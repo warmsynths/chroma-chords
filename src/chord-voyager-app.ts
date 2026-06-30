@@ -1470,6 +1470,8 @@ export class ChordVoyagerApp extends LitElement {
     }
   }
 
+  private lastSelectStepTime = 0;
+
   private handleSelectStep(e: CustomEvent<{ sectionId: string, index: number } | null>) {
     const detail = e.detail;
     if (!detail) {
@@ -1496,10 +1498,18 @@ export class ChordVoyagerApp extends LitElement {
       }
 
       if (prof) {
+        const now = Date.now();
+        const isSameStep = this.activeLocation && this.activeLocation.sectionId === detail.sectionId && this.activeLocation.stepIndex === detail.index;
+        const isRapidRepeat = isSameStep && (now - this.lastSelectStepTime < 350);
+        this.lastSelectStepTime = now;
+
         this.activeProfile = prof;
         this.activeLocation = { sectionId: sec.id, stepIndex: detail.index };
-        const voicedNotes = this.getVoicedMidiNotesForStep(step, prof);
-        this.playChordNotes(voicedNotes);
+
+        if (!isRapidRepeat) {
+          const voicedNotes = this.getVoicedMidiNotesForStep(step, prof);
+          this.playChordNotes(voicedNotes);
+        }
       }
     } else {
       this.activeLocation = { sectionId: sec.id, stepIndex: detail.index };

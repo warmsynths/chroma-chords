@@ -843,11 +843,6 @@ export class ChordTimeline extends LitElement {
 
   private handleStepDblClick(sectionId: string, index: number) {
     this.isEditing = true;
-    this.dispatchEvent(new CustomEvent('select-step', {
-      detail: { sectionId, index },
-      bubbles: true,
-      composed: true
-    }));
   }
 
   private exitEditMode() {
@@ -1216,7 +1211,7 @@ export class ChordTimeline extends LitElement {
         </div>
         
         <!-- Inline Chord Editor Drawer -->
-        ${hasSections && this.activeLocation ? html`
+        ${hasSections && this.activeLocation && this.isEditing ? html`
           <div class="chord-editor-drawer">
             ${this.renderChordEditor()}
           </div>
