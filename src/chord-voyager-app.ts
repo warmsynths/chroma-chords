@@ -452,6 +452,14 @@ export class ChordVoyagerApp extends LitElement {
       border-bottom: 2px solid var(--accent-gold);
     }
     
+    .tab-explanation {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: var(--text-secondary);
+    }
+    
     next-options-table {
       flex: 1;
       min-height: 0;
@@ -2262,16 +2270,27 @@ export class ChordVoyagerApp extends LitElement {
                   <button 
                     class="tab-btn ${this.activeOptionsTab === 'diatonic' ? 'active' : ''}" 
                     @click=${() => this.activeOptionsTab = 'diatonic'}
+                    title="Charted Waters (Diatonic Chords)"
                   >
-                    Charted Waters
+                    ${this.compactMode ? '⛵' : 'Charted Waters'}
                   </button>
                   <button 
                     class="tab-btn ${this.activeOptionsTab === 'borrowed' ? 'active' : ''}" 
                     @click=${() => this.activeOptionsTab = 'borrowed'}
+                    title="Uncharted Waters (Borrowed Chords)"
                   >
-                    Uncharted Waters
+                    ${this.compactMode ? '🧭' : 'Uncharted Waters'}
                   </button>
                 </div>
+                
+                ${!this.compactMode ? html`
+                  <div class="tab-explanation">
+                    ${this.activeOptionsTab === 'diatonic' ? 
+                      'Cruising safe, familiar routes using diatonic chords built strictly from your active scale to provide comfortable stability.' : 
+                      'Venturing into mysterious, unmapped territory using borrowed chords from parallel modes to introduce tension and emotional color.'
+                    }
+                  </div>
+                ` : ''}
                 
                 ${this.activeOptionsTab === 'diatonic' ? html`
                   <next-options-table
