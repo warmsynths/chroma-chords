@@ -96,6 +96,14 @@ const SCALE_TYPES = [
     phase: 2
   },
   {
+    id: 'LYDIAN',
+    emoji: '🌫️',
+    title: 'The Floating Mist',
+    subtitle: 'Lydian Mode',
+    desc: 'An ethereal, weightless drift. With its raised 4th degree, Lydian creates a suspended, dreamlike atmosphere—like sailing through a glowing fog where the boundary between sea and sky dissolves.',
+    phase: 2
+  },
+  {
     id: 'NATURAL MINOR',
     emoji: '🌌',
     title: 'Clear Night',
@@ -157,7 +165,7 @@ export class ChordVoyagerApp extends LitElement {
   @state()
   private isDriveSyncing = false;
   @state() private setupStep: 'scale' | 'tonic' = 'scale';
-  @state() private selectedScaleType: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | null = null;
+  @state() private selectedScaleType: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | 'LYDIAN' | null = null;
 
   private playTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -730,6 +738,11 @@ export class ChordVoyagerApp extends LitElement {
           'F#': 'E', 'G': 'F', 'G#': 'F#', 'A': 'G', 'A#': 'Ab', 'B': 'A'
         };
 
+        const LYDIAN_PARENT_ROOTS: Record<string, string> = {
+          'C': 'G', 'Db': 'Ab', 'D': 'A', 'Eb': 'Bb', 'E': 'B', 'F': 'C',
+          'F#': 'Db', 'G': 'D', 'Ab': 'Eb', 'A': 'E', 'Bb': 'F', 'B': 'F#'
+        };
+
         const parentToModeDegree: Record<string, string> = {
           // Dorian
           'DORIAN_SUPERTONIC': 'TONIC',
@@ -746,7 +759,15 @@ export class ChordVoyagerApp extends LitElement {
           'MIXOLYDIAN_TONIC': 'SUBDOMINANT',
           'MIXOLYDIAN_SUPERTONIC': 'DOMINANT',
           'MIXOLYDIAN_MEDIANT': 'SUBMEDIANT',
-          'MIXOLYDIAN_SUBDOMINANT': 'SUBTONIC'
+          'MIXOLYDIAN_SUBDOMINANT': 'SUBTONIC',
+          // Lydian
+          'LYDIAN_SUBDOMINANT': 'TONIC',
+          'LYDIAN_DOMINANT': 'SUPERTONIC',
+          'LYDIAN_SUBMEDIANT': 'MEDIANT',
+          'LYDIAN_LEADING-TONE': 'SUBDOMINANT',
+          'LYDIAN_TONIC': 'DOMINANT',
+          'LYDIAN_SUPERTONIC': 'SUBMEDIANT',
+          'LYDIAN_MEDIANT': 'LEADING-TONE'
         };
 
         const modeToParentDegree: Record<string, string> = {
@@ -765,7 +786,15 @@ export class ChordVoyagerApp extends LitElement {
           'MIXOLYDIAN_SUBDOMINANT': 'TONIC',
           'MIXOLYDIAN_DOMINANT': 'SUPERTONIC',
           'MIXOLYDIAN_SUBMEDIANT': 'MEDIANT',
-          'MIXOLYDIAN_SUBTONIC': 'SUBDOMINANT'
+          'MIXOLYDIAN_SUBTONIC': 'SUBDOMINANT',
+          // Lydian
+          'LYDIAN_TONIC': 'SUBDOMINANT',
+          'LYDIAN_SUPERTONIC': 'DOMINANT',
+          'LYDIAN_MEDIANT': 'SUBMEDIANT',
+          'LYDIAN_SUBDOMINANT': 'LEADING-TONE',
+          'LYDIAN_DOMINANT': 'TONIC',
+          'LYDIAN_SUBMEDIANT': 'SUPERTONIC',
+          'LYDIAN_LEADING-TONE': 'MEDIANT'
         };
 
         // Inject Mixolydian Mode
@@ -842,6 +871,45 @@ export class ChordVoyagerApp extends LitElement {
           this.chordData.scales[scaleKey] = {
             root: modeRoot,
             type: 'DORIAN',
+            degrees: degreesObj
+          };
+        }
+
+        // Inject Lydian Mode
+        for (const [modeRoot, parentRoot] of Object.entries(LYDIAN_PARENT_ROOTS)) {
+          const parentScaleKey = `${parentRoot}_MAJOR`;
+          const parentScale = this.chordData.scales[parentScaleKey];
+          if (!parentScale) continue;
+
+          const scaleKey = `${modeRoot}_LYDIAN`;
+          const degreesObj: any = {};
+
+          for (const modeDegree of ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'LEADING-TONE']) {
+            const parentDegree = modeToParentDegree[`LYDIAN_${modeDegree}`];
+            const parentDegProfile = parentScale.degrees[parentDegree];
+            if (!parentDegProfile) continue;
+
+            const degProfile = JSON.parse(JSON.stringify(parentDegProfile));
+            degProfile.next_chord_options = (degProfile.next_chord_options || []).map((opt: any) => {
+              if (opt.nodeId.startsWith(`${parentRoot}_MAJOR_`)) {
+                const parentDeg = opt.nodeId.replace(`${parentRoot}_MAJOR_`, '');
+                const modeDeg = parentToModeDegree[`LYDIAN_${parentDeg}`];
+                if (modeDeg) {
+                  return {
+                    name: opt.name,
+                    nodeId: `${modeRoot}_LYDIAN_${modeDeg}`
+                  };
+                }
+              }
+              return opt;
+            });
+
+            degreesObj[modeDegree] = degProfile;
+          }
+
+          this.chordData.scales[scaleKey] = {
+            root: modeRoot,
+            type: 'LYDIAN',
             degrees: degreesObj
           };
         }
@@ -1897,7 +1965,7 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   // Select scale type in first step
-  private handleScaleTypeSelect(scaleId: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN') {
+  private handleScaleTypeSelect(scaleId: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | 'LYDIAN') {
     this.selectedScaleType = scaleId;
     this.setupStep = 'tonic';
   }
@@ -1929,7 +1997,7 @@ export class ChordVoyagerApp extends LitElement {
       this.activeProfile = prof;
 
       // Instantiate progression
-      const vibeVal = (this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN') ? 'tonic-major' : 'tonic-minor';
+      const vibeVal = (this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN' || this.selectedScaleType === 'LYDIAN') ? 'tonic-major' : 'tonic-minor';
       const step: ChordStep = {
         name: prof.chord_name,
         tension: '10%',
@@ -2126,9 +2194,9 @@ export class ChordVoyagerApp extends LitElement {
               
               <div class="key-selector-container">
                 <div class="key-grid">
-                  ${((this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN') ? MAJOR_KEYS : MINOR_KEYS).map(key => html`
+                  ${((this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN' || this.selectedScaleType === 'LYDIAN') ? MAJOR_KEYS : MINOR_KEYS).map(key => html`
                     <button class="btn-key" @click="${() => this.handleKeySelect(key)}">
-                      ${key} ${(this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN') ? 'Maj' : 'Min'}
+                      ${key} ${(this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN' || this.selectedScaleType === 'LYDIAN') ? 'Maj' : 'Min'}
                     </button>
                   `)}
                 </div>

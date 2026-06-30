@@ -6,7 +6,7 @@ export interface ProjectData {
   lastModified: number;
   sections: ProgressionSection[];
   setupStep: 'scale' | 'tonic';
-  selectedScaleType: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | null;
+  selectedScaleType: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | 'LYDIAN' | null;
   syncedToCloud?: boolean;
 }
 
