@@ -6,6 +6,7 @@ import { playChordFromInput } from './services/audio-service';
 import './components/chord-profile-card.ts';
 import './components/next-options-table.ts';
 import './components/chord-timeline.ts';
+import './components/onboarding-landing.ts';
 
 interface NextChordOption {
   name: string;
@@ -1976,10 +1977,17 @@ export class ChordVoyagerApp extends LitElement {
     document.documentElement.classList.toggle('light-theme', this.lightMode);
   }
 
-  // Select scale type in first step
+  // Select scale type in first step (kept for internal use / future)
   private handleScaleTypeSelect(scaleId: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | 'LYDIAN') {
     this.selectedScaleType = scaleId;
     this.setupStep = 'tonic';
+  }
+
+  // Bridge from <onboarding-landing> → existing handleKeySelect flow
+  private handleOnboardingScaleSelected(e: CustomEvent<{ key: string; scaleType: string }>) {
+    const { key, scaleType } = e.detail;
+    this.selectedScaleType = scaleType as any;
+    this.handleKeySelect(key);
   }
 
   private renderScaleCard(sc: any) {
@@ -2154,67 +2162,11 @@ export class ChordVoyagerApp extends LitElement {
         
         ${this.activeProfile === null ? html`
           <div class="setup-view glass-panel">
-            
-            ${this.setupStep === 'scale' ? html`
-              <div class="setup-title">Start your journey</div>
-              ${!this.compactMode ? html`
-                <div class="setup-desc">
-                  Select an emotional scale landscape to begin writing. These define the general moods of transitions and determine your composition's starting pitch contexts.
-                </div>
-              ` : ''}
-              
-              <div class="phases-container">
-                <!-- Row 1 / Phase 1 (Bright / Day Navigation) -->
-                <div class="phase-section">
-                  <div class="phase-header">Phase 1: Bright / Day Navigation</div>
-                  <div class="scale-grid row-1">
-                    ${SCALE_TYPES.filter(sc => sc.phase === 1).map(sc => this.renderScaleCard(sc))}
-                  </div>
-                </div>
-
-                <!-- Row 2 / Phase 2 (Deepening Waters / Transition) -->
-                <div class="phase-section">
-                  <div class="phase-header">Phase 2: Deepening Waters / Transition</div>
-                  <div class="scale-grid row-2">
-                    ${SCALE_TYPES.filter(sc => sc.phase === 2).map(sc => this.renderScaleCard(sc))}
-                  </div>
-                </div>
-
-                <!-- Row 3 / Phase 3 (Dark / Night Exploration & Turbulence) -->
-                <div class="phase-section">
-                  <div class="phase-header">Phase 3: Dark / Night Exploration & Turbulence</div>
-                  <div class="scale-grid row-3">
-                    ${SCALE_TYPES.filter(sc => sc.phase === 3).map(sc => this.renderScaleCard(sc))}
-                  </div>
-                </div>
-              </div>
-            ` : html`
-              <!-- Step 2: Choose Tonic Chord Key -->
-              <button class="btn-back" @click="${() => this.setupStep = 'scale'}">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                  <line x1="19" y1="12" x2="5" y2="12"></line>
-                  <polyline points="12 19 5 12 12 5"></polyline>
-                </svg> Back to Scales
-              </button>
-              
-              <div class="setup-title" style="margin-top: 10px;">Choose A ${this.selectedScaleType} Tonic Key</div>
-              ${!this.compactMode ? html`
-                <div class="setup-desc">
-                  Select the starting tonic minor or major key root. These set the target registers and vocals limits for your piece.
-                </div>
-              ` : ''}
-              
-              <div class="key-selector-container">
-                <div class="key-grid">
-                  ${((this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN' || this.selectedScaleType === 'LYDIAN') ? MAJOR_KEYS : MINOR_KEYS).map(key => html`
-                    <button class="btn-key" @click="${() => this.handleKeySelect(key)}">
-                      ${key} ${(this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN' || this.selectedScaleType === 'LYDIAN') ? 'Maj' : 'Min'}
-                    </button>
-                  `)}
-                </div>
-              </div>
-            `}
-            
+            <onboarding-landing
+              .compactMode=${this.compactMode}
+              .chordDataLoaded=${Object.keys(this.chordData.scales).length > 0}
+              @scale-selected=${this.handleOnboardingScaleSelected}
+            ></onboarding-landing>
           </div>
         ` : html`
           <div class="workspace-container">
