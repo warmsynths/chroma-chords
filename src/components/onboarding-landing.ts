@@ -138,13 +138,13 @@ export class OnboardingLanding extends LitElement {
 
         this.frameCount++;
         features.chroma.forEach((val, i) => {
+          // Accumulate raw chroma energy across all frames — detection
+          // is deferred to computeScaleMatches() so transient noise
+          // frames cannot pollute the final pitch set.
           this.chromaAccumulator[i] += val;
-          if (val > CHROMA_THRESHOLD) {
-            this.detectedPitches.add(i);
-          }
         });
 
-        // Normalise for display (0–1 range, smooth peaks)
+        // Normalise for live display (0–1 range relative to strongest bin)
         const max = Math.max(...this.chromaAccumulator, 0.0001);
         this.liveChroma = this.chromaAccumulator.map(v => v / max);
       }
@@ -193,10 +193,44 @@ export class OnboardingLanding extends LitElement {
 
   // ── Scale matching logic ──────────────────────────────────────────────────────
   private computeScaleMatches(): ScaleMatch[] {
-    if (this.detectedPitches.size === 0) return [];
+    if (this.frameCount === 0) return [];
 
-    const detected = this.detectedPitches;
+    // Average accumulated chroma energy per frame
+    const avgChroma = this.chromaAccumulator.map(v => v / this.frameCount);
+    const maxEnergy = Math.max(...avgChroma);
+
+    // Bail if recording was essentially silent throughout
+    if (maxEnergy < 0.01) return [];
+
+    // Derive the detected pitch set from the accumulated average rather than
+    // per-frame binary threshold. Any pitch class whose average energy is
+    // ≥ 30 % of the strongest pitch class is considered detected.
+    // This filters out noise that occasionally crosses a per-frame threshold
+    // but never accumulates significant energy.
+    const RELATIVE_ENERGY_THRESHOLD = 0.30;
+    const detected = new Set<number>(
+      avgChroma.reduce<number[]>((acc, v, i) => {
+        if (v / maxEnergy >= RELATIVE_ENERGY_THRESHOLD) acc.push(i);
+        return acc;
+      }, [])
+    );
+
+    if (detected.size === 0) return [];
+
+    // Find the single strongest pitch class detected to use for tonic boosting
+    let strongestPitchIndex = -1;
+    let strongestPitchVal = -1;
+    detected.forEach(p => {
+      if (avgChroma[p] > strongestPitchVal) {
+        strongestPitchVal = avgChroma[p];
+        strongestPitchIndex = p;
+      }
+    });
+
     const results: ScaleMatch[] = [];
+
+    // Lower the Jaccard threshold if the user only sang 1 or 2 notes
+    const minThreshold = detected.size <= 2 ? 0.10 : 0.28;
 
     for (const [scaleType, intervals] of Object.entries(SCALE_INTERVALS)) {
       // Test all 12 roots (rotations)
@@ -207,19 +241,23 @@ export class OnboardingLanding extends LitElement {
         let intersection = 0;
         for (const p of detected) { if (scalePitches.has(p)) intersection++; }
         const union = scalePitches.size + detected.size - intersection;
-        const score = union > 0 ? intersection / union : 0;
+        let score = union > 0 ? intersection / union : 0;
 
-        // Only include meaningful matches
-        if (score >= 0.3) {
-          results.push({ scaleType, root: NOTE_NAMES[root], rootIndex: root, score });
+        // Boost score if the root of the scale matches our absolute strongest sung pitch
+        if (root === strongestPitchIndex) {
+          score += 0.25; // Significant boost to favor starting on the sung key center
+        }
+
+        // Only surface matches that cross the threshold
+        if (score >= minThreshold) {
+          results.push({ scaleType, root: NOTE_NAMES[root], rootIndex: root, score: Math.min(1.0, score) });
         }
       }
     }
 
-    // Sort by score descending, take top 5
+    // Sort by score descending, de-duplicate by (root, scaleType), keep top 5
     results.sort((a, b) => b.score - a.score);
 
-    // De-duplicate by (root, scaleType) — keep highest score only
     const seen = new Set<string>();
     const deduped: ScaleMatch[] = [];
     for (const r of results) {
@@ -337,11 +375,13 @@ export class OnboardingLanding extends LitElement {
         <div class="note-indicators" aria-label="Live pitch indicators">
           ${NOTE_NAMES.map((note, i) => {
             const energy = Math.min(1, this.liveChroma[i] ?? 0);
-            const isActive = energy > 0.4;
-            const isDetected = this.detectedPitches.has(i);
+            // "active" = currently spiking strongly (terracotta flash)
+            const isActive = energy > 0.5;
+            // "detected" = has significant accumulated energy vs peak (gold hold)
+            const isDetected = energy >= 0.30;
             return html`
               <div
-                class="note-pip ${isActive ? 'note-active' : ''} ${isDetected ? 'note-detected' : ''}"
+                class="note-pip ${isActive ? 'note-active' : ''} ${isDetected && !isActive ? 'note-detected' : ''}"
                 style="--energy: ${energy};"
                 title="${note}"
               >
@@ -350,6 +390,7 @@ export class OnboardingLanding extends LitElement {
             `;
           })}
         </div>
+
 
         <!-- Progress bar -->
         <div class="scan-progress-bar" role="progressbar" aria-valuenow="${this.scanProgress}" aria-valuemax="100">
