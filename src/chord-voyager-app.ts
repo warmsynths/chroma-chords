@@ -172,6 +172,10 @@ export class ChordVoyagerApp extends LitElement {
   private playTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   static styles = css`
+    * {
+      box-sizing: border-box;
+    }
+    
     :host {
       display: block;
       width: 100%;
@@ -488,6 +492,7 @@ export class ChordVoyagerApp extends LitElement {
       justify-content: center;
       padding: 40px 24px;
       gap: 24px;
+      width: 100%;
       max-width: 900px;
       margin: 20px auto;
       text-align: center;

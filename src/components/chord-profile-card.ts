@@ -20,6 +20,10 @@ export class ChordProfileCard extends LitElement {
   private orchidWindowSize = 13; // 13 keys window
 
   static styles = css`
+    * {
+      box-sizing: border-box;
+    }
+
     :host {
       display: block;
     }

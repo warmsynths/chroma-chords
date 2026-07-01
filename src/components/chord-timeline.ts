@@ -55,6 +55,10 @@ export class ChordTimeline extends LitElement {
   private isDraggingVoicing = false;
 
   static styles = css`
+    * {
+      box-sizing: border-box;
+    }
+
     :host {
       display: block;
       --accent-cyan: var(--accent-terracotta, #c25233);

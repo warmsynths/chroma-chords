@@ -566,6 +566,10 @@ export class OnboardingLanding extends LitElement {
 
   // ── Styles ────────────────────────────────────────────────────────────────────
   static styles = css`
+    * {
+      box-sizing: border-box;
+    }
+
     :host {
       display: block;
       width: 100%;
@@ -578,6 +582,7 @@ export class OnboardingLanding extends LitElement {
       justify-content: flex-start;
       padding: 40px 24px;
       gap: 24px;
+      width: 100%;
       max-width: 900px;
       margin: 0 auto;
       text-align: center;
@@ -1329,6 +1334,20 @@ export class OnboardingLanding extends LitElement {
     .btn-back:hover {
       color: var(--accent-gold);
       box-shadow: var(--neu-pressed-sm);
+    }
+
+    @media (max-width: 500px) {
+      .key-select-context {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+      }
+      .key-select-emoji {
+        font-size: 2.2rem;
+      }
+      .setup-title {
+        font-size: 1.5rem !important;
+      }
     }
   `;
 }
