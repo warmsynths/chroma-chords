@@ -143,6 +143,7 @@ export class ChordVoyagerApp extends LitElement {
   @state() currentProjectName: string = 'Untitled Project';
   @state() showProjectModal = false;
   @state() private showShareModal = false;
+  @state() private showCloudPromptModal = false;
   @state() private shareModalToast = '';
   @state() private selectedShareDevice: 'm8' | 'circuit' = 'm8';
 
@@ -1046,6 +1047,7 @@ export class ChordVoyagerApp extends LitElement {
 
                     this.driveService.setAccessToken(tokenResponse.access_token);
                     await this.syncProjectsFromCloud();
+                    await this.syncProjectsToCloud();
                     return;
                   }
                 }
@@ -1093,6 +1095,7 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   private async syncProjectsToCloud() {
+    if (!this.isAuthenticated) return;
     if (this.isDriveSyncing) return;
 
     if (!this.driveService.hasAccessToken()) {
@@ -2109,45 +2112,6 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   render() {
-    if (!this.isAuthenticated) {
-      return html`
-        <div class="app-layout" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 24px; box-sizing: border-box;">
-          <div class="glass-panel" style="padding: 40px; max-width: 400px; text-align: center;">
-            <div class="branding" style="margin-bottom: 30px;">
-              <div class="brand-title" style="font-size: 2rem;">CHORD VOYAGER</div>
-              <div class="brand-sub">Modular Chord Studio</div>
-            </div>
-            
-            <p style="color: var(--text-secondary); margin-bottom: 24px; font-size: 0.95rem;">
-              Please sign in to access your Chord Voyager workspace.
-            </p>
-            
-            <button 
-              @click=${this.requestDriveAccess} 
-              style="background: var(--accent-blue); color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; width: 100%; max-width: 280px;"
-            >
-              Sign in with Google
-            </button>
-            
-            ${this.authError ? html`
-              <div style="color: var(--accent-terracotta); font-size: 0.85rem; margin-top: 16px; font-weight: 600;">
-                ${this.authError}
-              </div>
-            ` : ''}
-          </div>
-          <footer class="studio-footer" style="margin-top: 0;">
-            <div class="footer-content">
-              <a href="https://github.com/warmsynths/chord-voyager" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: inline-block; vertical-align: middle;"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>GitHub</a>
-              <span class="footer-divider">|</span>
-              <span>Made with ❤️ by <a href="mailto:warmsynthsiloveyou@gmail.com" target="_blank" rel="noopener">warmsynths</a></span>
-              <span class="footer-divider">|</span>
-              <a href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">☕ Support the Voyage</a>
-            </div>
-          </footer>
-        </div>
-      `;
-    }
-
     return html`
       <div class="app-layout">
         
@@ -2160,17 +2124,6 @@ export class ChordVoyagerApp extends LitElement {
           
           <!-- Header Controls -->
           <div class="header-controls">
-            <div class="auth-container">
-              <div class="auth-info">
-                <span class="email-text">${this.authUserEmail}</span>
-                <span style="color: var(--accent-terracotta); cursor: pointer; text-decoration: underline; margin-top: 2px;" @click=${this.handleLogout}>Sign Out</span>
-              </div>
-              <div class="user-avatar">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-                </svg>
-              </div>
-            </div>
             <div class="toggle-group">
               <button 
                 class="btn-compact-toggle" 
@@ -2347,6 +2300,7 @@ export class ChordVoyagerApp extends LitElement {
         
         ${this.showProjectModal ? this.renderProjectModal() : ''}
         ${this.showShareModal ? this.renderShareModal() : ''}
+        ${this.showCloudPromptModal ? this.renderCloudPromptModal() : ''}
         
         <footer class="studio-footer">
           <div class="footer-content">
@@ -2390,6 +2344,94 @@ export class ChordVoyagerApp extends LitElement {
               >
                 Save
               </button>
+              ${!this.isAuthenticated ? html`
+                <button
+                  @click=${() => this.showCloudPromptModal = true}
+                  title="Enable Cloud Backup"
+                  style="background: transparent; border: 1px dashed var(--border-color); color: var(--text-secondary); padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.85rem;"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.5 19A3.5 3.5 0 0 0 21 15.5c0-2.79-2.54-4.5-5-4.5-.42-1.89-1.78-3.5-4-3.5a5.5 5.5 0 0 0-5.38 4.41c-2.3.26-4.12 2.2-4.12 4.59A3.5 3.5 0 0 0 6 20h11.5a1 1 0 0 0 .5-1z"></path>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                    <polyline points="12 12 12 18"></polyline>
+                  </svg>
+                  Sync to Cloud
+                </button>
+              ` : html`
+                <button
+                  @click=${this.syncProjectsToCloud}
+                  ?disabled=${this.isDriveSyncing}
+                  title="Sync to Cloud Now"
+                  style="background: transparent; border: 1px solid var(--accent-blue); color: var(--accent-blue); padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.85rem;"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.5 19A3.5 3.5 0 0 0 21 15.5c0-2.79-2.54-4.5-5-4.5-.42-1.89-1.78-3.5-4-3.5a5.5 5.5 0 0 0-5.38 4.41c-2.3.26-4.12 2.2-4.12 4.59A3.5 3.5 0 0 0 6 20h11.5a1 1 0 0 0 .5-1z"></path>
+                  </svg>
+                  ${this.isDriveSyncing ? 'Syncing...' : 'Sync Active'}
+                </button>
+              `}
+            </div>
+            ${!this.isAuthenticated ? html`
+              <div style="display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 0.75rem; margin-top: 4px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                </svg>
+                <span>Saved locally to browser storage (Guest Mode)</span>
+              </div>
+            ` : html`
+              <div style="display: flex; align-items: center; gap: 6px; color: var(--accent-blue); font-size: 0.75rem; margin-top: 4px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <span>Google Cloud Sync Enabled</span>
+              </div>
+            `}
+          </div>
+
+          <!-- Cloud Sync Settings & Account Block -->
+          <div style="background: rgba(43, 107, 187, 0.08); padding: 16px; border-radius: 8px; border: 1px dashed rgba(43, 107, 187, 0.3); display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h3 style="margin: 0; font-size: 0.9rem; color: var(--accent-blue); font-family: var(--font-heading); display: flex; align-items: center; gap: 6px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.5 19A3.5 3.5 0 0 0 21 15.5c0-2.79-2.54-4.5-5-4.5-.42-1.89-1.78-3.5-4-3.5a5.5 5.5 0 0 0-5.38 4.41c-2.3.26-4.12 2.2-4.12 4.59A3.5 3.5 0 0 0 6 20h11.5a1 1 0 0 0 .5-1z"></path>
+                </svg>
+                Cloud Synchronization
+              </h3>
+              ${this.isAuthenticated ? html`
+                <span style="font-size: 0.75rem; color: var(--accent-gold); background: rgba(212, 175, 55, 0.15); padding: 2px 8px; border-radius: 4px; font-weight: 600;">CONNECTED</span>
+              ` : html`
+                <span style="font-size: 0.75rem; color: var(--text-muted); background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 4px; font-weight: 600;">LOCAL-FIRST</span>
+              `}
+            </div>
+            
+            <p style="margin: 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+              ${this.isAuthenticated 
+                ? `You are signed in as ${this.authUserEmail}. Your projects are automatically synced and backed up to your personal Google Drive.` 
+                : 'Projects are saved locally to this browser by default. Sign in with Google only if you want to sync your projects and access them from other devices.'
+              }
+            </p>
+            
+            <div style="display: flex; justify-content: flex-end;">
+              ${this.isAuthenticated ? html`
+                <button 
+                  @click=${this.handleLogout}
+                  style="background: transparent; border: 1px solid var(--accent-terracotta); color: var(--accent-terracotta); padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 0.8rem;"
+                >
+                  Sign Out
+                </button>
+              ` : html`
+                <button 
+                  @click=${this.requestDriveAccess}
+                  style="background: var(--accent-blue); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; box-shadow: var(--neu-flat-sm);"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.866-3.577-7.866-8s3.536-8 7.866-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C17.955 2.192 15.34 1 12.24 1 5.753 1 .5 6.253.5 12.75s5.253 11.75 11.74 11.75c6.776 0 11.28-4.76 11.28-11.46 0-.77-.085-1.35-.188-1.755H12.24z"/>
+                  </svg>
+                  Sign in with Google
+                </button>
+              `}
             </div>
           </div>
 
@@ -2402,13 +2444,6 @@ export class ChordVoyagerApp extends LitElement {
                 <input type="file" accept=".json" style="display: none;" @change=${this.handleImportProject} />
               </label>
             </div>
-
-            ${!this.driveService.hasAccessToken() ? html`
-              <div style="background: rgba(43, 107, 187, 0.15); border: 1px solid rgba(43, 107, 187, 0.3); border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: var(--accent-blue); font-size: 0.85rem;">Connect Google Drive to load your cloud projects on this device.</span>
-                <button @click=${this.requestDriveAccess} style="background: var(--accent-blue); color: #fff; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">Connect</button>
-              </div>
-            ` : ''}
 
             ${this.projects.length === 0 ? html`
               <div style="text-align: center; padding: 30px; color: var(--text-muted); font-style: italic; background: rgba(0,0,0,0.1); border-radius: 8px;">
@@ -2586,6 +2621,50 @@ export class ChordVoyagerApp extends LitElement {
       this.shareModalToast = 'Failed to copy link automatically. Please select and copy below.';
       console.error('Fallback copy failed:', err);
     }
+  }
+
+  private renderCloudPromptModal() {
+    return html`
+      <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 1100; display: flex; align-items: center; justify-content: center;" @click=${() => this.showCloudPromptModal = false}>
+        <div class="glass-panel" style="width: 420px; max-width: 90vw; padding: 32px; display: flex; flex-direction: column; gap: 20px; text-align: center;" @click=${(e: Event) => e.stopPropagation()}>
+          
+          <div style="display: flex; justify-content: flex-end; margin-bottom: -10px;">
+            <button class="btn-compact-toggle" @click=${() => this.showCloudPromptModal = false} style="margin: 0; padding: 4px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+
+          <div style="font-size: 2.5rem; line-height: 1; margin-bottom: 5px;">☁️</div>
+          
+          <div>
+            <h2 style="margin: 0 0 8px 0; font-family: var(--font-heading); color: var(--accent-gold); font-size: 1.5rem;">Enable Cloud Sync</h2>
+            <p style="color: var(--text-secondary); margin: 0; font-size: 0.95rem; line-height: 1.5;">
+              Sign in with Google to safely back up your projects, custom progressions, and configuration variables to the cloud. Access your files on any device!
+            </p>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
+            <button 
+              @click=${() => { this.showCloudPromptModal = false; this.requestDriveAccess(); }}
+              style="background: var(--accent-blue); color: #fff; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; box-shadow: var(--neu-flat-sm);"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: middle;">
+                <path d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.866-3.577-7.866-8s3.536-8 7.866-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C17.955 2.192 15.34 1 12.24 1 5.753 1 .5 6.253.5 12.75s5.253 11.75 11.74 11.75c6.776 0 11.28-4.76 11.28-11.46 0-.77-.085-1.35-.188-1.755H12.24z"/>
+              </svg>
+              Sign in with Google
+            </button>
+            
+            <button 
+              @click=${() => this.showCloudPromptModal = false}
+              style="background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 0.9rem; cursor: pointer; width: 100%;"
+            >
+              Keep Saving Locally
+            </button>
+          </div>
+
+        </div>
+      </div>
+    `;
   }
 
   private renderShareModal() {
