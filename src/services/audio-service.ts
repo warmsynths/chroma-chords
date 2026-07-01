@@ -72,11 +72,63 @@ export function playNote(noteName: string, duration = 0.35): void {
 }
 
 /**
+ * Converts an arp rate string + bpm to a note interval in seconds.
+ */
+function arpRateToSeconds(arpRate: string, bpm: number): number {
+  const beatsPerSecond = bpm / 60;
+  switch (arpRate) {
+    case '1/4':  return 1 / beatsPerSecond;           // 1 beat
+    case '1/8':  return 0.5 / beatsPerSecond;         // half beat
+    case '1/8T': return (0.5 / beatsPerSecond) * (2 / 3); // triplet eighth
+    case '1/16': return 0.25 / beatsPerSecond;        // quarter beat
+    default:     return 0.25 / beatsPerSecond;
+  }
+}
+
+/**
+ * Expands a set of note names across multiple octaves for arp range.
+ * Returns a flat array of note names spanning `arpRange` octaves.
+ */
+function expandNotesAcrossOctaves(noteNames: string[], arpRange: number): string[] {
+  const expanded: string[] = [];
+  for (let oct = 0; oct < arpRange; oct++) {
+    for (const note of noteNames) {
+      // Parse note name and octave, e.g. "C4" -> name="C", octave=4
+      const match = note.match(/^([A-G]#?)(-?\d+)$/);
+      if (match) {
+        const name = match[1];
+        const octave = parseInt(match[2], 10) + oct;
+        expanded.push(`${name}${octave}`);
+      } else {
+        expanded.push(note);
+      }
+    }
+  }
+  return expanded;
+}
+
+/**
+ * Orders notes according to arpeggiator mode.
+ */
+function orderNotesForArp(notes: string[], arpMode: string): string[] {
+  const sorted = [...notes]; // assume already sorted ascending
+  switch (arpMode) {
+    case 'up':      return sorted;
+    case 'down':    return [...sorted].reverse();
+    case 'up-down': return [...sorted, ...[...sorted].reverse().slice(1, -1)];
+    case 'random':  return sorted.sort(() => Math.random() - 0.5);
+    default:        return sorted;
+  }
+}
+
+/**
  * Plays a chord of notes simultaneously using the sampled Rhodes electric piano.
  * Starts Tone.js audio context on user gesture if not already running.
+ * When humanState.arpMode is set (not 'off'), plays notes in an arpeggio pattern.
  * 
  * @param noteNames Array of note names with octaves, e.g. ["C4", "E4", "G4"].
  * @param duration Duration in seconds.
+ * @param humanState Optional HumanState including bpm, arpMode, arpRate, arpRange.
  */
 export function playChord(noteNames: string[], duration = 0.7, humanState?: any): void {
   try {
@@ -85,6 +137,43 @@ export function playChord(noteNames: string[], duration = 0.7, humanState?: any)
       const densityScaling = count <= 1 ? 1 : Math.max(0.4, 1 / Math.sqrt(count));
       const now = Tone.now();
 
+      // --- Arpeggiator mode ---
+      if (humanState && humanState.arpMode && humanState.arpMode !== 'off') {
+        const bpm = humanState.bpm ?? 80;
+        const arpRate = humanState.arpRate ?? '1/16';
+        const arpRange = humanState.arpRange ?? 1;
+        const arpMode = humanState.arpMode;
+
+        const interval = arpRateToSeconds(arpRate, bpm);
+        const expanded = expandNotesAcrossOctaves(noteNames, arpRange);
+        const ordered = orderNotesForArp(expanded, arpMode);
+
+        // Velocity from humanState if available
+        const getVel = () => {
+          if (humanState.minVelocity !== undefined && humanState.maxVelocity !== undefined) {
+            const rawVel = (humanState.minVelocity + Math.random() * (humanState.maxVelocity - humanState.minVelocity)) / 127;
+            return rawVel * densityScaling;
+          }
+          return densityScaling;
+        };
+
+        // Note duration: slightly shorter than interval for a crisp arp feel
+        const noteDur = humanState.duration
+          ? humanState.duration * (1.0 + (Math.random() - 0.5) * 0.1 * (humanState.humanVariance ?? 0))
+          : Math.max(0.05, interval * 0.9);
+
+        ordered.forEach((noteName, index) => {
+          // Optional micro-timing jitter on each arp step
+          const jitter = humanState.microTiming
+            ? (Math.random() - 0.5) * humanState.microTiming * 0.02
+            : 0;
+          sampler.triggerAttackRelease(noteName, noteDur, now + index * interval + jitter, getVel());
+        });
+
+        return;
+      }
+
+      // --- Standard humanized chord playback ---
       noteNames.forEach((noteName, index) => {
         let stagger = 0;
         let vel = densityScaling;

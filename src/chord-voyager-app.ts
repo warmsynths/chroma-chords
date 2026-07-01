@@ -1859,6 +1859,10 @@ export class ChordVoyagerApp extends LitElement {
     if (this.sections.length === 0) return;
     this.isPlaying = true;
 
+    // Step interval: 2 beats (half note) calculated from BPM. Default 80 BPM → 1500ms.
+    const bpm = this.humanState?.bpm ?? 80;
+    const stepIntervalMs = Math.round((2 * 60 / bpm) * 1000);
+
     let secIndex = 0;
     let stepIndex = 0;
 
@@ -1935,15 +1939,15 @@ export class ChordVoyagerApp extends LitElement {
         if (this.isLooping && this.sections.some(s => s.steps.some(st => st !== null))) {
           secIndex = 0;
           stepIndex = 0;
-          this.playTimeoutId = setTimeout(playNextStep, 1500);
+          this.playTimeoutId = setTimeout(playNextStep, stepIntervalMs);
         } else {
           this.playTimeoutId = setTimeout(() => {
             this.stopProgressionPlayback();
-          }, 1500);
+          }, stepIntervalMs);
         }
         return;
       }
-      this.playTimeoutId = setTimeout(playNextStep, 1500);
+      this.playTimeoutId = setTimeout(playNextStep, stepIntervalMs);
     };
 
     playNextStep();
@@ -2225,6 +2229,7 @@ export class ChordVoyagerApp extends LitElement {
                 .activeNotes="${this.activeProfile && this.getActiveStep() ? this.getVoicedMidiNotesForStep(this.getActiveStep()!, this.activeProfile) : []}"
                 .rootNoteName="${this.activeProfile ? this.activeProfile.chord_notes.split(' ')[0] : ''}"
                 .windowStartMidi="${this.getActiveStepVoicing()}"
+                .bpm="${this.humanState?.bpm ?? 80}"
                 @toggle-play="${this.togglePlayProgression}"
                 @toggle-loop="${this.handleToggleLoop}"
                 @clear-timeline="${this.handleClearTimeline}"

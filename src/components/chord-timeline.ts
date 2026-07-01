@@ -26,6 +26,7 @@ export class ChordTimeline extends LitElement {
   @property({ type: Array }) activeNotes: number[] = [];
   @property({ type: String }) rootNoteName = '';
   @property({ type: Number }) windowStartMidi = 60;
+  @property({ type: Number }) bpm = 80;
 
   @state() viewedSectionId: string | null = null;
   @state() private humanLoaded = false;
