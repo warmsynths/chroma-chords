@@ -6,6 +6,11 @@ Chord Voyager is a tool designed to completely remove the friction of musical ex
 
 ---
 
+![Chord Voyager Demo Layout](assets/demo.gif)
+[Live app](https://warmsynths.github.io/chord-voyager)
+
+---
+
 ## 🌊 The Philosophy
 
 We've all been there: you have a melody or a vibe in your head, but by the time you open your DAW, load up a synth, configure your MIDI routing, and draw notes in a piano roll, the spark is gone. 
