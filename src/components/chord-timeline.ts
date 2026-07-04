@@ -1035,12 +1035,17 @@ export class ChordTimeline extends LitElement {
   }
 
   private scrollActiveStepIntoView() {
-    const activeChip = this.renderRoot.querySelector('.chord-chip.active');
-    if (activeChip) {
-      activeChip.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center'
+    const activeChip = this.renderRoot.querySelector('.chord-chip.active') as HTMLElement;
+    const scrollContainer = this.renderRoot.querySelector('.timeline-scroll-container') as HTMLElement;
+    if (activeChip && scrollContainer) {
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const chipRect = activeChip.getBoundingClientRect();
+      const relativeLeft = chipRect.left - containerRect.left + scrollContainer.scrollLeft;
+      const targetScrollLeft = relativeLeft - (containerRect.width / 2) + (chipRect.width / 2);
+      
+      scrollContainer.scrollTo({
+        left: targetScrollLeft,
+        behavior: 'smooth'
       });
     }
   }
