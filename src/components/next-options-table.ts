@@ -32,10 +32,16 @@ export class NextOptionsTable extends LitElement {
     .options-container {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 16px;
       padding: 20px;
       box-sizing: border-box;
       padding-bottom: 40px;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
     }
     
     .options-header {
@@ -51,17 +57,33 @@ export class NextOptionsTable extends LitElement {
     }
     
     .option-card {
-      display: grid;
-      grid-template-columns: auto 1fr auto;
-      align-items: center;
-      gap: 16px;
-      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
       background: var(--bg-card);
       border: none;
       border-radius: 12px;
       cursor: pointer;
       box-shadow: var(--neu-flat);
       transition: all 0.25s ease;
+      height: 100%;
+      box-sizing: border-box;
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      width: 100%;
+    }
+    
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      width: 100%;
+      margin-top: auto;
     }
     
     .option-card:hover {
@@ -282,10 +304,11 @@ export class NextOptionsTable extends LitElement {
     }
 
     @media (max-width: 600px) {
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
       .option-card {
-        padding: 10px 12px;
-        gap: 8px;
-        grid-template-columns: auto 1fr;
+        padding: 12px;
       }
       .tag-section {
         display: none;
@@ -341,7 +364,8 @@ export class NextOptionsTable extends LitElement {
           <span style="font-size: 0.7rem; font-weight: 400; text-transform: none;">Click card to transition</span>
         </div>
         
-        ${this.options.map(opt => {
+        <div class="cards-grid">
+          ${this.options.map(opt => {
       const vibe = this.getVibeConfig(opt.vibe);
       const tensionPct = parseInt(opt.tension) || 50;
       const tensionNum = Math.min(4, Math.max(1, Math.ceil(tensionPct / 25)));
@@ -356,37 +380,39 @@ export class NextOptionsTable extends LitElement {
 
       return html`
             <div class="option-card ${vibe.class}" @click="${() => this.handleOptionSelect(opt)}">
-              <!-- Chord pill & audio preview trigger -->
-              <div class="chord-pill-container">
-                <div class="chord-pill">${opt.name}</div>
+              <div class="card-header">
+                <div class="chord-pill-container">
+                  <div class="chord-pill">${opt.name}</div>
+                </div>
+                <div class="tag-section">
+                  <div class="tension-dots">
+                    ${dots}
+                  </div>
+                  <span class="tension-lbl">${opt.tension}</span>
+                </div>
+              </div>
+              
+              <div class="desc-section">
+                ${!this.compactMode ? html`<div class="desc-text">${opt.description}</div>` : ''}
+              </div>
+              
+              <div class="card-footer">
+                <div class="meta-row" style="margin-top: 0;">
+                  <span class="mood-badge ${vibe.class} ${this.compactMode ? 'large-mode' : ''}">
+                    <span class="emoji-icon">${vibe.emoji}</span> 
+                    <span class="mood-text">${vibe.label}</span>
+                  </span>
+                </div>
                 <button class="btn-preview" @click="${(e: Event) => this.handlePreviewClick(e, opt)}" title="Preview Sound">
                   <svg viewBox="0 0 24 24">
                     <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
                   </svg>
                 </button>
               </div>
-              
-              <!-- Transition description -->
-              <div class="desc-section">
-                ${!this.compactMode ? html`<div class="desc-text">${opt.description}</div>` : ''}
-                <div class="meta-row">
-                  <span class="mood-badge ${vibe.class} ${this.compactMode ? 'large-mode' : ''}">
-                    <span class="emoji-icon">${vibe.emoji}</span> 
-                    <span class="mood-text">${vibe.label}</span>
-                  </span>
-                </div>
-              </div>
-              
-              <!-- Tension dots rating -->
-              <div class="tag-section">
-                <div class="tension-dots">
-                  ${dots}
-                </div>
-                <span class="tension-lbl">${opt.tension}</span>
-              </div>
             </div>
           `;
     })}
+        </div>
       </div>
     `;
   }
