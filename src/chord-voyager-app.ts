@@ -417,6 +417,25 @@ export class ChordVoyagerApp extends LitElement {
       .brand-sub {
         font-size: 0.65rem;
       }
+      
+      .is-compact .options-tabs {
+        padding: 6px 12px 0;
+        justify-content: center;
+        gap: 32px;
+      }
+      
+      .is-compact .tab-btn {
+        padding: 6px 16px 8px;
+        font-size: 1.5rem;
+      }
+      
+      .is-compact .mobile-header-tabs {
+        display: block;
+      }
+      
+      .is-compact .desktop-pane-tabs {
+        display: none;
+      }
     }
     
     /* Left column panel (Active Chord) */
@@ -434,6 +453,20 @@ export class ChordVoyagerApp extends LitElement {
       gap: 12px;
       padding: 16px 20px 0;
       border-bottom: 1px solid var(--border-color);
+    }
+    
+    .header-tabs {
+      padding: 0;
+      border-bottom: none;
+      gap: 12px;
+    }
+    
+    .header-tabs .tab-btn {
+      padding: 4px 8px;
+    }
+    
+    .mobile-header-tabs {
+      display: none;
     }
     
     .tab-btn {
@@ -2234,7 +2267,7 @@ export class ChordVoyagerApp extends LitElement {
             </div>
 
             <!-- Active Workspace Panel -->
-            <div class="workspace-grid glass-panel" style="padding: 0; display: flex; flex-direction: column;">
+            <div class="workspace-grid glass-panel ${this.compactMode ? 'is-compact' : ''}" style="padding: 0; display: flex; flex-direction: column;">
               
               <!-- Top portion: Active Chord Profile Card -->
               <div class="chord-pane" style="border-bottom: 1px solid var(--border-color);">
@@ -2251,26 +2284,47 @@ export class ChordVoyagerApp extends LitElement {
                   @play-chord=${this.handlePlayChordEvent}
                   @change-extension=${this.handleChangeExtensionEvent}
                   @change-voicing-window=${this.handleChangeVoicingWindowEvent}
-                ></chord-profile-card>
+                >
+                  <div slot="tabs" class="mobile-header-tabs">
+                    <div class="options-tabs header-tabs">
+                      <button 
+                        class="tab-btn ${this.activeOptionsTab === 'diatonic' ? 'active' : ''}" 
+                        @click=${() => this.activeOptionsTab = 'diatonic'}
+                        title="Charted Waters"
+                      >
+                        ⛵
+                      </button>
+                      <button 
+                        class="tab-btn ${this.activeOptionsTab === 'borrowed' ? 'active' : ''}" 
+                        @click=${() => this.activeOptionsTab = 'borrowed'}
+                        title="Uncharted Waters"
+                      >
+                        🧭
+                      </button>
+                    </div>
+                  </div>
+                </chord-profile-card>
               </div>
               
               <!-- Bottom portion: Chord Voyager options list -->
               <div class="options-pane">
-                <div class="options-tabs">
-                  <button 
-                    class="tab-btn ${this.activeOptionsTab === 'diatonic' ? 'active' : ''}" 
-                    @click=${() => this.activeOptionsTab = 'diatonic'}
-                    title="Charted Waters (Diatonic Chords)"
-                  >
-                    ${this.compactMode ? '⛵' : 'Charted Waters'}
-                  </button>
-                  <button 
-                    class="tab-btn ${this.activeOptionsTab === 'borrowed' ? 'active' : ''}" 
-                    @click=${() => this.activeOptionsTab = 'borrowed'}
-                    title="Uncharted Waters (Borrowed Chords)"
-                  >
-                    ${this.compactMode ? '🧭' : 'Uncharted Waters'}
-                  </button>
+                <div class="desktop-pane-tabs">
+                  <div class="options-tabs">
+                    <button 
+                      class="tab-btn ${this.activeOptionsTab === 'diatonic' ? 'active' : ''}" 
+                      @click=${() => this.activeOptionsTab = 'diatonic'}
+                      title="Charted Waters (Diatonic Chords)"
+                    >
+                      ${this.compactMode ? '⛵' : 'Charted Waters'}
+                    </button>
+                    <button 
+                      class="tab-btn ${this.activeOptionsTab === 'borrowed' ? 'active' : ''}" 
+                      @click=${() => this.activeOptionsTab = 'borrowed'}
+                      title="Uncharted Waters (Borrowed Chords)"
+                    >
+                      ${this.compactMode ? '🧭' : 'Uncharted Waters'}
+                    </button>
+                  </div>
                 </div>
                 
                 ${!this.compactMode ? html`

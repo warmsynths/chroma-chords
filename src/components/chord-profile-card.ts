@@ -166,9 +166,30 @@ export class ChordProfileCard extends LitElement {
     
     @media (max-width: 768px) {
       .chord-title-row {
-        flex-direction: column;
-        align-items: flex-start;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
         gap: 8px;
+      }
+      .chord-name-group {
+        order: 1;
+      }
+      ::slotted([slot="tabs"]) {
+        order: 2;
+        margin-left: auto;
+      }
+      .chord-notes-badge {
+        order: 3;
+      }
+      .profile-card.compact {
+        padding: 12px 16px;
+      }
+      .profile-card.compact .chord-title {
+        font-size: 1.5rem;
+      }
+      .profile-card.compact .chord-title-row {
+        gap: 6px;
       }
     }
   `;
@@ -287,6 +308,9 @@ export class ChordProfileCard extends LitElement {
                 <div class="chord-title">${this.chordName || '...'}</div>
                 <span class="header-pill ${this.getHeaderClass()}">${this.header || 'Chord Profile'}</span>
               </div>
+              
+              <slot name="tabs"></slot>
+              
               <div class="chord-notes-badge">
                 <span class="chord-notes-label">Notes Set</span>
                 <span class="chord-notes-value">${voicedNotesNames || '-'}</span>
