@@ -33,7 +33,7 @@ Chord Voyager is built to be lightweight, incredibly fast, and runs entirely in 
 * **Key Services:**
   * **Audio Service:** Handles playback, voicings, humanization (velocity & micro-timing deviations), and arpeggiation patterns.
   * **Project Service:** Manages local persistence, saving and loading your voyages.
-  * **Google Drive Service:** Connects to your Google Drive to back up projects in the cloud.
+  * **Google Drive Service:** Connects to your Google Drive to back up projects in the cloud
 
 ---
 
