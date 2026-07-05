@@ -313,6 +313,41 @@ export class NextOptionsTable extends LitElement {
       .tag-section {
         display: none;
       }
+      
+      /* Compact mode horizontal layout for mobile */
+      .is-compact .option-card {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        height: auto;
+      }
+      
+      .is-compact .card-header {
+        width: auto;
+      }
+      
+      .is-compact .desc-section {
+        display: none;
+      }
+      
+      .is-compact .card-footer {
+        width: auto;
+        margin-top: 0;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+      
+      .is-compact .mood-badge.large-mode {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+        margin-top: 0;
+      }
+      
+      .is-compact .mood-badge.large-mode .emoji-icon {
+        font-size: 1rem;
+      }
       .mood-badge.large-mode {
         font-size: 0.95rem;
         padding: 6px 10px;
@@ -358,7 +393,7 @@ export class NextOptionsTable extends LitElement {
 
   render() {
     return html`
-      <div class="options-container">
+      <div class="options-container ${this.compactMode ? 'is-compact' : ''}">
         <div class="options-header">
           <span>Next Transition Options</span>
           <span style="font-size: 0.7rem; font-weight: 400; text-transform: none;">Click card to transition</span>
