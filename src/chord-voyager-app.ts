@@ -428,14 +428,14 @@ export class ChordVoyagerApp extends LitElement {
         padding: 6px 16px 8px;
         font-size: 1.5rem;
       }
-      
-      .is-compact .mobile-header-tabs {
-        display: block;
-      }
-      
-      .is-compact .desktop-pane-tabs {
-        display: none;
-      }
+    }
+    
+    .is-compact .compact-header-tabs {
+      display: block;
+    }
+    
+    .is-compact .desktop-pane-tabs {
+      display: none;
     }
     
     /* Left column panel (Active Chord) */
@@ -458,14 +458,15 @@ export class ChordVoyagerApp extends LitElement {
     .header-tabs {
       padding: 0;
       border-bottom: none;
-      gap: 12px;
+      gap: 16px;
     }
     
     .header-tabs .tab-btn {
-      padding: 4px 8px;
+      padding: 6px 12px;
+      font-size: 1.4rem;
     }
     
-    .mobile-header-tabs {
+    .compact-header-tabs {
       display: none;
     }
     
@@ -2285,7 +2286,7 @@ export class ChordVoyagerApp extends LitElement {
                   @change-extension=${this.handleChangeExtensionEvent}
                   @change-voicing-window=${this.handleChangeVoicingWindowEvent}
                 >
-                  <div slot="tabs" class="mobile-header-tabs">
+                  <div slot="tabs" class="compact-header-tabs">
                     <div class="options-tabs header-tabs">
                       <button 
                         class="tab-btn ${this.activeOptionsTab === 'diatonic' ? 'active' : ''}" 
