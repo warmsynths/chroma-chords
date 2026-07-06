@@ -853,24 +853,24 @@ export class ChordVoyagerApp extends LitElement {
     }
 
     @keyframes sea-monster-bottom {
-      0% { transform: translate(50px, 100%) rotate(30deg); }
-      25% { transform: translate(0, 25%) rotate(0deg); }
-      75% { transform: translate(0, 25%) rotate(0deg); }
-      100% { transform: translate(-50px, 100%) rotate(-30deg); }
+      0% { transform: translateY(100%); }
+      20% { transform: translateY(25%); }
+      80% { transform: translateY(25%); }
+      100% { transform: translateY(100%); }
     }
 
     @keyframes sea-monster-left {
-      0% { transform: translate(-100%, -50px) rotate(60deg) scaleX(-1); }
-      25% { transform: translate(-25%, 0) rotate(90deg) scaleX(-1); }
-      75% { transform: translate(-25%, 0) rotate(90deg) scaleX(-1); }
-      100% { transform: translate(-100%, 50px) rotate(120deg) scaleX(-1); }
+      0% { transform: translateX(-100%) rotate(90deg) scaleX(-1); }
+      20% { transform: translateX(-25%) rotate(90deg) scaleX(-1); }
+      80% { transform: translateX(-25%) rotate(90deg) scaleX(-1); }
+      100% { transform: translateX(-100%) rotate(90deg) scaleX(-1); }
     }
 
     @keyframes sea-monster-right {
-      0% { transform: translate(100%, 50px) rotate(-60deg); }
-      25% { transform: translate(25%, 0) rotate(-90deg); }
-      75% { transform: translate(25%, 0) rotate(-90deg); }
-      100% { transform: translate(100%, -50px) rotate(-120deg); }
+      0% { transform: translateX(100%) rotate(-90deg); }
+      20% { transform: translateX(25%) rotate(-90deg); }
+      80% { transform: translateX(25%) rotate(-90deg); }
+      100% { transform: translateX(100%) rotate(-90deg); }
     }
 
     .sea-monster-easter-egg {
