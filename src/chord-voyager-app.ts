@@ -144,8 +144,6 @@ export class ChordVoyagerApp extends LitElement {
   @state() showProjectModal = false;
   @state() private showShareModal = false;
   @state() private showCloudPromptModal = false;
-  @state() private shareModalToast = '';
-  @state() private selectedShareDevice: 'm8' | 'circuit' = 'm8';
 
   @state() private isAuthenticated = false;
   @state() private authUserEmail = '';
@@ -2020,15 +2018,44 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   private handleClearTimeline() {
-    this.sections = [];
-    this.activeProfile = null;
-    this.activeLocation = null;
     this.stopProgressionPlayback();
     this.windEasterEggTriggered = false;
     this.showWind = false;
     if (this.windTimeoutId) {
       clearTimeout(this.windTimeoutId);
       this.windTimeoutId = null;
+    }
+
+    if (this.sections.length > 0 && this.sections[0].steps.length > 0) {
+      const firstStep = this.sections[0].steps[0];
+      this.sections = [{
+        ...this.sections[0],
+        steps: [firstStep]
+      }];
+      this.activeLocation = { sectionId: this.sections[0].id, stepIndex: 0 };
+      
+      if (firstStep) {
+        let prof = null;
+        let targetId = firstStep.nodeId || firstStep.targetChordId || (firstStep as any).target_id;
+        if (targetId) {
+          prof = this.resolveProfile(targetId);
+        }
+        if (!prof) {
+          targetId = this.getTargetIdByChordName(firstStep.name) || '';
+          if (targetId) {
+            prof = this.resolveProfile(targetId);
+            firstStep.nodeId = targetId;
+            firstStep.targetChordId = targetId;
+          }
+        }
+        if (prof) {
+          this.activeProfile = prof;
+        }
+      }
+    } else {
+      this.sections = [];
+      this.activeProfile = null;
+      this.activeLocation = null;
     }
   }
 
@@ -2791,7 +2818,6 @@ export class ChordVoyagerApp extends LitElement {
 
   private handleOpenShareModal() {
     this.showShareModal = true;
-    this.shareModalToast = '';
   }
 
   private handleCloseShareModal() {
@@ -2860,77 +2886,22 @@ export class ChordVoyagerApp extends LitElement {
     return step.name;
   }
 
-  private copyShareLink(device?: 'm8' | 'circuit' | Event) {
-    let targetDevice: 'm8' | 'circuit' = this.selectedShareDevice;
-    if (device && typeof device === 'string') {
-      targetDevice = device;
-      this.selectedShareDevice = device;
-    }
-
+  private openDeviceLink(device: 'm8' | 'circuit') {
     const chords = this.sections
       .flatMap(s => s.steps)
       .filter((step): step is Exclude<ChordStep, null> => step !== null)
       .map(step => this.getShareableChordName(step))
       .filter(Boolean);
 
-    if (chords.length === 0) {
-      this.shareModalToast = 'Error: Add at least one chord to your progression first!';
-      return;
-    }
-
-    const baseUrl = targetDevice === 'm8'
+    const baseUrl = device === 'm8'
       ? 'https://warmsynths.github.io/hypersyn-chord-helper/'
       : 'https://warmsynths.github.io/circuit-chords/';
 
-    const shareUrl = `${baseUrl}?p=${chords.join('+')}`;
+    const shareUrl = chords.length > 0
+      ? `${baseUrl}?p=${chords.join('+')}`
+      : baseUrl;
 
-    try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        navigator.clipboard.writeText(shareUrl).then(() => {
-          this.shareModalToast = 'Success: Shareable link copied to clipboard!';
-          setTimeout(() => {
-            if (this.shareModalToast.startsWith('Success')) {
-              this.shareModalToast = '';
-            }
-          }, 3000);
-        }).catch(err => {
-          console.warn('navigator.clipboard.writeText rejected, trying fallback:', err);
-          this.fallbackCopy(shareUrl);
-        });
-      } else {
-        this.fallbackCopy(shareUrl);
-      }
-    } catch (err) {
-      console.warn('navigator.clipboard error, trying fallback:', err);
-      this.fallbackCopy(shareUrl);
-    }
-  }
-
-  private fallbackCopy(text: string) {
-    try {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.opacity = '0';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      const successful = document.execCommand('copy');
-      document.body.removeChild(textArea);
-      if (successful) {
-        this.shareModalToast = 'Success: Shareable link copied to clipboard!';
-        setTimeout(() => {
-          if (this.shareModalToast.startsWith('Success')) {
-            this.shareModalToast = '';
-          }
-        }, 3000);
-      } else {
-        this.shareModalToast = 'Failed to copy link automatically. Please select and copy below.';
-      }
-    } catch (err) {
-      this.shareModalToast = 'Failed to copy link automatically. Please select and copy below.';
-      console.error('Fallback copy failed:', err);
-    }
+    window.open(shareUrl, '_blank');
   }
 
   private renderCloudPromptModal() {
@@ -2978,20 +2949,6 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   private renderShareModal() {
-    const chords = this.sections
-      .flatMap(s => s.steps)
-      .filter((step): step is Exclude<ChordStep, null> => step !== null)
-      .map(step => this.getShareableChordName(step))
-      .filter(Boolean);
-
-    const baseUrl = this.selectedShareDevice === 'm8'
-      ? 'https://warmsynths.github.io/hypersyn-chord-helper/'
-      : 'https://warmsynths.github.io/circuit-chords/';
-
-    const shareUrl = chords.length > 0
-      ? `${baseUrl}?p=${chords.join('+')}`
-      : '';
-
     return html`
       <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 1000; display: flex; align-items: center; justify-content: center;" @click=${this.handleCloseShareModal}>
         <div class="glass-panel" style="width: 640px; max-width: 90vw; max-height: 90vh; overflow-y: auto; padding: 30px; display: flex; flex-direction: column; gap: 24px;" @click=${(e: Event) => e.stopPropagation()}>
@@ -3004,14 +2961,14 @@ export class ChordVoyagerApp extends LitElement {
           </div>
 
           <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5;">
-            Select a destination device to export your chord progression. Clicking the device copies the formatted URL to your clipboard.
+            Select a destination device to export your chord progression. Clicking the device opens it in a new tab.
           </p>
 
           <div class="share-grid">
             <!-- M8 Tracker Card -->
             <div 
-              @click=${() => this.copyShareLink('m8')}
-              class="device-card ${this.selectedShareDevice === 'm8' ? 'selected' : ''}"
+              @click=${() => this.openDeviceLink('m8')}
+              class="device-card"
             >
               <!-- Dirtywave M8 Tracker SVG -->
               <svg width="140" height="200" viewBox="0 0 240 340" style="filter: drop-shadow(0 8px 16px rgba(0,0,0,0.4));">
@@ -3131,13 +3088,13 @@ export class ChordVoyagerApp extends LitElement {
               </svg>
 
               <div style="margin-top: 16px; font-weight: bold; font-family: var(--font-heading); color: var(--accent-gold); font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em;">M8 Tracker</div>
-              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; text-align: center;">Copies progression formatted for Hypersyn helper</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; text-align: center;">Opens Hypersyn helper with progression</div>
             </div>
 
             <!-- Circuit Tracks Card -->
             <div 
-              @click=${() => this.copyShareLink('circuit')}
-              class="device-card ${this.selectedShareDevice === 'circuit' ? 'selected' : ''}"
+              @click=${() => this.openDeviceLink('circuit')}
+              class="device-card"
             >
               <!-- Novation Circuit Tracks SVG -->
               <svg width="140" height="200" viewBox="0 0 240 340" style="filter: drop-shadow(0 8px 16px rgba(0,0,0,0.4));">
@@ -3384,37 +3341,7 @@ export class ChordVoyagerApp extends LitElement {
               </svg>
 
               <div style="margin-top: 16px; font-weight: bold; font-family: var(--font-heading); color: var(--accent-gold); font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em;">Circuit Tracks</div>
-              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; text-align: center;">Copies progression formatted for Circuit Tracks</div>
-            </div>
-          </div>
-
-          ${this.shareModalToast ? html`
-            <div style="background: ${this.shareModalToast.startsWith('Error') ? 'rgba(235, 94, 85, 0.15)' : 'rgba(212, 163, 89, 0.15)'}; border: 1px solid ${this.shareModalToast.startsWith('Error') ? 'rgba(235, 94, 85, 0.3)' : 'rgba(212, 163, 89, 0.3)'}; border-radius: 8px; padding: 12px; font-size: 0.85rem; color: ${this.shareModalToast.startsWith('Error') ? 'var(--accent-terracotta)' : 'var(--accent-gold)'}; font-weight: 600; text-align: center;">
-              ${this.shareModalToast}
-            </div>
-          ` : ''}
-
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <label style="font-size: 0.8rem; color: var(--text-secondary); font-weight: 600; font-family: var(--font-heading); text-transform: uppercase; letter-spacing: 0.05em;">Shareable Link</label>
-            <div style="display: flex; gap: 8px;">
-              <input 
-                type="text" 
-                readonly
-                .value=${shareUrl || '(Add chords to your progression first)'}
-                style="flex: 1; background: var(--bg-primary); border: 1px solid var(--border-color); color: ${shareUrl ? 'var(--accent-gold)' : 'var(--text-muted)'}; padding: 8px 12px; border-radius: 6px; font-family: var(--font-mono); font-size: 0.75rem; outline: none;"
-                @click=${(e: Event) => (e.target as HTMLInputElement).select()}
-              />
-              <button 
-                @click=${() => this.copyShareLink()}
-                ?disabled=${!shareUrl}
-                style="background: var(--accent-terracotta); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; opacity: ${shareUrl ? 1 : 0.5}; transition: opacity 0.2s;"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-                Copy
-              </button>
+              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; text-align: center;">Opens Circuit Tracks helper with progression</div>
             </div>
           </div>
 
