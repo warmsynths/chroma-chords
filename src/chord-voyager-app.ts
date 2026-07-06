@@ -175,6 +175,9 @@ export class ChordVoyagerApp extends LitElement {
   private seaMonsterTimeoutId: ReturnType<typeof setTimeout> | null = null;
   @state() private showSun = false;
   private sunTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  @state() private showWind = false;
+  private windTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private windEasterEggTriggered = false;
 
   static styles = css`
     * {
@@ -922,6 +925,37 @@ export class ChordVoyagerApp extends LitElement {
       pointer-events: none;
       animation: sun-drop 3s ease-in-out forwards;
       transform: translateY(-100%);
+    }
+
+    @keyframes wind-blow {
+      0% {
+        transform: translate(-100%, -50%);
+        opacity: 0;
+      }
+      15% {
+        transform: translate(20px, -50%);
+        opacity: 1;
+      }
+      85% {
+        transform: translate(20px, -50%);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(-100%, -50%);
+        opacity: 0;
+      }
+    }
+
+    .wind-easter-egg {
+      position: fixed;
+      top: 50%;
+      left: 0;
+      width: 250px;
+      height: auto;
+      z-index: 10001;
+      pointer-events: none;
+      animation: wind-blow 4.5s ease-in-out forwards;
+      transform: translate(-100%, -50%);
     }
   `;
 
@@ -1733,6 +1767,36 @@ export class ChordVoyagerApp extends LitElement {
     }, 3500);
   }
 
+  private triggerWindEasterEgg() {
+    this.windEasterEggTriggered = true;
+    this.showWind = true;
+    if (this.windTimeoutId) clearTimeout(this.windTimeoutId);
+    this.windTimeoutId = setTimeout(() => {
+      this.showWind = false;
+    }, 4500);
+  }
+
+  private checkWindEasterEgg() {
+    if (this.windEasterEggTriggered) return;
+
+    const activeSteps = this.sections.flatMap(s => s.steps).filter(step => step !== null);
+    if (activeSteps.length === 0) return;
+
+    const mistCount = activeSteps.filter(step => step.mood === 'LYDIAN').length;
+    const percent = mistCount / activeSteps.length;
+
+    if (percent > 0.5) {
+      this.triggerWindEasterEgg();
+    }
+  }
+
+  updated(changedProperties: Map<string, any>) {
+    super.updated(changedProperties);
+    if (changedProperties.has('sections')) {
+      this.checkWindEasterEgg();
+    }
+  }
+
   private handlePlayActiveChord() {
     const step = this.getActiveStep();
     if (step && this.activeProfile) {
@@ -1960,6 +2024,12 @@ export class ChordVoyagerApp extends LitElement {
     this.activeProfile = null;
     this.activeLocation = null;
     this.stopProgressionPlayback();
+    this.windEasterEggTriggered = false;
+    this.showWind = false;
+    if (this.windTimeoutId) {
+      clearTimeout(this.windTimeoutId);
+      this.windTimeoutId = null;
+    }
   }
 
   private handleAddSection() {
@@ -2068,6 +2138,12 @@ export class ChordVoyagerApp extends LitElement {
     this.currentProjectName = project.name;
     this.setupStep = project.setupStep;
     this.selectedScaleType = project.selectedScaleType;
+    this.windEasterEggTriggered = false;
+    this.showWind = false;
+    if (this.windTimeoutId) {
+      clearTimeout(this.windTimeoutId);
+      this.windTimeoutId = null;
+    }
     this.sections = project.sections;
 
     if (this.sections.length > 0) {
@@ -2534,6 +2610,7 @@ export class ChordVoyagerApp extends LitElement {
         ${this.showCloudPromptModal ? this.renderCloudPromptModal() : ''}
         ${this.showSeaMonster ? html`<img src="/sea-monster.png" class="sea-monster-easter-egg ${this.seaMonsterSpawnSide}" alt="Sea Monster" />` : ''}
         ${this.showSun ? html`<img src="/sun.png" class="sun-easter-egg" alt="Sun" />` : ''}
+        ${this.showWind ? html`<img src="/wind.png" class="wind-easter-egg" alt="Wind" />` : ''}
         
         <footer class="studio-footer">
           <div class="footer-content">
