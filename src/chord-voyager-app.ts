@@ -173,6 +173,8 @@ export class ChordVoyagerApp extends LitElement {
 
   private playTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private seaMonsterTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  @state() private showSun = false;
+  private sunTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   static styles = css`
     * {
@@ -899,7 +901,27 @@ export class ChordVoyagerApp extends LitElement {
       bottom: 20%;
       right: -10px;
       animation: sea-monster-right 5s ease-in-out forwards;
-      transform: translateX(100%);
+      transform: translateX(100%) rotate(-90deg);
+    }
+
+    @keyframes sun-drop {
+      0% { transform: translateY(-100%); }
+      33% { transform: translateY(0); }
+      66% { transform: translateY(0); }
+      100% { transform: translateY(-100%); }
+    }
+
+    .sun-easter-egg {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      margin-left: -150px;
+      width: 300px;
+      height: auto;
+      z-index: 9999;
+      pointer-events: none;
+      animation: sun-drop 3s ease-in-out forwards;
+      transform: translateY(-100%);
     }
   `;
 
@@ -1686,6 +1708,14 @@ export class ChordVoyagerApp extends LitElement {
     }, 5500);
   }
 
+  private triggerSunEasterEgg() {
+    this.showSun = true;
+    if (this.sunTimeoutId) clearTimeout(this.sunTimeoutId);
+    this.sunTimeoutId = setTimeout(() => {
+      this.showSun = false;
+    }, 3500);
+  }
+
   private handlePlayActiveChord() {
     const step = this.getActiveStep();
     if (step && this.activeProfile) {
@@ -1730,6 +1760,11 @@ export class ChordVoyagerApp extends LitElement {
         const prevChord = sec.steps[this.activeLocation!.stepIndex];
         if (prevChord && prevChord.mood === 'dominant' && newChord.mood === 'dominant') {
           this.triggerSeaMonsterEasterEgg();
+        }
+
+        const totalChords = this.sections.reduce((acc, s) => acc + s.steps.filter(step => step !== null).length, 0);
+        if ((totalChords + 1) === 8 && newChord.mood.startsWith('tonic')) {
+          this.triggerSunEasterEgg();
         }
 
         if (nextIndex < sec.steps.length) {
@@ -2466,6 +2501,7 @@ export class ChordVoyagerApp extends LitElement {
         ${this.showShareModal ? this.renderShareModal() : ''}
         ${this.showCloudPromptModal ? this.renderCloudPromptModal() : ''}
         ${this.showSeaMonster ? html`<img src="/sea-monster.png" class="sea-monster-easter-egg ${this.seaMonsterSpawnSide}" alt="Sea Monster" />` : ''}
+        ${this.showSun ? html`<img src="/sun.png" class="sun-easter-egg" alt="Sun" />` : ''}
         
         <footer class="studio-footer">
           <div class="footer-content">
