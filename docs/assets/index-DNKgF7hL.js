@@ -3282,9 +3282,9 @@
         ${this.showProjectModal?this.renderProjectModal():""}
         ${this.showShareModal?this.renderShareModal():""}
         ${this.showCloudPromptModal?this.renderCloudPromptModal():""}
-        ${this.showSeaMonster?I`<img src="/sea-monster.png" class="sea-monster-easter-egg ${this.seaMonsterSpawnSide}" alt="Sea Monster" />`:""}
-        ${this.showSun?I`<img src="/sun.png" class="sun-easter-egg" alt="Sun" />`:""}
-        ${this.showWind?I`<img src="/wind.png" class="wind-easter-egg" alt="Wind" />`:""}
+        ${this.showSeaMonster?I`<img src="./sea-monster.png" class="sea-monster-easter-egg ${this.seaMonsterSpawnSide}" alt="Sea Monster" />`:""}
+        ${this.showSun?I`<img src="./sun.png" class="sun-easter-egg" alt="Sun" />`:""}
+        ${this.showWind?I`<img src="./wind.png" class="wind-easter-egg" alt="Wind" />`:""}
         
         <footer class="studio-footer">
           <div class="footer-content">
@@ -3932,7 +3932,7 @@
     }
 
     header.glass-panel {
-      background-image: linear-gradient(var(--header-overlay), var(--header-overlay)), url('/header-bg.jpg');
+      background-image: linear-gradient(var(--header-overlay), var(--header-overlay)), url('./header-bg.jpg');
       background-size: cover;
       background-position: center 30%;
       border: 1px solid var(--border-color);
