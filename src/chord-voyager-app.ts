@@ -1442,54 +1442,71 @@ export class ChordVoyagerApp extends LitElement {
     borrowedScale?: string
   ): string {
     const templates: Record<string, string[]> = {
-      'tonic-major': [
-        `Transitioning to ${targetChord} brings a profound sense of resolution and stability. It feels like returning to a safe haven, anchoring the progression.`,
+      'MAJOR': [
+        `Transitioning to ${targetChord} brings a profound sense of resolution and stability. It feels like returning to the sunlit harbor, anchoring the progression.`,
         `Moving to the bright tonic ${targetChord} establishes a clear point of rest and clarity, offering a warm and welcoming release.`
       ],
-      'tonic-minor': [
-        `Shifting to ${targetChord} introduces a quiet, introspective calm. It feels like retreating into a peaceful, shadowed space of solitude.`,
-        `The minor tonic ${targetChord} grounds the harmony in a reflective, gentle mood, inviting emotional depth and quiet focus.`
+      'MIXOLYDIAN': [
+        `Transitioning to ${targetChord} brings a sun-drenched, fluid breeze. It introduces a mellow warmth and smooth movement.`,
+        `Moving to ${targetChord} carries the warm current of Mixolydian, delivering classic neo-soul warmth and smooth movement.`
       ],
-      'subdominant': [
-        `Stepping into ${targetChord} opens up the sound, creating a pleasant lift and a feeling of looking out toward new horizons.`,
-        `Moving to ${targetChord} acts as a bridge, expanding the harmonic space and building gentle forward momentum.`
+      'DORIAN': [
+        `Shifting to ${targetChord} evokes the smooth, cinematic dusk of Dorian. It blends a minor foundation with a bright, sophisticated twist.`,
+        `The Dorian character of ${targetChord} grounds the harmony in a twilight mood, perfect for driving lofi vibes.`
       ],
-      'dominant': [
-        `Progressing to ${targetChord} introduces a powerful sense of friction and gravity. It creates a strong magnetic pull that demands resolution.`,
-        `The dominant force of ${targetChord} injects harmonic tension and energy, actively leading the ear toward the next stable destination.`
+      'LYDIAN': [
+        `Stepping into ${targetChord} feels like an ethereal, weightless drift. Lydian's raised fourth degree creates a suspended, dreamlike atmosphere.`,
+        `Moving to ${targetChord} carries you into a floating mist, where the boundaries of the key dissolve in a suspended glow.`
       ],
-      'modal-interchange': [
-        `Borrowing ${targetChord} from a parallel scale adds a touch of bittersweet nostalgia. It brings an unexpected shade of color to the narrative.`,
-        `The borrowed quality of ${targetChord} ${borrowedScale ? `from the parallel ${borrowedScale} scale` : ''} offers a dreamy, reflective detour, echoing familiar tones in an unfamiliar context.`
+      'NATURAL MINOR': [
+        `Shifting to ${targetChord} introduces the quiet, introspective calm of a clear night. It feels like retreating into a peaceful, shadowed space of solitude.`,
+        `The minor chord ${targetChord} grounds the harmony in a reflective, gentle mood, inviting deep emotional grounding.`
+      ],
+      'HARMONIC MINOR': [
+        `Progressing to ${targetChord} introduces the dramatic friction of a storm. It injects heightened tension and exotic mystery.`,
+        `The harmonic minor force of ${targetChord} creates a powerful sense of friction and gravity, actively demanding resolution.`
+      ],
+      'MELODIC MINOR': [
+        `Transitioning to ${targetChord} introduces a mysterious, fluid motion. Melodic minor offers a sophisticated path between light and shadow.`,
+        `Moving to ${targetChord} adds a touch of melodic mystery, shifting gracefully between major-like brightness and minor introspection.`
       ]
     };
 
-    const categoryTemplates = templates[vibe] || templates['tonic-major'];
+    const categoryTemplates = templates[vibe.toUpperCase()] || templates['MAJOR'];
     const hash = (currentChord.charCodeAt(0) + targetChord.charCodeAt(0)) % categoryTemplates.length;
     return categoryTemplates[hash];
   }
 
   private getVibeKeyForOption(targetId: string, isBorrowed: boolean): string {
-    if (isBorrowed) return 'modal-interchange';
-
     const parts = targetId.split('_');
     const degree = parts[parts.length - 1];
-    const scaleType = parts.length > 2 ? parts[1] : 'MAJOR';
+
+    if (isBorrowed) {
+      if (parts.length > 2) {
+        const scaleType = parts.slice(1, parts.length - 1).join(' ').toUpperCase();
+        return scaleType || 'MAJOR';
+      }
+      return 'MAJOR';
+    }
+
+    const activeScaleType = this.selectedScaleType || 'MAJOR';
+
+    if (degree === 'DOMINANT' || degree === 'LEADING-TONE') {
+      return 'HARMONIC MINOR';
+    }
 
     if (degree === 'TONIC' || degree === 'MEDIANT' || degree === 'SUBMEDIANT') {
-      if (scaleType.toUpperCase().includes('MAJOR')) {
-        return 'tonic-major';
-      } else {
-        return 'tonic-minor';
-      }
+      const isMajorLeaning = ['MAJOR', 'MIXOLYDIAN', 'LYDIAN'].includes(activeScaleType);
+      return isMajorLeaning ? 'MAJOR' : 'NATURAL MINOR';
     }
-    if (degree === 'DOMINANT' || degree === 'LEADING-TONE') {
-      return 'dominant';
+
+    if (activeScaleType === 'LYDIAN') {
+      return 'LYDIAN';
     }
-    if (degree === 'SUBDOMINANT' || degree === 'SUPERTONIC') {
-      return 'subdominant';
+    if (['MAJOR', 'MIXOLYDIAN'].includes(activeScaleType)) {
+      return 'MIXOLYDIAN';
     }
-    return scaleType.toUpperCase().includes('MAJOR') ? 'tonic-major' : 'tonic-minor';
+    return 'DORIAN';
   }
 
   private getCurrentProgressionHistory(): string[] {
@@ -1535,7 +1552,7 @@ export class ChordVoyagerApp extends LitElement {
             seenChords.add(chordName);
 
             const targetId = `${scale.root}_${scale.type.replace(/ /g, '_')}_${degree}`;
-            const vibeKey = 'modal-interchange';
+            const vibeKey = this.getVibeKeyForOption(targetId, true);
             const dynamicTensionVal = this.calculateDynamicTension(chordName, history);
             const dynamicDesc = this.generateDynamicDescription(
               this.activeProfile.chord_name,
@@ -1758,12 +1775,27 @@ export class ChordVoyagerApp extends LitElement {
         const nextIndex = this.activeLocation!.stepIndex + 1;
 
         const prevChord = sec.steps[this.activeLocation!.stepIndex];
-        if (prevChord && prevChord.mood === 'dominant' && newChord.mood === 'dominant') {
+        
+        const isDominant = (chord: ChordStep) => {
+          if (!chord || !chord.nodeId) return false;
+          const parts = chord.nodeId.split('_');
+          const deg = parts[parts.length - 1];
+          return deg === 'DOMINANT' || deg === 'LEADING-TONE';
+        };
+
+        const isTonic = (chord: ChordStep) => {
+          if (!chord || !chord.nodeId) return false;
+          const parts = chord.nodeId.split('_');
+          const deg = parts[parts.length - 1];
+          return deg === 'TONIC' || deg === 'MEDIANT' || deg === 'SUBMEDIANT';
+        };
+
+        if (prevChord && isDominant(prevChord) && isDominant(newChord)) {
           this.triggerSeaMonsterEasterEgg();
         }
 
         const totalChords = this.sections.reduce((acc, s) => acc + s.steps.filter(step => step !== null).length, 0);
-        if ((totalChords + 1) === 8 && newChord.mood.startsWith('tonic')) {
+        if ((totalChords + 1) === 8 && newChord.mood === 'MAJOR') {
           this.triggerSunEasterEgg();
         }
 
@@ -2264,7 +2296,7 @@ export class ChordVoyagerApp extends LitElement {
       this.activeProfile = prof;
 
       // Instantiate progression
-      const vibeVal = (this.selectedScaleType === 'MAJOR' || this.selectedScaleType === 'MIXOLYDIAN' || this.selectedScaleType === 'LYDIAN') ? 'tonic-major' : 'tonic-minor';
+      const vibeVal = this.getVibeKeyForOption(targetId, false);
       const step: ChordStep = {
         name: prof.chord_name,
         tension: '10%',

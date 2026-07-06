@@ -11,11 +11,13 @@ interface NextChordOption {
 }
 
 const VIBE_MAP: Record<string, { label: string; emoji: string; class: string }> = {
-  'tonic-major': { label: 'Home / Sanctuary', emoji: '☀️', class: 'vibe-tonic-major' },
-  'tonic-minor': { label: 'Shadow / Solitude', emoji: '🌌', class: 'vibe-tonic-minor' },
-  'subdominant': { label: 'Horizon / Lift', emoji: '🌅', class: 'vibe-subdominant' },
-  'dominant': { label: 'Gravity / Friction', emoji: '⛈️', class: 'vibe-dominant' },
-  'modal-interchange': { label: 'Nostalgia / Echo', emoji: '🌬️', class: 'vibe-modal-interchange' }
+  'MAJOR': { label: 'Sunlit Harbor', emoji: '☀️', class: 'vibe-major' },
+  'MIXOLYDIAN': { label: 'The Warm Current', emoji: '🌊', class: 'vibe-mixolydian' },
+  'DORIAN': { label: 'The Twilight Hour', emoji: '🌆', class: 'vibe-dorian' },
+  'LYDIAN': { label: 'The Floating Mist', emoji: '🌫️', class: 'vibe-lydian' },
+  'NATURAL MINOR': { label: 'Clear Night', emoji: '🌌', class: 'vibe-natural-minor' },
+  'HARMONIC MINOR': { label: 'The Storm', emoji: '⛈️', class: 'vibe-harmonic-minor' },
+  'MELODIC MINOR': { label: 'Mystic Sea', emoji: '✨', class: 'vibe-melodic-minor' }
 };
 
 @customElement('next-options-table')
@@ -121,39 +123,53 @@ export class NextOptionsTable extends LitElement {
     }
 
     /* Class-specific vibe highlights on hover (backlit hardware switch style) */
-    .option-card.vibe-tonic-major:hover .chord-pill { 
+    .option-card.vibe-major:hover .chord-pill { 
       background: linear-gradient(180deg, #c2a173 0%, #ab8b61 100%); 
       color: #171513; 
       border-color: #d9b88c;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 8px rgba(171, 139, 97, 0.6);
     }
 
-    .option-card.vibe-tonic-minor:hover .chord-pill { 
+    .option-card.vibe-natural-minor:hover .chord-pill { 
       background: linear-gradient(180deg, #e3dac9 0%, #c4baa7 100%); 
       color: #171513; 
       border-color: #eadecc;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 0 8px rgba(213, 205, 186, 0.6);
     }
 
-    .option-card.vibe-subdominant:hover .chord-pill { 
-      background: linear-gradient(180deg, #db6646 0%, #c25233 100%); 
+    .option-card.vibe-mixolydian:hover .chord-pill { 
+      background: linear-gradient(180deg, #4f9da6 0%, #31707d 100%); 
       color: #ffffff; 
-      border-color: #ec7f61;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 8px rgba(194, 82, 51, 0.6);
+      border-color: #63b2bd;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 8px rgba(79, 157, 166, 0.6);
     }
 
-    .option-card.vibe-dominant:hover .chord-pill { 
+    .option-card.vibe-dorian:hover .chord-pill { 
+      background: linear-gradient(180deg, #7a66cc 0%, #5945a8 100%); 
+      color: #ffffff; 
+      border-color: #9884e8;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 8px rgba(122, 102, 204, 0.6);
+    }
+
+    .option-card.vibe-lydian:hover .chord-pill { 
+      background: linear-gradient(180deg, #9bbecf 0%, #7da2b5 100%); 
+      color: #171513; 
+      border-color: #b4d4e6;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 0 8px rgba(155, 190, 207, 0.6);
+    }
+
+    .option-card.vibe-harmonic-minor:hover .chord-pill { 
       background: linear-gradient(180deg, #a83d2e 0%, #87291c 100%); 
       color: #ffffff; 
       border-color: #c25244;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 8px rgba(135, 41, 28, 0.6);
     }
 
-    .option-card.vibe-modal-interchange:hover .chord-pill { 
-      background: linear-gradient(180deg, #8a8170 0%, #6e6556 100%); 
+    .option-card.vibe-melodic-minor:hover .chord-pill { 
+      background: linear-gradient(180deg, #4a9b75 0%, #337254 100%); 
       color: #ffffff; 
-      border-color: #a39987;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 8px rgba(115, 107, 92, 0.6);
+      border-color: #60c196;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 0 8px rgba(74, 155, 117, 0.6);
     }
     
     .btn-preview {
@@ -291,11 +307,13 @@ export class NextOptionsTable extends LitElement {
       font-size: 1.5rem;
     }
     
-    .vibe-tonic-major { background: var(--bg-card); color: var(--accent-gold); border: none; box-shadow: var(--neu-pressed-sm); }
-    .vibe-tonic-minor { background: var(--bg-card); color: var(--text-secondary); border: none; box-shadow: var(--neu-pressed-sm); }
-    .vibe-subdominant { background: var(--bg-card); color: var(--accent-terracotta); border: none; box-shadow: var(--neu-pressed-sm); }
-    .vibe-dominant { background: var(--bg-card); color: #87291c; border: none; box-shadow: var(--neu-pressed-sm); }
-    .vibe-modal-interchange { background: var(--bg-card); color: var(--text-muted); border: none; box-shadow: var(--neu-pressed-sm); }
+    .vibe-major { background: var(--bg-card); color: var(--accent-gold); border: none; box-shadow: var(--neu-pressed-sm); }
+    .vibe-natural-minor { background: var(--bg-card); color: var(--text-secondary); border: none; box-shadow: var(--neu-pressed-sm); }
+    .vibe-mixolydian { background: var(--bg-card); color: var(--accent-cyan); border: none; box-shadow: var(--neu-pressed-sm); }
+    .vibe-dorian { background: var(--bg-card); color: #a892ee; border: none; box-shadow: var(--neu-pressed-sm); }
+    .vibe-lydian { background: var(--bg-card); color: #b3d3e6; border: none; box-shadow: var(--neu-pressed-sm); }
+    .vibe-harmonic-minor { background: var(--bg-card); color: #c25244; border: none; box-shadow: var(--neu-pressed-sm); }
+    .vibe-melodic-minor { background: var(--bg-card); color: #60bb92; border: none; box-shadow: var(--neu-pressed-sm); }
     
     .tension-lbl {
       font-size: 0.65rem;
