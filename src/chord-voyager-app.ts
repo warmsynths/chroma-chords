@@ -168,8 +168,11 @@ export class ChordVoyagerApp extends LitElement {
   private isDriveSyncing = false;
   @state() private setupStep: 'scale' | 'tonic' = 'scale';
   @state() private selectedScaleType: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | 'LYDIAN' | null = null;
+  @state() private showSeaMonster = false;
+  @state() private seaMonsterSpawnSide: 'bottom' | 'left' | 'right' = 'bottom';
 
   private playTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private seaMonsterTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   static styles = css`
     * {
@@ -213,6 +216,14 @@ export class ChordVoyagerApp extends LitElement {
       flex-wrap: wrap;
       gap: 16px;
     }
+
+    header.glass-panel {
+      background-image: linear-gradient(var(--header-overlay), var(--header-overlay)), url('/header-bg.jpg');
+      background-size: cover;
+      background-position: center 30%;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    }
     
     .branding {
       display: flex;
@@ -226,6 +237,7 @@ export class ChordVoyagerApp extends LitElement {
       font-family: var(--font-heading);
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
     
     .brand-sub {
@@ -312,6 +324,29 @@ export class ChordVoyagerApp extends LitElement {
     .btn-compact-toggle.active {
       color: var(--accent-terracotta);
       box-shadow: var(--neu-pressed-sm);
+    }
+
+    header.glass-panel .btn-compact-toggle {
+      background: var(--header-btn-bg);
+      border: 1px solid var(--header-btn-border);
+      color: var(--text-secondary);
+      box-shadow: var(--header-btn-shadow);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+    
+    header.glass-panel .btn-compact-toggle:hover {
+      background: var(--header-btn-bg-hover);
+      border-color: var(--header-btn-border-hover);
+      color: var(--text-primary);
+      box-shadow: var(--header-btn-shadow);
+    }
+    
+    header.glass-panel .btn-compact-toggle.active {
+      background: var(--accent-terracotta);
+      border-color: var(--accent-terracotta);
+      color: #ffffff;
+      box-shadow: none;
     }
     
     /* Workspace container to hold overlay timeline */
@@ -815,6 +850,56 @@ export class ChordVoyagerApp extends LitElement {
       .footer-divider {
         display: none;
       }
+    }
+
+    @keyframes sea-monster-bottom {
+      0% { transform: translate(50px, 100%) rotate(30deg); }
+      25% { transform: translate(0, 25%) rotate(0deg); }
+      75% { transform: translate(0, 25%) rotate(0deg); }
+      100% { transform: translate(-50px, 100%) rotate(-30deg); }
+    }
+
+    @keyframes sea-monster-left {
+      0% { transform: translate(-100%, -50px) rotate(60deg) scaleX(-1); }
+      25% { transform: translate(-25%, 0) rotate(90deg) scaleX(-1); }
+      75% { transform: translate(-25%, 0) rotate(90deg) scaleX(-1); }
+      100% { transform: translate(-100%, 50px) rotate(120deg) scaleX(-1); }
+    }
+
+    @keyframes sea-monster-right {
+      0% { transform: translate(100%, 50px) rotate(-60deg); }
+      25% { transform: translate(25%, 0) rotate(-90deg); }
+      75% { transform: translate(25%, 0) rotate(-90deg); }
+      100% { transform: translate(100%, -50px) rotate(-120deg); }
+    }
+
+    .sea-monster-easter-egg {
+      position: fixed;
+      width: 160px;
+      height: auto;
+      z-index: 10000;
+      pointer-events: none;
+    }
+
+    .sea-monster-easter-egg.bottom {
+      bottom: -10px;
+      right: 15%;
+      animation: sea-monster-bottom 5s ease-in-out forwards;
+      transform: translateY(100%);
+    }
+
+    .sea-monster-easter-egg.left {
+      bottom: 20%;
+      left: -10px;
+      animation: sea-monster-left 5s ease-in-out forwards;
+      transform: translateX(-100%) scaleX(-1);
+    }
+
+    .sea-monster-easter-egg.right {
+      bottom: 20%;
+      right: -10px;
+      animation: sea-monster-right 5s ease-in-out forwards;
+      transform: translateX(100%);
     }
   `;
 
@@ -1587,6 +1672,20 @@ export class ChordVoyagerApp extends LitElement {
     this.updateActiveStep(step => step.windowStartMidi = e.detail.windowStartMidi);
   }
 
+  private triggerSeaMonsterEasterEgg() {
+    const isBelowFold = document.documentElement.scrollHeight > window.innerHeight;
+    if (isBelowFold) {
+      this.seaMonsterSpawnSide = Math.random() > 0.5 ? 'left' : 'right';
+    } else {
+      this.seaMonsterSpawnSide = 'bottom';
+    }
+    this.showSeaMonster = true;
+    if (this.seaMonsterTimeoutId) clearTimeout(this.seaMonsterTimeoutId);
+    this.seaMonsterTimeoutId = setTimeout(() => {
+      this.showSeaMonster = false;
+    }, 5500);
+  }
+
   private handlePlayActiveChord() {
     const step = this.getActiveStep();
     if (step && this.activeProfile) {
@@ -1627,6 +1726,11 @@ export class ChordVoyagerApp extends LitElement {
       if (secIndex !== -1) {
         const sec = this.sections[secIndex];
         const nextIndex = this.activeLocation!.stepIndex + 1;
+
+        const prevChord = sec.steps[this.activeLocation!.stepIndex];
+        if (prevChord && prevChord.mood === 'dominant' && newChord.mood === 'dominant') {
+          this.triggerSeaMonsterEasterEgg();
+        }
 
         if (nextIndex < sec.steps.length) {
           if (sec.steps[nextIndex] === null) {
@@ -2330,10 +2434,10 @@ export class ChordVoyagerApp extends LitElement {
                 
                 ${!this.compactMode ? html`
                   <div class="tab-explanation">
-                    ${this.activeOptionsTab === 'diatonic' ? 
-                      'Cruising safe, familiar routes using diatonic chords built strictly from your active scale to provide comfortable stability.' : 
-                      'Venturing into mysterious, unmapped territory using borrowed chords from parallel modes to introduce tension and emotional color.'
-                    }
+                    ${this.activeOptionsTab === 'diatonic' ?
+            'Cruising safe, familiar routes using diatonic chords built strictly from your active scale to provide comfortable stability.' :
+            'Venturing into mysterious, unmapped territory using borrowed chords from parallel modes to introduce tension and emotional color.'
+          }
                   </div>
                 ` : ''}
                 
@@ -2361,6 +2465,7 @@ export class ChordVoyagerApp extends LitElement {
         ${this.showProjectModal ? this.renderProjectModal() : ''}
         ${this.showShareModal ? this.renderShareModal() : ''}
         ${this.showCloudPromptModal ? this.renderCloudPromptModal() : ''}
+        ${this.showSeaMonster ? html`<img src="/sea-monster.png" class="sea-monster-easter-egg ${this.seaMonsterSpawnSide}" alt="Sea Monster" />` : ''}
         
         <footer class="studio-footer">
           <div class="footer-content">
@@ -2467,10 +2572,10 @@ export class ChordVoyagerApp extends LitElement {
             </div>
             
             <p style="margin: 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
-              ${this.isAuthenticated 
-                ? `You are signed in as ${this.authUserEmail}. Your projects are automatically synced and backed up to your personal Google Drive.` 
-                : 'Projects are saved locally to this browser by default. Sign in with Google only if you want to sync your projects and access them from other devices.'
-              }
+              ${this.isAuthenticated
+        ? `You are signed in as ${this.authUserEmail}. Your projects are automatically synced and backed up to your personal Google Drive.`
+        : 'Projects are saved locally to this browser by default. Sign in with Google only if you want to sync your projects and access them from other devices.'
+      }
             </p>
             
             <div style="display: flex; justify-content: flex-end;">
@@ -2517,9 +2622,9 @@ export class ChordVoyagerApp extends LitElement {
                       <span style="font-weight: bold; font-family: var(--font-heading); color: var(--text-primary);">
                         ${p.name}
                         ${p.syncedToCloud
-        ? html`<span style="margin-left: 8px; font-size: 0.65rem; background: rgba(43, 107, 187, 0.2); color: var(--accent-blue); padding: 2px 6px; border-radius: 4px; vertical-align: middle;">CLOUD</span>`
-        : html`<span style="margin-left: 8px; font-size: 0.65rem; background: rgba(255, 255, 255, 0.1); color: var(--text-muted); padding: 2px 6px; border-radius: 4px; vertical-align: middle;">LOCAL</span>`
-      }
+          ? html`<span style="margin-left: 8px; font-size: 0.65rem; background: rgba(43, 107, 187, 0.2); color: var(--accent-blue); padding: 2px 6px; border-radius: 4px; vertical-align: middle;">CLOUD</span>`
+          : html`<span style="margin-left: 8px; font-size: 0.65rem; background: rgba(255, 255, 255, 0.1); color: var(--text-muted); padding: 2px 6px; border-radius: 4px; vertical-align: middle;">LOCAL</span>`
+        }
                       </span>
                       <span style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">${new Date(p.lastModified).toLocaleString()}</span>
                     </div>

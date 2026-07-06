@@ -64,6 +64,14 @@
   --scrollbar-track: #15120f;
   --scrollbar-thumb: #2b2520;
   --scrollbar-border: #15120f;
+
+  /* Header Overlays and Buttons */
+  --header-overlay: rgba(23, 21, 19, 0.65);
+  --header-btn-bg: rgba(255, 255, 255, 0.08);
+  --header-btn-bg-hover: rgba(255, 255, 255, 0.18);
+  --header-btn-border: rgba(255, 255, 255, 0.15);
+  --header-btn-border-hover: rgba(255, 255, 255, 0.3);
+  --header-btn-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
 }
 
 :root.light-theme {
@@ -103,6 +111,14 @@
   --scrollbar-track: #d6d2c9;
   --scrollbar-thumb: #b8b4ab;
   --scrollbar-border: #d6d2c9;
+
+  /* Header Overlays and Buttons */
+  --header-overlay: rgba(232, 228, 219, 0.35);
+  --header-btn-bg: rgba(0, 0, 0, 0.05);
+  --header-btn-bg-hover: rgba(0, 0, 0, 0.1);
+  --header-btn-border: rgba(0, 0, 0, 0.1);
+  --header-btn-border-hover: rgba(0, 0, 0, 0.25);
+  --header-btn-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
 * {

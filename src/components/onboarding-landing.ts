@@ -5,11 +5,11 @@ import { customElement, property, state } from 'lit/decorators.js';
 // Each array lists the 7 semitone offsets from the root (0 = root).
 // These are used to rotate against detected pitch classes to find the best fit.
 const SCALE_INTERVALS: Record<string, number[]> = {
-  'MAJOR':          [0, 2, 4, 5, 7, 9, 11],
-  'MIXOLYDIAN':     [0, 2, 4, 5, 7, 9, 10],
-  'DORIAN':         [0, 2, 3, 5, 7, 9, 10],
-  'LYDIAN':         [0, 2, 4, 6, 7, 9, 11],
-  'NATURAL MINOR':  [0, 2, 3, 5, 7, 8, 10],
+  'MAJOR': [0, 2, 4, 5, 7, 9, 11],
+  'MIXOLYDIAN': [0, 2, 4, 5, 7, 9, 10],
+  'DORIAN': [0, 2, 3, 5, 7, 9, 10],
+  'LYDIAN': [0, 2, 4, 6, 7, 9, 11],
+  'NATURAL MINOR': [0, 2, 3, 5, 7, 8, 10],
   'HARMONIC MINOR': [0, 2, 3, 5, 7, 8, 11],
 };
 
@@ -18,29 +18,29 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 
 // Scale metadata for display
 const SCALE_META: Record<string, { emoji: string; title: string; subtitle: string }> = {
-  'MAJOR':          { emoji: '☀️', title: 'Sunlit Harbor',    subtitle: 'Major / Ionian' },
-  'MIXOLYDIAN':     { emoji: '🌊', title: 'The Warm Current', subtitle: 'Mixolydian Mode' },
-  'DORIAN':         { emoji: '🌆', title: 'The Twilight Hour', subtitle: 'Dorian Mode' },
-  'LYDIAN':         { emoji: '🌫️', title: 'The Floating Mist', subtitle: 'Lydian Mode' },
-  'NATURAL MINOR':  { emoji: '🌌', title: 'Clear Night',       subtitle: 'Natural Minor / Aeolian' },
-  'HARMONIC MINOR': { emoji: '⛈️', title: 'The Storm',         subtitle: 'Harmonic Minor' },
+  'MAJOR': { emoji: '☀️', title: 'Sunlit Harbor', subtitle: 'Major / Ionian' },
+  'MIXOLYDIAN': { emoji: '🌊', title: 'The Warm Current', subtitle: 'Mixolydian Mode' },
+  'DORIAN': { emoji: '🌆', title: 'The Twilight Hour', subtitle: 'Dorian Mode' },
+  'LYDIAN': { emoji: '🌫️', title: 'The Floating Mist', subtitle: 'Lydian Mode' },
+  'NATURAL MINOR': { emoji: '🌌', title: 'Clear Night', subtitle: 'Natural Minor / Aeolian' },
+  'HARMONIC MINOR': { emoji: '⛈️', title: 'The Storm', subtitle: 'Harmonic Minor' },
 };
 
 // Scale types with phases (for manual grid)
 const SCALE_TYPES = [
-  { id: 'MAJOR',          emoji: '☀️', title: 'Sunlit Harbor',     subtitle: 'Major / Ionian',           desc: 'A clear, optimistic vibe of home and sanctuary. Excellent for open, joyous landscapes and peaceful resolution.',  phase: 1 },
-  { id: 'MIXOLYDIAN',     emoji: '🌊', title: 'The Warm Current',   subtitle: 'Mixolydian Mode',           desc: 'A sun-drenched, fluid breeze. Mixolydian introduces a mellow, flattened 7th degree, delivering classic neo-soul warmth and smooth electronic movement.', phase: 1 },
-  { id: 'DORIAN',         emoji: '🌆', title: 'The Twilight Hour',  subtitle: 'Dorian Mode',               desc: 'A smooth, cinematic dusk. The Dorian Mode blends a minor foundation with a bright major twist, perfect for sophisticated, driving lofi tracks.', phase: 2 },
-  { id: 'LYDIAN',         emoji: '🌫️', title: 'The Floating Mist', subtitle: 'Lydian Mode',               desc: 'An ethereal, weightless drift. With its raised 4th degree, Lydian creates a suspended, dreamlike atmosphere.', phase: 2 },
-  { id: 'NATURAL MINOR',  emoji: '🌌', title: 'Clear Night',        subtitle: 'Natural Minor / Aeolian',  desc: 'A midnight journey into shadow and solitude. Charts introspective, melancholic vibes, capturing deep emotional groundings and quiet nostalgia.', phase: 3 },
-  { id: 'HARMONIC MINOR', emoji: '⛈️', title: 'The Storm',          subtitle: 'Harmonic Minor',            desc: 'A dramatic crossing filled with gravitational friction. The Harmonic Minor Scale introduces exotic mystery and heightened tension.', phase: 3 },
+  { id: 'MAJOR', emoji: '☀️', title: 'Sunlit Harbor', subtitle: 'Major / Ionian', desc: 'A clear, optimistic vibe of home and sanctuary. Excellent for open, joyous landscapes and peaceful resolution.', phase: 1 },
+  { id: 'MIXOLYDIAN', emoji: '🌊', title: 'The Warm Current', subtitle: 'Mixolydian Mode', desc: 'A sun-drenched, fluid breeze. Mixolydian introduces a mellow, flattened 7th degree, delivering classic neo-soul warmth and smooth electronic movement.', phase: 1 },
+  { id: 'DORIAN', emoji: '🌆', title: 'The Twilight Hour', subtitle: 'Dorian Mode', desc: 'A smooth, cinematic dusk. The Dorian Mode blends a minor foundation with a bright major twist, perfect for sophisticated, driving lofi tracks.', phase: 2 },
+  { id: 'LYDIAN', emoji: '🌫️', title: 'The Floating Mist', subtitle: 'Lydian Mode', desc: 'An ethereal, weightless drift. With its raised 4th degree, Lydian creates a suspended, dreamlike atmosphere.', phase: 2 },
+  { id: 'NATURAL MINOR', emoji: '🌌', title: 'Clear Night', subtitle: 'Natural Minor / Aeolian', desc: 'A midnight journey into shadow and solitude. Charts introspective, melancholic vibes, capturing deep emotional groundings and quiet nostalgia.', phase: 3 },
+  { id: 'HARMONIC MINOR', emoji: '⛈️', title: 'The Storm', subtitle: 'Harmonic Minor', desc: 'A dramatic crossing filled with gravitational friction. The Harmonic Minor Scale introduces exotic mystery and heightened tension.', phase: 3 },
 ];
 
 const MAJOR_KEYS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const MINOR_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 // Thresholds for pitch detection
-const RMS_THRESHOLD    = 0.012; // silence gate — ignore very quiet frames
+const RMS_THRESHOLD = 0.012; // silence gate — ignore very quiet frames
 const CHROMA_THRESHOLD = 0.25;  // minimum chroma energy to register a pitch
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ export class OnboardingLanding extends LitElement {
   private stopScan() {
     if (this.scanTimer) { clearTimeout(this.scanTimer); this.scanTimer = null; }
     if (this.progressTimer) { clearInterval(this.progressTimer); this.progressTimer = null; }
-    if (this.meydaAnalyzer) { try { this.meydaAnalyzer.stop(); } catch {} }
+    if (this.meydaAnalyzer) { try { this.meydaAnalyzer.stop(); } catch { } }
 
     this.isScanActive = false;
     this.scanProgress = 100;
@@ -186,9 +186,9 @@ export class OnboardingLanding extends LitElement {
   }
 
   private teardownAudio() {
-    if (this.meydaAnalyzer) { try { this.meydaAnalyzer.stop(); } catch {} this.meydaAnalyzer = null; }
+    if (this.meydaAnalyzer) { try { this.meydaAnalyzer.stop(); } catch { } this.meydaAnalyzer = null; }
     if (this.micStream) { this.micStream.getTracks().forEach(t => t.stop()); this.micStream = null; }
-    if (this.audioContext) { try { this.audioContext.close(); } catch {} this.audioContext = null; }
+    if (this.audioContext) { try { this.audioContext.close(); } catch { } this.audioContext = null; }
   }
 
   // ── Scale matching logic ──────────────────────────────────────────────────────
@@ -318,7 +318,7 @@ export class OnboardingLanding extends LitElement {
               <div class="sonar-ring ring-2"></div>
               <span class="path-emoji">🎙️</span>
             </div>
-            <div class="path-label">Listen to My Studio</div>
+            <div class="path-label">Record</div>
             <div class="path-desc">
               Point your microphone at your instrument. We'll analyse the pitches in your riff and suggest the perfect scale context.
             </div>
@@ -340,7 +340,7 @@ export class OnboardingLanding extends LitElement {
             <div class="path-icon">
               <span class="path-emoji">🗺️</span>
             </div>
-            <div class="path-label">Manual Deck</div>
+            <div class="path-label">Manual</div>
             <div class="path-desc">
               Browse all six weather-themed scale landscapes and hand-pick your key. Full control, zero guesswork.
             </div>
@@ -374,12 +374,12 @@ export class OnboardingLanding extends LitElement {
         <!-- 12 note indicators -->
         <div class="note-indicators" aria-label="Live pitch indicators">
           ${NOTE_NAMES.map((note, i) => {
-            const energy = Math.min(1, this.liveChroma[i] ?? 0);
-            // "active" = currently spiking strongly (terracotta flash)
-            const isActive = energy > 0.5;
-            // "detected" = has significant accumulated energy vs peak (gold hold)
-            const isDetected = energy >= 0.30;
-            return html`
+      const energy = Math.min(1, this.liveChroma[i] ?? 0);
+      // "active" = currently spiking strongly (terracotta flash)
+      const isActive = energy > 0.5;
+      // "detected" = has significant accumulated energy vs peak (gold hold)
+      const isDetected = energy >= 0.30;
+      return html`
               <div
                 class="note-pip ${isActive ? 'note-active' : ''} ${isDetected && !isActive ? 'note-detected' : ''}"
                 style="--energy: ${energy};"
@@ -388,7 +388,7 @@ export class OnboardingLanding extends LitElement {
                 <span class="note-label">${note}</span>
               </div>
             `;
-          })}
+    })}
         </div>
 
 
@@ -416,10 +416,10 @@ export class OnboardingLanding extends LitElement {
 
         <div class="results-list">
           ${top.map((match, idx) => {
-            const meta = SCALE_META[match.scaleType];
-            const pct = Math.round(match.score * 100);
-            const isBest = idx === 0;
-            return html`
+      const meta = SCALE_META[match.scaleType];
+      const pct = Math.round(match.score * 100);
+      const isBest = idx === 0;
+      return html`
               <div
                 class="result-card ${isBest ? 'result-best' : ''}"
                 @click="${() => this.handleResultClick(match)}"
@@ -441,7 +441,7 @@ export class OnboardingLanding extends LitElement {
                 </div>
               </div>
             `;
-          })}
+    })}
         </div>
 
         <div class="results-actions">
@@ -555,10 +555,10 @@ export class OnboardingLanding extends LitElement {
   render() {
     return html`
       <div class="onboarding-root">
-        ${this.viewState === 'choose'     ? this.renderChooseView()    : ''}
-        ${this.viewState === 'scanning'   ? this.renderScanningView()  : ''}
-        ${this.viewState === 'results'    ? this.renderResultsView()   : ''}
-        ${this.viewState === 'manual'     ? this.renderManualView()    : ''}
+        ${this.viewState === 'choose' ? this.renderChooseView() : ''}
+        ${this.viewState === 'scanning' ? this.renderScanningView() : ''}
+        ${this.viewState === 'results' ? this.renderResultsView() : ''}
+        ${this.viewState === 'manual' ? this.renderManualView() : ''}
         ${this.viewState === 'key-select' ? this.renderKeySelectView() : ''}
       </div>
     `;
