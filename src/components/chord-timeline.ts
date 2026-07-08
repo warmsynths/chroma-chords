@@ -7,7 +7,8 @@ export type ChordStep = {
   tension: string;
   mood: string;
   notes?: string;
-  extension?: 'triad' | '7th' | '9th' | '6th';
+  core?: string;
+  modifier?: string;
 } | null;
 
 export type ProgressionSection = {
@@ -34,6 +35,9 @@ export class ChordTimeline extends LitElement {
   @state() private isEditing = false;
   @state() private showHumanInsideEditor = false;
 
+  @state() private chordCores: any[] = [];
+  @state() private chordModifiers: any[] = [];
+
   connectedCallback() {
     super.connectedCallback();
     const engineUrl = import.meta.env.VITE_HUMAN_ENGINE_URL;
@@ -42,8 +46,10 @@ export class ChordTimeline extends LitElement {
       : import('human-engine');
 
     loadEngine
-      .then(() => {
+      .then((engine) => {
         this.humanLoaded = true;
+        this.chordCores = engine.CHORD_CORES || [];
+        this.chordModifiers = engine.CHORD_MODIFIERS || [];
       })
       .catch((err) => {
         console.warn('Could not load human panel:', err);
@@ -985,9 +991,17 @@ export class ChordTimeline extends LitElement {
     }
   }
 
-  private handleExtensionChange(ext: 'triad' | '7th' | '9th' | '6th') {
-    this.dispatchEvent(new CustomEvent('change-extension', {
-      detail: { extension: ext },
+  private handleCoreChange(core: string) {
+    this.dispatchEvent(new CustomEvent('change-core', {
+      detail: { core },
+      bubbles: true,
+      composed: true
+    }));
+  }
+
+  private handleModifierChange(modifier: string) {
+    this.dispatchEvent(new CustomEvent('change-modifier', {
+      detail: { modifier },
       bubbles: true,
       composed: true
     }));
@@ -1251,7 +1265,8 @@ export class ChordTimeline extends LitElement {
     const isFirstStep = flatIndex === 0;
     const isLastStep = flatIndex === totalSteps - 1;
     const chordName = step ? step.name : 'Empty Slot';
-    const currentExtension = step?.extension || '7th';
+    const currentCore = step?.core || 'maj';
+    const currentModifier = step?.modifier !== undefined ? step?.modifier : '7';
 
     return html`
       <div class="chord-editor-container">
@@ -1313,17 +1328,28 @@ export class ChordTimeline extends LitElement {
             </div>
           </div>
 
-          <div class="editor-controls-row">
-            <!-- Extension Buttons -->
-            <div class="extension-group">
-              ${(['triad', '7th', '9th', '6th'] as const).map(ext => html`
-                <button 
-                  class="btn-extension ${currentExtension === ext ? 'active' : ''}" 
-                  @click=${() => this.handleExtensionChange(ext)}
-                >
-                  ${ext.toUpperCase()}
-                </button>
-              `)}
+            <!-- Core & Modifier Buttons -->
+            <div class="extension-group" style="flex-direction: column; gap: 8px;">
+              <div class="core-group" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px;">
+                ${this.chordCores.map(c => html`
+                  <button 
+                    class="btn-extension ${currentCore === c.value ? 'active' : ''}" 
+                    @click=${() => this.handleCoreChange(c.value)}
+                  >
+                    ${c.label}
+                  </button>
+                `)}
+              </div>
+              <div class="modifier-group" style="display: flex; gap: 8px; overflow-x: auto;">
+                ${this.chordModifiers.map(m => html`
+                  <button 
+                    class="btn-extension ${currentModifier === m.value ? 'active' : ''}" 
+                    @click=${() => this.handleModifierChange(m.value)}
+                  >
+                    ${m.label}
+                  </button>
+                `)}
+              </div>
             </div>
 
             <!-- Humanize Toggle -->
@@ -1383,8 +1409,8 @@ export class ChordTimeline extends LitElement {
                     <div class="chip-name">${step.name}</div>
                     <div class="chip-tension-row">
                       <span class="chip-tension-badge tension-${this.getTensionClass(step.tension)}">${step.tension}</span>
-                      ${step.extension && step.extension !== '7th' ? html`
-                        <span class="chip-ext-badge">${step.extension.toUpperCase()}</span>
+                      ${(step.core !== 'maj' || step.modifier !== '7') ? html`
+                        <span class="chip-ext-badge">${step.core === 'maj' ? '' : step.core}${step.modifier}</span>
                       ` : ''}
                     </div>
                     

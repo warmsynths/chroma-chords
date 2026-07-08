@@ -55,7 +55,8 @@ type ChordStep = {
   tension: string;
   mood: string;
   notes?: string;
-  extension: 'triad' | '7th' | '9th' | '6th';
+  core: string;
+  modifier: string;
   windowStartMidi: number;
   targetChordId?: string;
   nodeId?: string;
@@ -1622,7 +1623,8 @@ export class ChordVoyagerApp extends LitElement {
         name: chordName,
         tension: 'T1',
         mood: '0',
-        extension: this.getActiveStepExtension(),
+        core: this.getActiveStepCore(),
+        modifier: this.getActiveStepModifier(),
         windowStartMidi: this.getActiveStepVoicing()
       } as ChordStep;
       const dummyProfile = {
@@ -1650,37 +1652,38 @@ export class ChordVoyagerApp extends LitElement {
     const isMinor = relativePcs.includes(3) && !isDiminished;
     const isMajor = relativePcs.includes(4) && !isAugmented;
 
-    const ext = step && step.extension ? step.extension : '7th';
+    const core = step && step.core ? step.core : 'maj';
+    const modifier = step && step.modifier !== undefined ? step.modifier : '7';
 
-    let modifiedPcs: number[] = [];
-    if (ext === 'triad') {
-      modifiedPcs = relativePcs.filter(pc => pc < 9);
-    } else if (ext === '7th') {
-      modifiedPcs = [...relativePcs];
-      if (!hasSeventh) {
-        if (isDiminished) modifiedPcs.push(9);
-        else if (isMinor) modifiedPcs.push(10);
-        else if (isMajor) modifiedPcs.push(11);
-        else if (isAugmented) modifiedPcs.push(10);
-        else modifiedPcs.push(10);
-      }
-    } else if (ext === '9th') {
-      modifiedPcs = [...relativePcs];
-      if (!hasSeventh) {
-        if (isDiminished) modifiedPcs.push(9);
-        else if (isMinor) modifiedPcs.push(10);
-        else if (isMajor) modifiedPcs.push(11);
-        else if (isAugmented) modifiedPcs.push(10);
-        else modifiedPcs.push(10);
-      }
-      if (!modifiedPcs.includes(2)) {
-        modifiedPcs.push(2);
-      }
-    } else if (ext === '6th') {
-      modifiedPcs = relativePcs.filter(pc => pc < 9);
-      if (!modifiedPcs.includes(9)) {
-        modifiedPcs.push(9);
-      }
+    let modifiedPcs: number[] = [...relativePcs];
+
+    // Core adjustments
+    if (core === 'm') {
+      if (modifiedPcs.includes(4)) modifiedPcs[modifiedPcs.indexOf(4)] = 3;
+    } else if (core === 'maj') {
+      if (modifiedPcs.includes(3)) modifiedPcs[modifiedPcs.indexOf(3)] = 4;
+    } else if (core === 'sus4') {
+      if (modifiedPcs.includes(4)) modifiedPcs[modifiedPcs.indexOf(4)] = 5;
+      if (modifiedPcs.includes(3)) modifiedPcs[modifiedPcs.indexOf(3)] = 5;
+    } else if (core === 'dim') {
+      if (modifiedPcs.includes(4)) modifiedPcs[modifiedPcs.indexOf(4)] = 3;
+      if (modifiedPcs.includes(7)) modifiedPcs[modifiedPcs.indexOf(7)] = 6;
+    }
+
+    // Modifier additions
+    if (modifier === '7') {
+      if (!modifiedPcs.includes(10)) modifiedPcs.push(10);
+    } else if (modifier === 'maj7') {
+      if (!modifiedPcs.includes(11)) modifiedPcs.push(11);
+    } else if (modifier === '9') {
+      if (!modifiedPcs.includes(10)) modifiedPcs.push(10);
+      if (!modifiedPcs.includes(2)) modifiedPcs.push(2);
+    } else if (modifier === '6') {
+      if (!modifiedPcs.includes(9)) modifiedPcs.push(9);
+    }
+    if (modifier === '') {
+       // Just triad, remove any 7ths or higher (from base notes if any)
+       modifiedPcs = modifiedPcs.filter(pc => pc < 9);
     }
 
     const windowStartMidi = step && step.windowStartMidi !== undefined ? step.windowStartMidi : 60;
@@ -1723,13 +1726,24 @@ export class ChordVoyagerApp extends LitElement {
     }
   }
 
-  private getActiveStepExtension(): 'triad' | '7th' | '9th' | '6th' {
+  private getActiveStepCore(): string {
     const step = this.getActiveStep();
-    return step && step.extension ? step.extension : '7th';
+    return step && step.core ? step.core : 'maj';
   }
 
-  private async handleChangeExtensionEvent(e: CustomEvent<{ extension: 'triad' | '7th' | '9th' | '6th' }>) {
-    this.updateActiveStep(step => step.extension = e.detail.extension);
+  private getActiveStepModifier(): string {
+    const step = this.getActiveStep();
+    return step && step.modifier !== undefined ? step.modifier : '7';
+  }
+
+  private async handleChangeCoreEvent(e: CustomEvent<{ core: string }>) {
+    this.updateActiveStep(step => step.core = e.detail.core);
+    await this.updateComplete;
+    this.handlePlayActiveChord();
+  }
+
+  private async handleChangeModifierEvent(e: CustomEvent<{ modifier: string }>) {
+    this.updateActiveStep(step => step.modifier = e.detail.modifier);
     await this.updateComplete;
     this.handlePlayActiveChord();
   }
@@ -1824,7 +1838,8 @@ export class ChordVoyagerApp extends LitElement {
         name: prof.chord_name,
         tension: opt.tension,
         mood: opt.vibe,
-        extension: '7th',
+        core: 'maj',
+        modifier: '7',
         windowStartMidi: 60,
         targetChordId: targetId,
         nodeId: targetId
@@ -1857,7 +1872,7 @@ export class ChordVoyagerApp extends LitElement {
         }
 
         const totalChords = this.sections.reduce((acc, s) => acc + s.steps.filter(step => step !== null).length, 0);
-        if ((totalChords + 1) === 8 && newChord.mood === 'MAJOR') {
+        if ((totalChords + 1) === 8 && newChord && newChord.mood === 'MAJOR') {
           this.triggerSunEasterEgg();
         }
 
@@ -2404,7 +2419,8 @@ export class ChordVoyagerApp extends LitElement {
         name: prof.chord_name,
         tension: '10%',
         mood: vibeVal,
-        extension: '7th',
+        core: 'maj',
+        modifier: '7',
         windowStartMidi: 60,
         targetChordId: targetId,
         nodeId: targetId
@@ -2535,7 +2551,8 @@ export class ChordVoyagerApp extends LitElement {
                 @add-section="${this.handleAddSection}"
                 @change-voicing-window="${this.handleChangeVoicingWindowEvent}"
                 @play-active-chord="${this.handlePlayActiveChord}"
-                @change-extension="${this.handleChangeExtensionEvent}"
+                @change-core="${this.handleChangeCoreEvent}"
+                @change-modifier="${this.handleChangeModifierEvent}"
                 @human-state-change="${(e: CustomEvent<any>) => this.humanState = e.detail}"
                 @human-preview="${this.handleHumanPreview}"
               ></chord-timeline>
@@ -2554,10 +2571,10 @@ export class ChordVoyagerApp extends LitElement {
                   .functionText=${this.activeProfile.function_text}
                   .voicingsListed=${this.activeProfile.voicings_listed}
                   .compactMode=${this.compactMode}
-                  .extension=${this.getActiveStepExtension()}
+                  .core=${this.getActiveStepCore()}
+                  .modifier=${this.getActiveStepModifier()}
                   .windowStartMidi=${this.getActiveStepVoicing()}
                   @play-chord=${this.handlePlayChordEvent}
-                  @change-extension=${this.handleChangeExtensionEvent}
                   @change-voicing-window=${this.handleChangeVoicingWindowEvent}
                 >
                   <div slot="tabs" class="compact-header-tabs">
@@ -2853,37 +2870,10 @@ export class ChordVoyagerApp extends LitElement {
     };
     root = rootMapping[root] || root;
 
-    const ext = step.extension || '7th';
-
-    if (quality === 'MAJ') {
-      if (ext === 'triad') return root;
-      if (ext === '7th') return root + 'maj7';
-      if (ext === '9th') return root + 'maj9';
-      if (ext === '6th') return root + '6';
-    }
-
-    if (quality === 'MIN') {
-      if (ext === 'triad') return root + 'm';
-      if (ext === '7th') return root + 'm7';
-      if (ext === '9th') return root + 'm9';
-      if (ext === '6th') return root + 'm6';
-    }
-
-    if (quality === 'DIM') {
-      if (ext === 'triad') return root + 'dim';
-      if (ext === '7th') return root + 'm7b5';
-      if (ext === '9th') return root + 'm9b5';
-      if (ext === '6th') return root + 'dim6';
-    }
-
-    if (quality === 'AUG') {
-      if (ext === 'triad') return root + 'aug';
-      if (ext === '7th') return root + '7#5';
-      if (ext === '9th') return root + '9#5';
-      if (ext === '6th') return root + 'aug6';
-    }
-
-    return step.name;
+    const core = step.core || 'maj';
+    const modifier = step.modifier !== undefined ? step.modifier : '7';
+    const suffix = (core === 'maj' ? '' : core) + modifier;
+    return root + suffix;
   }
 
   private async openDeviceLink(device: 'm8' | 'circuit') {
@@ -2911,15 +2901,25 @@ export class ChordVoyagerApp extends LitElement {
         const root = rootMatch ? rootMatch[0] : 'C';
         const quality = step.name.substring(root.length) || 'maj';
         
+        let prof = step.nodeId ? this.resolveProfile(step.nodeId) : null;
+        if (!prof) {
+          const chordDef = this.chordData?.chords[step.name];
+          if (chordDef) {
+            prof = { chord_name: step.name, chord_notes: chordDef.notes } as any as ChordProfile;
+          }
+        }
+        
         let midiNotes: number[] = [];
-        if (step.notes) {
-          midiNotes = step.notes.split(' ').map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+        if (prof) {
+          midiNotes = this.getVoicedMidiNotesForStep(step, prof);
         }
         
         return {
           symbol: step.name,
           root,
           quality,
+          core: step.core,
+          modifier: step.modifier,
           midiNotes
         };
       });
@@ -2944,9 +2944,9 @@ export class ChordVoyagerApp extends LitElement {
     // Local dev override
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       if (device === 'circuit') {
-        baseUrl = 'http://localhost:8801/';
+        baseUrl = 'http://localhost:43302/';
       } else if (device === 'm8') {
-        baseUrl = 'http://localhost:8802/';
+        baseUrl = 'http://localhost:43303/';
       }
     }
 

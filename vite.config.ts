@@ -8,7 +8,7 @@ export default defineConfig({
     outDir: 'docs'
   },
   server: {
-    port: 3000,
+    port: 43301,
     fs: {
       allow: ['..']
     }

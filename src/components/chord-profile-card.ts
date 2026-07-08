@@ -14,7 +14,8 @@ export class ChordProfileCard extends LitElement {
   @property({ type: String }) functionText = '';
   @property({ type: Array }) voicingsListed: string[] = [];
   @property({ type: Boolean }) compactMode = false;
-  @property({ type: String }) extension: 'triad' | '7th' | '9th' | '6th' = '7th';
+  @property({ type: String }) core = 'maj';
+  @property({ type: String }) modifier = '7';
 
   @property({ type: Number }) windowStartMidi = 60; // default to C4
   private orchidWindowSize = 13; // 13 keys window
@@ -226,36 +227,34 @@ export class ChordProfileCard extends LitElement {
     const isMinor = relativePcs.includes(3) && !isDiminished;
     const isMajor = relativePcs.includes(4) && !isAugmented;
 
-    let modifiedPcs: number[] = [];
+    let modifiedPcs: number[] = [...relativePcs];
 
-    if (this.extension === 'triad') {
-      modifiedPcs = relativePcs.filter(pc => pc < 9);
-    } else if (this.extension === '7th') {
-      modifiedPcs = [...relativePcs];
-      if (!hasSeventh) {
-        if (isDiminished) modifiedPcs.push(9);
-        else if (isMinor) modifiedPcs.push(10);
-        else if (isMajor) modifiedPcs.push(11);
-        else if (isAugmented) modifiedPcs.push(10);
-        else modifiedPcs.push(10);
-      }
-    } else if (this.extension === '9th') {
-      modifiedPcs = [...relativePcs];
-      if (!hasSeventh) {
-        if (isDiminished) modifiedPcs.push(9);
-        else if (isMinor) modifiedPcs.push(10);
-        else if (isMajor) modifiedPcs.push(11);
-        else if (isAugmented) modifiedPcs.push(10);
-        else modifiedPcs.push(10);
-      }
-      if (!modifiedPcs.includes(2)) {
-        modifiedPcs.push(2);
-      }
-    } else if (this.extension === '6th') {
-      modifiedPcs = relativePcs.filter(pc => pc < 9);
-      if (!modifiedPcs.includes(9)) {
-        modifiedPcs.push(9);
-      }
+    // Core adjustments
+    if (this.core === 'm') {
+      if (modifiedPcs.includes(4)) modifiedPcs[modifiedPcs.indexOf(4)] = 3;
+    } else if (this.core === 'maj') {
+      if (modifiedPcs.includes(3)) modifiedPcs[modifiedPcs.indexOf(3)] = 4;
+    } else if (this.core === 'sus4') {
+      if (modifiedPcs.includes(4)) modifiedPcs[modifiedPcs.indexOf(4)] = 5;
+      if (modifiedPcs.includes(3)) modifiedPcs[modifiedPcs.indexOf(3)] = 5;
+    } else if (this.core === 'dim') {
+      if (modifiedPcs.includes(4)) modifiedPcs[modifiedPcs.indexOf(4)] = 3;
+      if (modifiedPcs.includes(7)) modifiedPcs[modifiedPcs.indexOf(7)] = 6;
+    }
+
+    // Modifier additions
+    if (this.modifier === '7') {
+      if (!modifiedPcs.includes(10)) modifiedPcs.push(10);
+    } else if (this.modifier === 'maj7') {
+      if (!modifiedPcs.includes(11)) modifiedPcs.push(11);
+    } else if (this.modifier === '9') {
+      if (!modifiedPcs.includes(10)) modifiedPcs.push(10);
+      if (!modifiedPcs.includes(2)) modifiedPcs.push(2);
+    } else if (this.modifier === '6') {
+      if (!modifiedPcs.includes(9)) modifiedPcs.push(9);
+    }
+    if (this.modifier === '') {
+       modifiedPcs = modifiedPcs.filter(pc => pc < 9);
     }
 
     const midiNotes: number[] = [];
