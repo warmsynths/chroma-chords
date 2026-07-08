@@ -1737,15 +1737,56 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   private async handleChangeCoreEvent(e: CustomEvent<{ core: string }>) {
-    this.updateActiveStep(step => step.core = e.detail.core);
+    this.updateActiveStep(step => {
+      step.core = e.detail.core;
+      this.updateStepNameFromCoreAndModifier(step);
+    });
     await this.updateComplete;
     this.handlePlayActiveChord();
   }
 
   private async handleChangeModifierEvent(e: CustomEvent<{ modifier: string }>) {
-    this.updateActiveStep(step => step.modifier = e.detail.modifier);
+    this.updateActiveStep(step => {
+      step.modifier = e.detail.modifier;
+      this.updateStepNameFromCoreAndModifier(step);
+    });
     await this.updateComplete;
     this.handlePlayActiveChord();
+  }
+
+  private updateStepNameFromCoreAndModifier(step: ChordStep | null) {
+    if (!step) return;
+    const rootMatch = step.name.match(/^[A-G][#b]?/i);
+    const root = rootMatch ? rootMatch[0] : 'C';
+    let coreStr = step.core === 'maj' ? '' : (step.core === 'm' ? 'min' : step.core);
+    if (coreStr === '' && step.modifier === '') coreStr = 'maj'; // default to maj if no modifier and maj core
+    step.name = root + coreStr + (step.modifier || '');
+    // Ensure capitalization matches the app's style (e.g. Dbmaj)
+    step.name = step.name.charAt(0).toUpperCase() + step.name.slice(1).toLowerCase();
+  }
+
+  private parseCoreAndModifier(chordName: string): { core: string, modifier: string } {
+    const rootMatch = chordName.match(/^[A-G][#b]?/i);
+    const root = rootMatch ? rootMatch[0] : 'C';
+    const quality = chordName.substring(root.length).toLowerCase();
+    
+    let core = 'maj';
+    let modifier = '';
+    
+    if (quality.startsWith('min') || (quality.startsWith('m') && !quality.startsWith('maj'))) {
+      core = 'm';
+    } else if (quality.startsWith('dim')) {
+      core = 'dim';
+    } else if (quality.startsWith('sus')) {
+      core = 'sus4';
+    }
+    
+    if (quality.includes('maj7')) modifier = 'maj7';
+    else if (quality.includes('7')) modifier = '7';
+    else if (quality.includes('9')) modifier = '9';
+    else if (quality.includes('6')) modifier = '6';
+    
+    return { core, modifier };
   }
 
   private getActiveStepVoicing(): number {
@@ -1834,12 +1875,13 @@ export class ChordVoyagerApp extends LitElement {
 
     if (prof) {
       this.activeProfile = prof;
+      const { core, modifier } = this.parseCoreAndModifier(prof.chord_name);
       const newChord: ChordStep = {
         name: prof.chord_name,
         tension: opt.tension,
         mood: opt.vibe,
-        core: 'maj',
-        modifier: '7',
+        core,
+        modifier,
         windowStartMidi: 60,
         targetChordId: targetId,
         nodeId: targetId
@@ -2415,12 +2457,13 @@ export class ChordVoyagerApp extends LitElement {
 
       // Instantiate progression
       const vibeVal = this.getVibeKeyForOption(targetId, false);
+      const { core, modifier } = this.parseCoreAndModifier(prof.chord_name);
       const step: ChordStep = {
         name: prof.chord_name,
         tension: '10%',
         mood: vibeVal,
-        core: 'maj',
-        modifier: '7',
+        core,
+        modifier,
         windowStartMidi: 60,
         targetChordId: targetId,
         nodeId: targetId
