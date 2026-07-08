@@ -984,7 +984,7 @@ export class ChordVoyagerApp extends LitElement {
       // Dynamically inject Dorian and Mixolydian modes
       if (this.chordData && this.chordData.scales) {
         const MIXOLYDIAN_PARENT_ROOTS: Record<string, string> = {
-          'C': 'F', 'Db': 'Gb', 'D': 'G', 'Eb': 'Ab', 'E': 'A', 'F': 'Bb',
+          'C': 'F', 'Db': 'F#', 'D': 'G', 'Eb': 'Ab', 'E': 'A', 'F': 'Bb',
           'F#': 'B', 'G': 'C', 'Ab': 'Db', 'A': 'D', 'Bb': 'Eb', 'B': 'E'
         };
 
