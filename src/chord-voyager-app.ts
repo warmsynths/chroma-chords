@@ -2886,22 +2886,71 @@ export class ChordVoyagerApp extends LitElement {
     return step.name;
   }
 
-  private openDeviceLink(device: 'm8' | 'circuit') {
-    const chords = this.sections
+  private async openDeviceLink(device: 'm8' | 'circuit') {
+    const steps = this.sections
       .flatMap(s => s.steps)
-      .filter((step): step is Exclude<ChordStep, null> => step !== null)
-      .map(step => this.getShareableChordName(step))
-      .filter(Boolean);
+      .filter((step): step is Exclude<ChordStep, null> => step !== null);
 
-    const baseUrl = device === 'm8'
+    if (steps.length === 0) {
+      const baseUrl = device === 'm8'
+        ? 'https://warmsynths.github.io/hypersyn-chord-helper/'
+        : 'https://warmsynths.github.io/circuit-chords/';
+      window.open(baseUrl, '_blank');
+      return;
+    }
+
+    let encodedState = '';
+    try {
+      const engineUrl = import.meta.env.VITE_HUMAN_ENGINE_URL;
+      const { encodeProgression } = engineUrl 
+        ? await import(/* @vite-ignore */ engineUrl)
+        : await import('human-engine');
+
+      const sharedChords = steps.map(step => {
+        const rootMatch = step.name.match(/^[A-G][#b]?/);
+        const root = rootMatch ? rootMatch[0] : 'C';
+        const quality = step.name.substring(root.length) || 'maj';
+        
+        let midiNotes: number[] = [];
+        if (step.notes) {
+          midiNotes = step.notes.split(' ').map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+        }
+        
+        return {
+          symbol: step.name,
+          root,
+          quality,
+          midiNotes
+        };
+      });
+
+      const sharedProgression = {
+        chords: sharedChords,
+        bpm: this.humanState?.bpm ?? 80,
+        humanState: this.humanState
+      };
+
+      encodedState = '?state=' + encodeProgression(sharedProgression);
+    } catch (err) {
+      console.warn('Failed to load human-engine for encode, falling back to basic sharing', err);
+      const chords = steps.map(step => this.getShareableChordName(step));
+      encodedState = '?p=' + chords.join('+');
+    }
+
+    let baseUrl = device === 'm8'
       ? 'https://warmsynths.github.io/hypersyn-chord-helper/'
       : 'https://warmsynths.github.io/circuit-chords/';
+      
+    // Local dev override
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      if (device === 'circuit') {
+        baseUrl = 'http://localhost:8801/';
+      } else if (device === 'm8') {
+        baseUrl = 'http://localhost:8802/';
+      }
+    }
 
-    const shareUrl = chords.length > 0
-      ? `${baseUrl}?p=${chords.join('+')}`
-      : baseUrl;
-
-    window.open(shareUrl, '_blank');
+    window.open(baseUrl + encodedState, '_blank');
   }
 
   private renderCloudPromptModal() {
