@@ -1278,6 +1278,7 @@
           ${s.steps.map((e,t)=>{const n=this.activeLocation?.sectionId===s.id&&this.activeLocation?.stepIndex===t,i=this.sections[0]?.id===s.id&&t===0;return I`
               <div class="step-wrapper">
                 <div class="chord-chip ${n?"active":""} ${e?"":"empty-slot"}" 
+                     title="${e?"Double-click to edit":""}"
                      @click="${()=>this.handleStepClick(s.id,t)}"
                      @dblclick="${()=>this.handleStepDblClick(s.id,t)}">
                   
@@ -1291,6 +1292,16 @@
                       ${e.core!=="maj"||e.modifier!=="7"?I`
                         <span class="chip-ext-badge">${e.core==="maj"?"":e.core}${e.modifier}</span>
                       `:""}
+                    </div>
+
+                    <div class="chip-edit-hint" aria-hidden="true">
+                      <span class="chip-edit-hint-icon">
+                        <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </span>
+                      <span class="chip-edit-hint-text">edit</span>
                     </div>
                     
                     <button class="btn-remove-step" @click="${r=>this.handleRemoveStep(r,s.id,t)}" title="Remove step">
@@ -1677,6 +1688,7 @@
       transform: translateY(-2px);
       box-shadow: var(--neu-flat);
       border-color: rgba(171, 139, 97, 0.1);
+      cursor: cell;
     }
     
     .chord-chip.active {
@@ -1808,6 +1820,41 @@
       color: var(--accent-terracotta);
       border-color: var(--accent-terracotta);
       transform: scale(1.1);
+    }
+
+    /* ── Double-click edit hint ── */
+    .chip-edit-hint {
+      position: absolute;
+      bottom: 5px;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .chip-edit-hint-text {
+      font-size: 0.52rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .chip-edit-hint-icon {
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+    }
+
+    .chord-chip:hover:not(.empty-slot) .chip-edit-hint {
+      opacity: 1;
     }
 
     /* ── Chord Editor Drawer ── */
