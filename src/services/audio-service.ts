@@ -250,3 +250,65 @@ export function playChordFromInput(
 
   playChord(noteNames, 0.7, humanState);
 }
+
+// --- Audio Track Player ---
+
+let audioTrackPlayer: Tone.Player | null = null;
+
+/**
+ * Loads an audio file from an object URL into a Tone.Player.
+ * Resolves when fully loaded.
+ */
+export function loadAudioTrack(url: string, volumeDb = 0): Promise<void> {
+  return new Promise((resolve, reject) => {
+    unloadAudioTrack(); // Cleanup existing
+
+    audioTrackPlayer = new Tone.Player({
+      url: url,
+      volume: volumeDb,
+      onload: () => {
+        resolve();
+      },
+      onerror: (err) => {
+        reject(err);
+      }
+    }).toDestination(); // Or connect to limiter if desired: .connect(limiter);
+  });
+}
+
+/**
+ * Starts playing the loaded audio track.
+ */
+export function playAudioTrack(timeOffset = 0): void {
+  if (audioTrackPlayer && audioTrackPlayer.loaded) {
+    audioTrackPlayer.start(undefined, timeOffset);
+  }
+}
+
+/**
+ * Stops the audio track playback.
+ */
+export function stopAudioTrack(): void {
+  if (audioTrackPlayer && audioTrackPlayer.state === 'started') {
+    audioTrackPlayer.stop();
+  }
+}
+
+/**
+ * Sets the volume of the audio track (in Decibels, e.g. 0 is normal, -12 is quiet).
+ */
+export function setAudioTrackVolume(volumeDb: number): void {
+  if (audioTrackPlayer) {
+    audioTrackPlayer.volume.value = volumeDb;
+  }
+}
+
+/**
+ * Disposes the current audio player to free memory.
+ */
+export function unloadAudioTrack(): void {
+  if (audioTrackPlayer) {
+    audioTrackPlayer.dispose();
+    audioTrackPlayer = null;
+  }
+}

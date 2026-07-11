@@ -2,7 +2,8 @@ import { LitElement, html, css, svg } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { ProjectService, ProjectData } from './services/project-service';
 import { GoogleDriveService } from './services/google-drive-service';
-import { playChordFromInput } from './services/audio-service';
+import { playChordFromInput, loadAudioTrack, playAudioTrack, stopAudioTrack, setAudioTrackVolume, unloadAudioTrack } from './services/audio-service';
+import { estimateBPM } from './services/bpm-detector';
 import './components/chord-profile-card.ts';
 import './components/next-options-table.ts';
 import './components/chord-timeline.ts';
@@ -149,6 +150,7 @@ export class ChordVoyagerApp extends LitElement {
   @state() private isAuthenticated = false;
   @state() private authUserEmail = '';
   @state() private authError = '';
+  @state() private isAudioUploading = false;
 
   @state() private activeOptionsTab: 'diatonic' | 'borrowed' = 'diatonic';
   @state() private humanState: any = null;
@@ -2216,8 +2218,91 @@ export class ChordVoyagerApp extends LitElement {
     this.syncProjectsToCloud();
   }
 
+  private async handleSaveAudioTrack(e: CustomEvent<{blob: Blob}>) {
+    if (!this.currentProjectId) return;
+    this.isAudioUploading = true;
+    try {
+      const blob = e.detail.blob;
+      
+      let bpm = 0;
+      try {
+        const audioCtx = new AudioContext();
+        const arrayBuf = await blob.arrayBuffer();
+        const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+        bpm = estimateBPM(audioBuf);
+      } catch (e) {
+        console.warn('Failed to estimate BPM', e);
+      }
+
+      await this.driveService.uploadAudioFile(this.currentProjectId, blob);
+      
+      const project = this.projects.find(p => p.id === this.currentProjectId);
+      if (project) {
+        project.audioTrack = {
+          filename: `recording_${this.currentProjectId}.webm`,
+          duration: blob.size / (16000), // rough estimate, but actual duration is less important here
+          volumeDb: 0,
+          bpm: bpm || undefined
+        };
+        ProjectService.saveProject(project);
+        this.projects = ProjectService.getProjects();
+        await this.loadProjectAudio(this.currentProjectId);
+      }
+    } catch (err) {
+      console.error('Failed to save audio track', err);
+    } finally {
+      this.isAudioUploading = false;
+    }
+  }
+
+  private async handleDeleteAudioTrack() {
+    if (!this.currentProjectId) return;
+    try {
+      await this.driveService.deleteAudioFile(this.currentProjectId);
+      const project = this.projects.find(p => p.id === this.currentProjectId);
+      if (project) {
+        delete project.audioTrack;
+        ProjectService.saveProject(project);
+        this.projects = ProjectService.getProjects();
+        unloadAudioTrack();
+      }
+    } catch(err) {
+      console.error('Failed to delete audio track', err);
+    }
+  }
+
+  private handleChangeAudioTrackVolume(e: CustomEvent<{volumeDb: number}>) {
+    if (!this.currentProjectId) return;
+    const project = this.projects.find(p => p.id === this.currentProjectId);
+    if (project && project.audioTrack) {
+      project.audioTrack.volumeDb = e.detail.volumeDb;
+      setAudioTrackVolume(e.detail.volumeDb);
+      ProjectService.saveProject(project);
+    }
+  }
+
+  private handleSyncBpmToRecording(e: CustomEvent<{bpm: number}>) {
+    if (this.humanState) {
+       this.humanState = { ...this.humanState, bpm: e.detail.bpm };
+    }
+  }
+  
+  private async loadProjectAudio(projectId: string) {
+    const project = this.projects.find(p => p.id === projectId);
+    if (project && project.audioTrack && this.isAuthenticated) {
+       const blob = await this.driveService.downloadAudioFile(projectId);
+       if (blob) {
+         const url = URL.createObjectURL(blob);
+         await loadAudioTrack(url, project.audioTrack.volumeDb);
+       }
+    } else {
+       unloadAudioTrack();
+    }
+  }
+
   private handleLoadProject(project: ProjectData) {
     this.stopProgressionPlayback();
+    this.loadProjectAudio(project.id);
     this.currentProjectId = project.id;
     this.currentProjectName = project.name;
     this.setupStep = project.setupStep;
@@ -2315,6 +2400,13 @@ export class ChordVoyagerApp extends LitElement {
       }
     }
 
+    let timeOffsetMs = 0;
+    for (let i = 0; i < secIndex; i++) {
+       timeOffsetMs += this.sections[i].steps.length * stepIntervalMs;
+    }
+    timeOffsetMs += stepIndex * stepIntervalMs;
+    playAudioTrack(timeOffsetMs / 1000);
+
     const playNextStep = () => {
       if (!this.isPlaying) return;
 
@@ -2394,6 +2486,7 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   private stopProgressionPlayback() {
+    stopAudioTrack();
     this.isPlaying = false;
     if (this.playTimeoutId) {
       clearTimeout(this.playTimeoutId);
@@ -2598,6 +2691,14 @@ export class ChordVoyagerApp extends LitElement {
                 @change-modifier="${this.handleChangeModifierEvent}"
                 @human-state-change="${(e: CustomEvent<any>) => this.humanState = e.detail}"
                 @human-preview="${this.handleHumanPreview}"
+                .isAuthenticated="${this.isAuthenticated}"
+                .projectId="${this.currentProjectId || ''}"
+                .audioTrack="${this.currentProjectId ? this.projects.find(p => p.id === this.currentProjectId)?.audioTrack : null}"
+                .isUploading="${this.isAudioUploading}"
+                @save-audio-track="${this.handleSaveAudioTrack}"
+                @delete-audio-track="${this.handleDeleteAudioTrack}"
+                @change-audio-track-volume="${this.handleChangeAudioTrackVolume}"
+                @sync-bpm-to-recording="${this.handleSyncBpmToRecording}"
               ></chord-timeline>
             </div>
 

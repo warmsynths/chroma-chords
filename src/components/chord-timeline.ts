@@ -29,6 +29,23 @@ export class ChordTimeline extends LitElement {
   @property({ type: Number }) windowStartMidi = 60;
   @property({ type: Number }) bpm = 80;
 
+  @property({ type: Boolean }) isAuthenticated = false;
+  @property({ type: String }) projectId = '';
+  @property({ type: Object }) audioTrack: any = null;
+  @property({ type: Boolean }) isUploading = false;
+
+  @state() private isRecording = false;
+  @state() private recordDuration = 0;
+  @state() private audioPeaks: number[] = [];
+  
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioChunks: Blob[] = [];
+  private recordInterval: any = null;
+  private micStream: MediaStream | null = null;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private animationFrameId: number | null = null;
+
   @state() viewedSectionId: string | null = null;
   @state() private humanLoaded = false;
   @state() private showHuman = false;
@@ -849,6 +866,89 @@ export class ChordTimeline extends LitElement {
       .btn-primary svg {
         margin: 0 !important;
       }
+
+      /* ── Audio Track Panel ── */
+      .audio-track-panel {
+        margin: 12px 20px 20px;
+        padding: 12px 16px;
+        background: var(--bg-card);
+        border-radius: 12px;
+        box-shadow: var(--neu-flat-sm);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        border: 1px solid var(--border-color);
+      }
+      .audio-track-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .btn-record {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--bg-primary);
+        border: none;
+        box-shadow: var(--neu-flat-sm);
+        color: var(--text-primary);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+      }
+      .btn-record:hover { box-shadow: var(--neu-pressed-sm); }
+      .btn-record.recording {
+        color: var(--accent-terracotta);
+        box-shadow: var(--neu-pressed-sm);
+        animation: pulse-record 1.5s infinite;
+      }
+      @keyframes pulse-record {
+        0% { box-shadow: inset 2px 2px 4px var(--neu-dark-color), inset -2px -2px 4px var(--neu-light-color), 0 0 0 0 rgba(194, 82, 51, 0.4); }
+        70% { box-shadow: inset 2px 2px 4px var(--neu-dark-color), inset -2px -2px 4px var(--neu-light-color), 0 0 0 10px rgba(194, 82, 51, 0); }
+        100% { box-shadow: inset 2px 2px 4px var(--neu-dark-color), inset -2px -2px 4px var(--neu-light-color), 0 0 0 0 rgba(194, 82, 51, 0); }
+      }
+      .audio-waveform-container {
+        flex: 1;
+        height: 40px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        padding: 0 4px;
+        position: relative;
+      }
+      .waveform-bar {
+        width: 4px;
+        background-color: var(--accent-terracotta);
+        border-radius: 2px;
+        margin: 0 2px;
+        opacity: 0.8;
+        transition: height 0.05s ease;
+      }
+      .audio-track-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .bpm-sync-badge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255,255,255,0.05);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+      }
+      .bpm-sync-badge:hover { background: rgba(255,255,255,0.1); }
+      .vol-slider {
+        width: 80px;
+        accent-color: var(--accent-gold);
+      }
     }
   `;
 
@@ -1117,6 +1217,169 @@ export class ChordTimeline extends LitElement {
     return '1';
   }
 
+  // --- Audio Recording Logic ---
+
+  private async toggleRecording() {
+    if (this.isRecording) {
+      this.stopRecording();
+    } else {
+      await this.startRecording();
+    }
+  }
+
+  private async startRecording() {
+    try {
+      this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      
+      this.audioContext = new AudioContext();
+      const source = this.audioContext.createMediaStreamSource(this.micStream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 256;
+      source.connect(this.analyser);
+      
+      this.mediaRecorder = new MediaRecorder(this.micStream, { mimeType: 'audio/webm' });
+      this.audioChunks = [];
+      
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) this.audioChunks.push(e.data);
+      };
+      
+      this.mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+        this.dispatchEvent(new CustomEvent('save-audio-track', { detail: { blob: audioBlob } }));
+        this.teardownRecording();
+      };
+      
+      this.audioPeaks = Array(40).fill(2); // reset visualization
+      this.isRecording = true;
+      this.recordDuration = 0;
+      
+      this.recordInterval = setInterval(() => {
+        this.recordDuration++;
+      }, 1000);
+      
+      this.mediaRecorder.start(100);
+      this.dispatchEvent(new CustomEvent('start-recording'));
+      
+      this.visualizeMic();
+      
+    } catch (err) {
+      alert("Microphone access denied or unavailable.");
+      console.error(err);
+    }
+  }
+
+  private stopRecording() {
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop();
+    }
+    this.dispatchEvent(new CustomEvent('stop-recording'));
+    this.isRecording = false;
+  }
+
+  private teardownRecording() {
+    if (this.recordInterval) clearInterval(this.recordInterval);
+    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+    if (this.micStream) {
+      this.micStream.getTracks().forEach(t => t.stop());
+    }
+    if (this.audioContext) {
+      this.audioContext.close();
+    }
+    this.micStream = null;
+    this.mediaRecorder = null;
+    this.analyser = null;
+    this.audioContext = null;
+  }
+
+  private visualizeMic = () => {
+    if (!this.analyser || !this.isRecording) return;
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteTimeDomainData(dataArray);
+    
+    let sumSquares = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      const norm = (dataArray[i] / 128.0) - 1.0;
+      sumSquares += norm * norm;
+    }
+    const rms = Math.sqrt(sumSquares / dataArray.length);
+    const height = Math.max(2, rms * 150);
+    
+    // Shift and push new peak
+    this.audioPeaks = [...this.audioPeaks.slice(1), height];
+    
+    this.animationFrameId = requestAnimationFrame(this.visualizeMic);
+  };
+
+  private formatTime(seconds: number) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  private renderAudioTrackPanel() {
+    if (!this.isAuthenticated) return '';
+
+    // Generate static peaks for an existing track using a simple hash of filename
+    let staticPeaks: number[] = [];
+    if (this.audioTrack && !this.isRecording) {
+      let hash = 0;
+      for (let i = 0; i < this.audioTrack.filename.length; i++) hash = (hash << 5) - hash + this.audioTrack.filename.charCodeAt(i);
+      for (let i = 0; i < 40; i++) {
+        const val = Math.abs(Math.sin(hash + i * 0.5)) * 30 + 4;
+        staticPeaks.push(val);
+      }
+    }
+
+    return html`
+      <div class="audio-track-panel">
+        <div class="audio-track-left">
+          <button class="btn-record ${this.isRecording ? 'recording' : ''}" @click="${this.toggleRecording}" title="${this.isRecording ? 'Stop Recording' : 'Record Audio'}">
+            ${this.isRecording ? html`
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"></rect></svg>
+            ` : html`
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--accent-terracotta)"><circle cx="12" cy="12" r="6"></circle></svg>
+            `}
+          </button>
+          
+          ${this.audioTrack && !this.isRecording ? html`
+            <input type="range" class="vol-slider" min="-30" max="10" value="${this.audioTrack.volumeDb || 0}"
+              @input="${(e: any) => this.dispatchEvent(new CustomEvent('change-audio-track-volume', { detail: { volumeDb: parseFloat(e.target.value) } }))}"
+              title="Track Volume"
+            />
+          ` : ''}
+        </div>
+
+        <div class="audio-waveform-container">
+          ${this.isUploading ? html`
+            <span style="color: var(--text-muted); font-size: 0.8rem; margin: auto;">Syncing to Google Drive...</span>
+          ` : html`
+            ${this.isRecording ? this.audioPeaks.map(h => html`<div class="waveform-bar" style="height: ${h}px;"></div>`) 
+            : this.audioTrack ? staticPeaks.map(h => html`<div class="waveform-bar" style="height: ${h}px;"></div>`)
+            : html`<span style="color: var(--text-muted); font-size: 0.8rem; margin: auto;">No audio track recorded</span>`}
+          `}
+        </div>
+
+        <div class="audio-track-right">
+          ${this.isRecording ? html`
+            <span style="color: var(--accent-terracotta); font-family: var(--font-mono); font-size: 0.85rem;">${this.formatTime(this.recordDuration)}</span>
+          ` : this.audioTrack ? html`
+            ${this.audioTrack.bpm ? html`
+              <div class="bpm-sync-badge" title="Sync Project BPM to this track" @click="${() => this.dispatchEvent(new CustomEvent('sync-bpm-to-recording', { detail: { bpm: this.audioTrack.bpm } }))}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.13 15.57a9 9 0 1 0 3.29-10.74L2 7"></path></svg>
+                Sync BPM: ${this.audioTrack.bpm}
+              </div>
+            ` : ''}
+            <span style="font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-muted);">${this.formatTime(Math.round(this.audioTrack.duration || 0))}</span>
+            <button class="btn-icon" @click="${() => this.dispatchEvent(new CustomEvent('delete-audio-track'))}" title="Delete Track">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
   render() {
     const hasSections = this.sections.length > 0;
     const totalSteps = this.sections.reduce((acc, sec) => acc + sec.steps.length, 0);
@@ -1269,6 +1532,9 @@ export class ChordTimeline extends LitElement {
             </div>
           `}
         </div>
+        
+        <!-- Inline Audio Track -->
+        ${this.renderAudioTrackPanel()}
         
         <!-- Inline Chord Editor Drawer -->
         ${hasSections && this.activeLocation && this.isEditing ? html`

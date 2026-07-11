@@ -8,6 +8,12 @@ export interface ProjectData {
   setupStep: 'scale' | 'tonic';
   selectedScaleType: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | 'LYDIAN' | null;
   syncedToCloud?: boolean;
+  audioTrack?: {
+    filename: string;
+    duration: number;
+    volumeDb: number;
+    bpm?: number;
+  };
 }
 
 const STORAGE_KEY = 'chord_voyager_projects';
