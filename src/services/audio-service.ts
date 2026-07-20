@@ -39,6 +39,81 @@ const sampler = new Tone.Sampler({
   }
 }).connect(limiter);
 
+// Additional voices for genres that shouldn't just be the Rhodes — all synthesized via
+// Tone.js primitives (no extra samples/network requests) so they're available instantly.
+
+// Gospel: drawbar-organ approximation — a few detuned square partials, fast percussive attack.
+const organ = new Tone.PolySynth(Tone.Synth, {
+  oscillator: { type: 'fatsquare', count: 3, spread: 20 },
+  envelope: { attack: 0.015, decay: 0.1, sustain: 0.9, release: 0.35 },
+  volume: -16,
+}).connect(limiter);
+
+// Cinematic: soft sustained strings/pad, long attack/release through reverb.
+const cinematicReverb = new Tone.Reverb({ decay: 4.5, wet: 0.35 }).connect(limiter);
+const padStrings = new Tone.PolySynth(Tone.Synth, {
+  oscillator: { type: 'sine' },
+  envelope: { attack: 0.9, decay: 0.4, sustain: 0.8, release: 2.8 },
+  volume: -15,
+}).connect(cinematicReverb);
+
+// Synthwave: Juno-60 style pad — detuned unison sawtooths through a slow chorus.
+const junoChorus = new Tone.Chorus({ frequency: 0.8, delayTime: 3.5, depth: 0.7, wet: 0.5 }).start().connect(limiter);
+const junoPad = new Tone.PolySynth(Tone.Synth, {
+  oscillator: { type: 'fatsawtooth', count: 3, spread: 25 },
+  envelope: { attack: 0.35, decay: 0.4, sustain: 0.85, release: 1.6 },
+  volume: -16,
+}).connect(junoChorus);
+
+// House/Dance: short percussive filter-swept stab.
+const stab = new Tone.PolySynth(Tone.MonoSynth, {
+  oscillator: { type: 'square' },
+  envelope: { attack: 0.004, decay: 0.14, sustain: 0.12, release: 0.15 },
+  filterEnvelope: { attack: 0.004, decay: 0.15, sustain: 0.1, release: 0.2, baseFrequency: 300, octaves: 4 },
+  volume: -14,
+}).connect(limiter);
+
+export type InstrumentId = 'rhodes' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab';
+
+function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
+  switch (instrument) {
+    case 'organ': return organ;
+    case 'pad-strings': return padStrings;
+    case 'juno-pad': return junoPad;
+    case 'stab': return stab;
+    case 'rhodes':
+    default: return sampler;
+  }
+}
+
+const GENRE_INSTRUMENT: Record<string, InstrumentId> = {
+  'Pop': 'rhodes',
+  'Rock': 'rhodes',
+  'Indie/Folk': 'rhodes',
+  'Lo-fi/Chill': 'rhodes',
+  'Jazz-ish': 'rhodes',
+  'R&B/Soul': 'rhodes',
+  'Gospel': 'organ',
+  'Cinematic': 'pad-strings',
+  'Synthwave': 'juno-pad',
+  'House/Dance': 'stab',
+};
+
+// Per-genre humanize profile: velocity range, timing looseness, note duration, and
+// (for Lo-fi/Jazz) a gentle arpeggiation instead of a flat hit.
+const GENRE_HUMANIZE: Record<string, any> = {
+  'Pop': { minVelocity: 90, maxVelocity: 110, spread: 0.5, microTiming: 0.3, humanVariance: 0.3, duration: 1.0 },
+  'Rock': { minVelocity: 105, maxVelocity: 127, spread: 0.2, microTiming: 0.1, humanVariance: 0.15, duration: 0.9 },
+  'Indie/Folk': { minVelocity: 80, maxVelocity: 105, spread: 1, microTiming: 0.5, humanVariance: 0.4, duration: 1.1 },
+  'Lo-fi/Chill': { minVelocity: 55, maxVelocity: 85, spread: 2.5, microTiming: 1.2, humanVariance: 0.8, duration: 1.4, arpMode: 'up', arpRate: '1/8', arpRange: 1 },
+  'Jazz-ish': { minVelocity: 70, maxVelocity: 100, spread: 1.8, microTiming: 1, humanVariance: 0.6, duration: 1.2, arpMode: 'up', arpRate: '1/8T', arpRange: 1 },
+  'R&B/Soul': { minVelocity: 75, maxVelocity: 105, spread: 1.2, microTiming: 0.6, humanVariance: 0.5, duration: 1.3 },
+  'Gospel': { minVelocity: 95, maxVelocity: 120, spread: 0.4, microTiming: 0.2, humanVariance: 0.2, duration: 1.5 },
+  'Cinematic': { minVelocity: 60, maxVelocity: 90, spread: 0, microTiming: 0, humanVariance: 0.1, duration: 2.2 },
+  'Synthwave': { minVelocity: 70, maxVelocity: 95, spread: 0, microTiming: 0, humanVariance: 0.1, duration: 1.8 },
+  'House/Dance': { minVelocity: 100, maxVelocity: 127, spread: 0, microTiming: 0.1, humanVariance: 0.15, duration: 0.5 },
+};
+
 // Note names for MIDI-to-note conversion
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -130,9 +205,10 @@ function orderNotesForArp(notes: string[], arpMode: string): string[] {
  * @param duration Duration in seconds.
  * @param humanState Optional HumanState including bpm, arpMode, arpRate, arpRange.
  */
-export function playChord(noteNames: string[], duration = 0.7, humanState?: any): void {
+export function playChord(noteNames: string[], duration = 0.7, humanState?: any, instrument: InstrumentId = 'rhodes'): void {
   try {
     Tone.start().then(() => {
+      const voice = getVoice(instrument);
       const count = noteNames.length;
       const densityScaling = count <= 1 ? 1 : Math.max(0.4, 1 / Math.sqrt(count));
       const now = Tone.now();
@@ -167,7 +243,7 @@ export function playChord(noteNames: string[], duration = 0.7, humanState?: any)
           const jitter = humanState.microTiming
             ? (Math.random() - 0.5) * humanState.microTiming * 0.02
             : 0;
-          sampler.triggerAttackRelease(noteName, noteDur, now + index * interval + jitter, getVel());
+          voice.triggerAttackRelease(noteName, noteDur, now + index * interval + jitter, getVel());
         });
 
         return;
@@ -197,7 +273,7 @@ export function playChord(noteNames: string[], duration = 0.7, humanState?: any)
           dur = hDuration * (1.0 + (Math.random() - 0.5) * 0.2 * humanVariance);
         }
 
-        sampler.triggerAttackRelease(noteName, dur, now + stagger, vel);
+        voice.triggerAttackRelease(noteName, dur, now + stagger, vel);
       });
     }).catch((e) => {
       console.warn("Audio playback gesture failed:", e);
@@ -205,6 +281,17 @@ export function playChord(noteNames: string[], duration = 0.7, humanState?: any)
   } catch (e) {
     console.warn("Audio playback failed:", e);
   }
+}
+
+/**
+ * Plays a chord using the voice and humanize feel mapped to the given genre
+ * (see GENRE_INSTRUMENT/GENRE_HUMANIZE) instead of always using the flat Rhodes hit.
+ */
+export function playChordForGenre(noteNames: string[], genre: string, opts?: { bpm?: number; duration?: number }): void {
+  const instrument = GENRE_INSTRUMENT[genre] || 'rhodes';
+  const profile = GENRE_HUMANIZE[genre] || {};
+  const humanState = { ...profile, bpm: opts?.bpm ?? profile.bpm ?? 90 };
+  playChord(noteNames, opts?.duration ?? profile.duration ?? 0.9, humanState, instrument);
 }
 
 /**

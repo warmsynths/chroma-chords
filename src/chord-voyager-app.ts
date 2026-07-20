@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { ProjectService, ProjectData } from './services/project-service';
 import { GoogleDriveService } from './services/google-drive-service';
-import { playChord } from './services/audio-service';
+import { playChordForGenre } from './services/audio-service';
 import {
   loadChordData, generateProgression, generateAlternatives,
   RawChordData, Progression, ChordBlock, Alternative,
@@ -86,7 +86,7 @@ export class ChordVoyagerApp extends LitElement {
     if (!this.progression) return;
     const chordIndex = this.order[this.activeIndex] ?? 0;
     const chord = this.progression.chords[chordIndex];
-    playChord(chord.notes.map(n => `${n}4`), 1.0);
+    playChordForGenre(chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm });
   }
 
   private onGenreChange(e: CustomEvent<string>) {
@@ -179,7 +179,7 @@ export class ChordVoyagerApp extends LitElement {
     this.swapIndex = e.detail;
     this.alternatives = generateAlternatives(this.chordData, this.progression, e.detail);
     this.sheetOpen = true;
-    playChord(this.progression.chords[e.detail].notes.map(n => `${n}4`), 0.8);
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
   }
 
   private onSheetClose() {
@@ -195,11 +195,12 @@ export class ChordVoyagerApp extends LitElement {
     this.sheetOpen = false;
     this.swapIndex = null;
     this.saveProject();
-    playChord(e.detail.chord.notes.map(n => `${n}4`), 0.8);
+    playChordForGenre(e.detail.chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
   }
 
   private onVoicingPreview(e: CustomEvent<string[]>) {
-    playChord(e.detail.map(n => `${n}4`), 0.6);
+    if (!this.progression) return;
+    playChordForGenre(e.detail.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.6 });
   }
 
   private saveProject() {
