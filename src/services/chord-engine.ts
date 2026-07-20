@@ -634,3 +634,25 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
 
   return results;
 }
+
+export type ShareDevice = 'm8' | 'circuit';
+
+// Same companion-helper URLs and localhost dev overrides as the original app's
+// openDeviceLink. The old encoder used a `human-engine` package (with full MIDI voicings
+// and humanize state) that isn't part of this rebuild; this keeps the same "?p=" fallback
+// query scheme it used when that package wasn't available — a plain '+'-joined chord list.
+const DEVICE_BASE_URL: Record<ShareDevice, string> = {
+  m8: 'https://warmsynths.github.io/hypersyn-chord-helper/',
+  circuit: 'https://warmsynths.github.io/circuit-chords/',
+};
+
+const DEVICE_LOCAL_PORT: Record<ShareDevice, number> = { m8: 43303, circuit: 43302 };
+
+export function buildDeviceShareUrl(progression: Progression, device: ShareDevice): string {
+  let base = DEVICE_BASE_URL[device];
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    base = `http://localhost:${DEVICE_LOCAL_PORT[device]}/`;
+  }
+  const chordParam = progression.chords.map(c => encodeURIComponent(c.name)).join('+');
+  return `${base}?p=${chordParam}`;
+}

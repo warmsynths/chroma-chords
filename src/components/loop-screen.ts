@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { Progression, ChordBlock, Alternative } from '../services/chord-engine';
+import { Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl } from '../services/chord-engine';
 import './swap-sheet';
+import './share-modal';
 
 const MENU_GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
 const MENU_MOODS = ['Uplifting', 'Melancholy', 'Dreamy', 'Tense', 'Warm', 'Nostalgic'];
@@ -10,6 +11,11 @@ const MENU_SCALES: { label: string; value: string }[] = [
   { label: 'Major', value: 'MAJOR' },
   { label: 'Minor', value: 'NATURAL_MINOR' },
 ];
+
+// The design animates the menu popover/backdrop in on mount and out before unmount:
+// set the `mounted` flag immediately, flip `visible` a frame later so the CSS transition
+// runs, and reverse that order on close so the fade-out plays before the DOM is removed.
+const MENU_CLOSE_MS = 220;
 
 @customElement('loop-screen')
 export class LoopScreen extends LitElement {
@@ -22,8 +28,23 @@ export class LoopScreen extends LitElement {
   @property({ type: Object }) swapChord: ChordBlock | null = null;
   @property({ type: Array }) alternatives: Alternative[] = [];
 
-  @state() private menuOpen = false;
+  @state() private menuMounted = false;
+  @state() private menuVisible = false;
+  @state() private shareMounted = false;
+  @state() private shareVisible = false;
+  @state() private toast: string | null = null;
   @state() private spinning = false;
+
+  private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.menuCloseTimer) clearTimeout(this.menuCloseTimer);
+    if (this.shareCloseTimer) clearTimeout(this.shareCloseTimer);
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+  }
 
   static styles = css`
     :host {
@@ -294,6 +315,13 @@ export class LoopScreen extends LitElement {
       position: absolute;
       inset: 0;
       z-index: 48;
+      background: rgba(32, 26, 19, 0);
+      transition: background .22s ease, backdrop-filter .22s ease;
+    }
+    .menu-scrim.visible {
+      background: rgba(32, 26, 19, 0.06);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
     }
     .menu {
       position: absolute;
@@ -303,10 +331,18 @@ export class LoopScreen extends LitElement {
       background: var(--cv-paper);
       border: 1px solid var(--cv-ink-18);
       border-radius: 10px;
-      box-shadow: 4px 4px 0 rgba(32, 26, 19, 0.15);
+      box-shadow: 4px 4px 0 rgba(32, 26, 19, 0.15), 0 24px 44px -18px rgba(32, 26, 19, 0.4);
       z-index: 49;
       padding: 14px;
       box-sizing: border-box;
+      transform-origin: top right;
+      opacity: 0;
+      transform: translateY(-6px) scale(0.94);
+      transition: opacity .22s cubic-bezier(.16,1,.3,1), transform .26s cubic-bezier(.16,1,.3,1);
+    }
+    .menu.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
     }
     .menu-label {
       font-family: var(--cv-font-grotesk);
@@ -336,11 +372,59 @@ export class LoopScreen extends LitElement {
       background: var(--cv-ink-04);
       color: var(--cv-ink-62);
       border: 1px solid var(--cv-ink-18);
+      opacity: 0;
+      transform: translateY(5px);
+      transition: opacity .3s ease, transform .3s cubic-bezier(.2,.8,.2,1), background .15s ease, color .15s ease;
+    }
+    .menu-chip.visible {
+      opacity: 1;
+      transform: translateY(0);
     }
     .menu-chip.selected {
       background: var(--cv-ink);
       color: var(--cv-cream);
       border-color: var(--cv-ink);
+    }
+    .menu-share-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--cv-ink-14);
+      cursor: pointer;
+    }
+    .menu-share-label {
+      font-family: var(--cv-font-serif);
+      font-style: italic;
+      font-size: 13px;
+      color: rgba(32, 26, 19, 0.65);
+    }
+    .menu-share-arrow {
+      font-size: 13px;
+      color: var(--cv-ink-40);
+    }
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 90px;
+      transform: translateX(-50%);
+      background: var(--cv-ink);
+      color: var(--cv-cream);
+      font-family: var(--cv-font-body);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 10px 16px;
+      border-radius: 999px;
+      z-index: 70;
+      box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.4);
+      animation: cv-toast-in .3s cubic-bezier(.16,1,.3,1);
+      white-space: nowrap;
+    }
+    @keyframes cv-toast-in {
+      from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
   `;
 
@@ -349,17 +433,54 @@ export class LoopScreen extends LitElement {
   }
 
   private toggleMenu() {
-    this.menuOpen = !this.menuOpen;
+    if (this.menuMounted) this.closeMenu();
+    else this.openMenu();
+  }
+
+  private openMenu() {
+    if (this.menuCloseTimer) { clearTimeout(this.menuCloseTimer); this.menuCloseTimer = null; }
+    this.menuMounted = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => { this.menuVisible = true; }));
   }
 
   private closeMenu() {
-    this.menuOpen = false;
+    this.menuVisible = false;
+    this.menuCloseTimer = setTimeout(() => { this.menuMounted = false; }, MENU_CLOSE_MS);
+  }
+
+  private openShare() {
+    this.closeMenu();
+    if (this.shareCloseTimer) { clearTimeout(this.shareCloseTimer); this.shareCloseTimer = null; }
+    this.shareMounted = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => { this.shareVisible = true; }));
+  }
+
+  private closeShare() {
+    this.shareVisible = false;
+    this.shareCloseTimer = setTimeout(() => { this.shareMounted = false; }, MENU_CLOSE_MS);
+  }
+
+  private exportDevice(device: ShareDevice, name: string) {
+    this.closeShare();
+    const url = buildDeviceShareUrl(this.progression, device);
+    window.open(url, '_blank');
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toast = name;
+    this.toastTimer = setTimeout(() => { this.toast = null; }, 2000);
   }
 
   private shuffle() {
     this.spinning = true;
     setTimeout(() => { this.spinning = false; }, 400);
     this.emit('shuffle');
+  }
+
+  private chipClass(idx: number, selected: boolean): string {
+    return `menu-chip ${selected ? 'selected' : ''} ${this.menuVisible ? 'visible' : ''}`;
+  }
+
+  private chipStyle(idx: number): string {
+    return `transition-delay: ${idx * 0.025}s`;
   }
 
   render() {
@@ -375,34 +496,48 @@ export class LoopScreen extends LitElement {
           <div class="icon-btn" @click=${() => this.toggleMenu()}>…</div>
         </div>
 
-        ${this.menuOpen ? html`
-          <div class="menu-scrim" @click=${() => this.closeMenu()}></div>
-          <div class="menu">
+        ${this.menuMounted ? html`
+          <div class="menu-scrim ${this.menuVisible ? 'visible' : ''}" @click=${() => this.closeMenu()}></div>
+          <div class="menu ${this.menuVisible ? 'visible' : ''}">
             <div class="menu-label">Key &amp; scale</div>
             <div class="menu-chips">
-              ${MENU_KEYS.map(k => html`
-                <div class="menu-chip ${k === p.key ? 'selected' : ''}" @click=${() => this.emit('set-key', k)}>${k}</div>
+              ${MENU_KEYS.map((k, i) => html`
+                <div class="${this.chipClass(i, k === p.key)}" style=${this.chipStyle(i)} @click=${() => this.emit('set-key', k)}>${k}</div>
               `)}
             </div>
             <div class="menu-chips">
-              ${MENU_SCALES.map(s => html`
-                <div class="menu-chip ${s.value === p.scaleType ? 'selected' : ''}" @click=${() => this.emit('set-scale', s.value)}>${s.label}</div>
+              ${MENU_SCALES.map((s, i) => html`
+                <div class="${this.chipClass(i + 7, s.value === p.scaleType)}" style=${this.chipStyle(i + 7)} @click=${() => this.emit('set-scale', s.value)}>${s.label}</div>
               `)}
             </div>
             <div class="menu-label spaced">Genre</div>
             <div class="menu-chips">
-              ${MENU_GENRES.map(g => html`
-                <div class="menu-chip ${g === p.genre ? 'selected' : ''}" @click=${() => this.emit('set-genre', g)}>${g}</div>
+              ${MENU_GENRES.map((g, i) => html`
+                <div class="${this.chipClass(i + 9, g === p.genre)}" style=${this.chipStyle(i + 9)} @click=${() => this.emit('set-genre', g)}>${g}</div>
               `)}
             </div>
             <div class="menu-label spaced">Mood</div>
             <div class="menu-chips">
-              ${MENU_MOODS.map(m => html`
-                <div class="menu-chip ${m === p.mood ? 'selected' : ''}" @click=${() => this.emit('set-mood', m)}>${m}</div>
+              ${MENU_MOODS.map((m, i) => html`
+                <div class="${this.chipClass(i + 19, m === p.mood)}" style=${this.chipStyle(i + 19)} @click=${() => this.emit('set-mood', m)}>${m}</div>
               `)}
+            </div>
+            <div class="menu-share-row" @click=${() => this.openShare()}>
+              <div class="menu-share-label">Share progression</div>
+              <div class="menu-share-arrow">↗</div>
             </div>
           </div>
         ` : ''}
+
+        ${this.shareMounted ? html`
+          <share-modal
+            .visible=${this.shareVisible}
+            @close=${() => this.closeShare()}
+            @export=${(e: CustomEvent<{ device: ShareDevice; name: string }>) => this.exportDevice(e.detail.device, e.detail.name)}
+          ></share-modal>
+        ` : ''}
+
+        ${this.toast ? html`<div class="toast">Sent to ${this.toast}</div>` : ''}
 
         <div class="theory-toggle">
           <div class="theory-inner" @click=${() => this.emit('theory-toggle')}>
