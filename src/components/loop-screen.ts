@@ -10,6 +10,10 @@ const MENU_KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const MENU_SCALES: { label: string; value: string }[] = [
   { label: 'Major', value: 'MAJOR' },
   { label: 'Minor', value: 'NATURAL_MINOR' },
+  { label: 'Harmonic Minor', value: 'HARMONIC_MINOR' },
+  { label: 'Dorian', value: 'DORIAN' },
+  { label: 'Mixolydian', value: 'MIXOLYDIAN' },
+  { label: 'Lydian', value: 'LYDIAN' },
 ];
 
 // The design animates the menu popover/backdrop in on mount and out before unmount:
@@ -302,13 +306,13 @@ export class LoopScreen extends LitElement {
       font-weight: 600;
       letter-spacing: 0.4px;
     }
-    .loop-icon {
-      font-size: 17px;
+    .dice-icon {
+      font-size: 16px;
       color: var(--cv-ink-40);
       cursor: pointer;
       transition: transform .3s ease;
     }
-    .loop-icon.spinning {
+    .dice-icon.spinning {
       transform: rotate(360deg);
     }
     .menu-scrim {
@@ -469,10 +473,10 @@ export class LoopScreen extends LitElement {
     this.toastTimer = setTimeout(() => { this.toast = null; }, 2000);
   }
 
-  private shuffle() {
+  private reroll() {
     this.spinning = true;
     setTimeout(() => { this.spinning = false; }, 400);
-    this.emit('shuffle');
+    this.emit('reroll');
   }
 
   private chipClass(idx: number, selected: boolean): string {
@@ -513,13 +517,13 @@ export class LoopScreen extends LitElement {
             <div class="menu-label spaced">Genre</div>
             <div class="menu-chips">
               ${MENU_GENRES.map((g, i) => html`
-                <div class="${this.chipClass(i + 9, g === p.genre)}" style=${this.chipStyle(i + 9)} @click=${() => this.emit('set-genre', g)}>${g}</div>
+                <div class="${this.chipClass(i + 13, g === p.genre)}" style=${this.chipStyle(i + 13)} @click=${() => this.emit('set-genre', g)}>${g}</div>
               `)}
             </div>
             <div class="menu-label spaced">Mood</div>
             <div class="menu-chips">
               ${MENU_MOODS.map((m, i) => html`
-                <div class="${this.chipClass(i + 19, m === p.mood)}" style=${this.chipStyle(i + 19)} @click=${() => this.emit('set-mood', m)}>${m}</div>
+                <div class="${this.chipClass(i + 23, m === p.mood)}" style=${this.chipStyle(i + 23)} @click=${() => this.emit('set-mood', m)}>${m}</div>
               `)}
             </div>
             <div class="menu-share-row" @click=${() => this.openShare()}>
@@ -590,7 +594,7 @@ export class LoopScreen extends LitElement {
             ` : html`<div class="play-triangle"></div>`}
           </button>
           <div class="transport-label">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
-          <div class="loop-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.shuffle()}>↻</div>
+          <div class="dice-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
         </div>
 
         ${this.sheetOpen && this.swapChord ? html`

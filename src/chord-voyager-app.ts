@@ -143,16 +143,10 @@ export class ChordVoyagerApp extends LitElement {
     this.regenerate();
   }
 
-  private onShuffle() {
+  // Dice reroll: a new progression in the current genre/mood/key/scale, not just a reorder.
+  private onReroll() {
     if (!this.progression) return;
-    const order = [...this.order];
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [order[i], order[j]] = [order[j], order[i]];
-    }
-    this.order = order;
-    this.activeIndex = 0;
-    if (this.playing) this.playActiveChord();
+    this.regenerate();
   }
 
   private onBack() {
@@ -351,7 +345,7 @@ export class ChordVoyagerApp extends LitElement {
         @set-scale=${this.onSetScale}
         @set-genre=${this.onSetGenre}
         @set-mood=${this.onSetMood}
-        @shuffle=${this.onShuffle}
+        @reroll=${this.onReroll}
       ></loop-screen>
     `;
   }
