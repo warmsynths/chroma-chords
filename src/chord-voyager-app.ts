@@ -104,11 +104,10 @@ export class ChordVoyagerApp extends LitElement {
     this.progression = progression;
     this.order = [0, 1, 2, 3, 4];
     this.activeIndex = 0;
-    this.playing = true;
+    this.playing = false;
     this.screen = 'loop';
     this.saveProject();
     this.startAutoplay();
-    this.playActiveChord();
   }
 
   private regenerate() {
@@ -120,7 +119,7 @@ export class ChordVoyagerApp extends LitElement {
     this.order = [0, 1, 2, 3, 4];
     this.activeIndex = 0;
     this.saveProject();
-    this.playActiveChord();
+    if (this.playing) this.playActiveChord();
   }
 
   private onSetKey(e: CustomEvent<string>) {
@@ -152,7 +151,7 @@ export class ChordVoyagerApp extends LitElement {
     }
     this.order = order;
     this.activeIndex = 0;
-    this.playActiveChord();
+    if (this.playing) this.playActiveChord();
   }
 
   private onBack() {
