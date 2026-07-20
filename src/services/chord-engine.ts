@@ -338,13 +338,18 @@ function prettifyChordName(symbol: string): string {
   return `${root}${suffix[quality] ?? ''}`;
 }
 
-export function generateProgression(data: RawChordData, genre: string, mood: string): Progression {
+export interface ProgressionOverrides {
+  key?: string;
+  scaleType?: string;
+}
+
+export function generateProgression(data: RawChordData, genre: string, mood: string, overrides?: ProgressionOverrides): Progression {
   const baseScaleType = GENRE_SCALE[genre] || 'MAJOR';
   const shift = MOOD_SHIFT[mood];
-  const scaleType = shift && (baseScaleType === 'MAJOR') ? shift : baseScaleType;
+  const scaleType = overrides?.scaleType || (shift && (baseScaleType === 'MAJOR') ? shift : baseScaleType);
 
   const keyIndex = (hashString(genre) + hashString(mood) * 7) % ROOT_KEYS.length;
-  let root = ROOT_KEYS[keyIndex];
+  let root = overrides?.key && ROOT_KEYS.includes(overrides.key) ? overrides.key : ROOT_KEYS[keyIndex];
 
   let scaleKey = `${root}_${scaleType}`;
   if (!data.scales[scaleKey]) {

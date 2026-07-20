@@ -1,17 +1,29 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { Progression, ChordBlock, Alternative } from '../services/chord-engine';
 import './swap-sheet';
+
+const MENU_GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
+const MENU_MOODS = ['Uplifting', 'Melancholy', 'Dreamy', 'Tense', 'Warm', 'Nostalgic'];
+const MENU_KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const MENU_SCALES: { label: string; value: string }[] = [
+  { label: 'Major', value: 'MAJOR' },
+  { label: 'Minor', value: 'NATURAL_MINOR' },
+];
 
 @customElement('loop-screen')
 export class LoopScreen extends LitElement {
   @property({ type: Object }) progression!: Progression;
   @property({ type: Number }) activeIndex = 0;
+  @property({ type: Array }) order: number[] = [0, 1, 2, 3, 4];
   @property({ type: Boolean }) playing = true;
   @property({ type: Boolean }) showTheory = false;
   @property({ type: Boolean }) sheetOpen = false;
   @property({ type: Object }) swapChord: ChordBlock | null = null;
   @property({ type: Array }) alternatives: Alternative[] = [];
+
+  @state() private menuOpen = false;
+  @state() private spinning = false;
 
   static styles = css`
     :host {
@@ -272,6 +284,63 @@ export class LoopScreen extends LitElement {
     .loop-icon {
       font-size: 17px;
       color: var(--cv-ink-40);
+      cursor: pointer;
+      transition: transform .3s ease;
+    }
+    .loop-icon.spinning {
+      transform: rotate(360deg);
+    }
+    .menu-scrim {
+      position: absolute;
+      inset: 0;
+      z-index: 48;
+    }
+    .menu {
+      position: absolute;
+      top: 96px;
+      right: 20px;
+      width: 230px;
+      background: var(--cv-paper);
+      border: 1px solid var(--cv-ink-18);
+      border-radius: 10px;
+      box-shadow: 4px 4px 0 rgba(32, 26, 19, 0.15);
+      z-index: 49;
+      padding: 14px;
+      box-sizing: border-box;
+    }
+    .menu-label {
+      font-family: var(--cv-font-grotesk);
+      font-size: 10px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--cv-ink-40);
+      font-weight: 700;
+    }
+    .menu-label.spaced {
+      margin-top: 14px;
+    }
+    .menu-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 8px;
+    }
+    .menu-chip {
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-family: var(--cv-font-body);
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      background: var(--cv-ink-04);
+      color: var(--cv-ink-62);
+      border: 1px solid var(--cv-ink-18);
+    }
+    .menu-chip.selected {
+      background: var(--cv-ink);
+      color: var(--cv-cream);
+      border-color: var(--cv-ink);
     }
   `;
 
@@ -279,17 +348,61 @@ export class LoopScreen extends LitElement {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
 
+  private toggleMenu() {
+    this.menuOpen = !this.menuOpen;
+  }
+
+  private closeMenu() {
+    this.menuOpen = false;
+  }
+
+  private shuffle() {
+    this.spinning = true;
+    setTimeout(() => { this.spinning = false; }, 400);
+    this.emit('shuffle');
+  }
+
   render() {
     const p = this.progression;
-    const active = p.chords[this.activeIndex];
+    const activeChordIndex = this.order[this.activeIndex] ?? 0;
+    const active = p.chords[activeChordIndex];
     return html`
       <div class="frame">
         <div class="grain"></div>
         <div class="top-bar">
           <div class="icon-btn" @click=${() => this.emit('back')}>‹</div>
           <div class="top-label">${p.genre} · ${p.mood}</div>
-          <div class="icon-btn" @click=${() => this.emit('overflow')}>…</div>
+          <div class="icon-btn" @click=${() => this.toggleMenu()}>…</div>
         </div>
+
+        ${this.menuOpen ? html`
+          <div class="menu-scrim" @click=${() => this.closeMenu()}></div>
+          <div class="menu">
+            <div class="menu-label">Key &amp; scale</div>
+            <div class="menu-chips">
+              ${MENU_KEYS.map(k => html`
+                <div class="menu-chip ${k === p.key ? 'selected' : ''}" @click=${() => this.emit('set-key', k)}>${k}</div>
+              `)}
+            </div>
+            <div class="menu-chips">
+              ${MENU_SCALES.map(s => html`
+                <div class="menu-chip ${s.value === p.scaleType ? 'selected' : ''}" @click=${() => this.emit('set-scale', s.value)}>${s.label}</div>
+              `)}
+            </div>
+            <div class="menu-label spaced">Genre</div>
+            <div class="menu-chips">
+              ${MENU_GENRES.map(g => html`
+                <div class="menu-chip ${g === p.genre ? 'selected' : ''}" @click=${() => this.emit('set-genre', g)}>${g}</div>
+              `)}
+            </div>
+            <div class="menu-label spaced">Mood</div>
+            <div class="menu-chips">
+              ${MENU_MOODS.map(m => html`
+                <div class="menu-chip ${m === p.mood ? 'selected' : ''}" @click=${() => this.emit('set-mood', m)}>${m}</div>
+              `)}
+            </div>
+          </div>
+        ` : ''}
 
         <div class="theory-toggle">
           <div class="theory-inner" @click=${() => this.emit('theory-toggle')}>
@@ -299,10 +412,11 @@ export class LoopScreen extends LitElement {
         </div>
 
         <div class="chord-stack">
-          ${p.chords.map((c, i) => {
-            const isActive = i === this.activeIndex;
+          ${this.order.map((chordIndex, pos) => {
+            const c = p.chords[chordIndex];
+            const isActive = pos === this.activeIndex;
             return html`
-              <div class="chord-block ${isActive ? 'active' : ''}" style="background:${c.color}" @click=${() => this.emit('chord-tap', i)}>
+              <div class="chord-block ${isActive ? 'active' : ''}" style="background:${c.color}" @click=${() => this.emit('chord-tap', chordIndex)}>
                 <div class="chord-grain" style="opacity:${c.grain}"></div>
                 ${isActive ? html`
                   <div class="now-marker">
@@ -341,7 +455,7 @@ export class LoopScreen extends LitElement {
             ` : html`<div class="play-triangle"></div>`}
           </button>
           <div class="transport-label">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
-          <div class="loop-icon">↻</div>
+          <div class="loop-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.shuffle()}>↻</div>
         </div>
 
         ${this.sheetOpen && this.swapChord ? html`

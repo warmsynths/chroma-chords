@@ -153,16 +153,16 @@ export class SeedScreen extends LitElement {
     }
     .cta-wrap {
       position: relative;
-      height: 62px;
+      height: 60px;
       margin-top: 24px;
     }
     .cta-shadow {
       position: absolute;
-      top: 6px;
-      left: 6px;
+      top: 3px;
+      left: 3px;
       width: 100%;
       height: 56px;
-      background: var(--cv-accent);
+      background: rgba(32, 26, 19, 0.22);
       border-radius: 8px;
     }
     .cta {

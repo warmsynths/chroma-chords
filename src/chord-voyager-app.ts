@@ -20,6 +20,9 @@ export class ChordVoyagerApp extends LitElement {
   @state() private mood = 'Uplifting';
   @state() private progression: Progression | null = null;
   @state() private activeIndex = 0;
+  @state() private order: number[] = [0, 1, 2, 3, 4];
+  @state() private keyOverride: string | null = null;
+  @state() private scaleOverride: string | null = null;
   @state() private playing = true;
   @state() private showTheory = false;
   @state() private sheetOpen = false;
@@ -67,7 +70,7 @@ export class ChordVoyagerApp extends LitElement {
     this.stopAutoplay();
     this.autoplayTimer = setInterval(() => {
       if (!this.progression || !this.playing || this.sheetOpen) return;
-      this.activeIndex = (this.activeIndex + 1) % this.progression.chords.length;
+      this.activeIndex = (this.activeIndex + 1) % this.order.length;
       this.playActiveChord();
     }, 1700);
   }
@@ -81,7 +84,8 @@ export class ChordVoyagerApp extends LitElement {
 
   private playActiveChord() {
     if (!this.progression) return;
-    const chord = this.progression.chords[this.activeIndex];
+    const chordIndex = this.order[this.activeIndex] ?? 0;
+    const chord = this.progression.chords[chordIndex];
     playChord(chord.notes.map(n => `${n}4`), 1.0);
   }
 
@@ -94,8 +98,11 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   private onGenerate() {
+    this.keyOverride = null;
+    this.scaleOverride = null;
     const progression = generateProgression(this.chordData, this.genre, this.mood);
     this.progression = progression;
+    this.order = [0, 1, 2, 3, 4];
     this.activeIndex = 0;
     this.playing = true;
     this.screen = 'loop';
@@ -104,10 +111,56 @@ export class ChordVoyagerApp extends LitElement {
     this.playActiveChord();
   }
 
+  private regenerate() {
+    const progression = generateProgression(this.chordData, this.genre, this.mood, {
+      key: this.keyOverride ?? undefined,
+      scaleType: this.scaleOverride ?? undefined,
+    });
+    this.progression = progression;
+    this.order = [0, 1, 2, 3, 4];
+    this.activeIndex = 0;
+    this.saveProject();
+    this.playActiveChord();
+  }
+
+  private onSetKey(e: CustomEvent<string>) {
+    this.keyOverride = e.detail;
+    this.regenerate();
+  }
+
+  private onSetScale(e: CustomEvent<string>) {
+    this.scaleOverride = e.detail;
+    this.regenerate();
+  }
+
+  private onSetGenre(e: CustomEvent<string>) {
+    this.genre = e.detail;
+    this.regenerate();
+  }
+
+  private onSetMood(e: CustomEvent<string>) {
+    this.mood = e.detail;
+    this.regenerate();
+  }
+
+  private onShuffle() {
+    if (!this.progression) return;
+    const order = [...this.order];
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    this.order = order;
+    this.activeIndex = 0;
+    this.playActiveChord();
+  }
+
   private onBack() {
     this.stopAutoplay();
     this.screen = 'seed';
     this.sheetOpen = false;
+    this.keyOverride = null;
+    this.scaleOverride = null;
   }
 
   private onTheoryToggle() {
@@ -280,6 +333,7 @@ export class ChordVoyagerApp extends LitElement {
       <loop-screen
         .progression=${this.progression}
         .activeIndex=${this.activeIndex}
+        .order=${this.order}
         .playing=${this.playing}
         .showTheory=${this.showTheory}
         .sheetOpen=${this.sheetOpen}
@@ -292,6 +346,11 @@ export class ChordVoyagerApp extends LitElement {
         @close=${this.onSheetClose}
         @select-alternative=${this.onSelectAlternative}
         @voicing-preview=${this.onVoicingPreview}
+        @set-key=${this.onSetKey}
+        @set-scale=${this.onSetScale}
+        @set-genre=${this.onSetGenre}
+        @set-mood=${this.onSetMood}
+        @shuffle=${this.onShuffle}
       ></loop-screen>
     `;
   }
