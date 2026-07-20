@@ -160,10 +160,108 @@ const MOOD_DEGREE_BIAS: Record<string, string[]> = {
   Nostalgic: ['SUBMEDIANT', 'MEDIANT', 'DOMINANT'],
 };
 
-function hashString(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return h;
+interface ProgressionTemplate {
+  degrees: string[];
+}
+
+// Idiomatic 5-chord shapes per scale/mode, drawn from real progressions common to that
+// harmonic world (e.g. I-V-vi-IV pop, i-VI-VII-v cinematic minor, mixolydian I-bVII-IV vamps).
+// Genre picks the scale/mode via GENRE_SCALE; mood then re-weights which shape gets picked
+// (see degreeBiasWeight) so the same genre still varies with mood, and randomly among
+// same-weight shapes so repeated generations of the same genre+mood don't repeat.
+const PROGRESSION_TEMPLATES: Record<string, ProgressionTemplate[]> = {
+  MAJOR: [
+    { degrees: ['TONIC', 'DOMINANT', 'SUBMEDIANT', 'SUBDOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'DOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBMEDIANT', 'DOMINANT', 'SUBDOMINANT'] },
+    { degrees: ['SUBMEDIANT', 'SUBDOMINANT', 'TONIC', 'DOMINANT', 'SUBMEDIANT'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'SUBDOMINANT', 'DOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'SUBDOMINANT'] },
+    { degrees: ['TONIC', 'MEDIANT', 'SUBMEDIANT', 'SUBDOMINANT', 'DOMINANT'] },
+  ],
+  NATURAL_MINOR: [
+    { degrees: ['TONIC', 'SUBTONIC', 'SUBMEDIANT', 'SUBTONIC', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'TONIC', 'SUBMEDIANT'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBTONIC', 'DOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'SUBTONIC', 'SUBMEDIANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'SUBTONIC', 'TONIC'] },
+  ],
+  HARMONIC_MINOR: [
+    { degrees: ['TONIC', 'SUBMEDIANT', 'DOMINANT', 'TONIC', 'SUBDOMINANT'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'DOMINANT', 'TONIC', 'SUBMEDIANT'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'DOMINANT', 'TONIC', 'SUBMEDIANT'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'DOMINANT', 'TONIC'] },
+  ],
+  DORIAN: [
+    { degrees: ['TONIC', 'SUBDOMINANT', 'TONIC', 'SUBTONIC', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBTONIC', 'SUBDOMINANT', 'TONIC', 'SUBDOMINANT'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'TONIC', 'SUBDOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'SUBDOMINANT', 'TONIC'] },
+  ],
+  MIXOLYDIAN: [
+    { degrees: ['TONIC', 'SUBTONIC', 'SUBDOMINANT', 'TONIC', 'SUBTONIC'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'TONIC', 'SUBDOMINANT'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'SUBTONIC', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBTONIC', 'TONIC', 'SUBDOMINANT', 'SUBTONIC'] },
+  ],
+  LYDIAN: [
+    { degrees: ['TONIC', 'SUPERTONIC', 'TONIC', 'DOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUPERTONIC', 'TONIC', 'DOMINANT'] },
+    { degrees: ['TONIC', 'DOMINANT', 'SUPERTONIC', 'TONIC', 'SUPERTONIC'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'SUBMEDIANT', 'DOMINANT', 'TONIC'] },
+  ],
+};
+
+function degreeBiasWeight(template: ProgressionTemplate, bias: string[]): number {
+  return 1 + template.degrees.filter(d => bias.includes(d)).length * 0.6;
+}
+
+function pickWeighted<T>(items: T[], weight: (item: T) => number): T {
+  const total = items.reduce((sum, item) => sum + weight(item), 0);
+  let r = Math.random() * total;
+  for (const item of items) {
+    r -= weight(item);
+    if (r <= 0) return item;
+  }
+  return items[items.length - 1];
+}
+
+function pickOne<T>(items: T[]): T | undefined {
+  if (!items.length) return undefined;
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+// Fallback for scale/mode combos without a curated template bank entry: a biased random
+// walk over the diatonic neighbor graph encoded in the chord data's next_chord_options.
+function walkDegreeGraph(scale: ScaleProfile, scaleKey: string, degreeOrder: string[], bias: string[]): string[] {
+  const chosenDegrees: string[] = ['TONIC'];
+  let currentDegree = 'TONIC';
+  for (let i = 1; i < 5; i++) {
+    const options = (scale.degrees[currentDegree]?.next_chord_options || [])
+      .filter(o => o.nodeId.startsWith(`${scaleKey}_`))
+      .map(o => o.nodeId.replace(`${scaleKey}_`, ''))
+      .filter(d => degreeOrder.includes(d));
+
+    if (!options.length) {
+      currentDegree = 'TONIC';
+      chosenDegrees.push(currentDegree);
+      continue;
+    }
+
+    let pool = options;
+    if (i === 4) {
+      const resolving = options.filter(d => d === 'TONIC' || d === 'DOMINANT');
+      if (resolving.length) pool = resolving;
+    } else {
+      const biased = options.filter(d => bias.includes(d));
+      if (biased.length && Math.random() < 0.6) pool = biased;
+    }
+
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    currentDegree = pick;
+    chosenDegrees.push(pick);
+  }
+  return chosenDegrees;
 }
 
 function noteName(pc: number, preferFlat: boolean): string {
@@ -171,11 +269,26 @@ function noteName(pc: number, preferFlat: boolean): string {
   return preferFlat ? NOTE_FLAT[idx] : NOTE_SHARP[idx];
 }
 
+// Chord names in the source data are uppercase with sharps as '#' but flats written as a
+// literal 'B' after the root letter (e.g. "BBMAJ" = Bb major, "ABMAJ" = Ab major) — not
+// standard "Bb"/"b" notation, so this can't be a simple case-insensitive regex match.
 function parseChordSymbol(symbol: string): { root: string; quality: keyof typeof QUALITY_INTERVALS } {
-  const m = symbol.match(/^[A-Ga-g][#b]?/);
-  const rootRaw = m ? m[0] : 'C';
-  const root = rootRaw[0].toUpperCase() + rootRaw.slice(1);
-  const rest = symbol.slice(rootRaw.length).toLowerCase();
+  const first = symbol[0]?.toUpperCase();
+  let root = 'C';
+  let rest = symbol;
+  if (first && /[A-G]/.test(first)) {
+    if (symbol[1] === 'B') {
+      root = `${first}b`;
+      rest = symbol.slice(2);
+    } else if (symbol[1] === '#') {
+      root = `${first}#`;
+      rest = symbol.slice(2);
+    } else {
+      root = first;
+      rest = symbol.slice(1);
+    }
+  }
+  rest = rest.toLowerCase();
   let quality: keyof typeof QUALITY_INTERVALS = 'maj';
   if (rest.includes('maj7')) quality = 'maj7';
   else if (rest.includes('min7') || rest.includes('m7')) quality = 'min7';
@@ -348,8 +461,7 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
   const shift = MOOD_SHIFT[mood];
   const scaleType = overrides?.scaleType || (shift && (baseScaleType === 'MAJOR') ? shift : baseScaleType);
 
-  const keyIndex = (hashString(genre) + hashString(mood) * 7) % ROOT_KEYS.length;
-  let root = overrides?.key && ROOT_KEYS.includes(overrides.key) ? overrides.key : ROOT_KEYS[keyIndex];
+  let root = overrides?.key && ROOT_KEYS.includes(overrides.key) ? overrides.key : pickOne(ROOT_KEYS)!;
 
   let scaleKey = `${root}_${scaleType}`;
   if (!data.scales[scaleKey]) {
@@ -361,40 +473,13 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
 
   const degreeOrder = Object.keys(scale.degrees);
   const bias = MOOD_DEGREE_BIAS[mood] || [];
-  const rngSeed = hashString(`${genre}:${mood}:${Date.now() % 997}`);
-  let seed = rngSeed;
-  const rand = () => {
-    seed = (seed * 1103515245 + 12345) >>> 0;
-    return (seed >>> 8) / 0xffffff;
-  };
 
-  const chosenDegrees: string[] = ['TONIC'];
-  let currentDegree = 'TONIC';
-  for (let i = 1; i < 5; i++) {
-    const options = scale.degrees[currentDegree].next_chord_options
-      .filter(o => o.nodeId.startsWith(`${scaleKey}_`))
-      .map(o => o.nodeId.replace(`${scaleKey}_`, ''))
-      .filter(d => degreeOrder.includes(d));
+  const templates = PROGRESSION_TEMPLATES[scaleType] || [];
+  const validTemplates = templates.filter(t => t.degrees.every(d => degreeOrder.includes(d)));
 
-    if (!options.length) {
-      currentDegree = 'TONIC';
-      chosenDegrees.push(currentDegree);
-      continue;
-    }
-
-    let pool = options;
-    if (i === 4) {
-      const resolving = options.filter(d => d === 'TONIC' || d === 'DOMINANT');
-      if (resolving.length) pool = resolving;
-    } else {
-      const biased = options.filter(d => bias.includes(d));
-      if (biased.length && rand() < 0.6) pool = biased;
-    }
-
-    const pick = pool[Math.floor(rand() * pool.length)];
-    currentDegree = pick;
-    chosenDegrees.push(pick);
-  }
+  const chosenDegrees = validTemplates.length
+    ? pickWeighted(validTemplates, t => degreeBiasWeight(t, bias)).degrees
+    : walkDegreeGraph(scale, scaleKey, degreeOrder, bias);
 
   const chords = chosenDegrees.map(degree => buildChordBlock(scaleKey, degree, scale, preferFlat));
 
@@ -409,36 +494,34 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
   return { genre, mood, key: root, scaleType, bpm, chords };
 }
 
-interface AltTemplate {
-  label: string;
-  sub: string;
-  pickDegree: (current: string, degreeOrder: string[]) => string | null;
-  borrow?: boolean;
+// Each category offers several real candidate degrees rather than one fixed target, so
+// re-opening the swap sheet on the same chord doesn't always surface the same four chords.
+function pickDegreeExcluding(candidates: string[], degreeOrder: string[], exclude: string): string | undefined {
+  const available = candidates.filter(d => degreeOrder.includes(d));
+  const preferred = available.filter(d => d !== exclude);
+  return pickOne(preferred.length ? preferred : available);
 }
 
-const ALT_TEMPLATES: AltTemplate[] = [
-  {
-    label: 'Darker',
-    sub: 'heavier, more shadow',
-    pickDegree: () => null,
-    borrow: true,
-  },
-  {
-    label: 'More tension',
-    sub: 'sharper pull forward',
-    pickDegree: (_current, order) => order.includes('DOMINANT') ? 'DOMINANT' : (order.includes('LEADING-TONE') ? 'LEADING-TONE' : null),
-  },
-  {
-    label: 'Dreamier',
-    sub: 'softer, more air',
-    pickDegree: (_current, order) => order.includes('SUBDOMINANT') ? 'SUBDOMINANT' : (order.includes('MEDIANT') ? 'MEDIANT' : null),
-  },
-  {
-    label: 'Resolve home',
-    sub: 'settles back to center',
-    pickDegree: () => 'TONIC',
-  },
-];
+const CHORD_SUFFIX: Record<string, string> = {
+  maj: '', min: 'm', dim: 'dim', aug: 'aug', dom7: '7', min7: 'm7', maj7: 'maj7', dim7: 'dim7', sus4: 'sus4',
+};
+
+// The source data only has NATURAL_MINOR scales for a handful of keys (no flat-major keys),
+// so borrowing a real parallel-mode chord isn't always possible. Synthesize a plausible
+// borrowed chord directly by transposition instead of leaving "Darker" with no option.
+function synthBorrowedBlock(root: string, semitones: number, quality: keyof typeof QUALITY_INTERVALS, functionLabel: string, roman: string, tag: string, preferFlat: boolean): ChordBlock {
+  const rootPc = (PITCH_CLASS[root] ?? 0) + semitones;
+  const chordRoot = noteName(rootPc, preferFlat);
+  const name = `${chordRoot}${CHORD_SUFFIX[quality]}`;
+  const notes = QUALITY_INTERVALS[quality].map(iv => noteName(rootPc + iv, preferFlat));
+  const tension = 0.3;
+  return {
+    name, tag, roman, color: colorForTension(tension), grain: grainForTension(tension),
+    functionLabel, notes, scaleLabel: 'Borrowed',
+    desc: `${name} borrows its color from outside the current key.`,
+    degree: 'BORROWED', scaleKey: '', tension,
+  };
+}
 
 export function rootOfChordName(name: string): string {
   const m = name.match(/^[A-Ga-g][#b]?/);
@@ -468,43 +551,86 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
   const scale = data.scales[chord.scaleKey];
   const degreeOrder = Object.keys(scale.degrees);
   const preferFlat = FLAT_TONICS.has(progression.key) || progression.key.includes('b');
+  const results: Alternative[] = [];
 
-  return ALT_TEMPLATES.map(tpl => {
-    if (tpl.borrow) {
-      const parallelType = progression.scaleType.includes('MAJOR') ? 'NATURAL_MINOR' : 'MAJOR';
-      const parallelKey = `${progression.key}_${parallelType}`;
-      const parallelScale = data.scales[parallelKey];
-      const borrowedDegree = parallelType === 'NATURAL_MINOR' ? 'SUBMEDIANT' : 'SUBDOMINANT';
-      if (parallelScale && parallelScale.degrees[borrowedDegree]) {
-        const block = buildChordBlock(parallelKey, borrowedDegree, parallelScale, preferFlat);
-        return {
-          label: tpl.label,
-          sub: tpl.sub,
-          chord: block,
-          functionCaption: `Borrowed · ${block.notes.join(' · ')}`,
-          rationale: `A borrowed chord — it darkens the color with a shadow pulled from the parallel ${parallelType === 'NATURAL_MINOR' ? 'minor' : 'major'}.`,
-        };
-      }
+  // Darker — a borrowed chord from the parallel mode, varying which degree gets borrowed.
+  const parallelType = progression.scaleType.includes('MINOR') ? 'MAJOR' : 'NATURAL_MINOR';
+  const parallelKey = `${progression.key}_${parallelType}`;
+  const parallelScale = data.scales[parallelKey];
+  const borrowCandidates = parallelType === 'NATURAL_MINOR' ? ['SUBMEDIANT', 'MEDIANT', 'SUBDOMINANT'] : ['SUBDOMINANT', 'SUBMEDIANT'];
+  if (parallelScale) {
+    const borrowedDegree = pickDegreeExcluding(borrowCandidates, Object.keys(parallelScale.degrees), chord.degree);
+    if (borrowedDegree) {
+      const block = buildChordBlock(parallelKey, borrowedDegree, parallelScale, preferFlat);
+      results.push({
+        label: 'Darker',
+        sub: 'heavier, more shadow',
+        chord: block,
+        functionCaption: `Borrowed · ${block.notes.join(' · ')}`,
+        rationale: `A borrowed chord from the parallel ${parallelType === 'NATURAL_MINOR' ? 'minor' : 'major'} — it darkens the color with an unexpected shadow.`,
+      });
     }
+  } else {
+    const block = parallelType === 'NATURAL_MINOR'
+      ? synthBorrowedBlock(progression.key, 8, 'maj', 'Submediant', 'bVI', 'hold', preferFlat)
+      : synthBorrowedBlock(progression.key, 5, 'maj', 'Subdominant', 'IV', 'lift', preferFlat);
+    results.push({
+      label: 'Darker',
+      sub: 'heavier, more shadow',
+      chord: block,
+      functionCaption: `Borrowed · ${block.notes.join(' · ')}`,
+      rationale: `A borrowed chord — it darkens the color with a shadow pulled from outside the current key.`,
+    });
+  }
 
-    const degree = tpl.pickDegree(chord.degree, degreeOrder);
-    const targetDegree = degree && scale.degrees[degree] ? degree : chord.degree;
-    const block = buildChordBlock(chord.scaleKey, targetDegree, scale, preferFlat);
-    const isTension = tpl.label === 'More tension';
-    const rationale = targetDegree === chord.degree
-      ? `Stays close to the current color, ${block.functionLabel.toLowerCase()} in feel.`
-      : isTension
-        ? `Aimed at the ${block.functionLabel.toLowerCase()} — it sharpens the pull forward with extra bite.`
-        : tpl.label === 'Resolve home'
-          ? `Returns to the tonic — full resolution, the sense of arriving home.`
-          : `Soft and airy — it floats rather than resolving.`;
-
-    return {
-      label: tpl.label,
-      sub: tpl.sub,
+  // More tension — usually the dominant family, but occasionally reach into the harmonic-minor
+  // dominant (a raised leading tone) when we're in natural minor, for extra bite.
+  let tensionScaleKey = chord.scaleKey;
+  let tensionScale = scale;
+  if (progression.scaleType === 'NATURAL_MINOR' && Math.random() < 0.5) {
+    const hmKey = `${progression.key}_HARMONIC_MINOR`;
+    const hmScale = data.scales[hmKey];
+    if (hmScale?.degrees.DOMINANT) {
+      tensionScaleKey = hmKey;
+      tensionScale = hmScale;
+    }
+  }
+  const tensionDegree = pickDegreeExcluding(['DOMINANT', 'LEADING-TONE', 'SUPERTONIC'], Object.keys(tensionScale.degrees), chord.degree);
+  if (tensionDegree) {
+    const block = buildChordBlock(tensionScaleKey, tensionDegree, tensionScale, preferFlat);
+    results.push({
+      label: 'More tension',
+      sub: 'sharper pull forward',
       chord: block,
       functionCaption: `${block.functionLabel} · ${block.notes.join(' · ')}`,
-      rationale,
-    };
-  });
+      rationale: `Aimed at the ${block.functionLabel.toLowerCase()} — it sharpens the pull forward with extra bite.`,
+    });
+  }
+
+  // Dreamier — a softer, non-resolving degree.
+  const dreamierDegree = pickDegreeExcluding(['SUBDOMINANT', 'MEDIANT', 'SUBMEDIANT'], degreeOrder, chord.degree);
+  if (dreamierDegree) {
+    const block = buildChordBlock(chord.scaleKey, dreamierDegree, scale, preferFlat);
+    results.push({
+      label: 'Dreamier',
+      sub: 'softer, more air',
+      chord: block,
+      functionCaption: `${block.functionLabel} · ${block.notes.join(' · ')}`,
+      rationale: `Soft and airy — it floats rather than resolving.`,
+    });
+  }
+
+  // Resolve home — always the tonic.
+  if (degreeOrder.includes('TONIC')) {
+    const block = buildChordBlock(chord.scaleKey, 'TONIC', scale, preferFlat);
+    results.push({
+      label: 'Resolve home',
+      sub: 'settles back to center',
+      chord: block,
+      functionCaption: `${block.functionLabel} · ${block.notes.join(' · ')}`,
+      rationale: `Returns to the tonic — full resolution, the sense of arriving home.`,
+    });
+  }
+
+  return results;
 }
