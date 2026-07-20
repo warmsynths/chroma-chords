@@ -21,7 +21,7 @@ const MENU_CLOSE_MS = 220;
 export class LoopScreen extends LitElement {
   @property({ type: Object }) progression!: Progression;
   @property({ type: Number }) activeIndex = 0;
-  @property({ type: Array }) order: number[] = [0, 1, 2, 3, 4];
+  @property({ type: Array }) order: number[] = [0, 1, 2, 3];
   @property({ type: Boolean }) playing = true;
   @property({ type: Boolean }) showTheory = false;
   @property({ type: Boolean }) sheetOpen = false;

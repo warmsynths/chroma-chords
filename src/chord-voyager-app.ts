@@ -20,7 +20,7 @@ export class ChordVoyagerApp extends LitElement {
   @state() private mood = 'Uplifting';
   @state() private progression: Progression | null = null;
   @state() private activeIndex = 0;
-  @state() private order: number[] = [0, 1, 2, 3, 4];
+  @state() private order: number[] = [0, 1, 2, 3];
   @state() private keyOverride: string | null = null;
   @state() private scaleOverride: string | null = null;
   @state() private playing = true;
@@ -103,7 +103,7 @@ export class ChordVoyagerApp extends LitElement {
     this.scaleOverride = null;
     const progression = generateProgression(this.chordData, this.genre, this.mood);
     this.progression = progression;
-    this.order = [0, 1, 2, 3, 4];
+    this.order = [0, 1, 2, 3];
     this.activeIndex = 0;
     this.playing = false;
     this.screen = 'loop';
@@ -117,7 +117,7 @@ export class ChordVoyagerApp extends LitElement {
       scaleType: this.scaleOverride ?? undefined,
     });
     this.progression = progression;
-    this.order = [0, 1, 2, 3, 4];
+    this.order = [0, 1, 2, 3];
     this.activeIndex = 0;
     this.saveProject();
     if (this.playing) this.playActiveChord();

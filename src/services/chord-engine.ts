@@ -164,51 +164,50 @@ interface ProgressionTemplate {
   degrees: string[];
 }
 
-// Idiomatic 5-chord shapes per scale/mode, drawn from real progressions common to that
-// harmonic world (e.g. I-V-vi-IV pop, i-VI-VII-v cinematic minor, mixolydian I-bVII-IV vamps).
-// Genre picks the scale/mode via GENRE_SCALE; mood then re-weights which shape gets picked
-// (see degreeBiasWeight) so the same genre still varies with mood, and randomly among
-// same-weight shapes so repeated generations of the same genre+mood don't repeat.
+// Idiomatic 4-chord shapes per scale/mode, drawn from real progressions common to that
+// harmonic world (e.g. I-V-vi-IV pop, i-VI-III-VII cinematic minor, mixolydian I-bVII-IV vamps).
+// Every template uses 4 distinct degrees — no repeats — so the loop never lands on the
+// same chord twice. Genre picks the scale/mode via GENRE_SCALE; mood then re-weights which
+// shape gets picked (see degreeBiasWeight) so the same genre still varies with mood, and
+// randomly among same-weight shapes so repeated generations of the same genre+mood don't repeat.
 const PROGRESSION_TEMPLATES: Record<string, ProgressionTemplate[]> = {
   MAJOR: [
-    { degrees: ['TONIC', 'DOMINANT', 'SUBMEDIANT', 'SUBDOMINANT', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'DOMINANT', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBMEDIANT', 'DOMINANT', 'SUBDOMINANT'] },
-    { degrees: ['SUBMEDIANT', 'SUBDOMINANT', 'TONIC', 'DOMINANT', 'SUBMEDIANT'] },
-    { degrees: ['TONIC', 'SUPERTONIC', 'SUBDOMINANT', 'DOMINANT', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'SUBDOMINANT'] },
-    { degrees: ['TONIC', 'MEDIANT', 'SUBMEDIANT', 'SUBDOMINANT', 'DOMINANT'] },
+    { degrees: ['TONIC', 'DOMINANT', 'SUBMEDIANT', 'SUBDOMINANT'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'DOMINANT'] },
+    { degrees: ['SUBMEDIANT', 'SUBDOMINANT', 'TONIC', 'DOMINANT'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'SUBDOMINANT', 'DOMINANT'] },
+    { degrees: ['TONIC', 'MEDIANT', 'SUBMEDIANT', 'SUBDOMINANT'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBMEDIANT', 'DOMINANT'] },
   ],
   NATURAL_MINOR: [
-    { degrees: ['TONIC', 'SUBTONIC', 'SUBMEDIANT', 'SUBTONIC', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'TONIC', 'SUBMEDIANT'] },
-    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBTONIC', 'DOMINANT', 'TONIC'] },
-    { degrees: ['TONIC', 'SUPERTONIC', 'SUBTONIC', 'SUBMEDIANT', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'SUBTONIC', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'MEDIANT', 'SUBTONIC'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'MEDIANT'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBTONIC', 'DOMINANT'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'SUBTONIC', 'SUBMEDIANT'] },
   ],
   HARMONIC_MINOR: [
-    { degrees: ['TONIC', 'SUBMEDIANT', 'DOMINANT', 'TONIC', 'SUBDOMINANT'] },
-    { degrees: ['TONIC', 'SUPERTONIC', 'DOMINANT', 'TONIC', 'SUBMEDIANT'] },
-    { degrees: ['TONIC', 'SUBDOMINANT', 'DOMINANT', 'TONIC', 'SUBMEDIANT'] },
-    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'DOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'DOMINANT', 'SUBDOMINANT'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'DOMINANT', 'SUBMEDIANT'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUPERTONIC', 'DOMINANT'] },
   ],
   DORIAN: [
-    { degrees: ['TONIC', 'SUBDOMINANT', 'TONIC', 'SUBTONIC', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBTONIC', 'SUBDOMINANT', 'TONIC', 'SUBDOMINANT'] },
-    { degrees: ['TONIC', 'SUPERTONIC', 'TONIC', 'SUBDOMINANT', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'SUBDOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'SUPERTONIC'] },
+    { degrees: ['TONIC', 'SUBTONIC', 'SUBDOMINANT', 'SUPERTONIC'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'SUBDOMINANT', 'SUBTONIC'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUPERTONIC', 'SUBTONIC'] },
   ],
   MIXOLYDIAN: [
-    { degrees: ['TONIC', 'SUBTONIC', 'SUBDOMINANT', 'TONIC', 'SUBTONIC'] },
-    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'TONIC', 'SUBDOMINANT'] },
-    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'SUBTONIC', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBTONIC', 'TONIC', 'SUBDOMINANT', 'SUBTONIC'] },
+    { degrees: ['TONIC', 'SUBTONIC', 'SUBDOMINANT', 'SUBMEDIANT'] },
+    { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'SUPERTONIC'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'SUBTONIC'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'SUBTONIC', 'SUBDOMINANT'] },
   ],
   LYDIAN: [
-    { degrees: ['TONIC', 'SUPERTONIC', 'TONIC', 'DOMINANT', 'TONIC'] },
-    { degrees: ['TONIC', 'SUBMEDIANT', 'SUPERTONIC', 'TONIC', 'DOMINANT'] },
-    { degrees: ['TONIC', 'DOMINANT', 'SUPERTONIC', 'TONIC', 'SUPERTONIC'] },
-    { degrees: ['TONIC', 'SUPERTONIC', 'SUBMEDIANT', 'DOMINANT', 'TONIC'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'SUBMEDIANT', 'DOMINANT'] },
+    { degrees: ['TONIC', 'DOMINANT', 'SUPERTONIC', 'SUBMEDIANT'] },
+    { degrees: ['TONIC', 'SUBMEDIANT', 'DOMINANT', 'SUPERTONIC'] },
+    { degrees: ['TONIC', 'SUPERTONIC', 'DOMINANT', 'SUBMEDIANT'] },
   ],
 };
 
@@ -231,25 +230,33 @@ function pickOne<T>(items: T[]): T | undefined {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+const PROGRESSION_LENGTH = 4;
+
 // Fallback for scale/mode combos without a curated template bank entry: a biased random
 // walk over the diatonic neighbor graph encoded in the chord data's next_chord_options.
+// Prefers a degree not already used in this progression at every step (falling back to
+// "not the immediately previous degree" only when truly no fresh option exists), so this
+// never lands on the same chord twice in a row and rarely repeats one at all.
 function walkDegreeGraph(scale: ScaleProfile, scaleKey: string, degreeOrder: string[], bias: string[]): string[] {
   const chosenDegrees: string[] = ['TONIC'];
   let currentDegree = 'TONIC';
-  for (let i = 1; i < 5; i++) {
-    const options = (scale.degrees[currentDegree]?.next_chord_options || [])
+  for (let i = 1; i < PROGRESSION_LENGTH; i++) {
+    const rawOptions = (scale.degrees[currentDegree]?.next_chord_options || [])
       .filter(o => o.nodeId.startsWith(`${scaleKey}_`))
       .map(o => o.nodeId.replace(`${scaleKey}_`, ''))
       .filter(d => degreeOrder.includes(d));
 
+    const fresh = rawOptions.filter(d => !chosenDegrees.includes(d));
+    let options = fresh.length ? fresh : rawOptions.filter(d => d !== currentDegree);
+
     if (!options.length) {
-      currentDegree = 'TONIC';
-      chosenDegrees.push(currentDegree);
-      continue;
+      const unused = degreeOrder.filter(d => d !== currentDegree && !chosenDegrees.includes(d));
+      options = unused.length ? unused : degreeOrder.filter(d => d !== currentDegree);
     }
+    if (!options.length) options = degreeOrder;
 
     let pool = options;
-    if (i === 4) {
+    if (i === PROGRESSION_LENGTH - 1) {
       const resolving = options.filter(d => d === 'TONIC' || d === 'DOMINANT');
       if (resolving.length) pool = resolving;
     } else {
