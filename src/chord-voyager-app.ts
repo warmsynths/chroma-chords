@@ -58,7 +58,8 @@ export class ChordVoyagerApp extends LitElement {
       console.error('Failed to load chord voyager data:', err);
     }
 
-    this.initSilentAuth();
+    // Not currently surfaced in the UI (no login/sync affordance), so don't trigger it on load.
+    // this.initSilentAuth();
   }
 
   disconnectedCallback() {
