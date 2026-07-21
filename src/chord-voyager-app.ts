@@ -4,7 +4,7 @@ import { ProjectService, ProjectData } from './services/project-service';
 import { GoogleDriveService } from './services/google-drive-service';
 import { playChordForGenre } from './services/audio-service';
 import {
-  loadChordData, generateProgression, generateAlternatives,
+  loadChordData, generateProgression, generateAlternatives, applyVoicingToChord,
   RawChordData, Progression, ChordBlock, Alternative,
 } from './services/chord-engine';
 import './components/seed-screen';
@@ -222,6 +222,17 @@ export class ChordVoyagerApp extends LitElement {
     playChordForGenre(e.detail.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.6 });
   }
 
+  // Applying a quality/extension in the swap sheet used to only preview the sound — the
+  // progression itself was never touched, so the chord reverted the moment the sheet closed
+  // or the loop moved to the next chord. Persist it into the real chord here instead.
+  private onVoicingChange(e: CustomEvent<{ quality: string; extension: string }>) {
+    if (!this.progression || this.swapIndex === null) return;
+    const chords = [...this.progression.chords];
+    chords[this.swapIndex] = applyVoicingToChord(chords[this.swapIndex], e.detail.quality, e.detail.extension);
+    this.progression = { ...this.progression, chords };
+    this.saveProject();
+  }
+
   private saveProject() {
     if (!this.progression) return;
     const id = this.currentProjectId || Math.random().toString(36).slice(2, 11);
@@ -357,6 +368,7 @@ export class ChordVoyagerApp extends LitElement {
         .showTheory=${this.showTheory}
         .sheetOpen=${this.sheetOpen}
         .swapChord=${swapChord}
+        .swapIndex=${this.swapIndex}
         .alternatives=${this.alternatives}
         @back=${this.onBack}
         @theory-toggle=${this.onTheoryToggle}
@@ -365,6 +377,7 @@ export class ChordVoyagerApp extends LitElement {
         @close=${this.onSheetClose}
         @select-alternative=${this.onSelectAlternative}
         @voicing-preview=${this.onVoicingPreview}
+        @voicing-change=${this.onVoicingChange}
         @set-key=${this.onSetKey}
         @set-scale=${this.onSetScale}
         @set-genre=${this.onSetGenre}

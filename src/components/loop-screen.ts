@@ -21,6 +21,12 @@ const MENU_SCALES: { label: string; value: string }[] = [
 // runs, and reverse that order on close so the fade-out plays before the DOM is removed.
 const MENU_CLOSE_MS = 220;
 
+// Same mount/visible pattern for the mobile swap sheet: it's driven by the parent's
+// `sheetOpen` prop rather than an internal open/close call, so `updated()` watches for that
+// prop flipping and drives the mount timing itself. Duration matches the sheet's own slide
+// transition (see swap-sheet.ts's `.sheet` transition).
+const SHEET_CLOSE_MS = 280;
+
 @customElement('loop-screen')
 export class LoopScreen extends LitElement {
   @property({ type: Object }) progression!: Progression;
@@ -30,18 +36,22 @@ export class LoopScreen extends LitElement {
   @property({ type: Boolean }) showTheory = false;
   @property({ type: Boolean }) sheetOpen = false;
   @property({ type: Object }) swapChord: ChordBlock | null = null;
+  @property({ type: Number }) swapIndex: number | null = null;
   @property({ type: Array }) alternatives: Alternative[] = [];
 
   @state() private menuMounted = false;
   @state() private menuVisible = false;
   @state() private shareMounted = false;
   @state() private shareVisible = false;
+  @state() private sheetMounted = false;
+  @state() private sheetVisible = false;
   @state() private toast: string | null = null;
   @state() private spinning = false;
   @state() private drag: { screen: 'mobile' | 'desktop'; pos: number; offsetX: number; offsetY: number } | null = null;
 
   private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  private sheetCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Drag-to-reorder: press-and-hold (150ms, without moving >8px) starts a drag instead of a
@@ -68,6 +78,7 @@ export class LoopScreen extends LitElement {
     super.disconnectedCallback();
     if (this.menuCloseTimer) clearTimeout(this.menuCloseTimer);
     if (this.shareCloseTimer) clearTimeout(this.shareCloseTimer);
+    if (this.sheetCloseTimer) clearTimeout(this.sheetCloseTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.pressTimer) clearTimeout(this.pressTimer);
     window.removeEventListener('pointermove', this.onDragMove);
@@ -597,6 +608,19 @@ export class LoopScreen extends LitElement {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
 
+  updated(changed: Map<string, unknown>) {
+    if (changed.has('sheetOpen')) {
+      if (this.sheetOpen) {
+        if (this.sheetCloseTimer) { clearTimeout(this.sheetCloseTimer); this.sheetCloseTimer = null; }
+        this.sheetMounted = true;
+        requestAnimationFrame(() => requestAnimationFrame(() => { this.sheetVisible = true; }));
+      } else {
+        this.sheetVisible = false;
+        this.sheetCloseTimer = setTimeout(() => { this.sheetMounted = false; }, SHEET_CLOSE_MS);
+      }
+    }
+  }
+
   private toggleMenu() {
     if (this.menuMounted) this.closeMenu();
     else this.openMenu();
@@ -850,11 +874,13 @@ export class LoopScreen extends LitElement {
           <div class="dice-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
         </div>
 
-        ${this.sheetOpen && this.swapChord ? html`
+        ${this.sheetMounted && this.swapChord ? html`
           <swap-sheet
             .chord=${this.swapChord}
             .alternatives=${this.alternatives}
             .showTheory=${this.showTheory}
+            .visible=${this.sheetVisible}
+            .resetKey=${this.swapIndex}
           ></swap-sheet>
         ` : ''}
         </div>
@@ -965,6 +991,7 @@ export class LoopScreen extends LitElement {
                 .chord=${this.swapChord}
                 .alternatives=${this.alternatives}
                 .showTheory=${this.showTheory}
+                .resetKey=${this.swapIndex}
               ></swap-sheet>
             ` : html`
               <div class="desktop-swap-empty">Click a chord to hear it differently.</div>

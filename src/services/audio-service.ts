@@ -136,7 +136,7 @@ export function midiToNoteName(midi: number): string {
  */
 export function playNote(noteName: string, duration = 0.35): void {
   try {
-    Tone.start().then(() => {
+    Promise.all([Tone.start(), Tone.loaded()]).then(() => {
       sampler.triggerAttackRelease(noteName, duration);
     }).catch((e) => {
       console.warn("Audio playback gesture failed:", e);
@@ -207,7 +207,7 @@ function orderNotesForArp(notes: string[], arpMode: string): string[] {
  */
 export function playChord(noteNames: string[], duration = 0.7, humanState?: any, instrument: InstrumentId = 'rhodes'): void {
   try {
-    Tone.start().then(() => {
+    Promise.all([Tone.start(), Tone.loaded()]).then(() => {
       const voice = getVoice(instrument);
       const count = noteNames.length;
       const densityScaling = count <= 1 ? 1 : Math.max(0.4, 1 / Math.sqrt(count));

@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, state, query } from 'lit/decorators.js';
 import { Alternative, ChordBlock, buildVoicingNotes, rootOfChordName } from '../services/chord-engine';
 
 const WHITE_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -45,10 +45,30 @@ export class SwapSheet extends LitElement {
   // 'sheet' (default): mobile bottom sheet with scrim. 'panel': inline, for the desktop
   // right-hand column — same content, no overlay/scrim/grabber.
   @property({ type: String }) variant: 'sheet' | 'panel' = 'sheet';
+  // Drives the slide-in/out transition. The parent mounts this component slightly before
+  // flipping this true (and unmounts it slightly after flipping it false) so the CSS
+  // transition has time to play — see loop-screen's sheetMounted/sheetVisible.
+  @property({ type: Boolean }) visible = false;
+  // Identifies which chord slot is being edited (the progression index). Quality/extension
+  // reset only when this changes — not whenever `chord` changes, since applying a voicing
+  // itself updates `chord` (new name/notes round-tripped back down) and that must NOT wipe
+  // out the very selection that just caused it.
+  @property({ type: Number }) resetKey: number | null = null;
 
   @state() private voicingOpen = false;
   @state() private quality = 'Major';
   @state() private extension = 'None';
+  // Grabber drag-to-dismiss: tracks live finger position while dragging (1:1, no
+  // transition) and, on release, either eases back to open or finishes the slide shut before
+  // telling the parent to close — so the sheet is already off-screen by the time it unmounts.
+  @state() private dragY = 0;
+  @state() private dragging = false;
+  @state() private snapping = false;
+
+  private dragStartY = 0;
+  private dragStartTime = 0;
+
+  @query('.sheet') private sheetEl?: HTMLElement;
 
   static styles = css`
     :host {
@@ -57,15 +77,20 @@ export class SwapSheet extends LitElement {
     .scrim {
       position: absolute;
       inset: 0;
-      background: rgba(32, 26, 19, 0.55);
+      background: rgba(32, 26, 19, 0);
       z-index: 40;
+      transition: background .28s ease;
+    }
+    .scrim.visible {
+      background: rgba(32, 26, 19, 0.55);
     }
     .sheet {
       position: absolute;
       left: 0;
       right: 0;
       bottom: 0;
-      height: 74%;
+      height: auto;
+      max-height: 74%;
       background: var(--cv-paper);
       border-radius: 14px 14px 0 0;
       z-index: 41;
@@ -75,6 +100,11 @@ export class SwapSheet extends LitElement {
       flex-direction: column;
       border-top: 1px solid var(--cv-ink-20);
       box-shadow: 0 -2px 0 rgba(32, 26, 19, 0.06);
+      transform: translateY(100%);
+      transition: transform .32s cubic-bezier(.32,.72,0,1);
+    }
+    .sheet.visible {
+      transform: translateY(0);
     }
     .grabber {
       width: 36px;
@@ -84,10 +114,14 @@ export class SwapSheet extends LitElement {
       margin-bottom: 16px;
       flex-shrink: 0;
       border-radius: 2px;
+      touch-action: none;
+      cursor: grab;
     }
     .sheet.panel {
       position: static;
       height: auto;
+      transform: none !important;
+      transition: none !important;
       border-radius: 0;
       border: none;
       box-shadow: none;
@@ -289,6 +323,20 @@ export class SwapSheet extends LitElement {
     }
   `;
 
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('pointermove', this.onGrabberMove);
+    window.addEventListener('pointerup', this.onGrabberUp);
+    window.addEventListener('pointercancel', this.onGrabberUp);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('pointermove', this.onGrabberMove);
+    window.removeEventListener('pointerup', this.onGrabberUp);
+    window.removeEventListener('pointercancel', this.onGrabberUp);
+  }
+
   private emit(name: string, detail?: unknown) {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
@@ -297,6 +345,49 @@ export class SwapSheet extends LitElement {
     this.emit('close');
   }
 
+  // Tapping empty sheet padding (not an alt row, button, or bento card) dismisses the sheet
+  // instead of silently swallowing the tap — otherwise a mis-tap there does nothing and the
+  // next tap lands on whatever's now underneath, which can read as the wrong chord's drawer
+  // opening or, worse, an accidental alternative selection.
+  private onSheetBackgroundClick(e: MouseEvent) {
+    if (e.target === e.currentTarget) this.close();
+  }
+
+  private onGrabberDown = (e: PointerEvent) => {
+    if (this.variant !== 'sheet') return;
+    e.preventDefault();
+    this.dragStartY = e.clientY;
+    this.dragStartTime = performance.now();
+    this.dragging = true;
+    this.snapping = false;
+    this.dragY = 0;
+  };
+
+  private onGrabberMove = (e: PointerEvent) => {
+    if (!this.dragging) return;
+    // Only allow dragging down (toward closed) — resist upward drag rather than let it
+    // pull the sheet above its resting position.
+    this.dragY = Math.max(0, e.clientY - this.dragStartY);
+  };
+
+  private onGrabberUp = () => {
+    if (!this.dragging) return;
+    this.dragging = false;
+    const elapsed = Math.max(1, performance.now() - this.dragStartTime);
+    const velocity = this.dragY / elapsed; // px/ms
+    const sheetHeight = this.sheetEl?.getBoundingClientRect().height || 400;
+    const pastThreshold = this.dragY > sheetHeight * 0.3 || velocity > 0.6;
+
+    this.snapping = true;
+    if (pastThreshold) {
+      this.dragY = sheetHeight + 80;
+      setTimeout(() => { this.close(); }, 260);
+    } else {
+      this.dragY = 0;
+      setTimeout(() => { this.snapping = false; }, 260);
+    }
+  };
+
   private toggleVoicing() {
     this.voicingOpen = !this.voicingOpen;
   }
@@ -304,11 +395,13 @@ export class SwapSheet extends LitElement {
   private setQuality(label: string) {
     this.quality = label;
     this.previewVoicing();
+    this.commitVoicing();
   }
 
   private setExtension(label: string) {
     this.extension = label;
     this.previewVoicing();
+    this.commitVoicing();
   }
 
   private previewVoicing() {
@@ -318,8 +411,15 @@ export class SwapSheet extends LitElement {
     this.emit('voicing-preview', notes);
   }
 
+  // Bakes the picked quality/extension into the actual chord, not just the audio preview —
+  // otherwise the change only ever lived in this component's local state and evaporated the
+  // moment the sheet closed or the loop moved on.
+  private commitVoicing() {
+    this.emit('voicing-change', { quality: this.quality, extension: this.extension });
+  }
+
   willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('chord')) {
+    if (changed.has('resetKey')) {
       this.voicingOpen = false;
       this.quality = 'Major';
       this.extension = 'None';
@@ -332,10 +432,14 @@ export class SwapSheet extends LitElement {
     const preferFlat = root.includes('b');
     const voicingNotes = this.voicingOpen ? buildVoicingNotes(root, this.quality, this.extension, preferFlat) : c.notes;
 
+    const dragStyle = this.dragging || this.snapping
+      ? `transform: translateY(${this.dragY}px); transition: ${this.dragging ? 'none' : 'transform .26s cubic-bezier(.32,.72,0,1)'};`
+      : '';
+
     return html`
-      ${this.variant === 'sheet' ? html`<div class="scrim" @click=${this.close}></div>` : ''}
-      <div class="sheet ${this.variant}">
-        <div class="grabber"></div>
+      ${this.variant === 'sheet' ? html`<div class="scrim ${this.visible ? 'visible' : ''}" @click=${this.close}></div>` : ''}
+      <div class="sheet ${this.variant} ${this.visible ? 'visible' : ''}" style=${dragStyle} @click=${this.onSheetBackgroundClick}>
+        <div class="grabber" @pointerdown=${this.onGrabberDown}></div>
         <div class="head-row">
           <div class="sheet-title">Swap ${c.name}</div>
           <button class="close-btn" @click=${this.close}>×</button>
