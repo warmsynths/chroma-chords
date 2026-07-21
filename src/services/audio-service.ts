@@ -128,15 +128,30 @@ export function midiToNoteName(midi: number): string {
 }
 
 /**
+ * Resolves once pending sample downloads settle, same as Tone.loaded() — but with a timeout.
+ * A stalled connection (drops mid-download rather than failing outright, common on flaky
+ * mobile networks) never lets Tone.loaded() settle, which would otherwise block every future
+ * playNote/playChord call forever — the first chord plays, then silence for good. Capping the
+ * wait means a stuck download only delays that one attempt instead of wedging playback
+ * permanently.
+ */
+function waitForSamplesReady(): Promise<void> {
+  return Promise.race([
+    Tone.loaded(),
+    new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+  ]);
+}
+
+/**
  * Plays a single note using the sampled Rhodes electric piano.
  * Starts Tone.js audio context on user gesture if not already running.
- * 
+ *
  * @param noteName Note name with octave, e.g. "C4" or "D#5".
  * @param duration Duration in seconds.
  */
 export function playNote(noteName: string, duration = 0.35): void {
   try {
-    Promise.all([Tone.start(), Tone.loaded()]).then(() => {
+    Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
       sampler.triggerAttackRelease(noteName, duration);
     }).catch((e) => {
       console.warn("Audio playback gesture failed:", e);
@@ -207,7 +222,7 @@ function orderNotesForArp(notes: string[], arpMode: string): string[] {
  */
 export function playChord(noteNames: string[], duration = 0.7, humanState?: any, instrument: InstrumentId = 'rhodes'): void {
   try {
-    Promise.all([Tone.start(), Tone.loaded()]).then(() => {
+    Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
       const voice = getVoice(instrument);
       const count = noteNames.length;
       const densityScaling = count <= 1 ? 1 : Math.max(0.4, 1 / Math.sqrt(count));
