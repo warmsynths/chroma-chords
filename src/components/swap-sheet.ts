@@ -350,7 +350,15 @@ export class SwapSheet extends LitElement {
   // instead of silently swallowing the tap — otherwise a mis-tap there does nothing and the
   // next tap lands on whatever's now underneath, which can read as the wrong chord's drawer
   // opening or, worse, an accidental alternative selection.
-  private onSheetBackgroundClick(e: MouseEvent) {
+  //
+  // This (and the scrim's dismiss) listens on `pointerdown`, not `click`: on touch devices the
+  // chord card's own tap handling already resolves — and opens this sheet — on the raw
+  // pointerdown/pointerup pair, well before the browser's compatibility `click` event fires for
+  // that same touch. By the time that ghost click lands, the scrim/sheet-background are already
+  // sitting right where the finger is, so a `click` listener here would close the sheet an
+  // instant after it opened — every single tap, since the scrim covers the whole screen. Only a
+  // genuinely new pointerdown (a real, separate tap) should be able to dismiss it.
+  private onSheetBackgroundClick(e: PointerEvent) {
     if (e.target === e.currentTarget) this.close();
   }
 
@@ -438,8 +446,8 @@ export class SwapSheet extends LitElement {
       : '';
 
     return html`
-      ${this.variant === 'sheet' ? html`<div class="scrim ${this.visible ? 'visible' : ''}" @click=${this.close}></div>` : ''}
-      <div class="sheet ${this.variant} ${this.visible ? 'visible' : ''}" style=${dragStyle} @click=${this.onSheetBackgroundClick}>
+      ${this.variant === 'sheet' ? html`<div class="scrim ${this.visible ? 'visible' : ''}" @pointerdown=${this.close}></div>` : ''}
+      <div class="sheet ${this.variant} ${this.visible ? 'visible' : ''}" style=${dragStyle} @pointerdown=${this.onSheetBackgroundClick}>
         <div class="grabber" @pointerdown=${this.onGrabberDown}></div>
         <div class="head-row">
           <div class="sheet-title">Swap ${c.name}</div>
