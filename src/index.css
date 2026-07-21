@@ -1,233 +1,31 @@
-:root {
-  /* Neumorphic Warm/Ochre Palette */
-  --bg-primary: #171513;
-  /* Unified base background (dark warm charcoal) */
-  --bg-card: #171513;
-  /* Same as base for soft UI effect */
-  --bg-card-hover: #171513;
-  /* Keeping same to maintain extruded illusion */
-  --border-color: #2b2520;
-  /* Used sparingly, mainly for thin dividers */
-  --border-color-active: #c25233;
-  /* Terracotta red active state */
-
-  --text-primary: #fbf4f0;
-  /* Warm off-white/cream */
-  --text-secondary: #d5cdba;
-  /* Warm sand grey */
-  --text-muted: #736b5c;
-  /* Muted bronze brown */
-
-  /* Vintage Accents */
-  --accent-terracotta: #c25233;
-  /* Terracotta Orange-Red */
-  --accent-gold: #ab8b61;
-  /* Vintage Brass/Gold */
-  --accent-sand: #d5cdba;
-  /* Soft Sand Cream */
-
-  /* Fallback maps for component compatibility */
-  --accent-cyan: #c25233;
-  --accent-purple: #ab8b61;
-  --accent-blue: #87291c;
-
-  /* Tension Colors (Vintage spectrum) */
-  --tension-1: #ab8b61;
-  /* Gold / Low Tension */
-  --tension-2: #ab8b61;
-  /* Gold */
-  --tension-3: #c25233;
-  /* Terracotta */
-  --tension-4: #87291c;
-  /* Deep Brick Red / High Tension */
-
-  /* Neumorphic Shadows (Calculated for #171513 background) */
-  /* Light source top-left: Light color #24211d, Dark color #0a0909 */
-  --neu-light-color: #26221f;
-  --neu-dark-color: #080706;
-
-  --neu-flat: 6px 6px 12px var(--neu-dark-color), -6px -6px 12px var(--neu-light-color);
-  --neu-flat-sm: 3px 3px 6px var(--neu-dark-color), -3px -3px 6px var(--neu-light-color);
-
-  --neu-pressed: inset 4px 4px 8px var(--neu-dark-color), inset -4px -4px 8px var(--neu-light-color);
-  --neu-pressed-sm: inset 2px 2px 4px var(--neu-dark-color), inset -2px -2px 4px var(--neu-light-color);
-
-  --neu-convex: linear-gradient(145deg, #191614, #151311);
-  --neu-concave: linear-gradient(145deg, #151311, #191614);
-
-  /* Typography */
-  --font-heading: 'Space Grotesk', sans-serif;
-  --font-body: 'Space Grotesk', sans-serif;
-  --font-mono: 'DM Mono', monospace;
-
-  /* Scrollbars */
-  --scrollbar-track: #15120f;
-  --scrollbar-thumb: #2b2520;
-  --scrollbar-border: #15120f;
-
-  /* Header Overlays and Buttons */
-  --header-overlay: rgba(23, 21, 19, 0.65);
-  --header-btn-bg: rgba(255, 255, 255, 0.08);
-  --header-btn-bg-hover: rgba(255, 255, 255, 0.18);
-  --header-btn-border: rgba(255, 255, 255, 0.15);
-  --header-btn-border-hover: rgba(255, 255, 255, 0.3);
-  --header-btn-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
-}
-
-:root.light-theme {
-  --bg-primary: #e8e4db;
-  --bg-card: #e8e4db;
-  --bg-card-hover: #e8e4db;
-  --border-color: #c9c3ba;
-  --border-color-active: #9a3d24;
-
-  --text-primary: #2a2520;
-  --text-secondary: #4a4238;
-  --text-muted: #70685e;
-
-  /* Darker Accents for Light Mode Contrast */
-  --accent-terracotta: #9a3d24;
-  --accent-gold: #8b6d47;
-  --accent-sand: #807667;
-
-  --accent-cyan: #9a3d24;
-  --accent-purple: #8b6d47;
-  --accent-blue: #6b1f13;
-
-  /* Tension Colors */
-  --tension-1: #8b6d47;
-  --tension-2: #8b6d47;
-  --tension-3: #9a3d24;
-  --tension-4: #6b1f13;
-
-  /* Neumorphic Shadows (Calculated for #e8e4db background) */
-  --neu-light-color: #ffffff;
-  --neu-dark-color: #c5c2ba;
-
-  --neu-convex: linear-gradient(145deg, #f8f4eb, #d1cdc5);
-  --neu-concave: linear-gradient(145deg, #d1cdc5, #f8f4eb);
-
-  /* Scrollbars */
-  --scrollbar-track: #d6d2c9;
-  --scrollbar-thumb: #b8b4ab;
-  --scrollbar-border: #d6d2c9;
-
-  /* Header Overlays and Buttons */
-  --header-overlay: rgba(232, 228, 219, 0.35);
-  --header-btn-bg: rgba(0, 0, 0, 0.05);
-  --header-btn-bg-hover: rgba(0, 0, 0, 0.1);
-  --header-btn-border: rgba(0, 0, 0, 0.1);
-  --header-btn-border-hover: rgba(0, 0, 0, 0.25);
-  --header-btn-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-}
+@import './design-tokens.css';
 
 * {
   box-sizing: border-box;
+}
+
+html, body {
   margin: 0;
   padding: 0;
+  background: var(--cv-canvas);
+  min-height: 100vh;
 }
 
 body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  overflow-x: hidden;
+  font-family: var(--cv-font-body);
+  color: var(--cv-ink);
+}
+
+#app-root {
   min-height: 100vh;
-  /* Clean matte background, no neon glowing blobs */
-  background-attachment: fixed;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  font-family: var(--font-heading);
-  letter-spacing: -0.02em;
-}
-
-/* Vintage matte panel template (Tactile Hardware Look) */
-.glass-panel {
-  background: var(--bg-card);
-  border: none;
-  border-radius: 16px;
-  /* Softer corners for neumorphic feel */
-  box-shadow: var(--neu-flat);
-  transition: all 0.25s ease;
-}
-
-.glass-panel:hover {
-  /* Maintain the neumorphic look even on hover */
-  box-shadow: var(--neu-flat-sm);
-}
-
-/* Custom Scrollbar (Low-contrast matte style) */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-}
-
 ::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
+  background: var(--cv-ink-20);
   border-radius: 4px;
-  border: 2px solid var(--scrollbar-border);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-gold);
-}
-
-/* Firefox standard scrollbars */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-}
-
-/* Base utility tags */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.badge-cyan {
-  background: rgba(0, 242, 254, 0.1);
-  color: var(--accent-cyan);
-  border: 1px solid rgba(0, 242, 254, 0.2);
-}
-
-.badge-purple {
-  background: rgba(155, 81, 224, 0.1);
-  color: var(--accent-purple);
-  border: 1px solid rgba(155, 81, 224, 0.2);
-}
-
-/* Micro-animations */
-@keyframes pulse-red {
-  0% {
-    box-shadow: 0 0 0 0 rgba(235, 87, 87, 0.4);
-  }
-
-  70% {
-    box-shadow: 0 0 0 8px rgba(235, 87, 87, 0);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 rgba(235, 87, 87, 0);
-  }
-}
-
-.pulse-t4 {
-  animation: pulse-red 2s infinite;
 }

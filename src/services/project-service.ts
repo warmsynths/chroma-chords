@@ -1,19 +1,30 @@
-import { ProgressionSection } from '../chord-voyager-app';
+export interface ProjectChord {
+  name: string;
+  tag: string;
+  roman: string;
+  color: string;
+  grain: number;
+  functionLabel: string;
+  notes: string[];
+  scaleLabel: string;
+  desc: string;
+  degree: string;
+  scaleKey: string;
+  tension: number;
+}
 
 export interface ProjectData {
   id: string;
   name: string;
   lastModified: number;
-  sections: ProgressionSection[];
-  setupStep: 'scale' | 'tonic';
-  selectedScaleType: 'MAJOR' | 'NATURAL MINOR' | 'HARMONIC MINOR' | 'MELODIC MINOR' | 'DORIAN' | 'MIXOLYDIAN' | 'LYDIAN' | null;
+  genre: string;
+  mood: string;
+  key: string;
+  scaleType: string;
+  bpm: number;
+  chords: ProjectChord[];
+  showTheory?: boolean;
   syncedToCloud?: boolean;
-  audioTrack?: {
-    filename: string;
-    duration: number;
-    volumeDb: number;
-    bpm?: number;
-  };
 }
 
 const STORAGE_KEY = 'chord_voyager_projects';
@@ -113,7 +124,7 @@ export class ProjectService {
           const parsed = JSON.parse(result);
           
           // Basic validation
-          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.sections)) {
+          if (parsed && typeof parsed === 'object' && Array.isArray(parsed.chords)) {
             // Ensure imported project gets a new ID to avoid collisions
             parsed.id = Math.random().toString(36).substr(2, 9);
             parsed.lastModified = Date.now();
