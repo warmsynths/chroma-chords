@@ -686,7 +686,8 @@
     .alt-list {
       display: flex;
       flex-direction: column;
-      overflow: auto;
+      overflow-y: auto;
+      overflow-x: hidden;
     }
     .alt-row {
       padding: 9px 0;
