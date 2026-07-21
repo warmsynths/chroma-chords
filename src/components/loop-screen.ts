@@ -36,6 +36,7 @@ export class LoopScreen extends LitElement {
   @property({ type: Boolean }) showTheory = false;
   @property({ type: Boolean }) sheetOpen = false;
   @property({ type: Object }) swapChord: ChordBlock | null = null;
+  @property({ type: Number }) swapIndex: number | null = null;
   @property({ type: Array }) alternatives: Alternative[] = [];
 
   @state() private menuMounted = false;
@@ -879,6 +880,7 @@ export class LoopScreen extends LitElement {
             .alternatives=${this.alternatives}
             .showTheory=${this.showTheory}
             .visible=${this.sheetVisible}
+            .resetKey=${this.swapIndex}
           ></swap-sheet>
         ` : ''}
         </div>
@@ -989,6 +991,7 @@ export class LoopScreen extends LitElement {
                 .chord=${this.swapChord}
                 .alternatives=${this.alternatives}
                 .showTheory=${this.showTheory}
+                .resetKey=${this.swapIndex}
               ></swap-sheet>
             ` : html`
               <div class="desktop-swap-empty">Click a chord to hear it differently.</div>

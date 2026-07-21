@@ -553,6 +553,33 @@ export function buildVoicingNotes(root: string, quality: string, extension: stri
   return intervals.map(iv => noteName(rootPc + iv, preferFlat));
 }
 
+const VOICING_QUALITY_SUFFIX: Record<string, string> = {
+  'Major': '', 'Minor': 'm', 'Suspended (sus)': 'sus', 'Diminished': 'dim',
+};
+const VOICING_EXTENSION_SUFFIX: Record<string, string> = {
+  'None': '', '6th': '6', '7th (dom / m7)': '7', 'Major 7th (M7)': 'maj7', '9th': '9',
+};
+
+function voicingChordName(root: string, quality: string, extension: string): string {
+  if (quality === 'Minor' && extension === 'Major 7th (M7)') return `${root}m(maj7)`;
+  return `${root}${VOICING_QUALITY_SUFFIX[quality] ?? ''}${VOICING_EXTENSION_SUFFIX[extension] ?? ''}`;
+}
+
+// Applying a quality/extension in the swap sheet's "Adjust voicing" panel used to only
+// preview the sound — it never touched the actual progression, so the change vanished the
+// moment the loop moved on or anything else re-rendered. This bakes the picked quality/
+// extension into a real ChordBlock (new name + notes, everything else — degree, scaleKey,
+// color, function, etc. — carried over) so the caller can persist it into the progression.
+export function applyVoicingToChord(chord: ChordBlock, quality: string, extension: string): ChordBlock {
+  const root = rootOfChordName(chord.name);
+  const preferFlat = root.includes('b');
+  return {
+    ...chord,
+    name: voicingChordName(root, quality, extension),
+    notes: buildVoicingNotes(root, quality, extension, preferFlat),
+  };
+}
+
 export function generateAlternatives(data: RawChordData, progression: Progression, chordIndex: number): Alternative[] {
   const chord = progression.chords[chordIndex];
   const scale = data.scales[chord.scaleKey];

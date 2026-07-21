@@ -49,6 +49,11 @@ export class SwapSheet extends LitElement {
   // flipping this true (and unmounts it slightly after flipping it false) so the CSS
   // transition has time to play — see loop-screen's sheetMounted/sheetVisible.
   @property({ type: Boolean }) visible = false;
+  // Identifies which chord slot is being edited (the progression index). Quality/extension
+  // reset only when this changes — not whenever `chord` changes, since applying a voicing
+  // itself updates `chord` (new name/notes round-tripped back down) and that must NOT wipe
+  // out the very selection that just caused it.
+  @property({ type: Number }) resetKey: number | null = null;
 
   @state() private voicingOpen = false;
   @state() private quality = 'Major';
@@ -390,11 +395,13 @@ export class SwapSheet extends LitElement {
   private setQuality(label: string) {
     this.quality = label;
     this.previewVoicing();
+    this.commitVoicing();
   }
 
   private setExtension(label: string) {
     this.extension = label;
     this.previewVoicing();
+    this.commitVoicing();
   }
 
   private previewVoicing() {
@@ -404,8 +411,15 @@ export class SwapSheet extends LitElement {
     this.emit('voicing-preview', notes);
   }
 
+  // Bakes the picked quality/extension into the actual chord, not just the audio preview —
+  // otherwise the change only ever lived in this component's local state and evaporated the
+  // moment the sheet closed or the loop moved on.
+  private commitVoicing() {
+    this.emit('voicing-change', { quality: this.quality, extension: this.extension });
+  }
+
   willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('chord')) {
+    if (changed.has('resetKey')) {
       this.voicingOpen = false;
       this.quality = 'Major';
       this.extension = 'None';
