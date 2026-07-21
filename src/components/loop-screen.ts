@@ -480,38 +480,32 @@ export class LoopScreen extends LitElement {
         padding: 32px 26px;
         box-sizing: border-box;
         overflow: auto;
-        display: flex;
-        flex-direction: column;
-        min-height: 100%;
       }
       .desktop-footer {
         display: flex;
         align-items: center;
-        gap: 8px;
-        margin-top: auto;
-        padding-top: 24px;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 20px;
+        padding-bottom: 2px;
+        font-family: var(--cv-font-body);
+        font-size: 12px;
+        color: rgba(32, 26, 19, 0.38);
         flex-shrink: 0;
       }
       .desktop-footer-link {
-        display: inline-flex;
+        display: flex;
         align-items: center;
         gap: 5px;
-        font-family: var(--cv-font-grotesk);
-        font-size: 10.5px;
-        letter-spacing: 0.3px;
-        color: var(--cv-ink-34);
+        color: inherit;
         text-decoration: none;
         transition: color .15s ease;
       }
       .desktop-footer-link:hover {
         color: var(--cv-accent);
       }
-      .desktop-footer-link svg {
-        display: block;
-      }
       .desktop-footer-divider {
-        color: var(--cv-ink-16);
-        font-size: 10px;
+        opacity: 0.6;
       }
       .desktop-wordmark {
         display: flex;
@@ -909,17 +903,6 @@ export class LoopScreen extends LitElement {
               <div class="menu-share-label">Share progression</div>
               <div class="menu-share-arrow">↗</div>
             </div>
-
-            <div class="desktop-footer">
-              <a class="desktop-footer-link" href="https://github.com/warmsynths/chord-voyager" target="_blank" rel="noopener">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
-                GitHub
-              </a>
-              <span class="desktop-footer-divider">·</span>
-              <a class="desktop-footer-link" href="mailto:warmsynthsiloveyou@gmail.com">warmsynths</a>
-              <span class="desktop-footer-divider">·</span>
-              <a class="desktop-footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
-            </div>
           </div>
 
           <div class="desktop-main">
@@ -961,6 +944,17 @@ export class LoopScreen extends LitElement {
               </button>
               <div class="desktop-transport-hint">Click a chord to explore a swap, on the right.</div>
               <div class="dice-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
+            </div>
+
+            <div class="desktop-footer">
+              <a class="desktop-footer-link" href="https://github.com/warmsynths/chord-voyager" target="_blank" rel="noopener">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+                GitHub
+              </a>
+              <span class="desktop-footer-divider">·</span>
+              <span>Made with ❤️ by warmsynths</span>
+              <span class="desktop-footer-divider">·</span>
+              <a class="desktop-footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
             </div>
           </div>
 
