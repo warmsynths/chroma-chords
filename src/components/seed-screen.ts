@@ -175,6 +175,7 @@ export class SeedScreen extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 12px;
       font-family: var(--cv-font-grotesk);
       font-weight: 600;
       font-size: 16px;
@@ -182,6 +183,31 @@ export class SeedScreen extends LitElement {
       color: var(--cv-cream);
       cursor: pointer;
     }
+    .cta-glyph {
+      position: relative;
+      width: 24px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .cta-glyph-chord {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--cv-font-serif);
+      font-style: italic;
+      font-weight: 700;
+      font-size: 15px;
+    }
+    .cta-glyph-chord.c1 { color: oklch(0.65 0.11 187); animation: cv-blur1 4s ease-in-out infinite; }
+    .cta-glyph-chord.c2 { color: oklch(0.68 0.13 154); animation: cv-blur2 4s ease-in-out infinite; }
+    .cta-glyph-chord.c3 { color: oklch(0.65 0.14 131); animation: cv-blur3 4s ease-in-out infinite; }
+    .cta-glyph-chord.c4 { color: oklch(0.65 0.16 88); animation: cv-blur4 4s ease-in-out infinite; }
+    @keyframes cv-blur1 { 0%, 4% { opacity: 1; filter: blur(0px); } 18%, 100% { opacity: 0; filter: blur(3px); } }
+    @keyframes cv-blur2 { 0%, 24% { opacity: 0; filter: blur(3px); } 28%, 40% { opacity: 1; filter: blur(0px); } 44%, 100% { opacity: 0; filter: blur(3px); } }
+    @keyframes cv-blur3 { 0%, 48% { opacity: 0; filter: blur(3px); } 52%, 64% { opacity: 1; filter: blur(0px); } 68%, 100% { opacity: 0; filter: blur(3px); } }
+    @keyframes cv-blur4 { 0%, 72% { opacity: 0; filter: blur(3px); } 76%, 88% { opacity: 1; filter: blur(0px); } 92%, 100% { opacity: 0; filter: blur(3px); } }
     .caption {
       text-align: center;
       font-family: var(--cv-font-body);
@@ -241,7 +267,15 @@ export class SeedScreen extends LitElement {
 
         <div class="cta-wrap">
           <div class="cta-shadow"></div>
-          <button class="cta" @click=${this.generate}>Generate loop →</button>
+          <button class="cta" @click=${this.generate}>
+            <div class="cta-glyph">
+              <span class="cta-glyph-chord c1">C</span>
+              <span class="cta-glyph-chord c2">Am</span>
+              <span class="cta-glyph-chord c3">F</span>
+              <span class="cta-glyph-chord c4">G7</span>
+            </div>
+            <span>Generate loop →</span>
+          </button>
         </div>
         <div class="caption">Nothing here is permanent — swap any chord after.</div>
       </div>

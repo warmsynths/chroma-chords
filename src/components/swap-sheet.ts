@@ -26,11 +26,25 @@ const EXTS = [
   { label: '9th', sub: 'wide, colorful' },
 ];
 
+// Each alternative's size/weight encodes how far it pulls from the current chord — the
+// biggest, boldest label ("More tension") reads as the most dramatic option, the smallest,
+// lightest one ("Resolve home") reads as the gentlest. Color still comes from the actual
+// generated chord so it stays tied to the real harmony, not a fixed palette.
+const VERSE_STYLE: Record<string, { size: number; weight: number }> = {
+  'Darker': { size: 22, weight: 600 },
+  'More tension': { size: 27, weight: 700 },
+  'Dreamier': { size: 21, weight: 500 },
+  'Resolve home': { size: 19, weight: 400 },
+};
+
 @customElement('swap-sheet')
 export class SwapSheet extends LitElement {
   @property({ type: Object }) chord!: ChordBlock;
   @property({ type: Array }) alternatives: Alternative[] = [];
   @property({ type: Boolean }) showTheory = false;
+  // 'sheet' (default): mobile bottom sheet with scrim. 'panel': inline, for the desktop
+  // right-hand column — same content, no overlay/scrim/grabber.
+  @property({ type: String }) variant: 'sheet' | 'panel' = 'sheet';
 
   @state() private voicingOpen = false;
   @state() private quality = 'Major';
@@ -71,16 +85,24 @@ export class SwapSheet extends LitElement {
       flex-shrink: 0;
       border-radius: 2px;
     }
-    .swatch {
-      height: 58px;
-      border-radius: 8px;
-      flex-shrink: 0;
+    .sheet.panel {
+      position: static;
+      height: auto;
+      border-radius: 0;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+    }
+    .sheet.panel .grabber {
+      display: none;
+    }
+    .sheet.panel .sheet-title {
+      font-size: 20px;
     }
     .head-row {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
-      margin-top: 16px;
       flex-shrink: 0;
     }
     .sheet-title {
@@ -108,35 +130,21 @@ export class SwapSheet extends LitElement {
     .alt-list {
       display: flex;
       flex-direction: column;
-      gap: 9px;
       overflow: auto;
     }
     .alt-row {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      min-height: 70px;
-      border-radius: 10px;
-      background: rgba(32, 26, 19, 0.035);
-      border: 1px solid var(--cv-ink-12);
-      padding: 14px 16px;
+      padding: 9px 0;
       cursor: pointer;
       flex-shrink: 0;
+      transition: transform .2s ease;
     }
-    .alt-swatch {
-      width: 42px;
-      height: 42px;
-      border-radius: 6px;
-      flex-shrink: 0;
-    }
-    .alt-text {
-      flex: 1;
+    .alt-row:hover {
+      transform: translateX(4px);
     }
     .alt-label {
       font-family: var(--cv-font-serif);
-      font-weight: 600;
-      font-size: 15.5px;
-      color: var(--cv-ink);
+      font-style: italic;
+      letter-spacing: -0.2px;
     }
     .alt-sub {
       font-family: var(--cv-font-body);
@@ -149,7 +157,7 @@ export class SwapSheet extends LitElement {
       font-size: 10px;
       letter-spacing: 0.4px;
       color: var(--cv-accent);
-      margin-top: 6px;
+      margin-top: 5px;
       text-transform: uppercase;
       font-weight: 700;
     }
@@ -159,11 +167,8 @@ export class SwapSheet extends LitElement {
       font-size: 12px;
       line-height: 1.4;
       color: var(--cv-ink-55);
-      margin-top: 4px;
-    }
-    .alt-chevron {
-      color: rgba(32, 26, 19, 0.3);
-      font-size: 16px;
+      margin-top: 3px;
+      margin-bottom: 2px;
     }
     .voicing-section {
       border-top: 1px solid var(--cv-ink-14);
@@ -328,30 +333,28 @@ export class SwapSheet extends LitElement {
     const voicingNotes = this.voicingOpen ? buildVoicingNotes(root, this.quality, this.extension, preferFlat) : c.notes;
 
     return html`
-      <div class="scrim" @click=${this.close}></div>
-      <div class="sheet">
+      ${this.variant === 'sheet' ? html`<div class="scrim" @click=${this.close}></div>` : ''}
+      <div class="sheet ${this.variant}">
         <div class="grabber"></div>
-        <div class="swatch" style="background:${c.color}"></div>
         <div class="head-row">
           <div class="sheet-title">Swap ${c.name}</div>
           <button class="close-btn" @click=${this.close}>×</button>
         </div>
         <div class="helper">Choose the feeling you want instead.</div>
         <div class="alt-list">
-          ${this.alternatives.map(alt => html`
-            <div class="alt-row" @click=${() => this.emit('select-alternative', alt)}>
-              <div class="alt-swatch" style="background:${alt.chord.color}"></div>
-              <div class="alt-text">
-                <div class="alt-label">${alt.label}</div>
+          ${this.alternatives.map(alt => {
+            const style = VERSE_STYLE[alt.label] || { size: 20, weight: 500 };
+            return html`
+              <div class="alt-row" @click=${() => this.emit('select-alternative', alt)}>
+                <div class="alt-label" style="font-size:${style.size}px;font-weight:${style.weight};color:${alt.chord.color}">${alt.label}</div>
                 <div class="alt-sub">${alt.sub}</div>
                 ${this.showTheory ? html`
                   <div class="alt-function">${alt.functionCaption}</div>
                   <div class="alt-rationale">${alt.rationale}</div>
                 ` : ''}
               </div>
-              <div class="alt-chevron">›</div>
-            </div>
-          `)}
+            `;
+          })}
         </div>
 
         ${this.showTheory ? html`

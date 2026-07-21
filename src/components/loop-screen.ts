@@ -131,15 +131,16 @@ export class LoopScreen extends LitElement {
     .chord-stack {
       display: flex;
       flex-direction: column;
-      gap: 9px;
+      gap: 0;
       flex: 1;
       margin-top: 16px;
       min-height: 0;
+      border-radius: 14px;
+      overflow: hidden;
     }
     .chord-block {
       position: relative;
       overflow: hidden;
-      border-radius: 10px;
       padding: 18px 20px;
       display: flex;
       flex-direction: column;
@@ -147,13 +148,6 @@ export class LoopScreen extends LitElement {
       cursor: pointer;
       flex: 1;
       min-height: 0;
-      box-shadow: 2px 2px 0 rgba(32, 26, 19, 0.12);
-      transform: scale(1);
-      transition: box-shadow .3s ease, transform .3s ease;
-    }
-    .chord-block.active {
-      box-shadow: inset 0 0 0 2px rgba(241, 232, 217, 0.85), 4px 4px 0 rgba(32, 26, 19, 0.22);
-      transform: scale(1.01);
     }
     .chord-grain {
       position: absolute;
@@ -197,6 +191,13 @@ export class LoopScreen extends LitElement {
       font-weight: 700;
       font-size: 32px;
       color: #F1E8D9;
+      display: inline-block;
+      transform-origin: left center;
+    }
+    @keyframes cv-breathe {
+      0% { transform: scale(1) skewX(0deg); letter-spacing: 0em; }
+      50% { transform: scale(calc(1 + 0.05 * var(--amp))) skewX(calc(-3deg * var(--amp))); letter-spacing: calc(-0.012em * var(--amp)); }
+      100% { transform: scale(1) skewX(0deg); letter-spacing: 0em; }
     }
     .chord-meta {
       position: relative;
@@ -430,6 +431,119 @@ export class LoopScreen extends LitElement {
       from { opacity: 0; transform: translateX(-50%) translateY(8px); }
       to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
+
+    .desktop-view {
+      display: none;
+    }
+
+    /* Below this width the mobile single-column frame (bottom-sheet swap, popover
+       settings) is used as-is; above it, a 3-column workspace layout takes over. */
+    @media (min-width: 900px) {
+      .frame {
+        max-width: 1180px;
+        min-height: 0;
+        padding: 0;
+      }
+      .mobile-view {
+        display: none;
+      }
+      .desktop-view {
+        display: flex;
+        min-height: 100dvh;
+      }
+      .desktop-sidebar {
+        position: relative;
+        width: 272px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--cv-ink-14);
+        padding: 32px 26px;
+        box-sizing: border-box;
+        overflow: auto;
+      }
+      .desktop-wordmark {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .desktop-wordmark .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #C25A3C;
+        flex-shrink: 0;
+      }
+      .desktop-wordmark .wordmark-text {
+        font-family: var(--cv-font-grotesk);
+        font-size: 12px;
+        letter-spacing: 2px;
+        color: var(--cv-ink-55);
+        text-transform: uppercase;
+      }
+      .desktop-section-label {
+        font-family: var(--cv-font-grotesk);
+        font-size: 11px;
+        letter-spacing: 1.5px;
+        color: var(--cv-ink-40);
+        text-transform: uppercase;
+        font-weight: 700;
+        margin-top: 24px;
+      }
+      .desktop-section-label.first {
+        margin-top: 30px;
+      }
+      .desktop-main {
+        position: relative;
+        flex: 1;
+        padding: 36px 40px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .desktop-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+      }
+      .desktop-chord-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+        gap: 0;
+        flex: 1;
+        margin-top: 24px;
+        min-height: 0;
+        max-height: 420px;
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      .desktop-transport-hint {
+        font-family: var(--cv-font-serif);
+        font-style: italic;
+        font-size: 13px;
+        color: rgba(32, 26, 19, 0.5);
+      }
+      .desktop-swap-panel {
+        position: relative;
+        width: 340px;
+        flex-shrink: 0;
+        border-left: 1px solid var(--cv-ink-14);
+        padding: 32px 26px;
+        box-sizing: border-box;
+        overflow: auto;
+      }
+      .desktop-swap-empty {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        font-family: var(--cv-font-serif);
+        font-style: italic;
+        font-size: 15px;
+        line-height: 1.5;
+        color: var(--cv-ink-40);
+      }
+    }
   `;
 
   private emit(name: string, detail?: unknown) {
@@ -494,6 +608,7 @@ export class LoopScreen extends LitElement {
     return html`
       <div class="frame">
         <div class="grain"></div>
+        <div class="mobile-view">
         <div class="top-bar">
           <div class="icon-btn" @click=${() => this.emit('back')}>‹</div>
           <div class="top-label">${p.genre} · ${p.mood}</div>
@@ -533,16 +648,6 @@ export class LoopScreen extends LitElement {
           </div>
         ` : ''}
 
-        ${this.shareMounted ? html`
-          <share-modal
-            .visible=${this.shareVisible}
-            @close=${() => this.closeShare()}
-            @export=${(e: CustomEvent<{ device: ShareDevice; name: string }>) => this.exportDevice(e.detail.device, e.detail.name)}
-          ></share-modal>
-        ` : ''}
-
-        ${this.toast ? html`<div class="toast">Sent to ${this.toast}</div>` : ''}
-
         <div class="theory-toggle">
           <div class="theory-inner" @click=${() => this.emit('theory-toggle')}>
             <div class="theory-dot" style="background:${this.showTheory ? 'var(--cv-accent)' : 'var(--cv-ink-20)'}"></div>
@@ -555,7 +660,7 @@ export class LoopScreen extends LitElement {
             const c = p.chords[chordIndex];
             const isActive = pos === this.activeIndex;
             return html`
-              <div class="chord-block ${isActive ? 'active' : ''}" style="background:${c.color}" @click=${() => this.emit('chord-tap', chordIndex)}>
+              <div class="chord-block" style="background:${c.color}" @click=${() => this.emit('chord-tap', chordIndex)}>
                 <div class="chord-grain" style="opacity:${c.grain}"></div>
                 ${isActive ? html`
                   <div class="now-marker">
@@ -563,7 +668,7 @@ export class LoopScreen extends LitElement {
                     <div class="now-text">now</div>
                   </div>
                 ` : ''}
-                <div class="chord-name">${c.name}</div>
+                <div class="chord-name" style="--amp:${c.tension};${isActive ? `animation: cv-breathe ${2.6 - c.tension * 1.1}s ease-in-out infinite;` : ''}">${c.name}</div>
                 <div class="chord-meta">
                   <div class="chord-tag">${c.tag}</div>
                   ${this.showTheory ? html`<div class="chord-roman">${c.roman}</div>` : ''}
@@ -604,6 +709,120 @@ export class LoopScreen extends LitElement {
             .showTheory=${this.showTheory}
           ></swap-sheet>
         ` : ''}
+        </div>
+
+        <div class="desktop-view">
+          <div class="desktop-sidebar">
+            <div class="desktop-wordmark">
+              <div class="dot"></div>
+              <div class="wordmark-text">Chord Voyager</div>
+            </div>
+
+            <div class="desktop-section-label first">Genre</div>
+            <div class="menu-chips">
+              ${MENU_GENRES.map(g => html`
+                <div class="menu-chip visible ${g === p.genre ? 'selected' : ''}" @click=${() => this.emit('set-genre', g)}>${g}</div>
+              `)}
+            </div>
+
+            <div class="desktop-section-label">Mood</div>
+            <div class="menu-chips">
+              ${MENU_MOODS.map(m => html`
+                <div class="menu-chip visible ${m === p.mood ? 'selected' : ''}" @click=${() => this.emit('set-mood', m)}>${m}</div>
+              `)}
+            </div>
+
+            <div class="desktop-section-label">Key &amp; scale</div>
+            <div class="menu-chips">
+              ${MENU_KEYS.map(k => html`
+                <div class="menu-chip visible ${k === p.key ? 'selected' : ''}" @click=${() => this.emit('set-key', k)}>${k}</div>
+              `)}
+            </div>
+            <div class="menu-chips">
+              ${MENU_SCALES.map(s => html`
+                <div class="menu-chip visible ${s.value === p.scaleType ? 'selected' : ''}" @click=${() => this.emit('set-scale', s.value)}>${s.label}</div>
+              `)}
+            </div>
+
+            <div class="theory-toggle" style="justify-content:flex-start;margin-top:30px;">
+              <div class="theory-inner" @click=${() => this.emit('theory-toggle')}>
+                <div class="theory-dot" style="background:${this.showTheory ? 'var(--cv-accent)' : 'var(--cv-ink-20)'}"></div>
+                <div class="theory-text" style="color:${this.showTheory ? 'rgba(32,26,19,0.65)' : 'rgba(32,26,19,0.32)'}">show music theory</div>
+              </div>
+            </div>
+
+            <div class="menu-share-row" style="margin-top:24px;" @click=${() => this.openShare()}>
+              <div class="menu-share-label">Share progression</div>
+              <div class="menu-share-arrow">↗</div>
+            </div>
+          </div>
+
+          <div class="desktop-main">
+            <div class="desktop-top">
+              <div class="top-label">${p.genre} · ${p.mood}</div>
+              <div class="transport-label">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
+            </div>
+
+            <div class="desktop-chord-grid">
+              ${this.order.map((chordIndex, pos) => {
+                const c = p.chords[chordIndex];
+                const isActive = pos === this.activeIndex;
+                return html`
+                  <div class="chord-block" style="background:${c.color}" @click=${() => this.emit('chord-tap', chordIndex)}>
+                    <div class="chord-grain" style="opacity:${c.grain}"></div>
+                    ${isActive ? html`
+                      <div class="now-marker">
+                        <div class="now-dot"></div>
+                        <div class="now-text">now</div>
+                      </div>
+                    ` : ''}
+                    <div class="chord-name" style="--amp:${c.tension};${isActive ? `animation: cv-breathe ${2.6 - c.tension * 1.1}s ease-in-out infinite;` : ''}">${c.name}</div>
+                    <div class="chord-meta">
+                      <div class="chord-tag">${c.tag}</div>
+                      ${this.showTheory ? html`<div class="chord-roman">${c.roman}</div>` : ''}
+                    </div>
+                  </div>
+                `;
+              })}
+            </div>
+
+            <div class="transport">
+              <button class="play-btn" @click=${() => this.emit('toggle-play')}>
+                ${this.playing ? html`
+                  <div class="play-bars">
+                    <div class="play-bar"></div>
+                    <div class="play-bar"></div>
+                  </div>
+                ` : html`<div class="play-triangle"></div>`}
+              </button>
+              <div class="desktop-transport-hint">Click a chord to explore a swap, on the right.</div>
+              <div class="dice-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
+            </div>
+          </div>
+
+          <div class="desktop-swap-panel">
+            ${this.sheetOpen && this.swapChord ? html`
+              <swap-sheet
+                variant="panel"
+                .chord=${this.swapChord}
+                .alternatives=${this.alternatives}
+                .showTheory=${this.showTheory}
+              ></swap-sheet>
+            ` : html`
+              <div class="desktop-swap-empty">Click a chord to hear it differently.</div>
+            `}
+          </div>
+        </div>
+
+        ${this.shareMounted ? html`
+          <share-modal
+            .visible=${this.shareVisible}
+            @close=${() => this.closeShare()}
+            @export=${(e: CustomEvent<{ device: ShareDevice; name: string }>) => this.exportDevice(e.detail.device, e.detail.name)}
+          ></share-modal>
+        ` : ''}
+
+        ${this.toast ? html`<div class="toast">Sent to ${this.toast}</div>` : ''}
       </div>
     `;
   }
