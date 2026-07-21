@@ -65,7 +65,8 @@ export class SwapSheet extends LitElement {
       left: 0;
       right: 0;
       bottom: 0;
-      height: 74%;
+      height: auto;
+      max-height: 74%;
       background: var(--cv-paper);
       border-radius: 14px 14px 0 0;
       z-index: 41;
@@ -297,6 +298,14 @@ export class SwapSheet extends LitElement {
     this.emit('close');
   }
 
+  // Tapping empty sheet padding (not an alt row, button, or bento card) dismisses the sheet
+  // instead of silently swallowing the tap — otherwise a mis-tap there does nothing and the
+  // next tap lands on whatever's now underneath, which can read as the wrong chord's drawer
+  // opening or, worse, an accidental alternative selection.
+  private onSheetBackgroundClick(e: MouseEvent) {
+    if (e.target === e.currentTarget) this.close();
+  }
+
   private toggleVoicing() {
     this.voicingOpen = !this.voicingOpen;
   }
@@ -334,7 +343,7 @@ export class SwapSheet extends LitElement {
 
     return html`
       ${this.variant === 'sheet' ? html`<div class="scrim" @click=${this.close}></div>` : ''}
-      <div class="sheet ${this.variant}">
+      <div class="sheet ${this.variant}" @click=${this.onSheetBackgroundClick}>
         <div class="grabber"></div>
         <div class="head-row">
           <div class="sheet-title">Swap ${c.name}</div>
