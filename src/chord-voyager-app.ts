@@ -108,7 +108,6 @@ export class ChordVoyagerApp extends LitElement {
     this.playing = false;
     this.screen = 'loop';
     this.saveProject();
-    this.startAutoplay();
   }
 
   private regenerate() {
@@ -120,7 +119,10 @@ export class ChordVoyagerApp extends LitElement {
     this.order = [0, 1, 2, 3];
     this.activeIndex = 0;
     this.saveProject();
-    if (this.playing) this.playActiveChord();
+    if (this.playing) {
+      this.startAutoplay();
+      this.playActiveChord();
+    }
   }
 
   private onSetKey(e: CustomEvent<string>) {
@@ -149,6 +151,18 @@ export class ChordVoyagerApp extends LitElement {
     this.regenerate();
   }
 
+  // Drag-to-reorder: keep the currently active chord "active" by absolute identity, not by
+  // screen position, so playback doesn't jump to a different chord just because the one that
+  // was playing got dragged to a new slot.
+  private onReorder(e: CustomEvent<number[]>) {
+    if (!this.progression) return;
+    const activeChordIndex = this.order[this.activeIndex];
+    this.order = e.detail;
+    const newPos = this.order.indexOf(activeChordIndex);
+    this.activeIndex = newPos >= 0 ? newPos : 0;
+    this.saveProject();
+  }
+
   private onBack() {
     this.stopAutoplay();
     this.screen = 'seed';
@@ -162,9 +176,19 @@ export class ChordVoyagerApp extends LitElement {
     localStorage.setItem('chord-voyager-show-theory', String(this.showTheory));
   }
 
+  // Play/Stop, not play/pause: stopping always returns to the first chord and halts the
+  // loop entirely, rather than leaving a stale autoplay interval running in the background
+  // (which was the source of the "resumes and immediately skips ahead" glitch — the old
+  // interval kept ticking on its original schedule the whole time it was "paused").
   private onTogglePlay() {
-    this.playing = !this.playing;
     if (this.playing) {
+      this.playing = false;
+      this.activeIndex = 0;
+      this.stopAutoplay();
+    } else {
+      this.playing = true;
+      this.activeIndex = 0;
+      this.startAutoplay();
       this.playActiveChord();
     }
   }
@@ -346,6 +370,7 @@ export class ChordVoyagerApp extends LitElement {
         @set-genre=${this.onSetGenre}
         @set-mood=${this.onSetMood}
         @reroll=${this.onReroll}
+        @reorder=${this.onReorder}
       ></loop-screen>
     `;
   }

@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, state, query } from 'lit/decorators.js';
 import { Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
@@ -38,16 +38,41 @@ export class LoopScreen extends LitElement {
   @state() private shareVisible = false;
   @state() private toast: string | null = null;
   @state() private spinning = false;
+  @state() private drag: { screen: 'mobile' | 'desktop'; pos: number; offsetX: number; offsetY: number } | null = null;
 
   private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Drag-to-reorder: press-and-hold (150ms, without moving >8px) starts a drag instead of a
+  // tap, so a quick tap still opens the swap sheet. itemHeight/cellSize are measured from the
+  // container at drag-start so the reorder math works regardless of viewport size.
+  private pressTimer: ReturnType<typeof setTimeout> | null = null;
+  private pressTapFn: (() => void) | null = null;
+  private pressStartX = 0;
+  private pressStartY = 0;
+  private itemHeight = 0;
+  private cellSize = { w: 0, h: 0 };
+
+  @query('.chord-stack') private stackEl?: HTMLElement;
+  @query('.desktop-chord-grid') private gridEl?: HTMLElement;
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('pointermove', this.onDragMove);
+    window.addEventListener('pointerup', this.onDragEnd);
+    window.addEventListener('pointercancel', this.onDragEnd);
+  }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.menuCloseTimer) clearTimeout(this.menuCloseTimer);
     if (this.shareCloseTimer) clearTimeout(this.shareCloseTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
+    if (this.pressTimer) clearTimeout(this.pressTimer);
+    window.removeEventListener('pointermove', this.onDragMove);
+    window.removeEventListener('pointerup', this.onDragEnd);
+    window.removeEventListener('pointercancel', this.onDragEnd);
   }
 
   static styles = css`
@@ -282,15 +307,11 @@ export class LoopScreen extends LitElement {
       cursor: pointer;
       border: none;
     }
-    .play-bars {
-      display: flex;
-      gap: 4px;
-    }
-    .play-bar {
-      width: 4px;
-      height: 14px;
+    .play-square {
+      width: 13px;
+      height: 13px;
       background: #F1E8D9;
-      border-radius: 1px;
+      border-radius: 2px;
     }
     .play-triangle {
       width: 0;
@@ -601,6 +622,108 @@ export class LoopScreen extends LitElement {
     return `transition-delay: ${idx * 0.025}s`;
   }
 
+  private pressStart(screen: 'mobile' | 'desktop', pos: number, tapFn: () => void, e: PointerEvent) {
+    e.preventDefault();
+    this.pressTapFn = tapFn;
+    this.pressStartX = e.clientX;
+    this.pressStartY = e.clientY;
+    if (this.pressTimer) clearTimeout(this.pressTimer);
+    this.pressTimer = setTimeout(() => {
+      this.pressTimer = null;
+      if (screen === 'mobile') {
+        this.itemHeight = this.stackEl ? this.stackEl.offsetHeight / this.order.length : 60;
+      } else {
+        this.cellSize = {
+          w: this.gridEl ? this.gridEl.offsetWidth / 2 : 100,
+          h: this.gridEl ? this.gridEl.offsetHeight / 2 : 100,
+        };
+      }
+      this.drag = { screen, pos, offsetX: 0, offsetY: 0 };
+    }, 150);
+  }
+
+  private onDragMove = (e: PointerEvent) => {
+    if (this.pressTimer && !this.drag) {
+      if (Math.abs(e.clientY - this.pressStartY) > 8 || Math.abs(e.clientX - this.pressStartX) > 8) {
+        clearTimeout(this.pressTimer);
+        this.pressTimer = null;
+      }
+      return;
+    }
+    if (!this.drag) return;
+    this.drag = { ...this.drag, offsetX: e.clientX - this.pressStartX, offsetY: e.clientY - this.pressStartY };
+  };
+
+  private onDragEnd = () => {
+    if (this.pressTimer) { clearTimeout(this.pressTimer); this.pressTimer = null; }
+    if (!this.drag) {
+      if (this.pressTapFn) this.pressTapFn();
+      this.pressTapFn = null;
+      return;
+    }
+    const { screen, pos, offsetX, offsetY } = this.drag;
+    let targetPos = pos;
+    if (screen === 'mobile') {
+      const itemH = this.itemHeight || 1;
+      targetPos = Math.max(0, Math.min(this.order.length - 1, pos + Math.round(offsetY / itemH)));
+    } else {
+      const cellW = this.cellSize.w || 1, cellH = this.cellSize.h || 1;
+      const fromRow = Math.floor(pos / 2), fromCol = pos % 2;
+      const newRow = Math.max(0, Math.min(1, fromRow + Math.round(offsetY / cellH)));
+      const newCol = Math.max(0, Math.min(1, fromCol + Math.round(offsetX / cellW)));
+      targetPos = newRow * 2 + newCol;
+    }
+    this.drag = null;
+    this.pressTapFn = null;
+    if (targetPos !== pos) {
+      const newOrder = [...this.order];
+      const [moved] = newOrder.splice(pos, 1);
+      newOrder.splice(targetPos, 0, moved);
+      this.emit('reorder', newOrder);
+    }
+  };
+
+  private dragStyleFor(pos: number, screen: 'mobile' | 'desktop'): string {
+    let tx = 0, ty = 0, transition = 'transform .22s cubic-bezier(.2,.8,.2,1)', scale = 1, rotate = 0, shadow = 'none', z = 1, opacity = 1;
+    const d = this.drag;
+    if (d && d.screen === screen) {
+      if (screen === 'mobile') {
+        const itemH = this.itemHeight || 1;
+        const targetPos = Math.max(0, Math.min(this.order.length - 1, d.pos + Math.round(d.offsetY / itemH)));
+        if (pos === d.pos) {
+          ty = d.offsetY; transition = 'none'; scale = 1.035; rotate = -0.6; shadow = '0 16px 32px rgba(0,0,0,0.35)'; z = 20;
+        } else {
+          const from = d.pos;
+          if (from < targetPos && pos > from && pos <= targetPos) ty = -itemH;
+          else if (from > targetPos && pos >= targetPos && pos < from) ty = itemH;
+          opacity = 0.86;
+        }
+      } else {
+        const cellW = this.cellSize.w || 1, cellH = this.cellSize.h || 1;
+        const fromRow = Math.floor(d.pos / 2), fromCol = d.pos % 2;
+        const newRow = Math.max(0, Math.min(1, fromRow + Math.round(d.offsetY / cellH)));
+        const newCol = Math.max(0, Math.min(1, fromCol + Math.round(d.offsetX / cellW)));
+        const targetPos = newRow * 2 + newCol;
+        if (pos === d.pos) {
+          tx = d.offsetX; ty = d.offsetY; transition = 'none'; scale = 1.045; rotate = -0.8; shadow = '0 20px 40px rgba(0,0,0,0.38)'; z = 20;
+        } else {
+          const arr = [0, 1, 2, 3];
+          const [moved] = arr.splice(d.pos, 1);
+          arr.splice(targetPos, 0, moved);
+          const newPos = arr.indexOf(pos);
+          if (newPos !== pos) {
+            const oldRow = Math.floor(pos / 2), oldCol = pos % 2, nr = Math.floor(newPos / 2), nc = newPos % 2;
+            tx = (nc - oldCol) * cellW;
+            ty = (nr - oldRow) * cellH;
+          }
+          opacity = 0.86;
+        }
+      }
+    }
+    const cursor = d && d.screen === screen && pos === d.pos ? 'grabbing' : 'grab';
+    return `transform:translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rotate}deg);transition:${transition};box-shadow:${shadow};z-index:${z};opacity:${opacity};touch-action:none;user-select:none;cursor:${cursor};`;
+  }
+
   render() {
     const p = this.progression;
     const activeChordIndex = this.order[this.activeIndex] ?? 0;
@@ -660,7 +783,11 @@ export class LoopScreen extends LitElement {
             const c = p.chords[chordIndex];
             const isActive = pos === this.activeIndex;
             return html`
-              <div class="chord-block" style="background:${c.color}" @click=${() => this.emit('chord-tap', chordIndex)}>
+              <div
+                class="chord-block"
+                style="background:${c.color};${this.dragStyleFor(pos, 'mobile')}"
+                @pointerdown=${(e: PointerEvent) => this.pressStart('mobile', pos, () => this.emit('chord-tap', chordIndex), e)}
+              >
                 <div class="chord-grain" style="opacity:${c.grain}"></div>
                 ${isActive ? html`
                   <div class="now-marker">
@@ -691,12 +818,7 @@ export class LoopScreen extends LitElement {
 
         <div class="transport">
           <button class="play-btn" @click=${() => this.emit('toggle-play')}>
-            ${this.playing ? html`
-              <div class="play-bars">
-                <div class="play-bar"></div>
-                <div class="play-bar"></div>
-              </div>
-            ` : html`<div class="play-triangle"></div>`}
+            ${this.playing ? html`<div class="play-square"></div>` : html`<div class="play-triangle"></div>`}
           </button>
           <div class="transport-label">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
           <div class="dice-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
@@ -768,7 +890,11 @@ export class LoopScreen extends LitElement {
                 const c = p.chords[chordIndex];
                 const isActive = pos === this.activeIndex;
                 return html`
-                  <div class="chord-block" style="background:${c.color}" @click=${() => this.emit('chord-tap', chordIndex)}>
+                  <div
+                    class="chord-block"
+                    style="background:${c.color};${this.dragStyleFor(pos, 'desktop')}"
+                    @pointerdown=${(e: PointerEvent) => this.pressStart('desktop', pos, () => this.emit('chord-tap', chordIndex), e)}
+                  >
                     <div class="chord-grain" style="opacity:${c.grain}"></div>
                     ${isActive ? html`
                       <div class="now-marker">
@@ -788,12 +914,7 @@ export class LoopScreen extends LitElement {
 
             <div class="transport">
               <button class="play-btn" @click=${() => this.emit('toggle-play')}>
-                ${this.playing ? html`
-                  <div class="play-bars">
-                    <div class="play-bar"></div>
-                    <div class="play-bar"></div>
-                  </div>
-                ` : html`<div class="play-triangle"></div>`}
+                ${this.playing ? html`<div class="play-square"></div>` : html`<div class="play-triangle"></div>`}
               </button>
               <div class="desktop-transport-hint">Click a chord to explore a swap, on the right.</div>
               <div class="dice-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
