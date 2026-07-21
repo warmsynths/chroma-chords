@@ -3,12 +3,14 @@ import { customElement, property, state, query } from 'lit/decorators.js';
 import { Alternative, ChordBlock, buildVoicingNotes, rootOfChordName } from '../services/chord-engine';
 
 const WHITE_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+// Chord notes come back flat-spelled for flat-rooted chords (e.g. Eb, Bb) but these keys
+// were only ever matched against their sharp name, so flat chord tones never highlighted.
 const BLACK_NOTES = [
-  { note: 'C#', left: '10%' },
-  { note: 'D#', left: '24.2857%' },
-  { note: 'F#', left: '52.857%' },
-  { note: 'G#', left: '67.1428%' },
-  { note: 'A#', left: '81.4285%' },
+  { note: 'C#', flat: 'Db', left: '10%' },
+  { note: 'D#', flat: 'Eb', left: '24.2857%' },
+  { note: 'F#', flat: 'Gb', left: '52.857%' },
+  { note: 'G#', flat: 'Ab', left: '67.1428%' },
+  { note: 'A#', flat: 'Bb', left: '81.4285%' },
 ];
 
 const QUALITIES = [
@@ -500,7 +502,7 @@ export class SwapSheet extends LitElement {
                     <div class="white-key ${voicingNotes.includes(n) ? 'active' : ''}">${n}</div>
                   `)}
                   ${BLACK_NOTES.map(b => html`
-                    <div class="black-key ${voicingNotes.includes(b.note) ? 'active' : ''}" style="left:${b.left}"></div>
+                    <div class="black-key ${(voicingNotes.includes(b.note) || voicingNotes.includes(b.flat)) ? 'active' : ''}" style="left:${b.left}"></div>
                   `)}
                 </div>
               </div>
