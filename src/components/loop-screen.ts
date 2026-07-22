@@ -759,6 +759,13 @@ export class LoopScreen extends LitElement {
       this.prevOrderLength = this.order.length;
       this.page = 0;
     }
+    // Autoplay following: as the active chord advances into a new page of 4, follow it there
+    // (and back to page 0 once the loop wraps around), so the visible page always shows
+    // what's currently playing.
+    if (changed.has('activeIndex') && !this.drag) {
+      const targetPage = Math.floor(this.activeIndex / 4);
+      if (targetPage !== this.page) this.page = targetPage;
+    }
     if (changed.has('sheetOpen')) {
       if (this.sheetOpen) {
         if (this.sheetCloseTimer) { clearTimeout(this.sheetCloseTimer); this.sheetCloseTimer = null; }
