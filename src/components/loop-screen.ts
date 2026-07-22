@@ -349,6 +349,13 @@ export class LoopScreen extends LitElement {
       background: #F1E8D9;
       transform: rotate(-14deg);
     }
+    .staff-accidental {
+      position: absolute;
+      font-size: 11px;
+      line-height: 1;
+      color: rgba(241, 232, 217, 0.65);
+      transform: translate(0, -50%);
+    }
     .theory-panel {
       padding-top: 18px;
       margin-top: 18px;
@@ -970,11 +977,12 @@ export class LoopScreen extends LitElement {
   };
 
   private renderChordStaff(c: ChordBlock, isActive: boolean) {
-    const staff = buildChordStaff(c.notes);
+    const staff = buildChordStaff(c.notes, this.progression.key, this.progression.scaleType);
     return html`
       <div class="chord-staff" style="top:${isActive ? 40 : 16}px;width:${staff.width}px;height:${staff.height}px;">
         ${staff.lines.map(y => html`<div class="staff-line" style="top:${y}px;"></div>`)}
         ${staff.ledgers.map(l => html`<div class="staff-ledger" style="left:${l.x}px;top:${l.y}px;"></div>`)}
+        ${staff.keySignature.map(k => html`<div class="staff-accidental" style="left:${k.x}px;top:${k.y}px;">${k.sign === 'sharp' ? '♯' : '♭'}</div>`)}
         ${staff.notes.map(n => html`<div class="staff-note" style="left:${n.x}px;top:${n.y}px;"></div>`)}
       </div>
     `;

@@ -641,6 +641,7 @@ export interface ChordStaff {
   lines: number[];
   ledgers: { x: number; y: number }[];
   notes: { x: number; y: number }[];
+  keySignature: { x: number; y: number; sign: 'sharp' | 'flat' }[];
 }
 
 const LETTER_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -650,6 +651,41 @@ const BOTTOM_LINE_STEP = LETTER_ORDER.indexOf('E') + 4 * 7;
 const TOP_LINE_STEP = BOTTOM_LINE_STEP + 4 * 2;
 const STAFF_TOP_Y = 20;
 const STAFF_BOTTOM_Y = STAFF_TOP_Y + 4 * STAFF_LINE_GAP;
+
+// Standard treble-clef key signatures for the 12 major keys this app's roots can canonically
+// spell as (see ROOT_KEYS/CANONICAL_ROOT_BY_PC below) — sharps/flats always added in this order.
+const MAJOR_KEY_SIGNATURES: Record<string, string[]> = {
+  C: [],
+  G: ['F#'], D: ['F#', 'C#'], A: ['F#', 'C#', 'G#'], E: ['F#', 'C#', 'G#', 'D#'],
+  B: ['F#', 'C#', 'G#', 'D#', 'A#'], 'F#': ['F#', 'C#', 'G#', 'D#', 'A#', 'E#'],
+  F: ['Bb'], Bb: ['Bb', 'Eb'], Eb: ['Bb', 'Eb', 'Ab'], Ab: ['Bb', 'Eb', 'Ab', 'Db'], Db: ['Bb', 'Eb', 'Ab', 'Db', 'Gb'],
+};
+
+// Semitone offset of each mode's tonic within its parent major scale (e.g. Dorian is the major
+// scale's 2nd degree, a whole step up), used to find the parent major whose key signature this
+// mode is notated with. Harmonic minor is notated with natural minor's signature plus an
+// explicit accidental on the raised 7th wherever it occurs, not its own signature.
+const MODE_PARENT_OFFSET: Record<string, number> = {
+  MAJOR: 0, LYDIAN: 5, MIXOLYDIAN: 7, DORIAN: 2, NATURAL_MINOR: 9, HARMONIC_MINOR: 9,
+};
+
+const CANONICAL_ROOT_BY_PC: Record<number, string> = {};
+ROOT_KEYS.forEach(r => { CANONICAL_ROOT_BY_PC[PITCH_CLASS[r]] = r; });
+
+export function getKeySignature(key: string, scaleType: string): string[] {
+  const offset = MODE_PARENT_OFFSET[scaleType] ?? 0;
+  const rootPc = PITCH_CLASS[key] ?? 0;
+  const parentPc = ((rootPc - offset) % 12 + 12) % 12;
+  const parentName = CANONICAL_ROOT_BY_PC[parentPc] ?? 'C';
+  return MAJOR_KEY_SIGNATURES[parentName] ?? [];
+}
+
+// Standard treble-clef vertical placement (in the same letter+octave "step" units as
+// diatonicSteps/stepToY) for each accidental that can appear in one of the signatures above.
+const KEY_SIG_STEP: Record<string, number> = {
+  'F#': 38, 'C#': 35, 'G#': 39, 'D#': 36, 'A#': 33, 'E#': 37, 'B#': 34,
+  'Bb': 34, 'Eb': 37, 'Ab': 33, 'Db': 36, 'Gb': 32, 'Cb': 35, 'Fb': 31,
+};
 
 function diatonicSteps(notes: string[]): number[] {
   let octave = 4;
@@ -666,20 +702,25 @@ function stepToY(step: number): number {
   return STAFF_BOTTOM_Y - (step - BOTTOM_LINE_STEP) * (STAFF_LINE_GAP / 2);
 }
 
-export function buildChordStaff(notes: string[]): ChordStaff {
+export function buildChordStaff(notes: string[], key: string, scaleType: string): ChordStaff {
   const steps = diatonicSteps(notes);
   const margin = 8;
   const noteWidth = 11;
 
-  const rawMinY = Math.min(STAFF_TOP_Y, ...steps.map(stepToY));
-  const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...steps.map(stepToY));
+  const sigLetters = getKeySignature(key, scaleType);
+  const sigGlyphSpacing = 6;
+  const sigWidth = sigLetters.length ? sigLetters.length * sigGlyphSpacing + 4 : 0;
+  const sigSteps = sigLetters.map(l => KEY_SIG_STEP[l]);
+
+  const rawMinY = Math.min(STAFF_TOP_Y, ...steps.map(stepToY), ...sigSteps.map(stepToY));
+  const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...steps.map(stepToY), ...sigSteps.map(stepToY));
   const offsetY = margin - rawMinY;
   const height = rawMaxY - rawMinY + noteWidth + margin;
 
   const lines = [0, 1, 2, 3, 4].map(i => STAFF_TOP_Y + i * STAFF_LINE_GAP + offsetY);
 
-  const usable = STAFF_WIDTH - margin * 2 - noteWidth;
-  const noteX = (i: number) => margin + (steps.length > 1 ? (i * usable) / (steps.length - 1) : usable / 2);
+  const usable = STAFF_WIDTH - margin * 2 - noteWidth - sigWidth;
+  const noteX = (i: number) => margin + sigWidth + (steps.length > 1 ? (i * usable) / (steps.length - 1) : usable / 2);
 
   const noteDots = steps.map((step, i) => ({ x: noteX(i), y: stepToY(step) + offsetY - noteWidth / 2 }));
 
@@ -691,7 +732,13 @@ export function buildChordStaff(notes: string[]): ChordStaff {
     }
   });
 
-  return { width: STAFF_WIDTH, height, lines, ledgers, notes: noteDots };
+  const keySignature = sigLetters.map((l, i) => ({
+    x: margin + i * sigGlyphSpacing,
+    y: stepToY(KEY_SIG_STEP[l]) + offsetY,
+    sign: (l.includes('#') ? 'sharp' : 'flat') as 'sharp' | 'flat',
+  }));
+
+  return { width: STAFF_WIDTH, height, lines, ledgers, notes: noteDots, keySignature };
 }
 
 export function applyVoicingToChord(chord: ChordBlock, quality: string, extension: string): ChordBlock {
