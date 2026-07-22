@@ -230,7 +230,9 @@ function pickOne<T>(items: T[]): T | undefined {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-const PROGRESSION_LENGTH = 4;
+const DEFAULT_PROGRESSION_LENGTH = 4;
+export const MIN_PROGRESSION_LENGTH = 1;
+export const MAX_PROGRESSION_LENGTH = 8;
 
 const DEFAULT_MARKOV_TRANSITIONS: Record<string, Record<string, number>> = {
   TONIC: { SUBDOMINANT: 0.35, SUBMEDIANT: 0.25, SUPERTONIC: 0.15, DOMINANT: 0.15, MEDIANT: 0.05, SUBTONIC: 0.05 },
@@ -284,7 +286,8 @@ function walkMarkovGraph(
   degreeOrder: string[],
   bias: string[],
   genre: string,
-  mood: string
+  mood: string,
+  length: number = DEFAULT_PROGRESSION_LENGTH
 ): string[] {
   let firstDegree = 'TONIC';
   if ((scale.type.includes('MINOR') || scale.type === 'DORIAN') && (mood === 'Melancholy' || mood === 'Nostalgic') && Math.random() < 0.4) {
@@ -293,8 +296,8 @@ function walkMarkovGraph(
   const chosenDegrees: string[] = [firstDegree];
   let currentDegree = firstDegree;
 
-  for (let i = 1; i < PROGRESSION_LENGTH; i++) {
-    const isLast = i === PROGRESSION_LENGTH - 1;
+  for (let i = 1; i < length; i++) {
+    const isLast = i === length - 1;
 
     let candidates = degreeOrder.filter(d => scale.degrees[d]);
     if (!candidates.length) candidates = degreeOrder;
@@ -515,9 +518,11 @@ function prettifyChordName(symbol: string): string {
 export interface ProgressionOverrides {
   key?: string;
   scaleType?: string;
+  length?: number;
 }
 
 export function generateProgression(data: RawChordData, genre: string, mood: string, overrides?: ProgressionOverrides): Progression {
+  const length = Math.max(MIN_PROGRESSION_LENGTH, Math.min(MAX_PROGRESSION_LENGTH, overrides?.length ?? DEFAULT_PROGRESSION_LENGTH));
   const baseScaleType = GENRE_SCALE[genre] || 'MAJOR';
   const shift = MOOD_SHIFT[mood];
   const scaleType = overrides?.scaleType || (shift && (baseScaleType === 'MAJOR') ? shift : baseScaleType);
@@ -536,12 +541,14 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
   const bias = MOOD_DEGREE_BIAS[mood] || [];
 
   const templates = PROGRESSION_TEMPLATES[scaleType] || [];
-  const validTemplates = templates.filter(t => t.degrees.every(d => degreeOrder.includes(d)));
+  const validTemplates = length === DEFAULT_PROGRESSION_LENGTH
+    ? templates.filter(t => t.degrees.every(d => degreeOrder.includes(d)))
+    : [];
 
   const useTemplate = validTemplates.length && Math.random() < 0.25;
   const chosenDegrees = useTemplate
     ? pickWeighted(validTemplates, t => degreeBiasWeight(t, bias)).degrees
-    : walkMarkovGraph(scale, scaleKey, degreeOrder, bias, genre, mood);
+    : walkMarkovGraph(scale, scaleKey, degreeOrder, bias, genre, mood, length);
 
   const chords = chosenDegrees.map(degree => buildChordBlock(scaleKey, degree, scale, preferFlat));
 

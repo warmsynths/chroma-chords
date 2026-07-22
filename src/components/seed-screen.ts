@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH } from '../services/chord-engine';
 
 const GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
 
@@ -16,6 +17,7 @@ const MOODS: { name: string; dot: string }[] = [
 export class SeedScreen extends LitElement {
   @property({ type: String }) genre = 'Pop';
   @property({ type: String }) mood = 'Uplifting';
+  @property({ type: Number }) length = 4;
 
   static styles = css`
     :host {
@@ -162,6 +164,56 @@ export class SeedScreen extends LitElement {
       border-radius: 50%;
       flex-shrink: 0;
     }
+    .length-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 10px;
+      background: var(--cv-ink);
+      padding: 12px 14px;
+      margin-top: 12px;
+    }
+    .length-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: rgba(241, 232, 217, 0.12);
+      color: var(--cv-cream);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .length-btn.disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .length-segments {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+    }
+    .length-segment {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(241, 232, 217, 0.18);
+      transition: background .25s ease;
+    }
+    .length-segment.filled {
+      background: var(--cv-cream);
+    }
+    .length-label-text {
+      font-family: var(--cv-font-grotesk);
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(241, 232, 217, 0.85);
+      white-space: nowrap;
+      min-width: 56px;
+      text-align: right;
+    }
     .spacer {
       flex: 1;
     }
@@ -248,6 +300,18 @@ export class SeedScreen extends LitElement {
     this.dispatchEvent(new CustomEvent('generate', { bubbles: true, composed: true }));
   }
 
+  private setLength(n: number) {
+    this.dispatchEvent(new CustomEvent('length-change', { detail: n, bubbles: true, composed: true }));
+  }
+
+  private decLength() {
+    if (this.length > MIN_PROGRESSION_LENGTH) this.setLength(this.length - 1);
+  }
+
+  private incLength() {
+    if (this.length < MAX_PROGRESSION_LENGTH) this.setLength(this.length + 1);
+  }
+
   render() {
     return html`
       <div class="frame">
@@ -280,6 +344,21 @@ export class SeedScreen extends LitElement {
               <div class="mood-dot" style="background:${m.dot}"></div>${m.name}
             </div>
           `)}
+        </div>
+
+        <div class="label-row mood">
+          <div class="section-label">Length</div>
+          <div class="rule"></div>
+        </div>
+        <div class="length-control">
+          <div class="length-btn ${this.length <= MIN_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => this.decLength()}>−</div>
+          <div class="length-segments">
+            ${Array.from({ length: MAX_PROGRESSION_LENGTH }, (_, i) => html`
+              <div class="length-segment ${i < this.length ? 'filled' : ''}"></div>
+            `)}
+          </div>
+          <div class="length-btn ${this.length >= MAX_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => this.incLength()}>+</div>
+          <div class="length-label-text">${this.length} ${this.length === 1 ? 'chord' : 'chords'}</div>
         </div>
 
         <div class="spacer"></div>

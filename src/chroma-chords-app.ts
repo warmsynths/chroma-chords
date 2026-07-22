@@ -9,8 +9,12 @@ import {
 } from './services/chord-engine';
 import './components/seed-screen';
 import './components/loop-screen';
+import './components/song-screen';
+import { SongSection } from './components/song-screen';
 
-type Screen = 'seed' | 'loop';
+type Screen = 'seed' | 'loop' | 'song';
+
+const SECTION_NAMES = ['Verse', 'Chorus', 'Bridge', 'Pre-chorus', 'Outro'];
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
@@ -28,6 +32,9 @@ export class ChromaChordsApp extends LitElement {
   @state() private sheetOpen = false;
   @state() private swapIndex: number | null = null;
   @state() private alternatives: Alternative[] = [];
+  @state() private length = 4;
+  @state() private sections: SongSection[] = [];
+  @state() private activeSectionIdx = 0;
 
   private currentProjectId: string | null = null;
   private autoplayTimer: ReturnType<typeof setInterval> | null = null;
@@ -101,28 +108,46 @@ export class ChromaChordsApp extends LitElement {
   private onGenerate() {
     this.keyOverride = null;
     this.scaleOverride = null;
-    const progression = generateProgression(this.chordData, this.genre, this.mood);
+    const progression = generateProgression(this.chordData, this.genre, this.mood, { length: this.length });
     this.progression = progression;
-    this.order = [0, 1, 2, 3];
+    this.order = Array.from({ length: this.length }, (_, i) => i);
     this.activeIndex = 0;
     this.playing = false;
     this.screen = 'loop';
+    this.sections = [{ name: SECTION_NAMES[0], progression, order: this.order.slice() }];
+    this.activeSectionIdx = 0;
     this.saveProject();
+  }
+
+  private onLengthChange(e: CustomEvent<number>) {
+    this.length = e.detail;
   }
 
   private regenerate() {
     const progression = generateProgression(this.chordData, this.genre, this.mood, {
       key: this.keyOverride ?? undefined,
       scaleType: this.scaleOverride ?? undefined,
+      length: this.length,
     });
     this.progression = progression;
-    this.order = [0, 1, 2, 3];
+    this.order = Array.from({ length: this.length }, (_, i) => i);
     this.activeIndex = 0;
+    this.syncActiveSection();
     this.saveProject();
     if (this.playing) {
       this.startAutoplay();
       this.playActiveChord();
     }
+  }
+
+  // Keeps the section the user is currently editing in the Loop screen up to date with
+  // whatever they just changed (key/scale/genre/mood, a chord swap, a reorder), so revisiting
+  // the Song screen or switching sections doesn't show stale chords.
+  private syncActiveSection() {
+    if (!this.progression || !this.sections[this.activeSectionIdx]) return;
+    const sections = [...this.sections];
+    sections[this.activeSectionIdx] = { ...sections[this.activeSectionIdx], progression: this.progression, order: this.order.slice() };
+    this.sections = sections;
   }
 
   private onSetKey(e: CustomEvent<string>) {
@@ -145,6 +170,11 @@ export class ChromaChordsApp extends LitElement {
     this.regenerate();
   }
 
+  private onSetLength(e: CustomEvent<number>) {
+    this.length = e.detail;
+    this.regenerate();
+  }
+
   // Dice reroll: a new progression in the current genre/mood/key/scale, not just a reorder.
   private onReroll() {
     if (!this.progression) return;
@@ -160,6 +190,7 @@ export class ChromaChordsApp extends LitElement {
     this.order = e.detail;
     const newPos = this.order.indexOf(activeChordIndex);
     this.activeIndex = newPos >= 0 ? newPos : 0;
+    this.syncActiveSection();
     this.saveProject();
   }
 
@@ -213,6 +244,7 @@ export class ChromaChordsApp extends LitElement {
     this.progression = { ...this.progression, chords };
     this.sheetOpen = false;
     this.swapIndex = null;
+    this.syncActiveSection();
     this.saveProject();
     playChordForGenre(e.detail.chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
   }
@@ -230,7 +262,45 @@ export class ChromaChordsApp extends LitElement {
     const chords = [...this.progression.chords];
     chords[this.swapIndex] = applyVoicingToChord(chords[this.swapIndex], e.detail.quality, e.detail.extension);
     this.progression = { ...this.progression, chords };
+    this.syncActiveSection();
     this.saveProject();
+  }
+
+  private onViewSong() {
+    this.stopAutoplay();
+    this.sheetOpen = false;
+    this.screen = 'song';
+  }
+
+  private onSelectSection(e: CustomEvent<number>) {
+    const section = this.sections[e.detail];
+    if (!section) return;
+    this.activeSectionIdx = e.detail;
+    this.progression = section.progression;
+    this.order = section.order.slice();
+    this.activeIndex = 0;
+    this.length = section.progression.chords.length;
+    this.keyOverride = section.progression.key;
+    this.scaleOverride = section.progression.scaleType;
+    this.sheetOpen = false;
+    this.screen = 'loop';
+    if (this.playing) {
+      this.startAutoplay();
+      this.playActiveChord();
+    }
+  }
+
+  private onAddSection() {
+    if (!this.progression || this.sections.length >= SECTION_NAMES.length) return;
+    const progression = generateProgression(this.chordData, this.genre, this.mood, {
+      key: this.progression.key,
+      scaleType: this.progression.scaleType,
+      length: this.length,
+    });
+    const order = Array.from({ length: this.length }, (_, i) => i);
+    const section: SongSection = { name: SECTION_NAMES[this.sections.length], progression, order };
+    this.sections = [...this.sections, section];
+    this.activeSectionIdx = this.sections.length - 1;
   }
 
   private saveProject() {
@@ -350,10 +420,24 @@ export class ChromaChordsApp extends LitElement {
         <seed-screen
           .genre=${this.genre}
           .mood=${this.mood}
+          .length=${this.length}
           @genre-change=${this.onGenreChange}
           @mood-change=${this.onMoodChange}
+          @length-change=${this.onLengthChange}
           @generate=${this.onGenerate}
         ></seed-screen>
+      `;
+    }
+
+    if (this.screen === 'song') {
+      return html`
+        <song-screen
+          .sections=${this.sections}
+          .activeSectionIdx=${this.activeSectionIdx}
+          .canAddSection=${this.sections.length < SECTION_NAMES.length}
+          @select-section=${this.onSelectSection}
+          @add-section=${this.onAddSection}
+        ></song-screen>
       `;
     }
 
@@ -384,6 +468,8 @@ export class ChromaChordsApp extends LitElement {
         @set-mood=${this.onSetMood}
         @reroll=${this.onReroll}
         @reorder=${this.onReorder}
+        @set-length=${this.onSetLength}
+        @view-song=${this.onViewSong}
       ></loop-screen>
     `;
   }

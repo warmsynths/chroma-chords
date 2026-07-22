@@ -1,6 +1,9 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
-import { Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl, buildChordStaff } from '../services/chord-engine';
+import {
+  Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl, buildChordStaff,
+  MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH,
+} from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
 
@@ -468,6 +471,65 @@ export class LoopScreen extends LitElement {
       font-size: 13px;
       color: var(--cv-ink-40);
     }
+    .menu-nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+    }
+    .length-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 10px;
+      background: var(--cv-ink);
+      padding: 12px 14px;
+      margin-top: 12px;
+    }
+    .length-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: rgba(241, 232, 217, 0.12);
+      color: var(--cv-cream);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .length-btn.disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .length-segments {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+    }
+    .length-segment {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(241, 232, 217, 0.18);
+      transition: background .25s ease;
+    }
+    .length-segment.filled {
+      background: var(--cv-cream);
+    }
+    .length-label-text {
+      font-family: var(--cv-font-grotesk);
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(241, 232, 217, 0.85);
+      white-space: nowrap;
+      min-width: 56px;
+      text-align: right;
+    }
     .toast {
       position: absolute;
       left: 50%;
@@ -600,12 +662,10 @@ export class LoopScreen extends LitElement {
       .desktop-chord-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        grid-template-rows: 1fr 1fr;
         gap: 0;
         flex: 1;
         margin-top: 24px;
         min-height: 0;
-        max-height: 420px;
         border-radius: 14px;
         overflow: hidden;
       }
@@ -716,9 +776,11 @@ export class LoopScreen extends LitElement {
       if (screen === 'mobile') {
         this.itemHeight = this.stackEl ? this.stackEl.offsetHeight / this.order.length : 60;
       } else {
+        const cols = 2;
+        const rows = Math.ceil(this.order.length / cols);
         this.cellSize = {
-          w: this.gridEl ? this.gridEl.offsetWidth / 2 : 100,
-          h: this.gridEl ? this.gridEl.offsetHeight / 2 : 100,
+          w: this.gridEl ? this.gridEl.offsetWidth / cols : 100,
+          h: this.gridEl ? this.gridEl.offsetHeight / rows : 100,
         };
       }
       this.drag = { screen, pos, offsetX: 0, offsetY: 0 };
@@ -750,11 +812,13 @@ export class LoopScreen extends LitElement {
       const itemH = this.itemHeight || 1;
       targetPos = Math.max(0, Math.min(this.order.length - 1, pos + Math.round(offsetY / itemH)));
     } else {
+      const cols = 2;
+      const rows = Math.ceil(this.order.length / cols);
       const cellW = this.cellSize.w || 1, cellH = this.cellSize.h || 1;
-      const fromRow = Math.floor(pos / 2), fromCol = pos % 2;
-      const newRow = Math.max(0, Math.min(1, fromRow + Math.round(offsetY / cellH)));
-      const newCol = Math.max(0, Math.min(1, fromCol + Math.round(offsetX / cellW)));
-      targetPos = newRow * 2 + newCol;
+      const fromRow = Math.floor(pos / cols), fromCol = pos % cols;
+      const newRow = Math.max(0, Math.min(rows - 1, fromRow + Math.round(offsetY / cellH)));
+      const newCol = Math.max(0, Math.min(cols - 1, fromCol + Math.round(offsetX / cellW)));
+      targetPos = Math.min(this.order.length - 1, newRow * cols + newCol);
     }
     this.drag = null;
     this.pressTapFn = null;
@@ -793,20 +857,22 @@ export class LoopScreen extends LitElement {
           opacity = 0.86;
         }
       } else {
+        const cols = 2;
+        const rows = Math.ceil(this.order.length / cols);
         const cellW = this.cellSize.w || 1, cellH = this.cellSize.h || 1;
-        const fromRow = Math.floor(d.pos / 2), fromCol = d.pos % 2;
-        const newRow = Math.max(0, Math.min(1, fromRow + Math.round(d.offsetY / cellH)));
-        const newCol = Math.max(0, Math.min(1, fromCol + Math.round(d.offsetX / cellW)));
-        const targetPos = newRow * 2 + newCol;
+        const fromRow = Math.floor(d.pos / cols), fromCol = d.pos % cols;
+        const newRow = Math.max(0, Math.min(rows - 1, fromRow + Math.round(d.offsetY / cellH)));
+        const newCol = Math.max(0, Math.min(cols - 1, fromCol + Math.round(d.offsetX / cellW)));
+        const targetPos = Math.min(this.order.length - 1, newRow * cols + newCol);
         if (pos === d.pos) {
           tx = d.offsetX; ty = d.offsetY; transition = 'none'; scale = 1.045; rotate = -0.8; shadow = '0 20px 40px rgba(0,0,0,0.38)'; z = 20;
         } else {
-          const arr = [0, 1, 2, 3];
+          const arr = Array.from({ length: this.order.length }, (_, i) => i);
           const [moved] = arr.splice(d.pos, 1);
           arr.splice(targetPos, 0, moved);
           const newPos = arr.indexOf(pos);
           if (newPos !== pos) {
-            const oldRow = Math.floor(pos / 2), oldCol = pos % 2, nr = Math.floor(newPos / 2), nc = newPos % 2;
+            const oldRow = Math.floor(pos / cols), oldCol = pos % cols, nr = Math.floor(newPos / cols), nc = newPos % cols;
             tx = (nc - oldCol) * cellW;
             ty = (nr - oldRow) * cellH;
           }
@@ -816,6 +882,20 @@ export class LoopScreen extends LitElement {
     }
     const cursor = d && d.screen === screen && pos === d.pos ? 'grabbing' : 'grab';
     return `transform:translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rotate}deg);transition:${transition};box-shadow:${shadow};z-index:${z};opacity:${opacity};touch-action:none;user-select:none;cursor:${cursor};`;
+  }
+
+  private renderLengthControl() {
+    const len = this.progression.chords.length;
+    return html`
+      <div class="length-control">
+        <div class="length-btn ${len <= MIN_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => len > MIN_PROGRESSION_LENGTH && this.emit('set-length', len - 1)}>−</div>
+        <div class="length-segments">
+          ${Array.from({ length: MAX_PROGRESSION_LENGTH }, (_, i) => html`<div class="length-segment ${i < len ? 'filled' : ''}"></div>`)}
+        </div>
+        <div class="length-btn ${len >= MAX_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => len < MAX_PROGRESSION_LENGTH && this.emit('set-length', len + 1)}>+</div>
+        <div class="length-label-text">${len} ${len === 1 ? 'chord' : 'chords'}</div>
+      </div>
+    `;
   }
 
   render() {
@@ -857,6 +937,14 @@ export class LoopScreen extends LitElement {
               ${MENU_MOODS.map((m, i) => html`
                 <div class="${this.chipClass(i + 23, m === p.mood)}" style=${this.chipStyle(i + 23)} @click=${() => this.emit('set-mood', m)}>${m}</div>
               `)}
+            </div>
+            <div class="menu-label spaced">Length</div>
+            ${this.renderLengthControl()}
+            <div class="menu-share-row" style="border-top:none;padding-top:0;margin-top:14px;">
+              <div class="menu-nav-row" @click=${() => this.emit('view-song')}>
+                <div class="menu-share-label">View song</div>
+                <div class="menu-share-arrow">↗</div>
+              </div>
             </div>
             <div class="menu-share-row" @click=${() => this.openShare()}>
               <div class="menu-share-label">Share progression</div>
@@ -963,6 +1051,9 @@ export class LoopScreen extends LitElement {
               `)}
             </div>
 
+            <div class="desktop-section-label">Length</div>
+            ${this.renderLengthControl()}
+
             <div class="theory-toggle" style="justify-content:flex-start;margin-top:30px;">
               <div class="theory-inner" @click=${() => this.emit('theory-toggle')}>
                 <div class="theory-dot" style="background:${this.showTheory ? 'var(--cv-accent)' : 'var(--cv-ink-20)'}"></div>
@@ -970,7 +1061,13 @@ export class LoopScreen extends LitElement {
               </div>
             </div>
 
-            <div class="menu-share-row" style="margin-top:24px;" @click=${() => this.openShare()}>
+            <div class="menu-share-row" style="margin-top:24px;">
+              <div class="menu-nav-row" @click=${() => this.emit('view-song')}>
+                <div class="menu-share-label">View song</div>
+                <div class="menu-share-arrow">↗</div>
+              </div>
+            </div>
+            <div class="menu-share-row" style="border-top:none;padding-top:0;margin-top:12px;" @click=${() => this.openShare()}>
               <div class="menu-share-label">Share progression</div>
               <div class="menu-share-arrow">↗</div>
             </div>
@@ -982,7 +1079,7 @@ export class LoopScreen extends LitElement {
               <div class="transport-label">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
             </div>
 
-            <div class="desktop-chord-grid">
+            <div class="desktop-chord-grid" style="grid-template-rows:repeat(${Math.ceil(this.order.length / 2)},1fr);max-height:${Math.min(640, Math.ceil(this.order.length / 2) * 170)}px">
               ${this.order.map((chordIndex, pos) => {
                 const c = p.chords[chordIndex];
                 const isActive = pos === this.activeIndex;
