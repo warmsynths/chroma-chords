@@ -69,6 +69,14 @@ export class LoopScreen extends LitElement {
   private dragPageOffset = 0;
   private dragPageLen = 0;
   private prevOrderLength = this.order.length;
+  private lastPointerX = 0;
+  private lastPointerY = 0;
+
+  // Cross-page drag: hovering a dragged chord over a page tab for a beat switches the visible
+  // page and moves the chord there, so a stack that's paged (see below) can still be reordered
+  // across pages instead of only within the current one.
+  private pageHoverTimer: ReturnType<typeof setTimeout> | null = null;
+  private pageHoverIndex: number | null = null;
 
   // Mobile paging: progressions longer than 4 chords page through 4 at a time (tabs above
   // the stack, dots below) rather than cramming every block onto one screen.
@@ -91,6 +99,7 @@ export class LoopScreen extends LitElement {
     if (this.sheetCloseTimer) clearTimeout(this.sheetCloseTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.pressTimer) clearTimeout(this.pressTimer);
+    if (this.pageHoverTimer) clearTimeout(this.pageHoverTimer);
     window.removeEventListener('pointermove', this.onDragMove);
     window.removeEventListener('pointerup', this.onDragEnd);
     window.removeEventListener('pointercancel', this.onDragEnd);
@@ -200,6 +209,9 @@ export class LoopScreen extends LitElement {
     .page-tab.selected {
       background: var(--cv-ink);
       color: var(--cv-cream);
+    }
+    .page-tab.drag-target {
+      box-shadow: inset 0 0 0 2px var(--cv-accent);
     }
     .page-dots {
       display: flex;
@@ -854,6 +866,8 @@ export class LoopScreen extends LitElement {
   }
 
   private onDragMove = (e: PointerEvent) => {
+    this.lastPointerX = e.clientX;
+    this.lastPointerY = e.clientY;
     if (this.pressTimer && !this.drag) {
       if (Math.abs(e.clientY - this.pressStartY) > 8 || Math.abs(e.clientX - this.pressStartX) > 8) {
         clearTimeout(this.pressTimer);
@@ -863,10 +877,67 @@ export class LoopScreen extends LitElement {
     }
     if (!this.drag) return;
     this.drag = { ...this.drag, offsetX: e.clientX - this.pressStartX, offsetY: e.clientY - this.pressStartY };
+    if (this.drag.screen === 'mobile') this.checkPageHover(e.clientX, e.clientY);
   };
+
+  // While dragging a chord on the (paged) mobile stack, hovering it over a page tab for a
+  // beat switches to that page and moves the chord there, so a drag can cross pages instead
+  // of only reordering within the one currently on screen.
+  private checkPageHover(x: number, y: number) {
+    const tabs = this.renderRoot.querySelectorAll('.page-tab');
+    let hoverIdx: number | null = null;
+    tabs.forEach((el, i) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hoverIdx = i;
+    });
+    if (hoverIdx !== null && hoverIdx !== this.page) {
+      if (this.pageHoverIndex !== hoverIdx) {
+        this.pageHoverIndex = hoverIdx;
+        if (this.pageHoverTimer) clearTimeout(this.pageHoverTimer);
+        const target = hoverIdx;
+        this.pageHoverTimer = setTimeout(() => this.switchDragToPage(target), 450);
+      }
+    } else if (this.pageHoverIndex !== null) {
+      this.pageHoverIndex = null;
+      if (this.pageHoverTimer) { clearTimeout(this.pageHoverTimer); this.pageHoverTimer = null; }
+    }
+  }
+
+  private switchDragToPage(newPage: number) {
+    this.pageHoverTimer = null;
+    this.pageHoverIndex = null;
+    if (!this.drag || this.drag.screen !== 'mobile') return;
+    const fromPage = this.page;
+    if (newPage === fromPage) return;
+
+    const draggedAbsIndex = this.dragPageOffset + this.drag.pos;
+    const movedChordIndex = this.order[draggedAbsIndex];
+    if (movedChordIndex === undefined) return;
+
+    const newOrder = [...this.order];
+    newOrder.splice(draggedAbsIndex, 1);
+    const newOffset = newPage * 4;
+    const remainingInTargetPage = Math.min(4, newOrder.length - newOffset);
+    // Coming from a later page, the chord lands at the top of the target page (it was
+    // "pushed forward" into it); coming from an earlier page, it lands at the bottom.
+    const insertPos = newPage > fromPage ? newOffset : Math.min(newOrder.length, newOffset + remainingInTargetPage);
+    newOrder.splice(insertPos, 0, movedChordIndex);
+
+    this.page = newPage;
+    this.dragPageOffset = newOffset;
+    this.dragPageLen = Math.min(4, newOrder.length - newOffset);
+    this.itemHeight = this.stackEl ? this.stackEl.offsetHeight / this.dragPageLen : this.itemHeight;
+    this.pressStartX = this.lastPointerX;
+    this.pressStartY = this.lastPointerY;
+    this.drag = { screen: 'mobile', pos: insertPos - newOffset, offsetX: 0, offsetY: 0 };
+
+    this.emit('reorder', newOrder);
+  }
 
   private onDragEnd = () => {
     if (this.pressTimer) { clearTimeout(this.pressTimer); this.pressTimer = null; }
+    if (this.pageHoverTimer) { clearTimeout(this.pageHoverTimer); this.pageHoverTimer = null; }
+    this.pageHoverIndex = null;
     if (!this.drag) {
       if (this.pressTapFn) this.pressTapFn();
       this.pressTapFn = null;
@@ -1039,7 +1110,7 @@ export class LoopScreen extends LitElement {
             <div class="page-tab-wrap">
               ${Array.from({ length: pageCount }, (_, i) => {
                 const start = i * 4 + 1, end = Math.min(this.order.length, i * 4 + 4);
-                return html`<div class="page-tab ${i === page ? 'selected' : ''}" @click=${() => { this.page = i; }}>${start}–${end}</div>`;
+                return html`<div class="page-tab ${i === page ? 'selected' : ''} ${this.pageHoverIndex === i ? 'drag-target' : ''}" @click=${() => { this.page = i; }}>${start}–${end}</div>`;
               })}
             </div>
           </div>
