@@ -1,43 +1,48 @@
-# 🧭 Chord Voyager
+# Chroma Chords
 
-> *"The distance between an idea in your head and a saved recording on your device should be zero."*
+> *"A tactile audio widget for generating pleasing chord progressions in seconds."*
 
-Chord Voyager is a tool designed to completely remove the friction of musical exploration. Instead of fighting complex DAW grids, loading heavy plugins, or getting lost in music theory menus, Chord Voyager lets you immediately set sail, map out chord progressions, feel the vibe, and instantly export the results directly to your device or the cloud.
-
----
-
-![Chord Voyager Demo Layout](assets/demo.gif)
-[Live app](https://warmsynths.github.io/chord-voyager)
+**Chroma Chords** is designed to completely eliminate friction when exploring musical ideas. Built as a fast, tactile web application, it lets you instantly seed chord progressions by genre and mood, swap chords with intelligent harmonic recommendations, customize voicings, view musical theory analysis, and export seamless loop helpers to your hardware or DAW.
 
 ---
 
-## 🌊 The Philosophy
-
-We've all been there: you have a melody or a vibe in your head, but by the time you open your DAW, load up a synth, configure your MIDI routing, and draw notes in a piano roll, the spark is gone. 
-
-Chord Voyager exists to capture that spark before it fades:
-* **Frictionless Exploration:** Use the **Voyage Metaphor** (curated modes like *Sunlit Harbor* or *The Twilight Hour*) to instantly find scales and modes that fit the vibe you are chasing.
-* **Flow-State Composition:** A physical-feeling progression timeline and neumorphic interface designed to help you construct, audition, and rearrange chord steps effortlessly.
-* **Instant Export:** Get your ideas out of the browser and into the real world. Save your session locally, sync it to **Google Drive**, or drag the MIDI/audio straight into your favorite sampler, DAW, or hardware device.
+![Chroma Chords Demo Layout](assets/demo.gif)
+[Live App](https://warmsynths.github.io/chroma-chords)
 
 ---
 
-## 🛠️ How It's Put Together
+## The Philosophy
 
-Chord Voyager is built to be lightweight, incredibly fast, and runs entirely in the browser.
+Opening a DAW, loading heavy virtual instruments, configuring MIDI routings, and manually clicking notes into a piano roll often destroys the creative spark before an idea takes shape.
 
-* **Frontend Architecture:** Built using [Lit](https://lit.dev/) for high-performance, lightweight, and native Web Components. It keeps the UI fast and modular without the overhead of heavy frameworks.
-* **Type Safety:** Written entirely in [TypeScript](https://www.typescriptlang.org/) for robust, maintainable components and services.
-* **Audio Engine:** Powered by [Tone.js](https://tonejs.github.io/) to synthesize lush, organic chord previews directly in the browser.
-* **Build System:** Bundled and served via [Vite](https://vite.dev/) for near-instant dev server spin-up and optimized production builds.
-* **Key Services:**
-  * **Audio Service:** Handles playback, voicings, humanization (velocity & micro-timing deviations), and arpeggiation patterns.
-  * **Project Service:** Manages local persistence, saving and loading your voyages.
-  * **Google Drive Service:** Connects to your Google Drive to back up projects in the cloud
+**Chroma Chords** acts as your instant progression sketchpad:
+* **Audio Widget Simplicity:** Designed to look beautiful, feel tactile, and generate great-sounding chord loops with zero setup or menu diving.
+* **Seed by Feel:** Choose a Genre (*Pop, Lo-fi, R&B/Soul, Synthwave, Jazz-ish, etc.*) and a Mood (*Uplifting, Melancholy, Dreamy, Tense, Warm, Nostalgic*) to instantly generate a 4-chord loop.
+* **Intuitive Swap Sheet:** Tap any chord card to view harmonic alternative suggestions (*Darker, More tension, Dreamier, Resolve home*) or customize exact qualities and extensions.
+* **Music Theory Made Visual:** Toggle theory mode to see Roman numeral notation, degree functions (*Tonic, Mediant, Dominant*), staff notation, and OKLCH tension color maps.
+* **Instant Hardware & DAW Helpers:** Export progressions directly into hardware/software workflows such as Dirtywave M8 (`hypersyn-chord-helper`) and Novation Circuit (`circuit-chords`).
 
 ---
 
-## 🚀 Getting Started
+## App Features & Capabilities
+
+* **Genre & Mood Seed Engine:** Curated probability rules for 10 musical genres and 6 distinct mood parameters.
+* **Tone.js Web Synthesizers & Samplers:** Built-in Rhodes piano, warm organ, lush string pads, Juno synth pads, and house stabs with humanized velocity and micro-timing.
+* **Key & Scale Controls:** Override key signatures (C through B with sharp/flat notation) and scale modes (Ionian, Aeolian, Dorian, Mixolydian, Lydian, Harmonic Minor).
+* **Tactile Playback & Reorder:** Seamless drag-to-reorder cards while maintaining playback identity so loops never glitch mid-beat.
+
+---
+
+## Technical Stack
+
+* **Frontend Architecture:** Built using [Lit](https://lit.dev/) for high-performance, lightweight Web Components.
+* **Type Safety:** Written 100% in [TypeScript](https://www.typescriptlang.org/).
+* **Audio Engine:** [Tone.js](https://tonejs.github.io/) for realtime browser synthesis and sample playback.
+* **Build System:** [Vite](https://vite.dev/) for instant HMR and optimized production bundles.
+
+---
+
+## Getting Started
 
 ### Development
 1. Install dependencies:
@@ -48,10 +53,10 @@ Chord Voyager is built to be lightweight, incredibly fast, and runs entirely in 
    ```bash
    npm run dev
    ```
-3. Open `http://localhost:5173` in your browser and start exploring.
+3. Open the dev server link in your browser and start exploring.
 
-### Build
-To build the app for production:
+### Production Build
+To compile TypeScript and bundle for production (outputs to `docs/`):
 ```bash
 npm run build
 ```

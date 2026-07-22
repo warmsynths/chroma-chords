@@ -27,12 +27,19 @@ export interface ProjectData {
   syncedToCloud?: boolean;
 }
 
-const STORAGE_KEY = 'chord_voyager_projects';
+const STORAGE_KEY = 'chroma_chords_projects';
+const OLD_STORAGE_KEY = 'chord_voyager_projects';
 
 export class ProjectService {
   static getProjects(): ProjectData[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
+      let data = localStorage.getItem(STORAGE_KEY);
+      if (!data) {
+        data = localStorage.getItem(OLD_STORAGE_KEY);
+        if (data) {
+          localStorage.setItem(STORAGE_KEY, data);
+        }
+      }
       if (data) {
         return JSON.parse(data) as ProjectData[];
       }
@@ -105,7 +112,7 @@ export class ProjectService {
     
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${project.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_chord_voyager.json`;
+    a.download = `${project.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_chroma_chords.json`;
     
     document.body.appendChild(a);
     a.click();

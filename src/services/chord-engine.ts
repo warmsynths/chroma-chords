@@ -232,42 +232,93 @@ function pickOne<T>(items: T[]): T | undefined {
 
 const PROGRESSION_LENGTH = 4;
 
-// Fallback for scale/mode combos without a curated template bank entry: a biased random
-// walk over the diatonic neighbor graph encoded in the chord data's next_chord_options.
-// Prefers a degree not already used in this progression at every step (falling back to
-// "not the immediately previous degree" only when truly no fresh option exists), so this
-// never lands on the same chord twice in a row and rarely repeats one at all.
-function walkDegreeGraph(scale: ScaleProfile, scaleKey: string, degreeOrder: string[], bias: string[]): string[] {
-  const chosenDegrees: string[] = ['TONIC'];
-  let currentDegree = 'TONIC';
-  for (let i = 1; i < PROGRESSION_LENGTH; i++) {
-    const rawOptions = (scale.degrees[currentDegree]?.next_chord_options || [])
-      .filter(o => o.nodeId.startsWith(`${scaleKey}_`))
-      .map(o => o.nodeId.replace(`${scaleKey}_`, ''))
-      .filter(d => degreeOrder.includes(d));
+const DEFAULT_MARKOV_TRANSITIONS: Record<string, Record<string, number>> = {
+  TONIC: { SUBDOMINANT: 0.35, SUBMEDIANT: 0.25, SUPERTONIC: 0.15, DOMINANT: 0.15, MEDIANT: 0.05, SUBTONIC: 0.05 },
+  SUPERTONIC: { DOMINANT: 0.50, SUBDOMINANT: 0.20, SUBMEDIANT: 0.15, TONIC: 0.10, 'LEADING-TONE': 0.05 },
+  MEDIANT: { SUBMEDIANT: 0.40, SUBDOMINANT: 0.30, SUPERTONIC: 0.15, DOMINANT: 0.15 },
+  SUBDOMINANT: { DOMINANT: 0.45, TONIC: 0.25, SUPERTONIC: 0.15, SUBMEDIANT: 0.15 },
+  DOMINANT: { TONIC: 0.55, SUBMEDIANT: 0.25, SUBDOMINANT: 0.15, MEDIANT: 0.05 },
+  SUBMEDIANT: { SUBDOMINANT: 0.40, SUPERTONIC: 0.25, DOMINANT: 0.20, TONIC: 0.15 },
+  'LEADING-TONE': { TONIC: 0.70, SUBMEDIANT: 0.20, MEDIANT: 0.10 },
+  SUBTONIC: { TONIC: 0.45, SUBDOMINANT: 0.30, SUBMEDIANT: 0.15, DOMINANT: 0.10 },
+};
 
-    const fresh = rawOptions.filter(d => !chosenDegrees.includes(d));
-    let options = fresh.length ? fresh : rawOptions.filter(d => d !== currentDegree);
+export function getMarkovTransitionWeight(
+  fromDegree: string,
+  toDegree: string,
+  scaleType: string = 'MAJOR',
+  genre: string = 'Pop',
+  mood: string = 'Uplifting'
+): number {
+  if (fromDegree === toDegree) return 0.05;
 
-    if (!options.length) {
-      const unused = degreeOrder.filter(d => d !== currentDegree && !chosenDegrees.includes(d));
-      options = unused.length ? unused : degreeOrder.filter(d => d !== currentDegree);
-    }
-    if (!options.length) options = degreeOrder;
+  const baseTransitions = DEFAULT_MARKOV_TRANSITIONS[fromDegree] || {};
+  let weight = baseTransitions[toDegree] ?? 0.1;
 
-    let pool = options;
-    if (i === PROGRESSION_LENGTH - 1) {
-      const resolving = options.filter(d => d === 'TONIC' || d === 'DOMINANT');
-      if (resolving.length) pool = resolving;
-    } else {
-      const biased = options.filter(d => bias.includes(d));
-      if (biased.length && Math.random() < 0.6) pool = biased;
-    }
-
-    const pick = pool[Math.floor(Math.random() * pool.length)];
-    currentDegree = pick;
-    chosenDegrees.push(pick);
+  if (scaleType.includes('MINOR') || scaleType === 'DORIAN') {
+    if (fromDegree === 'TONIC' && toDegree === 'SUBMEDIANT') weight *= 1.5;
+    if (fromDegree === 'SUBMEDIANT' && toDegree === 'MEDIANT') weight *= 1.4;
+    if (fromDegree === 'MEDIANT' && toDegree === 'SUBTONIC') weight *= 1.4;
+    if (fromDegree === 'SUBTONIC' && toDegree === 'TONIC') weight *= 1.3;
   }
+
+  if (genre === 'Jazz-ish' || genre === 'Lo-fi/Chill') {
+    if (fromDegree === 'SUPERTONIC' && toDegree === 'DOMINANT') weight *= 1.8;
+    if (fromDegree === 'DOMINANT' && toDegree === 'TONIC') weight *= 1.5;
+    if (fromDegree === 'TONIC' && toDegree === 'SUPERTONIC') weight *= 1.4;
+  } else if (genre === 'House/Dance' || genre === 'Synthwave') {
+    if (toDegree === 'SUBTONIC' || toDegree === 'SUBDOMINANT') weight *= 1.5;
+  }
+
+  const bias = MOOD_DEGREE_BIAS[mood] || [];
+  if (bias.includes(toDegree)) {
+    weight *= 1.5;
+  }
+
+  return Math.max(0.01, weight);
+}
+
+function walkMarkovGraph(
+  scale: ScaleProfile,
+  scaleKey: string,
+  degreeOrder: string[],
+  bias: string[],
+  genre: string,
+  mood: string
+): string[] {
+  let firstDegree = 'TONIC';
+  if ((scale.type.includes('MINOR') || scale.type === 'DORIAN') && (mood === 'Melancholy' || mood === 'Nostalgic') && Math.random() < 0.4) {
+    firstDegree = degreeOrder.includes('SUBMEDIANT') ? 'SUBMEDIANT' : 'TONIC';
+  }
+  const chosenDegrees: string[] = [firstDegree];
+  let currentDegree = firstDegree;
+
+  for (let i = 1; i < PROGRESSION_LENGTH; i++) {
+    const isLast = i === PROGRESSION_LENGTH - 1;
+
+    let candidates = degreeOrder.filter(d => scale.degrees[d]);
+    if (!candidates.length) candidates = degreeOrder;
+
+    const nonDuplicates = candidates.filter(d => d !== currentDegree);
+    const pool = nonDuplicates.length ? nonDuplicates : candidates;
+
+    if (isLast) {
+      const cadencePick = pickWeighted(pool, d => {
+        const transitionToFirst = getMarkovTransitionWeight(d, chosenDegrees[0], scale.type, genre, mood);
+        const transitionFromCurrent = getMarkovTransitionWeight(currentDegree, d, scale.type, genre, mood);
+        return transitionToFirst * transitionFromCurrent;
+      });
+      chosenDegrees.push(cadencePick);
+    } else {
+      const unused = pool.filter(d => !chosenDegrees.includes(d));
+      const searchPool = unused.length ? unused : pool;
+
+      const pick = pickWeighted(searchPool, d => getMarkovTransitionWeight(currentDegree, d, scale.type, genre, mood));
+      currentDegree = pick;
+      chosenDegrees.push(pick);
+    }
+  }
+
   return chosenDegrees;
 }
 
@@ -317,7 +368,10 @@ export function notesForSymbol(symbol: string, preferFlat: boolean): string[] {
 }
 
 export async function loadChordData(): Promise<RawChordData> {
-  const res = await fetch('./chord_voyager_data.json');
+  let res = await fetch('./chroma_chords_data.json');
+  if (!res.ok) {
+    res = await fetch('./chord_voyager_data.json');
+  }
   if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
   const data = (await res.json()) as RawChordData;
   injectModes(data);
@@ -484,9 +538,10 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
   const templates = PROGRESSION_TEMPLATES[scaleType] || [];
   const validTemplates = templates.filter(t => t.degrees.every(d => degreeOrder.includes(d)));
 
-  const chosenDegrees = validTemplates.length
+  const useTemplate = validTemplates.length && Math.random() < 0.25;
+  const chosenDegrees = useTemplate
     ? pickWeighted(validTemplates, t => degreeBiasWeight(t, bias)).degrees
-    : walkDegreeGraph(scale, scaleKey, degreeOrder, bias);
+    : walkMarkovGraph(scale, scaleKey, degreeOrder, bias, genre, mood);
 
   const chords = chosenDegrees.map(degree => buildChordBlock(scaleKey, degree, scale, preferFlat));
 
@@ -501,12 +556,20 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
   return { genre, mood, key: root, scaleType, bpm, chords };
 }
 
-// Each category offers several real candidate degrees rather than one fixed target, so
-// re-opening the swap sheet on the same chord doesn't always surface the same four chords.
-function pickDegreeExcluding(candidates: string[], degreeOrder: string[], exclude: string): string | undefined {
+function pickDegreeWithMarkov(
+  candidates: string[],
+  degreeOrder: string[],
+  exclude: string,
+  prevDegree: string,
+  scaleType: string,
+  genre: string,
+  mood: string
+): string | undefined {
   const available = candidates.filter(d => degreeOrder.includes(d));
   const preferred = available.filter(d => d !== exclude);
-  return pickOne(preferred.length ? preferred : available);
+  const pool = preferred.length ? preferred : available;
+  if (!pool.length) return undefined;
+  return pickWeighted(pool, d => getMarkovTransitionWeight(prevDegree, d, scaleType, genre, mood));
 }
 
 const CHORD_SUFFIX: Record<string, string> = {
@@ -576,17 +639,11 @@ export interface ChordStaff {
 const LETTER_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const STAFF_WIDTH = 96;
 const STAFF_LINE_GAP = 6;
-// Treble clef bottom line is E4 — letter index 2, octave 4 — used as the reference
-// diatonic step that every note's y-position is measured against.
 const BOTTOM_LINE_STEP = LETTER_ORDER.indexOf('E') + 4 * 7;
 const TOP_LINE_STEP = BOTTOM_LINE_STEP + 4 * 2;
 const STAFF_TOP_Y = 20;
 const STAFF_BOTTOM_Y = STAFF_TOP_Y + 4 * STAFF_LINE_GAP;
 
-// Chord tones come back as bare letter names with no octave (e.g. "Eb", "G"), but a staff
-// needs one. Chords here are built by stacking thirds upward from the root, so walking the
-// notes in order and bumping the octave whenever a letter doesn't advance past the previous
-// one reconstructs a plausible ascending voicing (root position, closed).
 function diatonicSteps(notes: string[]): number[] {
   let octave = 4;
   let prevLetter = -1;
@@ -602,15 +659,11 @@ function stepToY(step: number): number {
   return STAFF_BOTTOM_Y - (step - BOTTOM_LINE_STEP) * (STAFF_LINE_GAP / 2);
 }
 
-// A stylized visual guide, not engraved notation — ledger lines are only drawn through the
-// note's own row, without the intermediate ledgers real sheet music uses to "reach" it.
 export function buildChordStaff(notes: string[]): ChordStaff {
   const steps = diatonicSteps(notes);
   const margin = 8;
   const noteWidth = 11;
 
-  // Notes past the top/bottom line push the box taller — re-anchor everything so the
-  // highest element still sits `margin` px from the top instead of leaving dead space.
   const rawMinY = Math.min(STAFF_TOP_Y, ...steps.map(stepToY));
   const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...steps.map(stepToY));
   const offsetY = margin - rawMinY;
@@ -634,11 +687,6 @@ export function buildChordStaff(notes: string[]): ChordStaff {
   return { width: STAFF_WIDTH, height, lines, ledgers, notes: noteDots };
 }
 
-// Applying a quality/extension in the swap sheet's "Adjust voicing" panel used to only
-// preview the sound — it never touched the actual progression, so the change vanished the
-// moment the loop moved on or anything else re-rendered. This bakes the picked quality/
-// extension into a real ChordBlock (new name + notes, everything else — degree, scaleKey,
-// color, function, etc. — carried over) so the caller can persist it into the progression.
 export function applyVoicingToChord(chord: ChordBlock, quality: string, extension: string): ChordBlock {
   const root = rootOfChordName(chord.name);
   const preferFlat = root.includes('b');
@@ -656,13 +704,15 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
   const preferFlat = FLAT_TONICS.has(progression.key) || progression.key.includes('b');
   const results: Alternative[] = [];
 
-  // Darker — a borrowed chord from the parallel mode, varying which degree gets borrowed.
+  const prevIndex = (chordIndex - 1 + progression.chords.length) % progression.chords.length;
+  const prevDegree = progression.chords[prevIndex]?.degree || 'TONIC';
+
   const parallelType = progression.scaleType.includes('MINOR') ? 'MAJOR' : 'NATURAL_MINOR';
   const parallelKey = `${progression.key}_${parallelType}`;
   const parallelScale = data.scales[parallelKey];
   const borrowCandidates = parallelType === 'NATURAL_MINOR' ? ['SUBMEDIANT', 'MEDIANT', 'SUBDOMINANT'] : ['SUBDOMINANT', 'SUBMEDIANT'];
   if (parallelScale) {
-    const borrowedDegree = pickDegreeExcluding(borrowCandidates, Object.keys(parallelScale.degrees), chord.degree);
+    const borrowedDegree = pickDegreeWithMarkov(borrowCandidates, Object.keys(parallelScale.degrees), chord.degree, prevDegree, progression.scaleType, progression.genre, progression.mood);
     if (borrowedDegree) {
       const block = buildChordBlock(parallelKey, borrowedDegree, parallelScale, preferFlat);
       results.push({
@@ -686,8 +736,6 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
     });
   }
 
-  // More tension — usually the dominant family, but occasionally reach into the harmonic-minor
-  // dominant (a raised leading tone) when we're in natural minor, for extra bite.
   let tensionScaleKey = chord.scaleKey;
   let tensionScale = scale;
   if (progression.scaleType === 'NATURAL_MINOR' && Math.random() < 0.5) {
@@ -698,7 +746,7 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
       tensionScale = hmScale;
     }
   }
-  const tensionDegree = pickDegreeExcluding(['DOMINANT', 'LEADING-TONE', 'SUPERTONIC'], Object.keys(tensionScale.degrees), chord.degree);
+  const tensionDegree = pickDegreeWithMarkov(['DOMINANT', 'LEADING-TONE', 'SUPERTONIC'], Object.keys(tensionScale.degrees), chord.degree, prevDegree, progression.scaleType, progression.genre, progression.mood);
   if (tensionDegree) {
     const block = buildChordBlock(tensionScaleKey, tensionDegree, tensionScale, preferFlat);
     results.push({
@@ -710,8 +758,7 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
     });
   }
 
-  // Dreamier — a softer, non-resolving degree.
-  const dreamierDegree = pickDegreeExcluding(['SUBDOMINANT', 'MEDIANT', 'SUBMEDIANT'], degreeOrder, chord.degree);
+  const dreamierDegree = pickDegreeWithMarkov(['SUBDOMINANT', 'MEDIANT', 'SUBMEDIANT'], degreeOrder, chord.degree, prevDegree, progression.scaleType, progression.genre, progression.mood);
   if (dreamierDegree) {
     const block = buildChordBlock(chord.scaleKey, dreamierDegree, scale, preferFlat);
     results.push({
@@ -723,7 +770,6 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
     });
   }
 
-  // Resolve home — always the tonic.
   if (degreeOrder.includes('TONIC')) {
     const block = buildChordBlock(chord.scaleKey, 'TONIC', scale, preferFlat);
     results.push({

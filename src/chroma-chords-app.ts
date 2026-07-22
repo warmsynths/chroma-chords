@@ -12,8 +12,8 @@ import './components/loop-screen';
 
 type Screen = 'seed' | 'loop';
 
-@customElement('chord-voyager-app')
-export class ChordVoyagerApp extends LitElement {
+@customElement('chroma-chords-app')
+export class ChromaChordsApp extends LitElement {
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
   @state() private screen: Screen = 'seed';
   @state() private genre = 'Pop';
@@ -50,12 +50,12 @@ export class ChordVoyagerApp extends LitElement {
   `;
 
   async firstUpdated() {
-    this.showTheory = localStorage.getItem('chord-voyager-show-theory') === 'true';
+    this.showTheory = (localStorage.getItem('chroma-chords-show-theory') || localStorage.getItem('chord-voyager-show-theory')) === 'true';
 
     try {
       this.chordData = await loadChordData();
     } catch (err) {
-      console.error('Failed to load chord voyager data:', err);
+      console.error('Failed to load chord data:', err);
     }
 
     // Not currently surfaced in the UI (no login/sync affordance), so don't trigger it on load.
@@ -70,7 +70,7 @@ export class ChordVoyagerApp extends LitElement {
   private startAutoplay() {
     this.stopAutoplay();
     this.autoplayTimer = setInterval(() => {
-      if (!this.progression || !this.playing || this.sheetOpen) return;
+      if (!this.progression || !this.playing) return;
       this.activeIndex = (this.activeIndex + 1) % this.order.length;
       this.playActiveChord();
     }, 1700);
@@ -173,7 +173,7 @@ export class ChordVoyagerApp extends LitElement {
 
   private onTheoryToggle() {
     this.showTheory = !this.showTheory;
-    localStorage.setItem('chord-voyager-show-theory', String(this.showTheory));
+    localStorage.setItem('chroma-chords-show-theory', String(this.showTheory));
   }
 
   // Play/Stop, not play/pause: stopping always returns to the first chord and halts the
@@ -254,7 +254,7 @@ export class ChordVoyagerApp extends LitElement {
   }
 
   private initSilentAuth() {
-    const savedAuth = localStorage.getItem('chord-voyager-auth');
+    const savedAuth = localStorage.getItem('chroma-chords-auth') || localStorage.getItem('chord-voyager-auth');
     if (!savedAuth) return;
 
     this.hashEmail(savedAuth).then(hash => {
@@ -285,7 +285,7 @@ export class ChordVoyagerApp extends LitElement {
             if (!this.AUTHORIZED_HASHES.includes(hash)) return;
 
             this.isAuthenticated = true;
-            localStorage.setItem('chord-voyager-auth', userInfo.email);
+            localStorage.setItem('chroma-chords-auth', userInfo.email);
             this.driveService.setAccessToken(tokenResponse.access_token);
             await this.syncProjectsFromCloud();
             await this.syncProjectsToCloud();
@@ -391,6 +391,6 @@ export class ChordVoyagerApp extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'chord-voyager-app': ChordVoyagerApp;
+    'chroma-chords-app': ChromaChordsApp;
   }
 }

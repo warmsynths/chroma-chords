@@ -2,7 +2,8 @@ import { ProjectData } from './project-service';
 
 export class GoogleDriveService {
   private accessToken: string | null = null;
-  private readonly FILENAME = 'chord_voyager_projects.json';
+  private readonly FILENAME = 'chroma_chords_projects.json';
+  private readonly OLD_FILENAME = 'chord_voyager_projects.json';
 
   setAccessToken(token: string) {
     this.accessToken = token;
@@ -45,6 +46,24 @@ export class GoogleDriveService {
       if (data.files && data.files.length > 0) {
         return data.files[0].id;
       }
+
+      // Check legacy file name if new file isn't found
+      const oldQuery = encodeURIComponent(`name='${this.OLD_FILENAME}' and trashed=false`);
+      const oldResponse = await fetch(
+        `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${oldQuery}&fields=files(id)`,
+        {
+          method: 'GET',
+          headers: this.headers
+        }
+      );
+
+      if (oldResponse.ok) {
+        const oldData = await oldResponse.json();
+        if (oldData.files && oldData.files.length > 0) {
+          return oldData.files[0].id;
+        }
+      }
+
       return null;
     } catch (e) {
       console.error('Failed to find project file in Google Drive:', e);
