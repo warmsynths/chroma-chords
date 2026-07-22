@@ -284,7 +284,7 @@ export class ShareModal extends LitElement {
     }
     .backdrop {
       position: absolute;
-      inset: 0;
+      inset: -2px;
       z-index: 58;
       background: rgba(32, 26, 19, 0);
       transition: background .26s ease, backdrop-filter .26s ease;

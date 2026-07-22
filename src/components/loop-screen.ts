@@ -282,8 +282,8 @@ export class LoopScreen extends LitElement {
       transform: rotate(-14deg);
     }
     .theory-panel {
-      padding-top: 14px;
-      margin-top: 6px;
+      padding-top: 18px;
+      margin-top: 18px;
       border-top: 1px solid var(--cv-ink-14);
       flex-shrink: 0;
     }
@@ -330,7 +330,7 @@ export class LoopScreen extends LitElement {
       align-items: center;
       justify-content: space-between;
       padding: 0 16px;
-      margin-top: 12px;
+      margin-top: 18px;
       flex-shrink: 0;
     }
     .play-btn {
@@ -376,7 +376,7 @@ export class LoopScreen extends LitElement {
     }
     .menu-scrim {
       position: absolute;
-      inset: 0;
+      inset: -2px;
       z-index: 48;
       background: rgba(32, 26, 19, 0);
       transition: background .22s ease, backdrop-filter .22s ease;
