@@ -283,7 +283,7 @@ export class ShareModal extends LitElement {
       display: block;
     }
     .backdrop {
-      position: absolute;
+      position: fixed;
       inset: -2px;
       z-index: 58;
       background: rgba(32, 26, 19, 0);

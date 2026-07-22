@@ -585,7 +585,7 @@
       display: contents;
     }
     .scrim {
-      position: absolute;
+      position: fixed;
       inset: 0;
       background: rgba(32, 26, 19, 0);
       z-index: 40;
@@ -1110,7 +1110,7 @@
       display: block;
     }
     .backdrop {
-      position: absolute;
+      position: fixed;
       inset: -2px;
       z-index: 58;
       background: rgba(32, 26, 19, 0);
@@ -1738,7 +1738,7 @@
       transform: rotate(360deg);
     }
     .menu-scrim {
-      position: absolute;
+      position: fixed;
       inset: -2px;
       z-index: 48;
       background: rgba(32, 26, 19, 0);

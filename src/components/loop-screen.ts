@@ -375,7 +375,7 @@ export class LoopScreen extends LitElement {
       transform: rotate(360deg);
     }
     .menu-scrim {
-      position: absolute;
+      position: fixed;
       inset: -2px;
       z-index: 48;
       background: rgba(32, 26, 19, 0);

@@ -77,7 +77,7 @@ export class SwapSheet extends LitElement {
       display: contents;
     }
     .scrim {
-      position: absolute;
+      position: fixed;
       inset: 0;
       background: rgba(32, 26, 19, 0);
       z-index: 40;
