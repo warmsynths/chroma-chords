@@ -553,8 +553,15 @@ export class LoopScreen extends LitElement {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        background: #C25A3C;
+        animation: cv-dot-cycle 12s ease-in-out infinite;
         flex-shrink: 0;
+      }
+      @keyframes cv-dot-cycle {
+        0%, 20% { background: oklch(0.42 0.11 187); }
+        25%, 45% { background: oklch(0.40 0.13 154); }
+        50%, 70% { background: oklch(0.40 0.14 131); }
+        75%, 95% { background: oklch(0.38 0.16 88); }
+        100% { background: oklch(0.42 0.11 187); }
       }
       .desktop-wordmark .wordmark-text {
         font-family: var(--cv-font-grotesk);
