@@ -53,8 +53,15 @@ export class SeedScreen extends LitElement {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #C25A3C;
+      animation: cv-dot-cycle 12s ease-in-out infinite;
       flex-shrink: 0;
+    }
+    @keyframes cv-dot-cycle {
+      0%, 20% { background: oklch(0.42 0.11 187); }
+      25%, 45% { background: oklch(0.40 0.13 154); }
+      50%, 70% { background: oklch(0.40 0.14 131); }
+      75%, 95% { background: oklch(0.38 0.16 88); }
+      100% { background: oklch(0.42 0.11 187); }
     }
     .wordmark-text {
       font-family: var(--cv-font-grotesk);
@@ -73,7 +80,14 @@ export class SeedScreen extends LitElement {
     }
     h1 em {
       font-style: italic;
-      color: var(--cv-accent);
+      animation: cv-text-cycle 12s ease-in-out infinite;
+    }
+    @keyframes cv-text-cycle {
+      0%, 20% { color: oklch(0.42 0.11 187); }
+      25%, 45% { color: oklch(0.40 0.13 154); }
+      50%, 70% { color: oklch(0.40 0.14 131); }
+      75%, 95% { color: oklch(0.38 0.16 88); }
+      100% { color: oklch(0.42 0.11 187); }
     }
     .subcopy {
       font-family: var(--cv-font-body);
@@ -183,31 +197,10 @@ export class SeedScreen extends LitElement {
       color: var(--cv-cream);
       cursor: pointer;
     }
-    .cta-glyph {
-      position: relative;
-      width: 24px;
-      height: 22px;
+    .cta-dice {
+      font-size: 18px;
       flex-shrink: 0;
     }
-    .cta-glyph-chord {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-weight: 700;
-      font-size: 15px;
-    }
-    .cta-glyph-chord.c1 { color: oklch(0.65 0.11 187); animation: cv-blur1 4s ease-in-out infinite; }
-    .cta-glyph-chord.c2 { color: oklch(0.68 0.13 154); animation: cv-blur2 4s ease-in-out infinite; }
-    .cta-glyph-chord.c3 { color: oklch(0.65 0.14 131); animation: cv-blur3 4s ease-in-out infinite; }
-    .cta-glyph-chord.c4 { color: oklch(0.65 0.16 88); animation: cv-blur4 4s ease-in-out infinite; }
-    @keyframes cv-blur1 { 0%, 4% { opacity: 1; filter: blur(0px); } 18%, 100% { opacity: 0; filter: blur(3px); } }
-    @keyframes cv-blur2 { 0%, 24% { opacity: 0; filter: blur(3px); } 28%, 40% { opacity: 1; filter: blur(0px); } 44%, 100% { opacity: 0; filter: blur(3px); } }
-    @keyframes cv-blur3 { 0%, 48% { opacity: 0; filter: blur(3px); } 52%, 64% { opacity: 1; filter: blur(0px); } 68%, 100% { opacity: 0; filter: blur(3px); } }
-    @keyframes cv-blur4 { 0%, 72% { opacity: 0; filter: blur(3px); } 76%, 88% { opacity: 1; filter: blur(0px); } 92%, 100% { opacity: 0; filter: blur(3px); } }
     .caption {
       text-align: center;
       font-family: var(--cv-font-body);
@@ -261,10 +254,10 @@ export class SeedScreen extends LitElement {
         <div class="grain"></div>
         <div class="wordmark">
           <div class="dot"></div>
-          <div class="wordmark-text">Chord Voyager</div>
+          <div class="wordmark-text">Chroma Chords</div>
         </div>
 
-        <h1>What's the<br /><em>feeling?</em></h1>
+        <h1>Chords,<br /><em>by feel.</em></h1>
         <div class="subcopy">Pick a genre and a mood. We'll build the progression.</div>
 
         <div class="label-row">
@@ -294,12 +287,7 @@ export class SeedScreen extends LitElement {
         <div class="cta-wrap">
           <div class="cta-shadow"></div>
           <button class="cta" @click=${this.generate}>
-            <div class="cta-glyph">
-              <span class="cta-glyph-chord c1">C</span>
-              <span class="cta-glyph-chord c2">Am</span>
-              <span class="cta-glyph-chord c3">F</span>
-              <span class="cta-glyph-chord c4">G7</span>
-            </div>
+            <div class="cta-dice">⚄</div>
             <span>Generate loop →</span>
           </button>
         </div>
