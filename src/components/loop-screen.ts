@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
-import { Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl } from '../services/chord-engine';
+import { Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl, buildChordStaff } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
 
@@ -254,6 +254,32 @@ export class LoopScreen extends LitElement {
       font-style: italic;
       font-size: 12.5px;
       color: rgba(241, 232, 217, 0.55);
+    }
+    .chord-staff {
+      position: absolute;
+      right: 18px;
+      pointer-events: none;
+    }
+    .staff-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: rgba(241, 232, 217, 0.3);
+    }
+    .staff-ledger {
+      position: absolute;
+      width: 16px;
+      height: 1px;
+      background: rgba(241, 232, 217, 0.35);
+    }
+    .staff-note {
+      position: absolute;
+      width: 11px;
+      height: 8px;
+      border-radius: 50%;
+      background: #F1E8D9;
+      transform: rotate(-14deg);
     }
     .theory-panel {
       padding-top: 14px;
@@ -733,6 +759,17 @@ export class LoopScreen extends LitElement {
     }
   };
 
+  private renderChordStaff(c: ChordBlock, isActive: boolean) {
+    const staff = buildChordStaff(c.notes);
+    return html`
+      <div class="chord-staff" style="top:${isActive ? 40 : 16}px;width:${staff.width}px;height:${staff.height}px;">
+        ${staff.lines.map(y => html`<div class="staff-line" style="top:${y}px;"></div>`)}
+        ${staff.ledgers.map(l => html`<div class="staff-ledger" style="left:${l.x}px;top:${l.y}px;"></div>`)}
+        ${staff.notes.map(n => html`<div class="staff-note" style="left:${n.x}px;top:${n.y}px;"></div>`)}
+      </div>
+    `;
+  }
+
   private dragStyleFor(pos: number, screen: 'mobile' | 'desktop'): string {
     let tx = 0, ty = 0, transition = 'transform .22s cubic-bezier(.2,.8,.2,1)', scale = 1, rotate = 0, shadow = 'none', z = 1, opacity = 1;
     const d = this.drag;
@@ -845,6 +882,7 @@ export class LoopScreen extends LitElement {
                     <div class="now-text">now</div>
                   </div>
                 ` : ''}
+                ${this.showTheory ? this.renderChordStaff(c, isActive) : ''}
                 <div class="chord-name" style="--amp:${c.tension};${isActive ? `animation: cv-breathe ${2.6 - c.tension * 1.1}s ease-in-out infinite;` : ''}">${c.name}</div>
                 <div class="chord-meta">
                   <div class="chord-tag">${c.tag}</div>
@@ -889,7 +927,7 @@ export class LoopScreen extends LitElement {
           <div class="desktop-sidebar">
             <div class="desktop-wordmark">
               <div class="dot"></div>
-              <div class="wordmark-text">Chord Voyager</div>
+              <div class="wordmark-text">Chroma Chords</div>
             </div>
 
             <div class="desktop-section-label first">Genre</div>
@@ -954,6 +992,7 @@ export class LoopScreen extends LitElement {
                         <div class="now-text">now</div>
                       </div>
                     ` : ''}
+                    ${this.showTheory ? this.renderChordStaff(c, isActive) : ''}
                     <div class="chord-name" style="--amp:${c.tension};${isActive ? `animation: cv-breathe ${2.6 - c.tension * 1.1}s ease-in-out infinite;` : ''}">${c.name}</div>
                     <div class="chord-meta">
                       <div class="chord-tag">${c.tag}</div>

@@ -261,10 +261,10 @@ export class SeedScreen extends LitElement {
         <div class="grain"></div>
         <div class="wordmark">
           <div class="dot"></div>
-          <div class="wordmark-text">Chord Voyager</div>
+          <div class="wordmark-text">Chroma Chords</div>
         </div>
 
-        <h1>What's the<br /><em>feeling?</em></h1>
+        <h1>Chords,<br /><em>by feel.</em></h1>
         <div class="subcopy">Pick a genre and a mood. We'll build the progression.</div>
 
         <div class="label-row">

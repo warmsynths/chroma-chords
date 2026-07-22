@@ -565,6 +565,75 @@ function voicingChordName(root: string, quality: string, extension: string): str
   return `${root}${VOICING_QUALITY_SUFFIX[quality] ?? ''}${VOICING_EXTENSION_SUFFIX[extension] ?? ''}`;
 }
 
+export interface ChordStaff {
+  width: number;
+  height: number;
+  lines: number[];
+  ledgers: { x: number; y: number }[];
+  notes: { x: number; y: number }[];
+}
+
+const LETTER_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const STAFF_WIDTH = 96;
+const STAFF_LINE_GAP = 6;
+// Treble clef bottom line is E4 — letter index 2, octave 4 — used as the reference
+// diatonic step that every note's y-position is measured against.
+const BOTTOM_LINE_STEP = LETTER_ORDER.indexOf('E') + 4 * 7;
+const TOP_LINE_STEP = BOTTOM_LINE_STEP + 4 * 2;
+const STAFF_TOP_Y = 20;
+const STAFF_BOTTOM_Y = STAFF_TOP_Y + 4 * STAFF_LINE_GAP;
+
+// Chord tones come back as bare letter names with no octave (e.g. "Eb", "G"), but a staff
+// needs one. Chords here are built by stacking thirds upward from the root, so walking the
+// notes in order and bumping the octave whenever a letter doesn't advance past the previous
+// one reconstructs a plausible ascending voicing (root position, closed).
+function diatonicSteps(notes: string[]): number[] {
+  let octave = 4;
+  let prevLetter = -1;
+  return notes.map(note => {
+    const letter = LETTER_ORDER.indexOf(note[0].toUpperCase());
+    if (prevLetter !== -1 && letter <= prevLetter) octave++;
+    prevLetter = letter;
+    return letter + octave * 7;
+  });
+}
+
+function stepToY(step: number): number {
+  return STAFF_BOTTOM_Y - (step - BOTTOM_LINE_STEP) * (STAFF_LINE_GAP / 2);
+}
+
+// A stylized visual guide, not engraved notation — ledger lines are only drawn through the
+// note's own row, without the intermediate ledgers real sheet music uses to "reach" it.
+export function buildChordStaff(notes: string[]): ChordStaff {
+  const steps = diatonicSteps(notes);
+  const margin = 8;
+  const noteWidth = 11;
+
+  // Notes past the top/bottom line push the box taller — re-anchor everything so the
+  // highest element still sits `margin` px from the top instead of leaving dead space.
+  const rawMinY = Math.min(STAFF_TOP_Y, ...steps.map(stepToY));
+  const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...steps.map(stepToY));
+  const offsetY = margin - rawMinY;
+  const height = rawMaxY - rawMinY + noteWidth + margin;
+
+  const lines = [0, 1, 2, 3, 4].map(i => STAFF_TOP_Y + i * STAFF_LINE_GAP + offsetY);
+
+  const usable = STAFF_WIDTH - margin * 2 - noteWidth;
+  const noteX = (i: number) => margin + (steps.length > 1 ? (i * usable) / (steps.length - 1) : usable / 2);
+
+  const noteDots = steps.map((step, i) => ({ x: noteX(i), y: stepToY(step) + offsetY - noteWidth / 2 }));
+
+  const ledgers: { x: number; y: number }[] = [];
+  steps.forEach((step, i) => {
+    const isLinePosition = (step - BOTTOM_LINE_STEP) % 2 === 0;
+    if (isLinePosition && (step < BOTTOM_LINE_STEP || step > TOP_LINE_STEP)) {
+      ledgers.push({ x: noteX(i) - 2.5, y: stepToY(step) + offsetY });
+    }
+  });
+
+  return { width: STAFF_WIDTH, height, lines, ledgers, notes: noteDots };
+}
+
 // Applying a quality/extension in the swap sheet's "Adjust voicing" panel used to only
 // preview the sound — it never touched the actual progression, so the change vanished the
 // moment the loop moved on or anything else re-rendered. This bakes the picked quality/
