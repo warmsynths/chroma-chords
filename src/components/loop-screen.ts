@@ -337,21 +337,21 @@ export class LoopScreen extends LitElement {
     }
     .staff-ledger {
       position: absolute;
-      width: 16px;
+      width: 18px;
       height: 1px;
       background: rgba(241, 232, 217, 0.35);
     }
     .staff-note {
       position: absolute;
-      width: 11px;
-      height: 8px;
+      width: 12px;
+      height: 9px;
       border-radius: 50%;
       background: #F1E8D9;
       transform: rotate(-14deg);
     }
     .staff-accidental {
       position: absolute;
-      font-size: 11px;
+      font-size: 13px;
       line-height: 1;
       color: rgba(241, 232, 217, 0.65);
       transform: translate(0, -50%);

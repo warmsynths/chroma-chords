@@ -689,8 +689,8 @@ export interface ChordStaff {
 }
 
 const LETTER_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-const STAFF_WIDTH = 96;
-const STAFF_LINE_GAP = 6;
+const STAFF_WIDTH = 116;
+const STAFF_LINE_GAP = 7.5;
 const BOTTOM_LINE_STEP = LETTER_ORDER.indexOf('E') + 4 * 7;
 const TOP_LINE_STEP = BOTTOM_LINE_STEP + 4 * 2;
 const STAFF_TOP_Y = 20;
@@ -761,12 +761,12 @@ function stepToY(step: number): number {
 
 export function buildChordStaff(notes: string[], key: string, scaleType: string): ChordStaff {
   const steps = diatonicSteps(notes);
-  const margin = 8;
-  const noteWidth = 11;
+  const margin = 9;
+  const noteWidth = 12;
 
   const sigLetters = getKeySignature(key, scaleType);
-  const sigGlyphSpacing = 6;
-  const sigWidth = sigLetters.length ? sigLetters.length * sigGlyphSpacing + 4 : 0;
+  const sigGlyphSpacing = 8;
+  const sigWidth = sigLetters.length ? sigLetters.length * sigGlyphSpacing + 5 : 0;
   const sigSteps = sigLetters.map(l => KEY_SIG_STEP[l]);
 
   const rawMinY = Math.min(STAFF_TOP_Y, ...steps.map(stepToY), ...sigSteps.map(stepToY));
