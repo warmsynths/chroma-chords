@@ -334,14 +334,24 @@ export class SeedScreen extends LitElement {
         display: none;
       }
       .desktop-view {
+        position: relative;
         display: flex;
         min-height: 100dvh;
         width: 100%;
+      }
+      .desktop-view-blobs {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 272px;
+        right: 0;
+        pointer-events: none;
       }
       .desktop-sidebar {
         position: relative;
         width: 272px;
         flex-shrink: 0;
+        background: var(--cv-paper);
         border-right: 1px solid var(--cv-ink-14);
         padding: 32px 26px;
         box-sizing: border-box;
@@ -473,18 +483,11 @@ export class SeedScreen extends LitElement {
       .desktop-main {
         position: relative;
         flex: 1;
-        overflow: hidden;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         min-width: 0;
-      }
-      .desktop-main-ink-blobs {
-        position: absolute;
-        inset: 0;
-        overflow: hidden;
-        pointer-events: none;
       }
       .desktop-main-blob {
         position: absolute;
@@ -641,6 +644,10 @@ export class SeedScreen extends LitElement {
         </div>
 
         <div class="desktop-view">
+          <div class="desktop-view-blobs">
+            <div class="desktop-main-blob" style="width:640px;height:640px;margin:-320px 0 0 -320px;border-radius:42% 58% 54% 46% / 46% 54% 46% 54%;background:${moodColor};filter:blur(90px);opacity:0.35;animation:cv-ink-1 15s ease-in-out infinite;"></div>
+            <div class="desktop-main-blob" style="width:420px;height:420px;margin:-160px 0 0 -260px;border-radius:58% 42% 40% 60% / 54% 46% 54% 46%;background:${moodColor};filter:blur(60px);opacity:0.26;animation:cv-ink-2 18s ease-in-out infinite;"></div>
+          </div>
           <div class="desktop-sidebar">
             <div class="desktop-wordmark">
               <div class="dot" style="background:${moodColor}"></div>
@@ -693,10 +700,6 @@ export class SeedScreen extends LitElement {
           </div>
 
           <div class="desktop-main">
-            <div class="desktop-main-ink-blobs">
-              <div class="desktop-main-blob" style="width:640px;height:640px;margin:-320px 0 0 -320px;border-radius:42% 58% 54% 46% / 46% 54% 46% 54%;background:${moodColor};filter:blur(90px);opacity:0.35;animation:cv-ink-1 15s ease-in-out infinite;"></div>
-              <div class="desktop-main-blob" style="width:420px;height:420px;margin:-160px 0 0 -260px;border-radius:58% 42% 40% 60% / 54% 46% 54% 46%;background:${moodColor};filter:blur(60px);opacity:0.26;animation:cv-ink-2 18s ease-in-out infinite;"></div>
-            </div>
             <div class="desktop-genre-label">${this.genre}</div>
             ${repeat([this.mood], m => m, () => html`
               <div class="mood-doodle">
