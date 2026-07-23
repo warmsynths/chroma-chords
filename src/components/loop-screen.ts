@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import {
   Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl, buildChordStaff,
-  MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH,
+  MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor,
 } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
@@ -687,15 +687,8 @@ export class LoopScreen extends LitElement {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        animation: cv-dot-cycle 12s ease-in-out infinite;
+        transition: background .6s cubic-bezier(0.23, 1, 0.32, 1);
         flex-shrink: 0;
-      }
-      @keyframes cv-dot-cycle {
-        0%, 20% { background: oklch(0.42 0.11 187); }
-        25%, 45% { background: oklch(0.40 0.13 154); }
-        50%, 70% { background: oklch(0.40 0.14 131); }
-        75%, 95% { background: oklch(0.38 0.16 88); }
-        100% { background: oklch(0.42 0.11 187); }
       }
       .desktop-wordmark .wordmark-text {
         font-family: var(--cv-font-grotesk);
@@ -1193,7 +1186,7 @@ export class LoopScreen extends LitElement {
         <div class="desktop-view">
           <div class="desktop-sidebar">
             <div class="desktop-wordmark">
-              <div class="dot"></div>
+              <div class="dot" style="background:${getMoodColor(p.mood)}"></div>
               <div class="wordmark-text">Chroma Chords</div>
             </div>
 

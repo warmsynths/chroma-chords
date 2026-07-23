@@ -160,6 +160,50 @@ const MOOD_DEGREE_BIAS: Record<string, string[]> = {
   Nostalgic: ['SUBMEDIANT', 'MEDIANT', 'DOMINANT'],
 };
 
+export interface MoodDef {
+  name: string;
+  dot: string;
+  desc: string;
+  pathD: string;
+}
+
+// Shared mood data: dot/accent color (also used to tint the ink-blob background and wordmark),
+// a short caption, and an abstract line-art "doodle" path drawn on the desktop Seed screen.
+export const MOODS: MoodDef[] = [
+  {
+    name: 'Uplifting', dot: 'oklch(0.55 0.12 165)', desc: 'Bright, major, forward-moving',
+    pathD: 'M55 240 C35 215 34 185 55 165 C40 145 48 118 72 112 C64 92 82 70 104 76 C112 55 138 46 152 64 C168 48 192 56 190 78 C212 74 228 96 214 116 C232 124 234 150 214 160 C222 182 206 204 184 198 C182 218 158 228 144 210 C126 226 102 220 98 200 C76 206 58 194 58 172 C48 172 44 254 55 240',
+  },
+  {
+    name: 'Melancholy', dot: 'oklch(0.42 0.09 245)', desc: 'Minor-leaning, unresolved longing',
+    pathD: 'M40 76 C64 60 82 82 74 106 C68 126 88 140 104 128 C96 150 114 168 134 156 C128 178 148 194 166 180 C160 202 180 216 198 202 C196 220 214 232 230 220 C230 236 244 244 258 250',
+  },
+  {
+    name: 'Dreamy', dot: 'oklch(0.60 0.08 205)', desc: 'Suspended, floating, reverb-soaked',
+    pathD: 'M48 176 C36 148 60 128 84 138 C66 108 94 84 122 96 C126 66 164 60 172 88 C202 78 222 104 202 126 C226 138 220 168 194 168 C204 190 184 214 158 206 C158 226 128 232 116 210 C90 220 70 202 78 180 C58 192 42 196 48 176 C58 158 66 162 78 168',
+  },
+  {
+    name: 'Tense', dot: 'oklch(0.45 0.20 35)', desc: 'Chromatic pulls, unresolved tension',
+    pathD: 'M46 232 L88 176 L64 148 L112 122 L84 96 L136 78 L108 52 L166 42 L142 22 L200 26 L184 8 L226 34 L206 58 L238 84 L212 100 L228 128',
+  },
+  {
+    name: 'Warm', dot: 'oklch(0.55 0.15 55)', desc: 'Rich, consonant, close voicings',
+    pathD: 'M138 148 C168 150 190 130 182 104 C176 78 142 74 128 98 C116 118 132 138 154 134 C176 130 186 104 166 92 C148 82 122 94 116 118 C110 142 128 164 152 168 C132 178 112 170 106 150 C100 128 116 106 138 96 C160 86 186 92 198 112',
+  },
+  {
+    name: 'Nostalgic', dot: 'oklch(0.50 0.11 20)', desc: 'Bittersweet, borrowed chords',
+    pathD: 'M36 210 C60 192 78 216 104 200 C130 184 112 156 96 164 C82 170 86 186 100 184 C118 182 122 158 146 148 C170 138 194 150 202 174 C208 192 196 208 178 204 C186 224 168 238 148 228 C128 218 128 198 146 190',
+  },
+];
+
+export function getMoodColor(mood: string): string {
+  return (MOODS.find(m => m.name === mood) || MOODS[0]).dot;
+}
+
+export function getMoodPath(mood: string): string {
+  return (MOODS.find(m => m.name === mood) || MOODS[0]).pathD;
+}
+
 interface ProgressionTemplate {
   degrees: string[];
 }
