@@ -579,7 +579,7 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
     scaleKey = `${root}_${scaleType}`;
   }
   const scale = data.scales[scaleKey];
-  const preferFlat = FLAT_TONICS.has(root) || root.includes('b');
+  const preferFlat = preferFlatSpelling(root, scaleType);
 
   const degreeOrder = Object.keys(scale.degrees);
   const bias = MOOD_DEGREE_BIAS[mood] || [];
@@ -716,12 +716,25 @@ const MODE_PARENT_OFFSET: Record<string, number> = {
 const CANONICAL_ROOT_BY_PC: Record<number, string> = {};
 ROOT_KEYS.forEach(r => { CANONICAL_ROOT_BY_PC[PITCH_CLASS[r]] = r; });
 
-export function getKeySignature(key: string, scaleType: string): string[] {
+// The major key whose signature/spelling a given key+scaleType is notated with — e.g. C Dorian
+// is notated in Bb major's 2 flats, since C Dorian is the 2nd mode of Bb major and shares all of
+// its pitches. Used both to pick the key signature and to decide whether individual chord tones
+// should be spelled with sharps or flats (a mode's notes must use its parent's spelling, not
+// whatever the mode's own tonic letter would suggest — e.g. C Dorian's notes are Eb/Bb, not D#/A#).
+function parentMajorKeyFor(key: string, scaleType: string): string {
   const offset = MODE_PARENT_OFFSET[scaleType] ?? 0;
   const rootPc = PITCH_CLASS[key] ?? 0;
   const parentPc = ((rootPc - offset) % 12 + 12) % 12;
-  const parentName = CANONICAL_ROOT_BY_PC[parentPc] ?? 'C';
-  return MAJOR_KEY_SIGNATURES[parentName] ?? [];
+  return CANONICAL_ROOT_BY_PC[parentPc] ?? 'C';
+}
+
+export function getKeySignature(key: string, scaleType: string): string[] {
+  return MAJOR_KEY_SIGNATURES[parentMajorKeyFor(key, scaleType)] ?? [];
+}
+
+export function preferFlatSpelling(key: string, scaleType: string): boolean {
+  const parentName = parentMajorKeyFor(key, scaleType);
+  return FLAT_TONICS.has(parentName) || parentName.includes('b');
 }
 
 // Standard treble-clef vertical placement (in the same letter+octave "step" units as
@@ -799,7 +812,7 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
   const chord = progression.chords[chordIndex];
   const scale = data.scales[chord.scaleKey];
   const degreeOrder = Object.keys(scale.degrees);
-  const preferFlat = FLAT_TONICS.has(progression.key) || progression.key.includes('b');
+  const preferFlat = preferFlatSpelling(progression.key, progression.scaleType);
   const results: Alternative[] = [];
 
   const prevIndex = (chordIndex - 1 + progression.chords.length) % progression.chords.length;
@@ -808,11 +821,12 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
   const parallelType = progression.scaleType.includes('MINOR') ? 'MAJOR' : 'NATURAL_MINOR';
   const parallelKey = `${progression.key}_${parallelType}`;
   const parallelScale = data.scales[parallelKey];
+  const preferFlatParallel = preferFlatSpelling(progression.key, parallelType);
   const borrowCandidates = parallelType === 'NATURAL_MINOR' ? ['SUBMEDIANT', 'MEDIANT', 'SUBDOMINANT'] : ['SUBDOMINANT', 'SUBMEDIANT'];
   if (parallelScale) {
     const borrowedDegree = pickDegreeWithMarkov(borrowCandidates, Object.keys(parallelScale.degrees), chord.degree, prevDegree, progression.scaleType, progression.genre, progression.mood);
     if (borrowedDegree) {
-      const block = buildChordBlock(parallelKey, borrowedDegree, parallelScale, preferFlat);
+      const block = buildChordBlock(parallelKey, borrowedDegree, parallelScale, preferFlatParallel);
       results.push({
         label: 'Darker',
         sub: 'heavier, more shadow',
@@ -823,8 +837,8 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
     }
   } else {
     const block = parallelType === 'NATURAL_MINOR'
-      ? synthBorrowedBlock(progression.key, 8, 'maj', 'Submediant', 'bVI', 'hold', preferFlat)
-      : synthBorrowedBlock(progression.key, 5, 'maj', 'Subdominant', 'IV', 'lift', preferFlat);
+      ? synthBorrowedBlock(progression.key, 8, 'maj', 'Submediant', 'bVI', 'hold', preferFlatParallel)
+      : synthBorrowedBlock(progression.key, 5, 'maj', 'Subdominant', 'IV', 'lift', preferFlatParallel);
     results.push({
       label: 'Darker',
       sub: 'heavier, more shadow',
