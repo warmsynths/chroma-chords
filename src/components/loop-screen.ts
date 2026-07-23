@@ -124,7 +124,7 @@ export class LoopScreen extends LitElement {
     }
     .frame {
       position: relative;
-      max-width: 402px;
+      width: 100%;
       margin: 0 auto;
       min-height: 100dvh;
       display: flex;
