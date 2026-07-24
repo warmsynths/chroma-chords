@@ -12,7 +12,11 @@
 // Free-tier model IDs on OpenRouter get renamed/deprecated over time (e.g.
 // meta-llama/llama-3.1-8b-instruct:free was retired in favor of a paid slug), so rather than
 // hardcode one, the default model is picked live from OpenRouter's own model list on each
-// request (cached briefly per Worker isolate). GET /models exposes that same filtered list for
+// request (cached briefly per Worker isolate). Free models also vary in whether they support
+// the `response_format: json_object` parameter — some providers hard-error if you send it — so
+// that's only included when the chosen model actually advertises support for it; either way the
+// response is parsed leniently (markdown-fenced JSON is unwrapped) since the system prompt is
+// the real enforcement, not the API parameter. GET /models exposes the same filtered list for
 // manual inspection/override — it's a public read-only endpoint, no key required to call it.
 
 import { GENRES, MOODS, ROOT_KEYS, SCALE_TYPES } from '../src/services/chord-engine';
@@ -32,14 +36,16 @@ interface OpenRouterModel {
   name?: string;
   pricing?: { prompt?: string; completion?: string };
   architecture?: { modality?: string; input_modalities?: string[]; output_modalities?: string[] };
+  supported_parameters?: string[];
 }
 
 interface ModelOption {
   id: string;
   name: string;
+  supportsJsonMode: boolean;
 }
 
-let modelListCache: { models: ModelOption[]; fetchedAt: number } | null = null;
+let rawModelListCache: { models: OpenRouterModel[]; fetchedAt: number } | null = null;
 
 function isFreeTextModel(m: OpenRouterModel): boolean {
   const isFree = m.id.endsWith(':free')
@@ -53,30 +59,49 @@ function isFreeTextModel(m: OpenRouterModel): boolean {
   return isFree && isTextOnly;
 }
 
+function supportsJsonMode(m: OpenRouterModel): boolean {
+  return Array.isArray(m.supported_parameters)
+    && (m.supported_parameters.includes('response_format') || m.supported_parameters.includes('structured_outputs'));
+}
+
 // OpenRouter's model listing is public and needs no API key — safe to call from here without
 // the secret, and safe to expose filtered results to the client via GET /models.
-async function listFreeTextModels(): Promise<ModelOption[]> {
+async function fetchAllModels(): Promise<OpenRouterModel[]> {
   const now = Date.now();
-  if (modelListCache && now - modelListCache.fetchedAt < MODEL_LIST_CACHE_MS) {
-    return modelListCache.models;
+  if (rawModelListCache && now - rawModelListCache.fetchedAt < MODEL_LIST_CACHE_MS) {
+    return rawModelListCache.models;
   }
 
   const res = await fetch('https://openrouter.ai/api/v1/models');
   if (!res.ok) throw new Error(`Failed to list OpenRouter models: ${res.status}`);
   const data = await res.json() as { data: OpenRouterModel[] };
 
-  const models = data.data
-    .filter(isFreeTextModel)
-    .map(m => ({ id: m.id, name: m.name || m.id }));
-
-  modelListCache = { models, fetchedAt: now };
-  return models;
+  rawModelListCache = { models: data.data, fetchedAt: now };
+  return data.data;
 }
 
-async function pickDefaultModel(): Promise<string> {
-  const models = await listFreeTextModels();
-  if (!models.length) throw new Error('No free text-only models currently available on OpenRouter');
-  return models[0].id;
+async function listFreeTextModels(): Promise<ModelOption[]> {
+  const all = await fetchAllModels();
+  return all.filter(isFreeTextModel).map(m => ({ id: m.id, name: m.name || m.id, supportsJsonMode: supportsJsonMode(m) }));
+}
+
+// Picks which model to call and whether it's safe to ask it for structured JSON output.
+// Prefers a free/text model that advertises json-mode support; falls back to the first free
+// text model otherwise (still works, just relies on the prompt alone for JSON formatting).
+async function resolveModel(requestedId: string | undefined): Promise<{ id: string; useJsonMode: boolean }> {
+  const all = await fetchAllModels();
+
+  if (requestedId) {
+    const found = all.find(m => m.id === requestedId);
+    return { id: requestedId, useJsonMode: found ? supportsJsonMode(found) : false };
+  }
+
+  const freeText = all.filter(isFreeTextModel);
+  if (!freeText.length) throw new Error('No free text-only models currently available on OpenRouter');
+
+  const jsonCapable = freeText.filter(supportsJsonMode);
+  const chosen = jsonCapable.length ? jsonCapable[0] : freeText[0];
+  return { id: chosen.id, useJsonMode: supportsJsonMode(chosen) };
 }
 
 function corsHeaders(origin: string): HeadersInit {
@@ -119,7 +144,15 @@ function systemPrompt(): string {
   ].join('\n');
 }
 
-async function classify(text: string, model: string, apiKey: string): Promise<unknown> {
+// Some models wrap JSON in a ```json fence even when told not to — unwrap it before parsing
+// rather than treating that as a hard failure.
+function parseClassifierJson(content: string): unknown {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return JSON.parse(fenced ? fenced[1] : trimmed);
+}
+
+async function classify(text: string, model: string, useJsonMode: boolean, apiKey: string): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
@@ -138,7 +171,7 @@ async function classify(text: string, model: string, apiKey: string): Promise<un
           { role: 'system', content: systemPrompt() },
           { role: 'user', content: text },
         ],
-        response_format: { type: 'json_object' },
+        ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
         temperature: 0.2,
         max_tokens: 150,
       }),
@@ -152,7 +185,7 @@ async function classify(text: string, model: string, apiKey: string): Promise<un
     const data = await res.json() as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw new Error('Empty completion from OpenRouter');
-    return JSON.parse(content);
+    return parseClassifierJson(content);
   } finally {
     clearTimeout(timeout);
   }
@@ -193,10 +226,9 @@ export default {
     }
 
     try {
-      const model = typeof body.model === 'string' && body.model.trim()
-        ? body.model.trim()
-        : await pickDefaultModel();
-      const result = await classify(text, model, env.OPENROUTER_KEY);
+      const requestedId = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : undefined;
+      const { id: model, useJsonMode } = await resolveModel(requestedId);
+      const result = await classify(text, model, useJsonMode, env.OPENROUTER_KEY);
       return jsonResponse(result, 200, allowedOrigin);
     } catch (err) {
       return jsonResponse({ error: err instanceof Error ? err.message : 'Classification failed' }, 502, allowedOrigin);
