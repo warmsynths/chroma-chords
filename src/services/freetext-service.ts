@@ -5,7 +5,7 @@ import { getPreferredModel } from './model-picker';
 // Deployed Worker URL (see worker/README.md) — override in dev via VITE_CLASSIFIER_ENDPOINT
 // without needing to edit source.
 const CLASSIFIER_ENDPOINT =
-  import.meta.env.VITE_CLASSIFIER_ENDPOINT || 'https://chroma-chords-classifier.warmsynths.workers.dev';
+  import.meta.env.VITE_CLASSIFIER_ENDPOINT || 'https://chroma-chords-classifier.warmsynthsiloveyou.workers.dev';
 const LLM_TIMEOUT_MS = 6000;
 
 // Local, offline classifier — no network involved. Used both as the always-on instant
