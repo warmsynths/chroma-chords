@@ -1,49 +1,16 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, getMoodColor } from '../services/chord-engine';
+import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, GENRES, getMoodColor } from '../services/chord-engine';
+import { heuristicClassify, classifyFreeText } from '../services/freetext-service';
+import { NormalizedPrompt } from '../services/freetext-schema';
 
-const GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
+const CLASSIFY_DEBOUNCE_MS = 500;
+
 const GENRE_ICON_PALETTE = ['#F2A79B', '#9CC0EC', '#F6D98B'];
 // index % 3 -> corner radius on the genre pill's icon swatch: rounded square, squarer, near-circle.
 const GENRE_ICON_RADIUS = [6, 3, 12];
 
 const VIBE_EXAMPLES = ['rainy drive at 2am, first day of summer...', 'Portishead', 'Bohemian Rhapsody'];
-
-const MOOD_KEYWORDS: Record<string, string[]> = {
-  Uplifting: ['happy', 'joy', 'bright', 'hope', 'celebrat', 'win', 'sun', 'morning', 'triumph'],
-  Melancholy: ['sad', 'rain', 'lonely', 'grief', 'loss', 'blue', 'tear', 'goodbye'],
-  Dreamy: ['dream', 'float', 'cloud', 'soft', 'sleep', 'hazy', 'ethereal', 'stars'],
-  Tense: ['fear', 'anxious', 'dark', 'storm', 'fight', 'chase', 'danger', 'thriller'],
-  Warm: ['cozy', 'home', 'fire', 'love', 'autumn', 'familiar', 'fireplace'],
-  Nostalgic: ['memory', 'childhood', 'old', 'faded', 'remember', 'summer', 'photo', 'yearbook'],
-};
-
-const GENRE_KEYWORDS: Record<string, string[]> = {
-  'Pop': ['pop', 'radio', 'dance', 'catchy', 'hit'],
-  'Lo-fi/Chill': ['lofi', 'lo-fi', 'study', 'bedroom', 'tape', 'chill', 'relax'],
-  'R&B/Soul': ['rnb', 'r&b', 'soul', 'smooth', 'slow jam', 'sultry'],
-  'Indie/Folk': ['folk', 'acoustic', 'campfire', 'porch', 'story', 'indie'],
-  'Synthwave': ['synth', '80s', 'neon', 'retro', 'synthwave', 'arcade'],
-  'Jazz-ish': ['jazz', 'smoky', 'bar', 'lounge', 'late night', 'saxophone'],
-  'Gospel': ['gospel', 'church', 'choir', 'soulful', 'worship'],
-  'Cinematic': ['movie', 'film', 'epic', 'trailer', 'scene', 'cinematic'],
-  'Rock': ['rock', 'guitar', 'drive', 'loud', 'energy', 'highway'],
-  'House/Dance': ['house', 'edm', 'club', 'rave', 'four on the floor', 'dance floor'],
-};
-
-function matchFromText(text: string, map: Record<string, string[]>, fallbackList: string[]): string {
-  const lower = text.toLowerCase();
-  let best: string | null = null;
-  let bestScore = 0;
-  Object.keys(map).forEach(key => {
-    const score = map[key].reduce((s, k) => s + (lower.includes(k) ? 1 : 0), 0);
-    if (score > bestScore) { bestScore = score; best = key; }
-  });
-  if (best) return best;
-  let h = 0;
-  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
-  return fallbackList[h % fallbackList.length];
-}
 
 @customElement('seed-screen')
 export class SeedScreen extends LitElement {
@@ -53,8 +20,13 @@ export class SeedScreen extends LitElement {
 
   @state() private freeText = '';
   @state() private placeholderIdx = 0;
+  // Upgraded suggestion from the LLM classifier, once it resolves for the current text.
+  // The instant keyword heuristic (see render()) covers the gap while this is in flight.
+  @state() private llmSuggestion: NormalizedPrompt | null = null;
 
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
+  private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
+  private classifyToken = 0;
 
   connectedCallback() {
     super.connectedCallback();
@@ -66,6 +38,7 @@ export class SeedScreen extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
+    if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
   }
 
   static styles = css`
@@ -423,21 +396,36 @@ export class SeedScreen extends LitElement {
 
   private onFreeTextChange(e: Event) {
     this.freeText = (e.target as HTMLInputElement).value;
+    this.llmSuggestion = null;
+    this.scheduleClassify();
   }
 
-  private applyFreeTextSuggestion(genre: string, mood: string) {
-    this.selectGenre(genre);
-    this.selectMood(mood);
+  private scheduleClassify() {
+    if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
+    const text = this.freeText.trim();
+    if (text.length <= 2) return;
+
+    const token = ++this.classifyToken;
+    this.classifyDebounce = setTimeout(async () => {
+      const result = await classifyFreeText(text);
+      if (token !== this.classifyToken) return; // text changed while the call was in flight
+      this.llmSuggestion = result;
+    }, CLASSIFY_DEBOUNCE_MS);
+  }
+
+  private applyFreeTextSuggestion(suggestion: NormalizedPrompt) {
+    this.selectGenre(suggestion.genre);
+    this.selectMood(suggestion.mood);
+    if (suggestion.length) this.setLength(suggestion.length);
   }
 
   render() {
     const moodColor = getMoodColor(this.mood);
     const freeTextTrimmed = this.freeText.trim();
-    let suggestion: { genre: string; mood: string; color: string } | null = null;
+    let suggestion: (NormalizedPrompt & { color: string }) | null = null;
     if (freeTextTrimmed.length > 2) {
-      const sMood = matchFromText(freeTextTrimmed, MOOD_KEYWORDS, MOODS.map(m => m.name));
-      const sGenre = matchFromText(freeTextTrimmed, GENRE_KEYWORDS, GENRES);
-      suggestion = { genre: sGenre, mood: sMood, color: getMoodColor(sMood) };
+      const best = this.llmSuggestion ?? heuristicClassify(freeTextTrimmed);
+      suggestion = { ...best, color: getMoodColor(best.mood) };
     }
 
     return html`
@@ -477,7 +465,7 @@ export class SeedScreen extends LitElement {
           </div>
           ${suggestion ? html`
             <div class="suggestion-wrap">
-              <div class="suggestion" style="border:1.5px solid ${suggestion.color}" @click=${() => this.applyFreeTextSuggestion(suggestion!.genre, suggestion!.mood)}>
+              <div class="suggestion" style="border:1.5px solid ${suggestion.color}" @click=${() => this.applyFreeTextSuggestion(suggestion!)}>
                 Try <span>${suggestion.genre} · ${suggestion.mood}</span> →
               </div>
             </div>

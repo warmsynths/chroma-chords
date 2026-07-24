@@ -118,6 +118,8 @@ const ROMAN_BY_SCALE: Record<string, Record<string, string>> = {
   LYDIAN: { TONIC: 'I', SUPERTONIC: 'II', MEDIANT: 'iii', SUBDOMINANT: 'iv°', DOMINANT: 'V', SUBMEDIANT: 'vi', 'LEADING-TONE': 'vii' },
 };
 
+export const SCALE_TYPES = Object.keys(ROMAN_BY_SCALE);
+
 const SCALE_LABEL: Record<string, string> = {
   MAJOR: 'Ionian',
   NATURAL_MINOR: 'Aeolian',
@@ -127,6 +129,10 @@ const SCALE_LABEL: Record<string, string> = {
   MIXOLYDIAN: 'Mixolydian',
   LYDIAN: 'Lydian',
 };
+
+// Canonical genre list/order — also drives the seed-screen pill grid, so this is the one
+// place that order should be edited.
+export const GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
 
 const GENRE_SCALE: Record<string, string> = {
   'Pop': 'MAJOR',
