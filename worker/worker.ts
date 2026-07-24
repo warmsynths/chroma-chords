@@ -173,10 +173,25 @@ function extractJsonObject(text: string): string {
   return text.slice(start);
 }
 
+// Smaller free models sometimes emit a JS-object-literal shape instead of strict JSON —
+// unquoted keys, single-quoted strings, trailing commas. Only tried as a fallback after a
+// strict parse fails, so it never masks a genuinely malformed response as valid.
+function repairLooseJson(text: string): string {
+  return text
+    .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":')
+    .replace(/:\s*'([^']*)'/g, ': "$1"')
+    .replace(/,\s*([}\]])/g, '$1');
+}
+
 function parseClassifierJson(content: string): unknown {
   const trimmed = content.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return JSON.parse(extractJsonObject(fenced ? fenced[1] : trimmed));
+  const candidate = extractJsonObject(fenced ? fenced[1] : trimmed);
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return JSON.parse(repairLooseJson(candidate));
+  }
 }
 
 async function classify(text: string, model: string, useJsonMode: boolean, apiKey: string): Promise<unknown> {
