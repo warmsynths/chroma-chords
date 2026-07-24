@@ -53,7 +53,7 @@ export function heuristicClassify(text: string): NormalizedPrompt {
   return { genre, mood };
 }
 
-async function llmClassify(text: string, model: string): Promise<unknown> {
+async function llmClassify(text: string, model: string | undefined): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
   try {
@@ -80,7 +80,7 @@ async function llmClassify(text: string, model: string): Promise<unknown> {
 // Worker proxy, so the OpenRouter key never reaches the client), and falls back to the local
 // keyword heuristic on any network failure, timeout, or invalid response. The LLM's raw
 // response is always re-validated/fuzzy-matched against the controlled vocabulary before use.
-export async function classifyFreeText(text: string, model: string = getPreferredModel()): Promise<NormalizedPrompt> {
+export async function classifyFreeText(text: string, model: string | undefined = getPreferredModel()): Promise<NormalizedPrompt> {
   const fallback = heuristicClassify(text);
   try {
     const raw = await llmClassify(text, model);

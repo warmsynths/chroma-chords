@@ -8,6 +8,12 @@
 // or progressions. The client re-validates/fuzzy-matches the response anyway (see
 // src/services/freetext-schema.ts) — this Worker's prompt is the first line of defense, not
 // the only one.
+//
+// Free-tier model IDs on OpenRouter get renamed/deprecated over time (e.g.
+// meta-llama/llama-3.1-8b-instruct:free was retired in favor of a paid slug), so rather than
+// hardcode one, the default model is picked live from OpenRouter's own model list on each
+// request (cached briefly per Worker isolate). GET /models exposes that same filtered list for
+// manual inspection/override — it's a public read-only endpoint, no key required to call it.
 
 import { GENRES, MOODS, ROOT_KEYS, SCALE_TYPES } from '../src/services/chord-engine';
 
@@ -17,16 +23,75 @@ export interface Env {
 }
 
 const DEFAULT_ALLOWED_ORIGIN = 'https://warmsynths.github.io';
-const DEFAULT_MODEL = 'meta-llama/llama-3.1-8b-instruct:free';
 const MAX_TEXT_LENGTH = 300;
 const UPSTREAM_TIMEOUT_MS = 8000;
+const MODEL_LIST_CACHE_MS = 60 * 60 * 1000; // 1 hour
+
+interface OpenRouterModel {
+  id: string;
+  name?: string;
+  pricing?: { prompt?: string; completion?: string };
+  architecture?: { modality?: string; input_modalities?: string[]; output_modalities?: string[] };
+}
+
+interface ModelOption {
+  id: string;
+  name: string;
+}
+
+let modelListCache: { models: ModelOption[]; fetchedAt: number } | null = null;
+
+function isFreeTextModel(m: OpenRouterModel): boolean {
+  const isFree = m.id.endsWith(':free')
+    || (parseFloat(m.pricing?.prompt ?? '1') === 0 && parseFloat(m.pricing?.completion ?? '1') === 0);
+
+  const arch = m.architecture;
+  const isTextOnly = arch?.modality === 'text->text'
+    || ((arch?.input_modalities ?? ['text']).every(x => x === 'text')
+      && (arch?.output_modalities ?? ['text']).every(x => x === 'text'));
+
+  return isFree && isTextOnly;
+}
+
+// OpenRouter's model listing is public and needs no API key — safe to call from here without
+// the secret, and safe to expose filtered results to the client via GET /models.
+async function listFreeTextModels(): Promise<ModelOption[]> {
+  const now = Date.now();
+  if (modelListCache && now - modelListCache.fetchedAt < MODEL_LIST_CACHE_MS) {
+    return modelListCache.models;
+  }
+
+  const res = await fetch('https://openrouter.ai/api/v1/models');
+  if (!res.ok) throw new Error(`Failed to list OpenRouter models: ${res.status}`);
+  const data = await res.json() as { data: OpenRouterModel[] };
+
+  const models = data.data
+    .filter(isFreeTextModel)
+    .map(m => ({ id: m.id, name: m.name || m.id }));
+
+  modelListCache = { models, fetchedAt: now };
+  return models;
+}
+
+async function pickDefaultModel(): Promise<string> {
+  const models = await listFreeTextModels();
+  if (!models.length) throw new Error('No free text-only models currently available on OpenRouter');
+  return models[0].id;
+}
 
 function corsHeaders(origin: string): HeadersInit {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
+}
+
+function jsonResponse(body: unknown, status: number, origin: string): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
+  });
 }
 
 function systemPrompt(): string {
@@ -96,9 +161,19 @@ async function classify(text: string, model: string, apiKey: string): Promise<un
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const allowedOrigin = env.ALLOWED_ORIGIN || DEFAULT_ALLOWED_ORIGIN;
+    const { pathname } = new URL(request.url);
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders(allowedOrigin) });
+    }
+
+    if (request.method === 'GET' && pathname === '/models') {
+      try {
+        const models = await listFreeTextModels();
+        return jsonResponse({ models }, 200, allowedOrigin);
+      } catch (err) {
+        return jsonResponse({ error: err instanceof Error ? err.message : 'Failed to list models' }, 502, allowedOrigin);
+      }
     }
 
     if (request.method !== 'POST') {
@@ -109,31 +184,22 @@ export default {
     try {
       body = await request.json();
     } catch {
-      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
-        status: 400,
-        headers: { ...corsHeaders(allowedOrigin), 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Invalid JSON body' }, 400, allowedOrigin);
     }
 
     const text = typeof body.text === 'string' ? body.text.trim().slice(0, MAX_TEXT_LENGTH) : '';
     if (!text) {
-      return new Response(JSON.stringify({ error: 'Missing "text"' }), {
-        status: 400,
-        headers: { ...corsHeaders(allowedOrigin), 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'Missing "text"' }, 400, allowedOrigin);
     }
-    const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : DEFAULT_MODEL;
 
     try {
+      const model = typeof body.model === 'string' && body.model.trim()
+        ? body.model.trim()
+        : await pickDefaultModel();
       const result = await classify(text, model, env.OPENROUTER_KEY);
-      return new Response(JSON.stringify(result), {
-        headers: { ...corsHeaders(allowedOrigin), 'Content-Type': 'application/json' },
-      });
+      return jsonResponse(result, 200, allowedOrigin);
     } catch (err) {
-      return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Classification failed' }), {
-        status: 502,
-        headers: { ...corsHeaders(allowedOrigin), 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: err instanceof Error ? err.message : 'Classification failed' }, 502, allowedOrigin);
     }
   },
 };
