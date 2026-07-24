@@ -116,26 +116,6 @@ export class SeedScreen extends LitElement {
       0%, 100% { transform: translate(0, 0) rotate(0deg); }
       50% { transform: translate(10px, -8px) rotate(-5deg); }
     }
-    .step-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      background: var(--cv-surface-2);
-      padding: 6px 15px;
-      border-radius: 100px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      color: var(--cv-label);
-      text-transform: uppercase;
-      margin-bottom: 20px;
-    }
-    .step-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      transition: background 0.35s var(--cv-ease);
-    }
     h1 {
       margin: 0;
       font-size: clamp(28px, 6vw, 42px);
@@ -474,10 +454,6 @@ export class SeedScreen extends LitElement {
             <svg class="float-shape a" width="34" height="34" viewBox="0 0 38 38"><circle cx="19" cy="19" r="17" fill="#F6D98B" /></svg>
             <svg class="float-shape b" width="26" height="26" viewBox="0 0 30 30"><rect x="2" y="2" width="26" height="26" rx="9" fill="#9CC0EC" /></svg>
 
-            <div class="step-badge">
-              <div class="step-dot" style="background:${moodColor}"></div>
-              Step 1 of 3
-            </div>
             <h1>Describe a vibe,<br />hear it as chords.</h1>
             <div class="subcopy">Type a feeling in your own words — or pick a genre and mood below.</div>
           </div>

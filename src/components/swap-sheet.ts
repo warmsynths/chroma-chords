@@ -36,6 +36,11 @@ export class SwapSheet extends LitElement {
   @property({ type: String }) moodColor = '#9B7CA8';
   @property({ type: Number }) position = 0;
   @property({ type: Number }) total = 4;
+  // 'swap' (default): the full sheet — theory toggle, alternate-chord list, and voicing tucked
+  // behind a collapsible (only when theory mode is on). 'voicing': opened directly from a
+  // chord's dedicated voicing icon — skips straight to the quality/extension/keyboard editor,
+  // no swap list, no theory gate.
+  @property({ type: String }) mode: 'swap' | 'voicing' = 'swap';
   // Drives the slide-in/out transition. The parent mounts this component slightly before
   // flipping this true (and unmounts it slightly after flipping it false) so the CSS
   // transition has time to play — see loop-screen's sheetMounted/sheetVisible.
@@ -465,7 +470,8 @@ export class SwapSheet extends LitElement {
     const c = this.chord;
     const root = rootOfChordName(c.name);
     const preferFlat = root.includes('b');
-    const voicingNotes = this.voicingOpen ? buildVoicingNotes(root, this.quality, this.extension, preferFlat) : c.notes;
+    const voicingExpanded = this.mode === 'voicing' || this.voicingOpen;
+    const voicingNotes = voicingExpanded ? buildVoicingNotes(root, this.quality, this.extension, preferFlat) : c.notes;
     const currentRole = roleForTension(c.tension);
 
     const dragStyle = this.dragging || this.snapping
@@ -478,53 +484,64 @@ export class SwapSheet extends LitElement {
         <div class="grabber" @pointerdown=${this.onGrabberDown}></div>
         <div class="head-row">
           <div>
-            <div class="step-label">Swap chord ${this.position} of ${this.total}</div>
-            <div class="sheet-title">Choose the feeling<br />you want instead.</div>
+            ${this.mode === 'voicing' ? html`
+              <div class="step-label">Chord ${this.position} of ${this.total}</div>
+              <div class="sheet-title">Adjust the voicing.</div>
+            ` : html`
+              <div class="step-label">Swap chord ${this.position} of ${this.total}</div>
+              <div class="sheet-title">Choose the feeling<br />you want instead.</div>
+            `}
           </div>
           <button class="close-btn" @click=${this.close}>×</button>
         </div>
 
-        <div class="theory-toggle-row" @click=${this.toggleTheory}>
-          <div class="theory-track ${this.showTheory ? 'on' : ''}"><div class="theory-knob ${this.showTheory ? 'on' : ''}"></div></div>
-          <div class="theory-label">Show music theory</div>
-        </div>
+        ${this.mode === 'swap' ? html`
+          <div class="theory-toggle-row" @click=${this.toggleTheory}>
+            <div class="theory-track ${this.showTheory ? 'on' : ''}"><div class="theory-knob ${this.showTheory ? 'on' : ''}"></div></div>
+            <div class="theory-label">Show music theory</div>
+          </div>
+        ` : ''}
 
         <div class="current-row">
           <div class="alt-shape" style="width:${Math.round(currentRole.size * 0.5)}px;height:${Math.round(currentRole.size * 0.5)}px;border-radius:${Math.round(currentRole.radius * 0.5)}px;background:${currentRole.color};"></div>
           <div>
-            <div class="current-label">Currently</div>
-            <div class="current-name">${c.name} — ${c.functionLabel}</div>
+            <div class="current-label">${this.mode === 'voicing' ? c.functionLabel : 'Currently'}</div>
+            <div class="current-name">${this.mode === 'voicing' ? c.name : html`${c.name} — ${c.functionLabel}`}</div>
           </div>
         </div>
 
-        <div class="alt-list">
-          ${this.alternatives.map(alt => {
-            const role = roleForTension(alt.chord.tension);
-            const size = Math.round(role.size * 0.4);
-            return html`
-              <div class="alt-row" @click=${() => this.emit('select-alternative', alt)}>
-                <div class="alt-shape" style="width:${size}px;height:${size}px;border-radius:${Math.round(role.radius * (size / role.size))}px;background:${role.color};"></div>
-                <div style="flex:1;min-width:0;">
-                  <div class="alt-name">${alt.label}</div>
-                  <div class="alt-sub">${alt.sub}</div>
-                  ${this.showTheory ? html`
-                    <div class="alt-tag">${alt.functionCaption}</div>
-                    <div class="alt-desc">${alt.rationale}</div>
-                  ` : ''}
+        ${this.mode === 'swap' ? html`
+          <div class="alt-list">
+            ${this.alternatives.map(alt => {
+              const role = roleForTension(alt.chord.tension);
+              const size = Math.round(role.size * 0.4);
+              return html`
+                <div class="alt-row" @click=${() => this.emit('select-alternative', alt)}>
+                  <div class="alt-shape" style="width:${size}px;height:${size}px;border-radius:${Math.round(role.radius * (size / role.size))}px;background:${role.color};"></div>
+                  <div style="flex:1;min-width:0;">
+                    <div class="alt-name">${alt.label}</div>
+                    <div class="alt-sub">${alt.sub}</div>
+                    ${this.showTheory ? html`
+                      <div class="alt-tag">${alt.functionCaption}</div>
+                      <div class="alt-desc">${alt.rationale}</div>
+                    ` : ''}
+                  </div>
+                  <div class="alt-arrow">→</div>
                 </div>
-                <div class="alt-arrow">→</div>
-              </div>
-            `;
-          })}
-        </div>
+              `;
+            })}
+          </div>
+        ` : ''}
 
-        ${this.showTheory ? html`
+        ${this.mode === 'voicing' || this.showTheory ? html`
           <div class="voicing-section">
-            <div class="voicing-toggle" @click=${this.toggleVoicing}>
-              <div class="voicing-chevron ${this.voicingOpen ? 'open' : ''}">›</div>
-              <div class="voicing-label">Adjust voicing</div>
-            </div>
-            ${this.voicingOpen ? html`
+            ${this.mode === 'swap' ? html`
+              <div class="voicing-toggle" @click=${this.toggleVoicing}>
+                <div class="voicing-chevron ${this.voicingOpen ? 'open' : ''}">›</div>
+                <div class="voicing-label">Adjust voicing</div>
+              </div>
+            ` : ''}
+            ${voicingExpanded ? html`
               <div>
                 <div class="bento">
                   ${QUALITIES.map(q => html`

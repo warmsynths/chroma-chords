@@ -52,6 +52,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private playing = true;
   @state() private showTheory = false;
   @state() private sheetOpen = false;
+  @state() private sheetMode: 'swap' | 'voicing' = 'swap';
   @state() private swapIndex: number | null = null;
   @state() private alternatives: Alternative[] = [];
   @state() private length = 4;
@@ -277,7 +278,19 @@ export class ChromaChordsApp extends LitElement {
   private onChordTap(e: CustomEvent<number>) {
     if (!this.progression) return;
     this.swapIndex = e.detail;
+    this.sheetMode = 'swap';
     this.alternatives = generateAlternatives(this.chordData, this.progression, e.detail);
+    this.sheetOpen = true;
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
+  }
+
+  // Opens the same sheet in 'voicing' mode — straight to the quality/extension/keyboard
+  // editor for this chord, skipping the alternate-chord list entirely.
+  private onChordVoicingTap(e: CustomEvent<number>) {
+    if (!this.progression) return;
+    this.swapIndex = e.detail;
+    this.sheetMode = 'voicing';
+    this.alternatives = [];
     this.sheetOpen = true;
     playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
   }
@@ -507,6 +520,7 @@ export class ChromaChordsApp extends LitElement {
         .playing=${this.playing}
         .showTheory=${this.showTheory}
         .sheetOpen=${this.sheetOpen}
+        .sheetMode=${this.sheetMode}
         .swapChord=${swapChord}
         .swapIndex=${this.swapIndex}
         .alternatives=${this.alternatives}
@@ -514,6 +528,7 @@ export class ChromaChordsApp extends LitElement {
         @theory-toggle=${this.onTheoryToggle}
         @toggle-play=${this.onTogglePlay}
         @chord-tap=${this.onChordTap}
+        @chord-voicing-tap=${this.onChordVoicingTap}
         @chord-preview=${this.onChordPreview}
         @close=${this.onSheetClose}
         @select-alternative=${this.onSelectAlternative}

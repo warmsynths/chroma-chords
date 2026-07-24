@@ -47,6 +47,7 @@ export class LoopScreen extends LitElement {
   @property({ type: Boolean }) playing = true;
   @property({ type: Boolean }) showTheory = false;
   @property({ type: Boolean }) sheetOpen = false;
+  @property({ type: String }) sheetMode: 'swap' | 'voicing' = 'swap';
   @property({ type: Object }) swapChord: ChordBlock | null = null;
   @property({ type: Number }) swapIndex: number | null = null;
   @property({ type: Array }) alternatives: Alternative[] = [];
@@ -201,27 +202,6 @@ export class LoopScreen extends LitElement {
       max-width: 640px;
       margin-top: 24px;
     }
-    .step-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      background: var(--cv-surface);
-      border: 1.5px solid var(--cv-ink-10);
-      padding: 6px 15px;
-      border-radius: 100px;
-      font-size: 11.5px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      color: var(--cv-label);
-      text-transform: uppercase;
-      margin-bottom: 18px;
-    }
-    .step-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      transition: background 0.4s ease;
-    }
     h1 {
       margin: 0;
       font-size: clamp(24px, 5vw, 36px);
@@ -356,6 +336,26 @@ export class LoopScreen extends LitElement {
       touch-action: manipulation;
     }
     .swap-badge:hover {
+      transform: scale(1.12);
+    }
+    .voicing-badge {
+      position: absolute;
+      bottom: -6px;
+      left: -6px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--cv-cream);
+      border: 1.5px solid var(--cv-ink-14);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(46, 39, 31, 0.15);
+      cursor: pointer;
+      transition: transform 150ms var(--cv-ease);
+      touch-action: manipulation;
+    }
+    .voicing-badge:hover {
       transform: scale(1.12);
     }
     .transport {
@@ -864,12 +864,8 @@ export class LoopScreen extends LitElement {
         ` : ''}
 
         <div class="content">
-          <div class="step-badge">
-            <div class="step-dot" style="background:${moodColor}"></div>
-            Step 2 of 3
-          </div>
           <h1>Your progression, feeling <span style="color:${moodColor}">${p.mood.toLowerCase()}.</span></h1>
-          <div class="subcopy">${p.genre} · ${p.chords.length} ${p.chords.length === 1 ? 'chord' : 'chords'} · tap a chord to preview, tap the swap icon to change it.</div>
+          <div class="subcopy">${p.genre} · ${p.chords.length} ${p.chords.length === 1 ? 'chord' : 'chords'} · tap a chord to preview it — use the icons to swap it or view its voicing.</div>
 
           <div class="panel" style="animation:${panelAnim.anim} ${panelAnim.dur}s ${panelAnim.ease} infinite;">
             <svg class="panel-blob a" width="140" height="140" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B" /></svg>
@@ -895,6 +891,14 @@ export class LoopScreen extends LitElement {
                       @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit('chord-tap', chordIndex); }}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4" /><path d="M20 16H7M11 12l-4 4 4 4" /></svg>
+                    </div>
+                    <div
+                      class="voicing-badge"
+                      aria-label="View voicing"
+                      @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                      @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit('chord-voicing-tap', chordIndex); }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.2 10-6.2 10 6.2 10 6.2-3.6 6.2-10 6.2-10-6.2-10-6.2z" /><circle cx="12" cy="12" r="2.6" /></svg>
                     </div>
                   </div>
                 `;
@@ -949,6 +953,7 @@ export class LoopScreen extends LitElement {
             .chord=${this.swapChord}
             .alternatives=${this.alternatives}
             .showTheory=${this.showTheory}
+            .mode=${this.sheetMode}
             .moodColor=${moodColor}
             .position=${(this.swapIndex ?? 0) + 1}
             .total=${this.order.length}

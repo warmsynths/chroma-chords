@@ -52,20 +52,6 @@ export class SongScreen extends LitElement {
       text-align: center;
       margin-bottom: 32px;
     }
-    .step-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--cv-surface-2);
-      padding: 7px 16px;
-      border-radius: 100px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      color: var(--cv-label);
-      text-transform: uppercase;
-      margin-bottom: 20px;
-    }
     h1 {
       margin: 0;
       font-size: clamp(26px, 5vw, 36px);
@@ -176,7 +162,6 @@ export class SongScreen extends LitElement {
 
         <div class="content">
           <div class="hero">
-            <div class="step-badge">Step 3 of 3</div>
             <h1>Build out the song.</h1>
             <div class="subcopy">Each section reuses the loop, related but never identical.</div>
           </div>
