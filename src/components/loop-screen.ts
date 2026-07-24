@@ -40,6 +40,10 @@ const PANEL_ANIM: Record<string, { anim: string; dur: number; ease: string }> = 
 export class LoopScreen extends LitElement {
   @property({ type: Object }) progression!: Progression;
   @property({ type: Number }) activeIndex = 0;
+  // Drives the progress bar specifically — kept separate from activeIndex because a
+  // drag-to-reorder remaps activeIndex to preserve which chord's sound stays "active," which
+  // isn't playback advancing and shouldn't move the bar.
+  @property({ type: Number }) progressStep = 0;
   @property({ type: Array }) order: number[] = [0, 1, 2, 3];
   @property({ type: Boolean }) playing = true;
   @property({ type: Boolean }) showTheory = false;
@@ -87,9 +91,9 @@ export class LoopScreen extends LitElement {
   }
 
   willUpdate(changed: PropertyValues) {
-    if (changed.has('activeIndex')) {
-      const prevIndex = changed.get('activeIndex') as number | undefined;
-      this.snapProgress = prevIndex !== undefined && this.activeIndex < prevIndex;
+    if (changed.has('progressStep')) {
+      const prevStep = changed.get('progressStep') as number | undefined;
+      this.snapProgress = prevStep !== undefined && this.progressStep < prevStep;
     }
   }
 
@@ -579,6 +583,14 @@ export class LoopScreen extends LitElement {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
         justify-items: center;
+        align-items: center;
+        row-gap: 30px;
+        column-gap: 18px;
+      }
+      /* Extra breathing room for the swap-badge (which pokes 6px past the chip's own edge) and
+         the "now" marker above the active chip — both can crowd a neighboring chip otherwise. */
+      .chord-chip {
+        margin: 8px;
       }
     }
   `;
@@ -724,7 +736,7 @@ export class LoopScreen extends LitElement {
   render() {
     const p = this.progression;
     const moodColor = getMoodColor(p.mood);
-    const progressPct = ((this.activeIndex + 1) / Math.max(1, this.order.length)) * 100;
+    const progressPct = ((this.progressStep + 1) / Math.max(1, this.order.length)) * 100;
     const panelAnim = PANEL_ANIM[p.mood] || PANEL_ANIM.Dreamy;
 
     return html`

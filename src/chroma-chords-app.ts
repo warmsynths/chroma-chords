@@ -25,6 +25,11 @@ export class ChromaChordsApp extends LitElement {
   @state() private mood = 'Uplifting';
   @state() private progression: Progression | null = null;
   @state() private activeIndex = 0;
+  // Drives the progress bar. Deliberately separate from activeIndex: activeIndex tracks which
+  // chord (by identity) is highlighted/audible, and onReorder remaps it to keep that identity
+  // stable when the user drags a chord to a new slot — but that remap isn't playback advancing,
+  // so the bar shouldn't react to it. This only moves on real autoplay ticks.
+  @state() private progressStep = 0;
   @state() private order: number[] = [0, 1, 2, 3];
   @state() private keyOverride: string | null = null;
   @state() private scaleOverride: string | null = null;
@@ -84,6 +89,7 @@ export class ChromaChordsApp extends LitElement {
     this.autoplayTimer = setInterval(() => {
       if (!this.progression || !this.playing) return;
       this.activeIndex = (this.activeIndex + 1) % this.order.length;
+      this.progressStep = (this.progressStep + 1) % this.order.length;
       this.playActiveChord();
     }, AUTOPLAY_INTERVAL_MS);
   }
@@ -135,6 +141,7 @@ export class ChromaChordsApp extends LitElement {
     this.order = Array.from({ length: progression.chords.length }, (_, i) => i);
     this.length = progression.chords.length;
     this.activeIndex = 0;
+    this.progressStep = 0;
     this.playing = false;
     this.screen = 'loop';
     this.sections = [{ name: SECTION_NAMES[0], progression, order: this.order.slice() }];
@@ -156,6 +163,7 @@ export class ChromaChordsApp extends LitElement {
     this.progression = progression;
     this.order = Array.from({ length: this.length }, (_, i) => i);
     this.activeIndex = 0;
+    this.progressStep = 0;
     this.syncActiveSection();
     this.saveProject();
     if (this.playing) {
@@ -239,10 +247,12 @@ export class ChromaChordsApp extends LitElement {
     if (this.playing) {
       this.playing = false;
       this.activeIndex = 0;
+      this.progressStep = 0;
       this.stopAutoplay();
     } else {
       this.playing = true;
       this.activeIndex = 0;
+      this.progressStep = 0;
       this.startAutoplay();
       this.playActiveChord();
     }
@@ -310,6 +320,7 @@ export class ChromaChordsApp extends LitElement {
     this.progression = section.progression;
     this.order = section.order.slice();
     this.activeIndex = 0;
+    this.progressStep = 0;
     this.length = section.progression.chords.length;
     this.keyOverride = section.progression.key;
     this.scaleOverride = section.progression.scaleType;
@@ -479,6 +490,7 @@ export class ChromaChordsApp extends LitElement {
       <loop-screen
         .progression=${this.progression}
         .activeIndex=${this.activeIndex}
+        .progressStep=${this.progressStep}
         .order=${this.order}
         .playing=${this.playing}
         .showTheory=${this.showTheory}
