@@ -1,4 +1,4 @@
-// Cloudflare Worker: the only place the OpenRouter API key exists. Chroma Chords itself is a
+// Cloudflare Worker: the only place the Anthropic API key exists. Chroma Chords itself is a
 // static site committed straight into docs/ and served from GitHub Pages, so any key baked
 // into the client bundle would be public — this Worker exists purely to keep that key server-side.
 //
@@ -12,123 +12,32 @@
 // src/services/freetext-schema.ts) — this Worker's prompt is the first line of defense, not
 // the only one.
 //
-// Free-tier model IDs on OpenRouter get renamed/deprecated over time (e.g.
-// meta-llama/llama-3.1-8b-instruct:free was retired in favor of a paid slug), so rather than
-// hardcode one, the default model is picked live from OpenRouter's own model list on each
-// request (cached briefly per Worker isolate). Free models also vary in whether they support
-// the `response_format: json_object` parameter — some providers hard-error if you send it — so
-// that's only included when the chosen model actually advertises support for it; either way the
-// response is parsed leniently (markdown-fenced JSON is unwrapped) since the system prompt is
-// the real enforcement, not the API parameter. GET /models exposes the same filtered list for
-// manual inspection/override — it's a public read-only endpoint, no key required to call it.
+// Previously routed through OpenRouter's free-tier models, but their availability/behavior
+// (JSON-mode support, chain-of-thought preambles, JS-object-literal output instead of strict
+// JSON) turned out to vary too much for a task this small. Claude Haiku is fast, cheap, and
+// reliably follows a "JSON only" instruction, so this calls Anthropic directly instead — one
+// model, no discovery/filtering logic needed. The lenient parsing (fenced/balanced-brace/loose-
+// JSON repair) stays as cheap insurance regardless.
 
 import { GENRES, MOODS, ROOT_KEYS, SCALE_TYPES, CHORD_QUALITIES } from '../src/services/chord-engine';
 
 export interface Env {
-  OPENROUTER_KEY: string;
+  ANTHROPIC_API_KEY: string;
   ALLOWED_ORIGIN?: string;
 }
 
 const DEFAULT_ALLOWED_ORIGIN = 'https://warmsynths.github.io';
 const MAX_TEXT_LENGTH = 300;
+const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 // Must stay comfortably shorter than the client's own timeout (freetext-service.ts,
 // LLM_TIMEOUT_MS) so the client always has time to receive this Worker's real error response
 // instead of aborting first and only ever seeing a generic AbortError.
 const UPSTREAM_TIMEOUT_MS = 10000;
-const MODEL_LIST_CACHE_MS = 60 * 60 * 1000; // 1 hour
-
-interface OpenRouterModel {
-  id: string;
-  name?: string;
-  pricing?: { prompt?: string; completion?: string };
-  architecture?: { modality?: string; input_modalities?: string[]; output_modalities?: string[] };
-  supported_parameters?: string[];
-}
-
-interface ModelOption {
-  id: string;
-  name: string;
-  supportsJsonMode: boolean;
-}
-
-let rawModelListCache: { models: OpenRouterModel[]; fetchedAt: number } | null = null;
-
-function isFreeTextModel(m: OpenRouterModel): boolean {
-  const isFree = m.id.endsWith(':free')
-    || (parseFloat(m.pricing?.prompt ?? '1') === 0 && parseFloat(m.pricing?.completion ?? '1') === 0);
-
-  const arch = m.architecture;
-  const isTextOnly = arch?.modality === 'text->text'
-    || ((arch?.input_modalities ?? ['text']).every(x => x === 'text')
-      && (arch?.output_modalities ?? ['text']).every(x => x === 'text'));
-
-  return isFree && isTextOnly;
-}
-
-function supportsJsonMode(m: OpenRouterModel): boolean {
-  return Array.isArray(m.supported_parameters)
-    && (m.supported_parameters.includes('response_format') || m.supported_parameters.includes('structured_outputs'));
-}
-
-// Chain-of-thought "reasoning" models (DeepSeek R1 distills, QwQ, etc.) tend to spend the whole
-// completion budget thinking out loud before ever reaching an answer, or ignore the
-// reasoning:exclude request param entirely — a poor fit for a task that's just "pick 2-3 tags
-// from a short list." Deprioritized for auto-selection (an explicit override still works),
-// matched on id/name since OpenRouter doesn't expose a clean "is reasoning model" flag.
-const REASONING_MODEL_HINTS = ['r1', 'reasoner', 'reasoning', 'thinking', 'cot', 'o1', 'o3', 'qwq'];
-
-function looksLikeReasoningModel(m: OpenRouterModel): boolean {
-  const haystack = `${m.id} ${m.name ?? ''}`.toLowerCase();
-  return REASONING_MODEL_HINTS.some(hint => haystack.includes(hint));
-}
-
-// OpenRouter's model listing is public and needs no API key — safe to call from here without
-// the secret, and safe to expose filtered results to the client via GET /models.
-async function fetchAllModels(): Promise<OpenRouterModel[]> {
-  const now = Date.now();
-  if (rawModelListCache && now - rawModelListCache.fetchedAt < MODEL_LIST_CACHE_MS) {
-    return rawModelListCache.models;
-  }
-
-  const res = await fetch('https://openrouter.ai/api/v1/models');
-  if (!res.ok) throw new Error(`Failed to list OpenRouter models: ${res.status}`);
-  const data = await res.json() as { data: OpenRouterModel[] };
-
-  rawModelListCache = { models: data.data, fetchedAt: now };
-  return data.data;
-}
-
-async function listFreeTextModels(): Promise<ModelOption[]> {
-  const all = await fetchAllModels();
-  return all.filter(isFreeTextModel).map(m => ({ id: m.id, name: m.name || m.id, supportsJsonMode: supportsJsonMode(m) }));
-}
-
-// Picks which model to call and whether it's safe to ask it for structured JSON output.
-// Prefers a free/text model that advertises json-mode support; falls back to the first free
-// text model otherwise (still works, just relies on the prompt alone for JSON formatting).
-async function resolveModel(requestedId: string | undefined): Promise<{ id: string; useJsonMode: boolean }> {
-  const all = await fetchAllModels();
-
-  if (requestedId) {
-    const found = all.find(m => m.id === requestedId);
-    return { id: requestedId, useJsonMode: found ? supportsJsonMode(found) : false };
-  }
-
-  const freeText = all.filter(isFreeTextModel);
-  if (!freeText.length) throw new Error('No free text-only models currently available on OpenRouter');
-
-  const nonReasoning = freeText.filter(m => !looksLikeReasoningModel(m));
-  const pool = nonReasoning.length ? nonReasoning : freeText;
-
-  const jsonCapable = pool.filter(supportsJsonMode);
-  const chosen = jsonCapable.length ? jsonCapable[0] : pool[0];
-  return { id: chosen.id, useJsonMode: supportsJsonMode(chosen) };
-}
 
 function corsHeaders(origin: string): HeadersInit {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
 }
@@ -173,10 +82,8 @@ function systemPrompt(): string {
   ].join('\n');
 }
 
-// Some models wrap JSON in a ```json fence even when told not to; reasoning models often
-// preface it with a chain-of-thought ("We need to classify this as...") despite response_format
-// and the "reasoning: exclude" request param, since not every provider honors either. Scan for
-// the first balanced {...} block instead of requiring the whole response to be pure JSON.
+// Belt-and-suspenders: Claude reliably returns plain JSON on its own, but this stays cheap
+// insurance against an occasional markdown fence or stray prose.
 function extractJsonObject(text: string): string {
   const start = text.indexOf('{');
   if (start === -1) return text;
@@ -191,9 +98,6 @@ function extractJsonObject(text: string): string {
   return text.slice(start);
 }
 
-// Smaller free models sometimes emit a JS-object-literal shape instead of strict JSON —
-// unquoted keys, single-quoted strings, trailing commas. Only tried as a fallback after a
-// strict parse fails, so it never masks a genuinely malformed response as valid.
 function repairLooseJson(text: string): string {
   return text
     .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g, '$1"$2":')
@@ -212,43 +116,34 @@ function parseClassifierJson(content: string): unknown {
   }
 }
 
-async function classify(text: string, model: string, useJsonMode: boolean, apiKey: string): Promise<unknown> {
+async function classify(text: string, apiKey: string): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
         'Content-Type': 'application/json',
-        'HTTP-Referer': DEFAULT_ALLOWED_ORIGIN,
-        'X-Title': 'Chroma Chords',
       },
       body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt() },
-          { role: 'user', content: text },
-        ],
-        ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
-        // Ask reasoning-capable models to skip emitting their chain-of-thought — not every
-        // provider honors this, which is why parseClassifierJson also digs the JSON out of
-        // whatever surrounding prose comes back regardless.
-        reasoning: { exclude: true },
-        temperature: 0.2,
-        max_tokens: 400,
+        model: ANTHROPIC_MODEL,
+        max_tokens: 300,
+        system: systemPrompt(),
+        messages: [{ role: 'user', content: text }],
       }),
       signal: controller.signal,
     });
 
     if (!res.ok) {
-      throw new Error(`OpenRouter error: ${res.status} ${await res.text()}`);
+      throw new Error(`Anthropic error: ${res.status} ${await res.text()}`);
     }
 
-    const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error('Empty completion from OpenRouter');
+    const data = await res.json() as { content?: { type: string; text?: string }[] };
+    const content = data.content?.find(block => block.type === 'text')?.text;
+    if (!content) throw new Error('Empty completion from Anthropic');
     return parseClassifierJson(content);
   } finally {
     clearTimeout(timeout);
@@ -258,26 +153,16 @@ async function classify(text: string, model: string, useJsonMode: boolean, apiKe
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const allowedOrigin = env.ALLOWED_ORIGIN || DEFAULT_ALLOWED_ORIGIN;
-    const { pathname } = new URL(request.url);
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders(allowedOrigin) });
-    }
-
-    if (request.method === 'GET' && pathname === '/models') {
-      try {
-        const models = await listFreeTextModels();
-        return jsonResponse({ models }, 200, allowedOrigin);
-      } catch (err) {
-        return jsonResponse({ error: err instanceof Error ? err.message : 'Failed to list models' }, 502, allowedOrigin);
-      }
     }
 
     if (request.method !== 'POST') {
       return new Response('Method not allowed', { status: 405, headers: corsHeaders(allowedOrigin) });
     }
 
-    let body: { text?: unknown; model?: unknown };
+    let body: { text?: unknown };
     try {
       body = await request.json();
     } catch {
@@ -290,9 +175,7 @@ export default {
     }
 
     try {
-      const requestedId = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : undefined;
-      const { id: model, useJsonMode } = await resolveModel(requestedId);
-      const result = await classify(text, model, useJsonMode, env.OPENROUTER_KEY);
+      const result = await classify(text, env.ANTHROPIC_API_KEY);
       return jsonResponse(result, 200, allowedOrigin);
     } catch (err) {
       return jsonResponse({ error: err instanceof Error ? err.message : 'Classification failed' }, 502, allowedOrigin);

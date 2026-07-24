@@ -1,15 +1,15 @@
 # Chroma Chords classifier Worker
 
-Holds the OpenRouter API key server-side and proxies freetext classification requests. Required
-because the app itself is a static site committed into `docs/` and served from GitHub Pages —
-any key embedded in the client bundle would be public.
+Holds the Anthropic API key server-side and proxies freetext classification requests (calls
+Claude Haiku directly). Required because the app itself is a static site committed into `docs/`
+and served from GitHub Pages — any key embedded in the client bundle would be public.
 
 ## Deploy
 
 ```
 npm install -g wrangler   # if not already installed
 cd worker
-wrangler secret put OPENROUTER_KEY
+wrangler secret put ANTHROPIC_API_KEY
 wrangler deploy
 ```
 

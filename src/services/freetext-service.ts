@@ -1,6 +1,5 @@
 import { GENRES, MOODS } from './chord-engine';
 import { normalize, NormalizedPrompt } from './freetext-schema';
-import { getPreferredModel } from './model-picker';
 
 // Last-resort filler for normalize()'s per-field substitution — only used when the LLM's
 // response has a single malformed field (e.g. a garbled mood) and the keyword heuristic also
@@ -65,14 +64,14 @@ export function heuristicClassify(text: string): NormalizedPrompt | null {
   return { genre, mood };
 }
 
-async function llmClassify(text: string, model: string | undefined): Promise<unknown> {
+async function llmClassify(text: string): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
   try {
     const res = await fetch(CLASSIFIER_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, model }),
+      body: JSON.stringify({ text }),
       signal: controller.signal,
     });
     const data = await res.json().catch(() => null);
@@ -89,7 +88,7 @@ async function llmClassify(text: string, model: string | undefined): Promise<unk
 }
 
 // Turns free text into a NormalizedPrompt: tries the LLM classifier first (via the Cloudflare
-// Worker proxy, so the OpenRouter key never reaches the client), and falls back to the local
+// Worker proxy, so the Anthropic key never reaches the client), and falls back to the local
 // keyword heuristic on any network failure, timeout, or invalid response. The LLM's raw
 // response is always re-validated/fuzzy-matched against the controlled vocabulary before use.
 //
@@ -97,10 +96,10 @@ async function llmClassify(text: string, model: string | undefined): Promise<unk
 // heuristic had no real signal either) — callers should treat that as "show no suggestion,"
 // never substitute a guess of their own, since an unrelated guess reads as flatly wrong to
 // anyone who typed something specific (an artist name, a song title) it didn't recognize.
-export async function classifyFreeText(text: string, model: string | undefined = getPreferredModel()): Promise<NormalizedPrompt | null> {
+export async function classifyFreeText(text: string): Promise<NormalizedPrompt | null> {
   const fallback = heuristicClassify(text);
   try {
-    const raw = await llmClassify(text, model);
+    const raw = await llmClassify(text);
     return normalize(raw, fallback ?? NEUTRAL_FALLBACK);
   } catch (e) {
     console.warn('LLM classification failed, falling back to keyword heuristic:', e);
