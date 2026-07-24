@@ -155,12 +155,28 @@ function systemPrompt(): string {
   ].join('\n');
 }
 
-// Some models wrap JSON in a ```json fence even when told not to — unwrap it before parsing
-// rather than treating that as a hard failure.
+// Some models wrap JSON in a ```json fence even when told not to; reasoning models often
+// preface it with a chain-of-thought ("We need to classify this as...") despite response_format
+// and the "reasoning: exclude" request param, since not every provider honors either. Scan for
+// the first balanced {...} block instead of requiring the whole response to be pure JSON.
+function extractJsonObject(text: string): string {
+  const start = text.indexOf('{');
+  if (start === -1) return text;
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return text.slice(start);
+}
+
 function parseClassifierJson(content: string): unknown {
   const trimmed = content.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return JSON.parse(fenced ? fenced[1] : trimmed);
+  return JSON.parse(extractJsonObject(fenced ? fenced[1] : trimmed));
 }
 
 async function classify(text: string, model: string, useJsonMode: boolean, apiKey: string): Promise<unknown> {
@@ -183,8 +199,12 @@ async function classify(text: string, model: string, useJsonMode: boolean, apiKe
           { role: 'user', content: text },
         ],
         ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
+        // Ask reasoning-capable models to skip emitting their chain-of-thought — not every
+        // provider honors this, which is why parseClassifierJson also digs the JSON out of
+        // whatever surrounding prose comes back regardless.
+        reasoning: { exclude: true },
         temperature: 0.2,
-        max_tokens: 150,
+        max_tokens: 400,
       }),
       signal: controller.signal,
     });
