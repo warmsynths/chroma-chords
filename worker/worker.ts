@@ -2,10 +2,13 @@
 // static site committed straight into docs/ and served from GitHub Pages, so any key baked
 // into the client bundle would be public — this Worker exists purely to keep that key server-side.
 //
-// It does one thing: turn free text ("rainy drive at 2am") into a JSON object built ONLY from
-// this app's existing controlled vocabulary (genre/mood/key/scaleType/length). It is a
-// classifier, never a composer — it must not be asked for, and must not return, chord names
-// or progressions. The client re-validates/fuzzy-matches the response anyway (see
+// It does one thing: turn free text ("rainy drive at 2am", "portishead") into a JSON object
+// built ONLY from this app's existing controlled vocabulary (genre/mood/key/scaleType/length,
+// plus an optional chord list). It is a classifier, never a composer — even the optional
+// chords are just {root, quality} pairs picked from the same closed enums (ROOT_KEYS/
+// CHORD_QUALITIES), never free-text chord symbols. The client's theory engine is what turns
+// those into real chords, snapping each one onto whatever's actually in its per-key data. The
+// client re-validates/fuzzy-matches the whole response anyway (see
 // src/services/freetext-schema.ts) — this Worker's prompt is the first line of defense, not
 // the only one.
 //
@@ -19,7 +22,7 @@
 // the real enforcement, not the API parameter. GET /models exposes the same filtered list for
 // manual inspection/override — it's a public read-only endpoint, no key required to call it.
 
-import { GENRES, MOODS, ROOT_KEYS, SCALE_TYPES } from '../src/services/chord-engine';
+import { GENRES, MOODS, ROOT_KEYS, SCALE_TYPES, CHORD_QUALITIES } from '../src/services/chord-engine';
 
 export interface Env {
   OPENROUTER_KEY: string;
@@ -124,7 +127,8 @@ function systemPrompt(): string {
   return [
     'You are a strict music-taxonomy classifier for the app Chroma Chords.',
     'You output ONLY a single JSON object, no prose, no markdown fences.',
-    'You must never output a chord name, chord symbol, or progression — only the tags below.',
+    'Every field must come from the closed lists below — never a raw chord symbol, note name,',
+    'or anything outside these lists.',
     '',
     'Fields (all optional except genre and mood):',
     `- genre: exactly one of ${JSON.stringify(GENRES)}`,
@@ -132,6 +136,11 @@ function systemPrompt(): string {
     `- key: optional, exactly one of ${JSON.stringify(ROOT_KEYS)}`,
     `- scaleType: optional, exactly one of ${JSON.stringify(SCALE_TYPES)}`,
     '- length: optional integer 1-8, number of chords in the progression',
+    '- chords: optional array of up to 8 objects, each { "root": ..., "quality": ... } where',
+    `  root is one of ${JSON.stringify(ROOT_KEYS)} and quality is one of ${JSON.stringify(CHORD_QUALITIES)}.`,
+    '  Only include chords if you can confidently name the real progression the text refers to',
+    '  (e.g. a specific well-known song) AND key/scaleType are also set. Omit chords entirely',
+    '  otherwise — a shorter, honest answer beats a guessed progression.',
     '',
     'Interpret the user\'s free text (a scene, feeling, artist name, or song title) and pick the',
     'closest matching tags from the lists above. If the text names a real artist or song, infer',
@@ -140,6 +149,8 @@ function systemPrompt(): string {
     'Examples:',
     'Input: "rainy drive at 2am" -> {"genre":"Lo-fi/Chill","mood":"Melancholy"}',
     'Input: "portishead" -> {"genre":"Jazz-ish","mood":"Tense"}',
+    'Input: "let it be" -> {"genre":"Gospel","mood":"Warm","key":"C","scaleType":"MAJOR","length":4,' +
+      '"chords":[{"root":"C","quality":"maj"},{"root":"G","quality":"maj"},{"root":"A","quality":"min"},{"root":"F","quality":"maj"}]}',
     'Input: "bohemian rhapsody" -> {"genre":"Rock","mood":"Tense","length":6}',
   ].join('\n');
 }

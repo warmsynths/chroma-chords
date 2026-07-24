@@ -12,6 +12,16 @@ const GENRE_ICON_RADIUS = [6, 3, 12];
 
 const VIBE_EXAMPLES = ['rainy drive at 2am, first day of summer...', 'Portishead', 'Bohemian Rhapsody'];
 
+// Shown when classification genuinely fails (LLM errored and the keyword heuristic had no
+// signal either) — the real error is logged to console (see freetext-service.ts), this is just
+// a gentle nudge toward the manual pickers rather than leaving the box looking broken.
+const CLASSIFY_ERROR_MESSAGES = [
+  "Drew a total blank on that one — good thing there's a picker right below.",
+  'That one stumped us completely. The genre & mood dials still work great, though.',
+  "Our ears just short-circuited. Manual mode has never let anyone down.",
+  "No idea, honestly — but you clearly do. Pick a genre & mood below.",
+];
+
 @customElement('seed-screen')
 export class SeedScreen extends LitElement {
   @property({ type: String }) genre = 'Pop';
@@ -26,6 +36,7 @@ export class SeedScreen extends LitElement {
   // the latter case would show a wrong guess as if it were real signal.
   @state() private llmSuggestion: NormalizedPrompt | null = null;
   @state() private llmResolved = false;
+  @state() private classifyError: string | null = null;
 
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -186,6 +197,14 @@ export class SeedScreen extends LitElement {
     }
     .suggestion:active {
       transform: scale(0.96);
+    }
+    .suggestion-note {
+      display: inline-block;
+      padding: 9px 18px;
+      font-size: 12.5px;
+      font-weight: 600;
+      font-style: italic;
+      color: var(--cv-ink-55);
     }
     .divider-row {
       display: flex;
@@ -401,6 +420,7 @@ export class SeedScreen extends LitElement {
     this.freeText = (e.target as HTMLInputElement).value;
     this.llmSuggestion = null;
     this.llmResolved = false;
+    this.classifyError = null;
     this.scheduleClassify();
   }
 
@@ -415,6 +435,7 @@ export class SeedScreen extends LitElement {
       if (token !== this.classifyToken) return; // text changed while the call was in flight
       this.llmSuggestion = result;
       this.llmResolved = true;
+      this.classifyError = result ? null : CLASSIFY_ERROR_MESSAGES[Math.floor(Math.random() * CLASSIFY_ERROR_MESSAGES.length)];
     }, CLASSIFY_DEBOUNCE_MS);
   }
 
@@ -422,6 +443,9 @@ export class SeedScreen extends LitElement {
     this.selectGenre(suggestion.genre);
     this.selectMood(suggestion.mood);
     if (suggestion.length) this.setLength(suggestion.length);
+    // Carries the full suggestion (including any key/scaleType/chords) up so Generate can use
+    // the LLM's actual progression when one was returned, not just the genre/mood tags.
+    this.dispatchEvent(new CustomEvent('freetext-suggestion-applied', { detail: suggestion, bubbles: true, composed: true }));
   }
 
   render() {
@@ -475,6 +499,10 @@ export class SeedScreen extends LitElement {
               <div class="suggestion" style="border:1.5px solid ${suggestion.color}" @click=${() => this.applyFreeTextSuggestion(suggestion!)}>
                 Try <span>${suggestion.genre} · ${suggestion.mood}</span> →
               </div>
+            </div>
+          ` : this.classifyError ? html`
+            <div class="suggestion-wrap">
+              <div class="suggestion-note">${this.classifyError}</div>
             </div>
           ` : ''}
 

@@ -75,6 +75,8 @@ const QUALITY_INTERVALS: Record<string, number[]> = {
   sus4: [0, 5, 7],
 };
 
+export const CHORD_QUALITIES = Object.keys(QUALITY_INTERVALS);
+
 const DEGREE_TAG: Record<string, string> = {
   TONIC: 'home',
   SUPERTONIC: 'rise',
@@ -572,6 +574,18 @@ export interface ProgressionOverrides {
   length?: number;
 }
 
+const GENRE_BPM: Record<string, number> = {
+  Pop: 100, Rock: 118, Gospel: 84, 'Indie/Folk': 92, 'Lo-fi/Chill': 76,
+  'Jazz-ish': 96, 'R&B/Soul': 88, 'House/Dance': 124, Synthwave: 108, Cinematic: 72,
+};
+
+export function bpmForGenreMood(genre: string, mood: string): number {
+  let bpm = GENRE_BPM[genre] || 92;
+  if (mood === 'Tense') bpm += 6;
+  if (mood === 'Dreamy' || mood === 'Melancholy') bpm -= 6;
+  return bpm;
+}
+
 export function generateProgression(data: RawChordData, genre: string, mood: string, overrides?: ProgressionOverrides): Progression {
   const length = Math.max(MIN_PROGRESSION_LENGTH, Math.min(MAX_PROGRESSION_LENGTH, overrides?.length ?? DEFAULT_PROGRESSION_LENGTH));
   const baseScaleType = GENRE_SCALE[genre] || 'MAJOR';
@@ -603,15 +617,57 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
 
   const chords = chosenDegrees.map(degree => buildChordBlock(scaleKey, degree, scale, preferFlat));
 
-  const bpmBase: Record<string, number> = {
-    Pop: 100, Rock: 118, Gospel: 84, 'Indie/Folk': 92, 'Lo-fi/Chill': 76,
-    'Jazz-ish': 96, 'R&B/Soul': 88, 'House/Dance': 124, Synthwave: 108, Cinematic: 72,
-  };
-  let bpm = bpmBase[genre] || 92;
-  if (mood === 'Tense') bpm += 6;
-  if (mood === 'Dreamy' || mood === 'Melancholy') bpm -= 6;
+  return { genre, mood, key: root, scaleType, bpm: bpmForGenreMood(genre, mood), chords };
+}
 
-  return { genre, mood, key: root, scaleType, bpm, chords };
+export interface RequestedChord {
+  root: string;
+  quality: string;
+}
+
+// Turns a real chord list (e.g. from the freetext LLM classifier) into an actual Progression,
+// built from this app's existing per-key chord data rather than anything the caller invented.
+// Each requested chord is matched to whichever scale degree owns that root's pitch class in the
+// given key — so the resulting ChordBlocks carry real roman numerals, tension, and
+// next_chord_options, identical to a manually-generated progression. A root that doesn't belong
+// to the given key becomes a synthesized "borrowed" chord (the same mechanism the "Darker" swap
+// suggestion already uses) rather than being dropped, so the shape of the requested progression
+// is preserved even when it isn't fully diatonic in that key.
+export function alignChordsToScale(
+  data: RawChordData,
+  key: string,
+  scaleType: string,
+  chords: RequestedChord[],
+  genre: string,
+  mood: string
+): Progression | null {
+  const scaleKey = `${key}_${scaleType}`;
+  const scale = data.scales[scaleKey];
+  if (!scale || !chords.length) return null;
+
+  const preferFlat = preferFlatSpelling(key, scaleType);
+  const keyPc = PITCH_CLASS[key] ?? 0;
+
+  const pitchClassToDegree: Record<number, string> = {};
+  Object.entries(scale.degrees).forEach(([degree, degProfile]) => {
+    const { root: degRoot } = parseChordSymbol(degProfile.chord_name);
+    const pc = PITCH_CLASS[degRoot] ?? 0;
+    if (!(pc in pitchClassToDegree)) pitchClassToDegree[pc] = degree;
+  });
+
+  const blocks = chords.slice(0, MAX_PROGRESSION_LENGTH).map(({ root, quality }) => {
+    const pc = PITCH_CLASS[root] ?? keyPc;
+    const degree = pitchClassToDegree[pc];
+    if (degree) return buildChordBlock(scaleKey, degree, scale, preferFlat);
+
+    const semitones = ((pc - keyPc) + 12) % 12;
+    const safeQuality = (QUALITY_INTERVALS[quality] ? quality : 'maj') as keyof typeof QUALITY_INTERVALS;
+    return synthBorrowedBlock(key, semitones, safeQuality, 'Borrowed', '?', 'drift', preferFlat);
+  });
+
+  if (blocks.length < MIN_PROGRESSION_LENGTH) return null;
+
+  return { genre, mood, key, scaleType, bpm: bpmForGenreMood(genre, mood), chords: blocks };
 }
 
 function pickDegreeWithMarkov(
@@ -637,7 +693,7 @@ const CHORD_SUFFIX: Record<string, string> = {
 // The source data only has NATURAL_MINOR scales for a handful of keys (no flat-major keys),
 // so borrowing a real parallel-mode chord isn't always possible. Synthesize a plausible
 // borrowed chord directly by transposition instead of leaving "Darker" with no option.
-function synthBorrowedBlock(root: string, semitones: number, quality: keyof typeof QUALITY_INTERVALS, functionLabel: string, roman: string, tag: string, preferFlat: boolean): ChordBlock {
+export function synthBorrowedBlock(root: string, semitones: number, quality: keyof typeof QUALITY_INTERVALS, functionLabel: string, roman: string, tag: string, preferFlat: boolean): ChordBlock {
   const rootPc = (PITCH_CLASS[root] ?? 0) + semitones;
   const chordRoot = noteName(rootPc, preferFlat);
   const name = `${chordRoot}${CHORD_SUFFIX[quality]}`;

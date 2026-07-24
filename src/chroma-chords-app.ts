@@ -4,9 +4,10 @@ import { ProjectService, ProjectData } from './services/project-service';
 import { GoogleDriveService } from './services/google-drive-service';
 import { playChordForGenre } from './services/audio-service';
 import {
-  loadChordData, generateProgression, generateAlternatives, applyVoicingToChord,
+  loadChordData, generateProgression, alignChordsToScale, generateAlternatives, applyVoicingToChord,
   RawChordData, Progression, ChordBlock, Alternative,
 } from './services/chord-engine';
+import { NormalizedPrompt } from './services/freetext-schema';
 import './components/seed-screen';
 import './components/loop-screen';
 import './components/song-screen';
@@ -35,6 +36,10 @@ export class ChromaChordsApp extends LitElement {
   @state() private length = 4;
   @state() private sections: SongSection[] = [];
   @state() private activeSectionIdx = 0;
+  // A specific progression from the freetext classifier (e.g. it recognized "let it be" and
+  // returned real chords), waiting to be used on the next Generate — cleared the moment the
+  // user manually changes genre/mood, since that signals they want a fresh one instead.
+  @state() private pendingChordSuggestion: NormalizedPrompt | null = null;
 
   private currentProjectId: string | null = null;
   private autoplayTimer: ReturnType<typeof setInterval> | null = null;
@@ -99,23 +104,42 @@ export class ChromaChordsApp extends LitElement {
 
   private onGenreChange(e: CustomEvent<string>) {
     this.genre = e.detail;
+    this.pendingChordSuggestion = null;
   }
 
   private onMoodChange(e: CustomEvent<string>) {
     this.mood = e.detail;
+    this.pendingChordSuggestion = null;
+  }
+
+  // Fires (in addition to genre-change/mood-change/length-change) whenever the seed screen's
+  // freetext suggestion chip is applied, carrying the full classifier result — including any
+  // real chord list it returned. Dispatched after those other events, so this always has the
+  // final say on pendingChordSuggestion for that click.
+  private onFreetextSuggestionApplied(e: CustomEvent<NormalizedPrompt>) {
+    const suggestion = e.detail;
+    this.pendingChordSuggestion = suggestion.chords?.length && suggestion.key && suggestion.scaleType ? suggestion : null;
   }
 
   private onGenerate() {
     this.keyOverride = null;
     this.scaleOverride = null;
-    const progression = generateProgression(this.chordData, this.genre, this.mood, { length: this.length });
+
+    const suggestion = this.pendingChordSuggestion;
+    const usingSuggestion = suggestion && suggestion.genre === this.genre && suggestion.mood === this.mood;
+    const progression = (usingSuggestion && suggestion.chords && suggestion.key && suggestion.scaleType
+      ? alignChordsToScale(this.chordData, suggestion.key, suggestion.scaleType, suggestion.chords, this.genre, this.mood)
+      : null) ?? generateProgression(this.chordData, this.genre, this.mood, { length: this.length });
+
     this.progression = progression;
-    this.order = Array.from({ length: this.length }, (_, i) => i);
+    this.order = Array.from({ length: progression.chords.length }, (_, i) => i);
+    this.length = progression.chords.length;
     this.activeIndex = 0;
     this.playing = false;
     this.screen = 'loop';
     this.sections = [{ name: SECTION_NAMES[0], progression, order: this.order.slice() }];
     this.activeSectionIdx = 0;
+    this.pendingChordSuggestion = null;
     this.saveProject();
   }
 
@@ -431,6 +455,7 @@ export class ChromaChordsApp extends LitElement {
           @genre-change=${this.onGenreChange}
           @mood-change=${this.onMoodChange}
           @length-change=${this.onLengthChange}
+          @freetext-suggestion-applied=${this.onFreetextSuggestionApplied}
           @generate=${this.onGenerate}
         ></seed-screen>
       `;
