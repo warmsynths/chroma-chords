@@ -182,29 +182,18 @@ export class SeedScreen extends LitElement {
       text-align: center;
       margin-top: 12px;
     }
-    .suggestion {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      border-radius: 100px;
-      padding: 9px 18px;
-      font-size: 12.5px;
-      font-weight: 700;
-      color: var(--cv-ink);
-      cursor: pointer;
-      background: transparent;
-      transition: transform 150ms var(--cv-ease);
-    }
-    .suggestion:active {
-      transform: scale(0.96);
-    }
     .suggestion-note {
       display: inline-block;
       padding: 9px 18px;
       font-size: 12.5px;
       font-weight: 600;
-      font-style: italic;
       color: var(--cv-ink-55);
+    }
+    .suggestion-note.error {
+      font-style: italic;
+    }
+    .suggestion-highlight {
+      font-weight: 800;
     }
     .divider-row {
       display: flex;
@@ -422,6 +411,15 @@ export class SeedScreen extends LitElement {
     this.llmResolved = false;
     this.classifyError = null;
     this.scheduleClassify();
+
+    // Instant feedback: auto-apply the offline keyword guess the moment it has real signal,
+    // so the genre/mood pills (and the CTA copy) react live as you type rather than waiting on
+    // a click. The LLM result upgrades this in place once it resolves (see scheduleClassify).
+    const trimmed = this.freeText.trim();
+    if (trimmed.length > 2) {
+      const instant = heuristicClassify(trimmed);
+      if (instant) this.applyBest(instant);
+    }
   }
 
   private scheduleClassify() {
@@ -436,27 +434,29 @@ export class SeedScreen extends LitElement {
       this.llmSuggestion = result;
       this.llmResolved = true;
       this.classifyError = result ? null : CLASSIFY_ERROR_MESSAGES[Math.floor(Math.random() * CLASSIFY_ERROR_MESSAGES.length)];
+      if (result) this.applyBest(result);
     }, CLASSIFY_DEBOUNCE_MS);
   }
 
-  private applyFreeTextSuggestion(suggestion: NormalizedPrompt) {
-    this.selectGenre(suggestion.genre);
-    this.selectMood(suggestion.mood);
-    if (suggestion.length) this.setLength(suggestion.length);
-    // Carries the full suggestion (including any key/scaleType/chords) up so Generate can use
-    // the LLM's actual progression when one was returned, not just the genre/mood tags.
-    this.dispatchEvent(new CustomEvent('freetext-suggestion-applied', { detail: suggestion, bubbles: true, composed: true }));
+  // Applies a classification result to the genre/mood/length controls and carries it up to
+  // chroma-chords-app (which uses it to build a real progression on Generate, including any
+  // key/scaleType/chords the LLM returned) — called automatically as soon as there's a
+  // confident answer, not on a separate click.
+  private applyBest(best: NormalizedPrompt) {
+    this.selectGenre(best.genre);
+    this.selectMood(best.mood);
+    if (best.length) this.setLength(best.length);
+    this.dispatchEvent(new CustomEvent('freetext-suggestion-applied', { detail: best, bubbles: true, composed: true }));
   }
 
   render() {
     const moodColor = getMoodColor(this.mood);
     const freeTextTrimmed = this.freeText.trim();
-    let suggestion: (NormalizedPrompt & { color: string }) | null = null;
+    let best: NormalizedPrompt | null = null;
     if (freeTextTrimmed.length > 2) {
       // Once the LLM call has resolved, trust its answer even if that answer is "no idea"
       // (null) — only fall back to the instant heuristic guess while still waiting on it.
-      const best = this.llmResolved ? this.llmSuggestion : heuristicClassify(freeTextTrimmed);
-      if (best) suggestion = { ...best, color: getMoodColor(best.mood) };
+      best = this.llmResolved ? this.llmSuggestion : heuristicClassify(freeTextTrimmed);
     }
 
     return html`
@@ -494,15 +494,13 @@ export class SeedScreen extends LitElement {
               placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
             />
           </div>
-          ${suggestion ? html`
+          ${best ? html`
             <div class="suggestion-wrap">
-              <div class="suggestion" style="border:1.5px solid ${suggestion.color}" @click=${() => this.applyFreeTextSuggestion(suggestion!)}>
-                Try <span>${suggestion.genre} · ${suggestion.mood}</span> →
-              </div>
+              <div class="suggestion-note">Sounds like <span class="suggestion-highlight" style="color:${moodColor}">${best.genre} · ${best.mood}</span> — the picks below already match.</div>
             </div>
           ` : this.classifyError ? html`
             <div class="suggestion-wrap">
-              <div class="suggestion-note">${this.classifyError}</div>
+              <div class="suggestion-note error">${this.classifyError}</div>
             </div>
           ` : ''}
 
@@ -553,7 +551,7 @@ export class SeedScreen extends LitElement {
           </div>
 
           <button class="cta" style="background:${moodColor}" @click=${this.generate}>
-            Generate loop <span>→</span>
+            ${best ? "Let's go to your progression" : 'Generate loop'} <span>→</span>
           </button>
           <div class="caption">Nothing here is permanent — swap any chord after.</div>
 
