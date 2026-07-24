@@ -574,7 +574,7 @@ export class LoopScreen extends LitElement {
        which on a narrow phone can wrap unevenly (e.g. 3 then 1). A strict 2-column grid forces
        an even 2-per-row layout without touching each chip's own size — grid tracks just divide
        the row width; the chip keeps its own inline width/height and centers within its cell. */
-    @media (max-width: 420px) {
+    @media (max-width: 600px) {
       .chip-row {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
