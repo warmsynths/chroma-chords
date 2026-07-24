@@ -265,6 +265,11 @@ const DEFAULT_PROGRESSION_LENGTH = 4;
 export const MIN_PROGRESSION_LENGTH = 1;
 export const MAX_PROGRESSION_LENGTH = 8;
 
+// How long each chord holds during autoplay — shared between the app's setInterval and the
+// loop screen's progress-bar CSS transition so the fill's animation duration always matches
+// real playback timing instead of drifting out of two hardcoded copies of the same number.
+export const AUTOPLAY_INTERVAL_MS = 1700;
+
 const DEFAULT_MARKOV_TRANSITIONS: Record<string, Record<string, number>> = {
   TONIC: { SUBDOMINANT: 0.35, SUBMEDIANT: 0.25, SUPERTONIC: 0.15, DOMINANT: 0.15, MEDIANT: 0.05, SUBTONIC: 0.05 },
   SUPERTONIC: { DOMINANT: 0.50, SUBDOMINANT: 0.20, SUBMEDIANT: 0.15, TONIC: 0.10, 'LEADING-TONE': 0.05 },

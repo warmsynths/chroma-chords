@@ -1,8 +1,9 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl,
   MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension, MOODS,
+  AUTOPLAY_INTERVAL_MS,
 } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
@@ -56,6 +57,10 @@ export class LoopScreen extends LitElement {
   @state() private toast: string | null = null;
   @state() private spinning = false;
   @state() private drag: { pos: number; offsetX: number; offsetY: number } | null = null;
+  // True only on the single update where activeIndex wraps back to 0 from the last chord —
+  // disables the progress-fill transition for that one render so the bar resets instantly
+  // instead of visibly sliding backward, then clears itself on the very next forward step.
+  @state() private snapProgress = false;
 
   private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,6 +84,13 @@ export class LoopScreen extends LitElement {
     window.addEventListener('pointermove', this.onDragMove);
     window.addEventListener('pointerup', this.onDragEnd);
     window.addEventListener('pointercancel', this.onDragEnd);
+  }
+
+  willUpdate(changed: PropertyValues) {
+    if (changed.has('activeIndex')) {
+      const prevIndex = changed.get('activeIndex') as number | undefined;
+      this.snapProgress = prevIndex !== undefined && this.activeIndex < prevIndex;
+    }
   }
 
   disconnectedCallback() {
@@ -359,7 +371,13 @@ export class LoopScreen extends LitElement {
     .progress-fill {
       height: 100%;
       border-radius: 6px;
-      transition: width 0.3s var(--cv-ease), background 0.4s ease;
+      /* Duration set inline to match AUTOPLAY_INTERVAL_MS so the fill sweeps continuously
+         across each chord's actual hold time instead of jumping there quickly and sitting
+         still — linear timing so the motion reads as constant, not eased/stepped. */
+      transition: width var(--progress-duration, 1.7s) linear, background 0.4s ease;
+    }
+    .progress-fill.snap {
+      transition: none;
     }
     .dice-btn {
       width: 50px;
@@ -550,6 +568,18 @@ export class LoopScreen extends LitElement {
     @media (min-width: 720px) {
       .content { max-width: 760px; }
       .panel { padding: 48px 40px; }
+    }
+
+    /* flex-wrap greedily fits as many chips as their (tension-varying) widths allow per row,
+       which on a narrow phone can wrap unevenly (e.g. 3 then 1). A strict 2-column grid forces
+       an even 2-per-row layout without touching each chip's own size — grid tracks just divide
+       the row width; the chip keeps its own inline width/height and centers within its cell. */
+    @media (max-width: 420px) {
+      .chip-row {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        justify-items: center;
+      }
     }
   `;
 
@@ -792,7 +822,10 @@ export class LoopScreen extends LitElement {
                 : html`<svg width="20" height="22" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z" /></svg>`}
             </button>
             <div class="progress-track">
-              <div class="progress-fill" style="width:${progressPct}%;background:${moodColor}"></div>
+              <div
+                class="progress-fill ${this.snapProgress ? 'snap' : ''}"
+                style="width:${progressPct}%;background:${moodColor};--progress-duration:${AUTOPLAY_INTERVAL_MS}ms"
+              ></div>
             </div>
             <div class="dice-btn ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
           </div>

@@ -5,7 +5,7 @@ import { GoogleDriveService } from './services/google-drive-service';
 import { playChordForGenre } from './services/audio-service';
 import {
   loadChordData, generateProgression, alignChordsToScale, generateAlternatives, applyVoicingToChord,
-  RawChordData, Progression, ChordBlock, Alternative,
+  RawChordData, Progression, ChordBlock, Alternative, AUTOPLAY_INTERVAL_MS,
 } from './services/chord-engine';
 import { NormalizedPrompt } from './services/freetext-schema';
 import './components/seed-screen';
@@ -85,7 +85,7 @@ export class ChromaChordsApp extends LitElement {
       if (!this.progression || !this.playing) return;
       this.activeIndex = (this.activeIndex + 1) % this.order.length;
       this.playActiveChord();
-    }, 1700);
+    }, AUTOPLAY_INTERVAL_MS);
   }
 
   private stopAutoplay() {
