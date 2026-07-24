@@ -401,18 +401,18 @@ export class LoopScreen extends LitElement {
       width: 50px;
       height: 50px;
       border-radius: 50%;
-      background: var(--cv-surface-2);
-      border: none;
+      background: var(--cv-surface);
+      border: 2px solid var(--cv-ink-12);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
       cursor: pointer;
       flex-shrink: 0;
+      box-sizing: border-box;
       transition: transform 0.3s ease, background 0.2s ease;
     }
     .dice-btn:hover {
-      background: var(--cv-surface);
+      background: var(--cv-surface-2);
     }
     .dice-btn.spinning {
       transform: rotate(360deg);
@@ -423,6 +423,38 @@ export class LoopScreen extends LitElement {
       font-weight: 600;
       color: var(--cv-ink-muted);
       margin-top: 12px;
+    }
+    .build-song-btn {
+      width: 100%;
+      border: none;
+      color: var(--cv-ink);
+      padding: 16px;
+      border-radius: 100px;
+      font-family: inherit;
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: 0.2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      margin-top: 24px;
+      transition: transform 160ms var(--cv-ease);
+    }
+    .build-song-btn:active {
+      transform: scale(0.98);
+    }
+    .back-to-seed-row {
+      text-align: center;
+      margin-top: 16px;
+    }
+    .back-to-seed-link {
+      display: inline-block;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--cv-label);
+      cursor: pointer;
     }
     .theory-toggle-row {
       display: flex;
@@ -852,10 +884,6 @@ export class LoopScreen extends LitElement {
             </div>
             <div class="menu-label spaced">Length</div>
             ${this.renderLengthControl()}
-            <div class="menu-nav-row" @click=${() => this.emit('view-song')}>
-              <div class="menu-nav-label">View song</div>
-              <div class="menu-nav-arrow">↗</div>
-            </div>
             <div class="menu-nav-row" @click=${() => this.openShare()}>
               <div class="menu-nav-label">Share progression</div>
               <div class="menu-nav-arrow">↗</div>
@@ -943,9 +971,25 @@ export class LoopScreen extends LitElement {
                 style="width:${progressPct}%;background:${moodColor};--progress-duration:${AUTOPLAY_INTERVAL_MS}ms"
               ></div>
             </div>
-            <div class="dice-btn ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
+            <div class="dice-btn ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}" />
+                <circle cx="8" cy="8" r="1.7" fill="#2E271F" />
+                <circle cx="16" cy="8" r="1.7" fill="#2E271F" />
+                <circle cx="12" cy="12" r="1.7" fill="#2E271F" />
+                <circle cx="8" cy="16" r="1.7" fill="#2E271F" />
+                <circle cx="16" cy="16" r="1.7" fill="#2E271F" />
+              </svg>
+            </div>
           </div>
           <div class="transport-meta">${displayKeyName(p.key, p.scaleType).toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
+
+          <button class="build-song-btn" style="background:${moodColor}" @click=${() => this.emit('view-song')}>
+            Build the full song <span>→</span>
+          </button>
+          <div class="back-to-seed-row">
+            <div class="back-to-seed-link" @click=${() => this.emit('back')}>← Back to seed</div>
+          </div>
         </div>
 
         ${this.sheetMounted && this.swapChord ? html`

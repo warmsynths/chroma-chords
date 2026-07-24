@@ -361,7 +361,7 @@ export class SwapSheet extends LitElement {
       top: 0;
       width: 8.5714%;
       height: 44px;
-      background: var(--cv-plum);
+      background: var(--cv-ink);
       border-radius: 0 0 6px 6px;
       z-index: 2;
     }
@@ -572,7 +572,7 @@ export class SwapSheet extends LitElement {
                     <div class="white-key ${voicingNotes.includes(n) ? 'active' : ''}" style=${voicingNotes.includes(n) ? `background:${this.moodColor}` : ''}>${n}</div>
                   `)}
                   ${BLACK_NOTES.map(b => html`
-                    <div class="black-key" style="left:${b.left};background:${(voicingNotes.includes(b.note) || voicingNotes.includes(b.flat)) ? this.moodColor : 'var(--cv-plum)'}"></div>
+                    <div class="black-key" style="left:${b.left};${(voicingNotes.includes(b.note) || voicingNotes.includes(b.flat)) ? `background:${this.moodColor}` : ''}"></div>
                   `)}
                 </div>
               </div>
