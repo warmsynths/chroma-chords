@@ -1,9 +1,9 @@
-import { LitElement, html, css, PropertyValues } from 'lit';
+import { LitElement, html, css, svg, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl,
   MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension, MOODS,
-  AUTOPLAY_INTERVAL_MS, displayKeyName, ROOT_KEYS,
+  AUTOPLAY_INTERVAL_MS, displayKeyName, ROOT_KEYS, buildProgressionStaff, getKeySignature,
 } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
@@ -300,6 +300,21 @@ export class LoopScreen extends LitElement {
       text-transform: uppercase;
       margin-top: 6px;
     }
+    .roman-badge {
+      position: absolute;
+      top: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--cv-ink);
+      color: var(--cv-cream);
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 9px;
+      border-radius: 100px;
+      white-space: nowrap;
+      box-shadow: 0 3px 8px -2px rgba(46, 39, 31, 0.4);
+      z-index: 3;
+    }
     .now-marker {
       position: absolute;
       top: 8px;
@@ -407,6 +422,61 @@ export class LoopScreen extends LitElement {
       font-size: 12.5px;
       font-weight: 600;
       color: var(--cv-ink-muted);
+      margin-top: 12px;
+    }
+    .theory-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 22px;
+      cursor: pointer;
+    }
+    .theory-track {
+      width: 40px;
+      height: 23px;
+      border-radius: 100px;
+      background: var(--cv-ink-16);
+      position: relative;
+      transition: background 150ms var(--cv-ease);
+      flex-shrink: 0;
+    }
+    .theory-track.on {
+      background: var(--cv-plum);
+    }
+    .theory-knob {
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: var(--cv-cream);
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      transition: left 150ms var(--cv-ease);
+    }
+    .theory-knob.on {
+      left: 20px;
+    }
+    .theory-label {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--cv-ink-muted);
+    }
+    .theory-strip {
+      background: var(--cv-surface-2);
+      border: 1.5px solid var(--cv-ink-10);
+      border-radius: 18px;
+      padding: 18px 22px;
+      margin-top: 22px;
+    }
+    .theory-key-label {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      color: var(--cv-label);
+      text-transform: uppercase;
+    }
+    .theory-staff-scroll {
+      overflow-x: auto;
       margin-top: 12px;
     }
     .menu-scrim {
@@ -737,6 +807,11 @@ export class LoopScreen extends LitElement {
     const moodColor = getMoodColor(p.mood);
     const progressPct = ((this.progressStep + 1) / Math.max(1, this.order.length)) * 100;
     const panelAnim = PANEL_ANIM[p.mood] || PANEL_ANIM.Dreamy;
+    // Staff mirrors the same left-to-right order the chip row shows (post drag-reorder), not
+    // the progression's original array order, so the two views always read the same sequence.
+    const staff = this.showTheory ? buildProgressionStaff(this.order.map(i => p.chords[i]), p.key, p.scaleType) : null;
+    const sigCount = getKeySignature(p.key, p.scaleType).length;
+    const sigLabel = sigCount === 0 ? 'no sharps or flats' : `${sigCount} ${sigCount === 1 ? 'sharp/flat' : 'sharps/flats'}`;
 
     return html`
       <div class="frame">
@@ -810,6 +885,7 @@ export class LoopScreen extends LitElement {
                     style="width:${role.size}px;height:${role.size}px;border-radius:${role.radius}px;background:${role.color};${this.dragStyleFor(pos)}"
                     @pointerdown=${(e: PointerEvent) => this.pressStart(pos, () => this.emit('chord-preview', chordIndex), e)}
                   >
+                    ${this.showTheory ? html`<div class="roman-badge">${c.roman}</div>` : ''}
                     ${isActive ? html`<div class="now-marker"><div class="now-dot"></div><div class="now-text">now</div></div>` : ''}
                     <div class="chord-name" style="font-size:${role.fontSize}px;">${c.name}</div>
                     <div class="chord-role">${c.functionLabel}</div>
@@ -825,6 +901,31 @@ export class LoopScreen extends LitElement {
               })}
             </div>
           </div>
+
+          <div class="theory-toggle-row" @click=${() => this.emit('theory-toggle')}>
+            <div class="theory-track ${this.showTheory ? 'on' : ''}"><div class="theory-knob ${this.showTheory ? 'on' : ''}"></div></div>
+            <div class="theory-label">Show music theory</div>
+          </div>
+          ${staff ? html`
+            <div class="theory-strip">
+              <div class="theory-key-label">${displayKeyName(p.key, p.scaleType)} ${p.scaleType.replace('_', ' ')} · ${sigLabel}</div>
+              <div class="theory-staff-scroll">
+                ${svg`
+                  <svg width="${staff.width}" height="${staff.height}" viewBox="0 0 ${staff.width} ${staff.height}">
+                    ${staff.lines.map(y => svg`<rect x="6" y="${y}" width="${staff.width - 12}" height="1.4" fill="rgba(46,39,31,0.35)" />`)}
+                    <text x="8" y="${staff.lines[3] + 12}" font-size="42" font-family="Georgia, 'Times New Roman', serif" fill="var(--cv-ink)">𝄞</text>
+                    ${staff.keySignature.map(sig => svg`<text x="${sig.x}" y="${sig.y + 5}" font-size="18" fill="var(--cv-ink)">${sig.sign === 'sharp' ? '♯' : '♭'}</text>`)}
+                    ${staff.chords.map(ch => svg`
+                      <text x="${ch.cx}" y="12" font-size="10" font-weight="800" fill="var(--cv-ink)" text-anchor="middle">${ch.name}</text>
+                      ${ch.ledgers.map(lg => svg`<rect x="${lg.x}" y="${lg.y}" width="16" height="1.4" fill="rgba(46,39,31,0.5)" />`)}
+                      ${ch.notes.map(n => svg`<ellipse cx="${n.x}" cy="${n.y}" rx="5" ry="3.9" fill="var(--cv-ink)" />`)}
+                      <text x="${ch.cx}" y="${staff.height - 4}" font-size="11" font-weight="800" fill="${moodColor}" text-anchor="middle">${ch.roman}</text>
+                    `)}
+                  </svg>
+                `}
+              </div>
+            </div>
+          ` : ''}
 
           <div class="transport">
             <button class="play-btn" style="background:${moodColor}" @click=${() => this.emit('toggle-play')}>

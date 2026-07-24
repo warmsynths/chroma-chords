@@ -875,6 +875,74 @@ export function buildChordStaff(notes: string[], key: string, scaleType: string)
   return { width: STAFF_WIDTH, height, lines, ledgers, notes: noteDots, keySignature };
 }
 
+export interface ProgressionStaffChord {
+  cx: number;
+  name: string;
+  roman: string;
+  notes: { x: number; y: number }[];
+  ledgers: { x: number; y: number }[];
+}
+
+export interface ProgressionStaff {
+  width: number;
+  height: number;
+  lines: number[];
+  keySignature: { x: number; y: number; sign: 'sharp' | 'flat' }[];
+  chords: ProgressionStaffChord[];
+}
+
+const PSTAFF_MARGIN = 10;
+const PSTAFF_CHORD_GAP = 46;
+const PSTAFF_CLEF_WIDTH = 26;
+const PSTAFF_LABEL_HEIGHT = 14;
+
+// Same layout math as buildChordStaff, generalized to lay multiple chords out along one
+// continuous staff (clef + key signature drawn once) instead of one compact box per chord —
+// this is what the full progression's "show music theory" view renders, vs. the single-chord
+// mini staff buildChordStaff still serves elsewhere.
+export function buildProgressionStaff(chords: ChordBlock[], key: string, scaleType: string): ProgressionStaff {
+  const sigLetters = getKeySignature(key, scaleType);
+  const sigGlyphSpacing = 8;
+  const sigWidth = sigLetters.length ? sigLetters.length * sigGlyphSpacing + 6 : 0;
+  const sigSteps = sigLetters.map(l => KEY_SIG_STEP[l]);
+
+  const perChordSteps = chords.map(c => diatonicSteps(c.notes));
+  const allSteps = perChordSteps.flat();
+
+  const rawMinY = Math.min(STAFF_TOP_Y, ...allSteps.map(stepToY), ...sigSteps.map(stepToY));
+  const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...allSteps.map(stepToY), ...sigSteps.map(stepToY));
+  const offsetY = PSTAFF_MARGIN - rawMinY;
+  const height = rawMaxY - rawMinY + 12 + PSTAFF_MARGIN + PSTAFF_LABEL_HEIGHT;
+
+  const lines = [0, 1, 2, 3, 4].map(i => STAFF_TOP_Y + i * STAFF_LINE_GAP + offsetY);
+
+  const chordStartX = PSTAFF_MARGIN + PSTAFF_CLEF_WIDTH + sigWidth;
+
+  const keySignature = sigLetters.map((l, i) => ({
+    x: PSTAFF_MARGIN + PSTAFF_CLEF_WIDTH + i * sigGlyphSpacing,
+    y: stepToY(KEY_SIG_STEP[l]) + offsetY,
+    sign: (l.includes('#') ? 'sharp' : 'flat') as 'sharp' | 'flat',
+  }));
+
+  const staffChords: ProgressionStaffChord[] = chords.map((chord, i) => {
+    const cx = chordStartX + i * PSTAFF_CHORD_GAP + PSTAFF_CHORD_GAP / 2;
+    const steps = perChordSteps[i];
+    const notes = steps.map(step => ({ x: cx, y: stepToY(step) + offsetY }));
+    const ledgers: { x: number; y: number }[] = [];
+    steps.forEach(step => {
+      const isLinePosition = (step - BOTTOM_LINE_STEP) % 2 === 0;
+      if (isLinePosition && (step < BOTTOM_LINE_STEP || step > TOP_LINE_STEP)) {
+        ledgers.push({ x: cx - 8, y: stepToY(step) + offsetY });
+      }
+    });
+    return { cx, name: chord.name, roman: chord.roman, notes, ledgers };
+  });
+
+  const width = chordStartX + chords.length * PSTAFF_CHORD_GAP + PSTAFF_MARGIN;
+
+  return { width, height, lines, keySignature, chords: staffChords };
+}
+
 export function applyVoicingToChord(chord: ChordBlock, quality: string, extension: string): ChordBlock {
   const root = rootOfChordName(chord.name);
   const preferFlat = root.includes('b');
