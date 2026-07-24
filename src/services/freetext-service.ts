@@ -63,10 +63,12 @@ async function llmClassify(text: string, model: string): Promise<unknown> {
       body: JSON.stringify({ text, model }),
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`Classifier request failed: ${res.status}`);
-    const data = await res.json();
-    if (data && typeof data === 'object' && 'error' in data) {
-      throw new Error(String((data as { error: unknown }).error));
+    const data = await res.json().catch(() => null);
+    if (!res.ok || (data && typeof data === 'object' && 'error' in data)) {
+      const detail = data && typeof data === 'object' && 'error' in data
+        ? String((data as { error: unknown }).error)
+        : `HTTP ${res.status}`;
+      throw new Error(`Classifier request failed: ${detail}`);
     }
     return data;
   } finally {
