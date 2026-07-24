@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import {
   Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl,
   MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension, MOODS,
-  AUTOPLAY_INTERVAL_MS,
+  AUTOPLAY_INTERVAL_MS, displayKeyName,
 } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
@@ -841,7 +841,7 @@ export class LoopScreen extends LitElement {
             </div>
             <div class="dice-btn ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
           </div>
-          <div class="transport-meta">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
+          <div class="transport-meta">${displayKeyName(p.key, p.scaleType).toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
         </div>
 
         ${this.sheetMounted && this.swapChord ? html`

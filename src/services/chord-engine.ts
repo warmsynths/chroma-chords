@@ -805,6 +805,15 @@ export function preferFlatSpelling(key: string, scaleType: string): boolean {
   return FLAT_TONICS.has(parentName) || parentName.includes('b');
 }
 
+// The key/scaleType pair is stored under its ROOT_KEYS canonical spelling (e.g. "F#") purely as
+// a lookup key into data.scales — but a mode's actual notated spelling can differ (F# Lydian's
+// notes are spelled from Db major's flats, so its tonic reads "Gb" on every chord chip). Use
+// this wherever the key is displayed to the user, so the label matches what the chords actually
+// show instead of the raw dictionary key.
+export function displayKeyName(key: string, scaleType: string): string {
+  return noteName(PITCH_CLASS[key] ?? 0, preferFlatSpelling(key, scaleType));
+}
+
 // Standard treble-clef vertical placement (in the same letter+octave "step" units as
 // diatonicSteps/stepToY) for each accidental that can appear in one of the signatures above.
 const KEY_SIG_STEP: Record<string, number> = {
