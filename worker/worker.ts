@@ -31,7 +31,10 @@ export interface Env {
 
 const DEFAULT_ALLOWED_ORIGIN = 'https://warmsynths.github.io';
 const MAX_TEXT_LENGTH = 300;
-const UPSTREAM_TIMEOUT_MS = 8000;
+// Must stay comfortably shorter than the client's own timeout (freetext-service.ts,
+// LLM_TIMEOUT_MS) so the client always has time to receive this Worker's real error response
+// instead of aborting first and only ever seeing a generic AbortError.
+const UPSTREAM_TIMEOUT_MS = 10000;
 const MODEL_LIST_CACHE_MS = 60 * 60 * 1000; // 1 hour
 
 interface OpenRouterModel {

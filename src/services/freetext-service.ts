@@ -11,7 +11,10 @@ const NEUTRAL_FALLBACK = { genre: GENRES[0], mood: MOODS[0].name };
 // without needing to edit source.
 const CLASSIFIER_ENDPOINT =
   import.meta.env.VITE_CLASSIFIER_ENDPOINT || 'https://chroma-chords-classifier.warmsynthsiloveyou.workers.dev';
-const LLM_TIMEOUT_MS = 6000;
+// Must stay comfortably longer than the Worker's own upstream timeout (worker/worker.ts,
+// UPSTREAM_TIMEOUT_MS) — otherwise the client aborts before the Worker can even return its
+// real error, and every slow-but-working model call looks like a generic AbortError instead.
+const LLM_TIMEOUT_MS = 12000;
 
 // Local, offline classifier — no network involved. Used both as the always-on instant
 // suggestion while the user is still typing, and as the fallback when the LLM call fails,
