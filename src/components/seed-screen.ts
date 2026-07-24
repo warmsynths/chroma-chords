@@ -1,9 +1,49 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
-import { repeat } from 'lit/directives/repeat.js';
-import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, getMoodColor, getMoodPath } from '../services/chord-engine';
+import { customElement, property, state } from 'lit/decorators.js';
+import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, getMoodColor } from '../services/chord-engine';
 
 const GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
+const GENRE_ICON_PALETTE = ['#F2A79B', '#9CC0EC', '#F6D98B'];
+// index % 3 -> corner radius on the genre pill's icon swatch: rounded square, squarer, near-circle.
+const GENRE_ICON_RADIUS = [6, 3, 12];
+
+const VIBE_EXAMPLES = ['rainy drive at 2am, first day of summer...', 'Portishead', 'Bohemian Rhapsody'];
+
+const MOOD_KEYWORDS: Record<string, string[]> = {
+  Uplifting: ['happy', 'joy', 'bright', 'hope', 'celebrat', 'win', 'sun', 'morning', 'triumph'],
+  Melancholy: ['sad', 'rain', 'lonely', 'grief', 'loss', 'blue', 'tear', 'goodbye'],
+  Dreamy: ['dream', 'float', 'cloud', 'soft', 'sleep', 'hazy', 'ethereal', 'stars'],
+  Tense: ['fear', 'anxious', 'dark', 'storm', 'fight', 'chase', 'danger', 'thriller'],
+  Warm: ['cozy', 'home', 'fire', 'love', 'autumn', 'familiar', 'fireplace'],
+  Nostalgic: ['memory', 'childhood', 'old', 'faded', 'remember', 'summer', 'photo', 'yearbook'],
+};
+
+const GENRE_KEYWORDS: Record<string, string[]> = {
+  'Pop': ['pop', 'radio', 'dance', 'catchy', 'hit'],
+  'Lo-fi/Chill': ['lofi', 'lo-fi', 'study', 'bedroom', 'tape', 'chill', 'relax'],
+  'R&B/Soul': ['rnb', 'r&b', 'soul', 'smooth', 'slow jam', 'sultry'],
+  'Indie/Folk': ['folk', 'acoustic', 'campfire', 'porch', 'story', 'indie'],
+  'Synthwave': ['synth', '80s', 'neon', 'retro', 'synthwave', 'arcade'],
+  'Jazz-ish': ['jazz', 'smoky', 'bar', 'lounge', 'late night', 'saxophone'],
+  'Gospel': ['gospel', 'church', 'choir', 'soulful', 'worship'],
+  'Cinematic': ['movie', 'film', 'epic', 'trailer', 'scene', 'cinematic'],
+  'Rock': ['rock', 'guitar', 'drive', 'loud', 'energy', 'highway'],
+  'House/Dance': ['house', 'edm', 'club', 'rave', 'four on the floor', 'dance floor'],
+};
+
+function matchFromText(text: string, map: Record<string, string[]>, fallbackList: string[]): string {
+  const lower = text.toLowerCase();
+  let best: string | null = null;
+  let bestScore = 0;
+  Object.keys(map).forEach(key => {
+    const score = map[key].reduce((s, k) => s + (lower.includes(k) ? 1 : 0), 0);
+    if (score > bestScore) { bestScore = score; best = key; }
+  });
+  if (best) return best;
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return fallbackList[h % fallbackList.length];
+}
 
 @customElement('seed-screen')
 export class SeedScreen extends LitElement {
@@ -11,202 +51,269 @@ export class SeedScreen extends LitElement {
   @property({ type: String }) mood = 'Uplifting';
   @property({ type: Number }) length = 4;
 
+  @state() private freeText = '';
+  @state() private placeholderIdx = 0;
+
+  private placeholderTimer: ReturnType<typeof setInterval> | null = null;
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.placeholderTimer = setInterval(() => {
+      this.placeholderIdx = (this.placeholderIdx + 1) % VIBE_EXAMPLES.length;
+    }, 2800);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.placeholderTimer) clearInterval(this.placeholderTimer);
+  }
+
   static styles = css`
     :host {
       display: block;
       position: relative;
       min-height: 100dvh;
-      background: var(--cv-paper);
-      overflow: hidden;
-    }
-    .grain {
-      position: absolute;
-      inset: 0;
-      background-image: var(--cv-noise);
-      background-size: 120px 120px;
-      mix-blend-mode: multiply;
-      opacity: 0.035;
-      pointer-events: none;
-    }
-    .ink-blobs {
-      position: absolute;
-      inset: 0;
-      overflow: hidden;
-      pointer-events: none;
-    }
-    .ink-blob {
-      position: absolute;
-      mix-blend-mode: multiply;
-      transition: background .8s ease;
-    }
-    @keyframes cv-ink-1 {
-      0% { transform: translate(0, 0) scale(1) rotate(0deg); }
-      50% { transform: translate(20px, -16px) scale(1.15) rotate(8deg); }
-      100% { transform: translate(0, 0) scale(1) rotate(0deg); }
-    }
-    @keyframes cv-ink-2 {
-      0% { transform: translate(0, 0) scale(1) rotate(0deg); }
-      50% { transform: translate(-14px, 18px) scale(0.88) rotate(-10deg); }
-      100% { transform: translate(0, 0) scale(1) rotate(0deg); }
-    }
-    @keyframes cv-line-draw {
-      from { stroke-dashoffset: 1; opacity: 0; }
-      15% { opacity: 1; }
-      to { stroke-dashoffset: 0; opacity: 1; }
-    }
-    @keyframes cv-line-float {
-      0%, 100% { transform: translateY(0) rotate(0deg); }
-      50% { transform: translateY(-8px) rotate(1.5deg); }
+      background: var(--cv-cream);
+      font-family: var(--cv-font);
     }
     .frame {
       position: relative;
       width: 100%;
-      margin: 0 auto;
       min-height: 100dvh;
       display: flex;
       flex-direction: column;
-      padding: 60px 26px 30px;
+      align-items: center;
       box-sizing: border-box;
+      padding: 36px 22px 40px;
     }
     .wordmark {
-      position: relative;
       display: flex;
       align-items: center;
-      gap: 8px;
-    }
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      transition: background .6s ease;
-      flex-shrink: 0;
+      gap: 9px;
     }
     .wordmark-text {
-      font-family: var(--cv-font-grotesk);
-      font-size: 12px;
-      letter-spacing: 2px;
-      color: var(--cv-ink-55);
+      font-size: 15.5px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      color: var(--cv-ink);
+    }
+    .content {
+      width: 100%;
+      max-width: 520px;
+      margin-top: 20px;
+    }
+    .hero {
+      position: relative;
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .float-shape {
+      position: absolute;
+      pointer-events: none;
+    }
+    .float-shape.a {
+      top: -22px;
+      left: 4px;
+      animation: cv-float-1 7s ease-in-out infinite;
+    }
+    .float-shape.b {
+      bottom: -26px;
+      right: -18px;
+      animation: cv-float-2 6.5s ease-in-out infinite;
+    }
+    @keyframes cv-float-1 {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      50% { transform: translate(0, -14px) rotate(4deg); }
+    }
+    @keyframes cv-float-2 {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      50% { transform: translate(10px, -8px) rotate(-5deg); }
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--cv-surface-2);
+      padding: 6px 15px;
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--cv-label);
       text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .step-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      transition: background 0.35s var(--cv-ease);
     }
     h1 {
-      position: relative;
-      font-family: var(--cv-font-serif);
-      font-weight: 600;
-      font-size: 42px;
-      line-height: 1.1;
+      margin: 0;
+      font-size: clamp(28px, 6vw, 42px);
+      font-weight: 800;
+      line-height: 1.14;
+      letter-spacing: -0.02em;
       color: var(--cv-ink);
-      margin: 28px 0 0;
-    }
-    h1 em {
-      font-style: italic;
-      transition: color .6s ease;
     }
     .subcopy {
-      position: relative;
-      font-family: var(--cv-font-body);
       font-size: 15px;
-      color: var(--cv-ink-55);
-      margin-top: 10px;
-      line-height: 1.5;
-      max-width: 280px;
-    }
-    .label-row {
-      position: relative;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 32px;
-    }
-    .label-row.mood {
-      margin-top: 26px;
-    }
-    .section-label {
-      font-family: var(--cv-font-grotesk);
-      font-size: 11px;
-      letter-spacing: 1.5px;
-      color: var(--cv-ink-40);
-      text-transform: uppercase;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-    .rule {
-      flex: 1;
-      height: 1px;
-      background: var(--cv-ink-16);
-    }
-    .chip-grid {
-      position: relative;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 9px;
+      line-height: 1.6;
+      color: var(--cv-ink-muted);
       margin-top: 12px;
     }
-    .chip {
-      padding: 13px 20px;
-      border-radius: 999px;
-      font-family: var(--cv-font-body);
-      font-size: 14.5px;
-      font-weight: 600;
-      white-space: nowrap;
-      cursor: pointer;
-      transition: all .15s ease;
-      background: var(--cv-ink-04);
-      color: var(--cv-ink-62);
-      border: 1px solid var(--cv-ink-18);
-    }
-    .chip.selected {
-      background: var(--cv-ink);
-      color: var(--cv-cream);
-      border-color: var(--cv-ink);
-    }
-    .chip.mood-chip {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      padding: 9px 16px 9px 12px;
-      border: 1px solid var(--cv-ink-16);
-      background: transparent;
-    }
-    .chip.mood-chip.selected {
-      background: var(--cv-ink);
-      border-color: var(--cv-ink);
-    }
-    .mood-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .length-control {
-      position: relative;
+    .vibe-input-wrap {
       display: flex;
       align-items: center;
       gap: 10px;
-      border-radius: 10px;
-      border: 1px solid var(--cv-ink-14);
-      padding: 12px 14px;
+      background: var(--cv-cream);
+      border: 1.5px solid var(--cv-ink-12);
+      border-radius: 100px;
+      padding: 8px 10px 8px 20px;
+      box-shadow: 0 14px 30px -20px rgba(46, 39, 31, 0.5);
+      margin-top: 28px;
+    }
+    .vibe-input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      outline: none;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--cv-ink);
+      padding: 10px 0;
+      min-width: 0;
+    }
+    .vibe-input::placeholder {
+      color: rgba(46, 39, 31, 0.34);
+      opacity: 1;
+      transition: color 0.3s ease;
+    }
+    .suggestion-wrap {
+      text-align: center;
       margin-top: 12px;
     }
-    .length-control.dark {
-      border: none;
-      background: var(--cv-ink);
-    }
-    .length-btn {
-      width: 26px;
-      height: 26px;
-      border-radius: 7px;
-      background: rgba(32, 26, 19, 0.06);
+    .suggestion {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 100px;
+      padding: 9px 18px;
+      font-size: 12.5px;
+      font-weight: 700;
       color: var(--cv-ink);
+      cursor: pointer;
+      background: transparent;
+      transition: transform 150ms var(--cv-ease);
+    }
+    .suggestion:active {
+      transform: scale(0.96);
+    }
+    .divider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 32px 0 8px;
+    }
+    .divider-rule {
+      flex: 1;
+      height: 1px;
+      background: var(--cv-ink-14);
+    }
+    .divider-label {
+      font-size: 11.5px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      color: var(--cv-label);
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .section-label {
+      margin-top: 24px;
+      margin-bottom: 12px;
+      font-size: 12.5px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      color: var(--cv-label);
+      text-transform: uppercase;
+      text-align: center;
+    }
+    .pill-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      justify-content: center;
+    }
+    .pill {
+      display: flex;
+      align-items: center;
+      padding: 9px 18px 9px 12px;
+      border-radius: 100px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--cv-surface-2);
+      color: #5B5145;
+      transition: transform 150ms var(--cv-ease), background 150ms var(--cv-ease), color 150ms var(--cv-ease);
+    }
+    .pill:active {
+      transform: scale(0.96);
+    }
+    .pill.selected {
+      color: var(--cv-ink);
+    }
+    .genre-icon-wrap {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      background: var(--cv-ink-08);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 15px;
-      cursor: pointer;
+      margin-right: 8px;
       flex-shrink: 0;
     }
-    .length-btn.dark {
-      background: rgba(241, 232, 217, 0.12);
-      color: var(--cv-cream);
+    .mood-pill {
+      padding: 8px 18px 8px 8px;
+    }
+    .mood-badge {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 9px;
+      flex-shrink: 0;
+      transition: background 150ms var(--cv-ease);
+    }
+    .length-control {
+      background: var(--cv-surface-2);
+      border-radius: 20px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .length-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--cv-cream);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--cv-ink);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 150ms var(--cv-ease);
+    }
+    .length-btn:active {
+      transform: scale(0.92);
     }
     .length-btn.disabled {
       opacity: 0.35;
@@ -214,96 +321,60 @@ export class SeedScreen extends LitElement {
     }
     .length-segments {
       display: flex;
-      gap: 4px;
+      gap: 6px;
       flex: 1;
     }
     .length-segment {
       flex: 1;
-      height: 6px;
-      border-radius: 3px;
-      background: rgba(32, 26, 19, 0.14);
-      transition: background .25s ease;
+      height: 14px;
+      border-radius: 6px;
+      background: var(--cv-ink-10);
+      transition: background 150ms var(--cv-ease);
     }
     .length-segment.filled {
-      background: var(--cv-ink);
-    }
-    .length-segment.dark {
-      background: rgba(241, 232, 217, 0.18);
-    }
-    .length-segment.dark.filled {
-      background: var(--cv-cream);
+      background: var(--cv-red);
     }
     .length-label-text {
-      font-family: var(--cv-font-grotesk);
-      font-size: 12px;
-      font-weight: 600;
-      color: rgba(32, 26, 19, 0.6);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--cv-ink-muted);
       white-space: nowrap;
-      min-width: 56px;
-      text-align: right;
-    }
-    .length-label-text.dark {
-      color: rgba(241, 232, 217, 0.85);
-    }
-    .spacer {
-      flex: 1;
-    }
-    .cta-wrap {
-      position: relative;
-      height: 60px;
-      margin-top: 24px;
-    }
-    .cta-shadow {
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 100%;
-      height: 56px;
-      background: rgba(32, 26, 19, 0.22);
-      border-radius: 8px;
     }
     .cta {
-      position: relative;
       width: 100%;
-      height: 56px;
-      background: var(--cv-ink);
       border: none;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      font-family: var(--cv-font-grotesk);
-      font-weight: 600;
+      color: var(--cv-ink);
+      padding: 18px;
+      border-radius: 100px;
+      font-family: inherit;
+      font-weight: 800;
       font-size: 16px;
-      letter-spacing: 0.3px;
-      color: var(--cv-cream);
-      cursor: pointer;
-    }
-    .cta-dice {
-      font-size: 18px;
-      flex-shrink: 0;
-    }
-    .caption {
-      position: relative;
-      text-align: center;
-      font-family: var(--cv-font-body);
-      font-size: 11.5px;
-      color: var(--cv-ink-40);
-      margin-top: 10px;
-    }
-    .footer {
-      position: relative;
+      letter-spacing: 0.2px;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
-      margin-top: 16px;
-      padding-bottom: 2px;
-      font-family: var(--cv-font-body);
+      cursor: pointer;
+      margin-top: 36px;
+      transition: transform 160ms var(--cv-ease);
+    }
+    .cta:active {
+      transform: scale(0.97);
+    }
+    .caption {
+      text-align: center;
+      font-size: 11.5px;
+      color: var(--cv-ink-45);
+      margin-top: 12px;
+    }
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 28px;
       font-size: 12px;
-      color: rgba(32, 26, 19, 0.38);
-      flex-shrink: 0;
+      color: rgba(46, 39, 31, 0.4);
     }
     .footer-link {
       display: flex;
@@ -311,229 +382,18 @@ export class SeedScreen extends LitElement {
       gap: 5px;
       color: inherit;
       text-decoration: none;
-      transition: color .15s ease;
+      transition: color 0.15s ease;
     }
     .footer-link:hover {
-      color: var(--cv-accent);
+      color: var(--cv-red-deep);
     }
     .footer-divider {
       opacity: 0.6;
     }
 
-    .desktop-view {
-      display: none;
-    }
-
-    @media (min-width: 900px) {
-      .frame {
-        max-width: 1180px;
-        min-height: 0;
-        padding: 0;
-      }
-      .mobile-view {
-        display: none;
-      }
-      .desktop-view {
-        position: relative;
-        display: flex;
-        min-height: 100dvh;
-        width: 100%;
-      }
-      .desktop-view-blobs {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        left: 272px;
-        right: 0;
-        pointer-events: none;
-      }
-      .desktop-sidebar {
-        position: relative;
-        width: 272px;
-        flex-shrink: 0;
-        background: var(--cv-paper);
-        border-right: 1px solid var(--cv-ink-14);
-        padding: 32px 26px;
-        box-sizing: border-box;
-        overflow: auto;
-        display: flex;
-        flex-direction: column;
-      }
-      .desktop-wordmark {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .desktop-wordmark .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        transition: background .6s cubic-bezier(0.23, 1, 0.32, 1);
-        flex-shrink: 0;
-      }
-      .desktop-wordmark .wordmark-text {
-        font-family: var(--cv-font-grotesk);
-        font-size: 12px;
-        letter-spacing: 2px;
-        color: var(--cv-ink-55);
-        text-transform: uppercase;
-      }
-      .desktop-section-label {
-        font-family: var(--cv-font-grotesk);
-        font-size: 11px;
-        letter-spacing: 1.5px;
-        color: var(--cv-ink-40);
-        text-transform: uppercase;
-        font-weight: 700;
-        margin-top: 24px;
-      }
-      .desktop-section-label.first {
-        margin-top: 30px;
-      }
-      .desktop-chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 7px;
-        margin-top: 12px;
-      }
-      .desktop-chip {
-        padding: 5px 10px;
-        border-radius: 999px;
-        font-family: var(--cv-font-body);
-        font-size: 11.5px;
-        font-weight: 600;
-        cursor: pointer;
-        white-space: nowrap;
-        background: var(--cv-ink-04);
-        color: var(--cv-ink-62);
-        border: 1px solid var(--cv-ink-18);
-        transition: background .15s ease, color .15s ease;
-      }
-      .desktop-chip.selected {
-        background: var(--cv-ink);
-        color: var(--cv-cream);
-        border-color: var(--cv-ink);
-      }
-      .desktop-cta-wrap {
-        position: relative;
-        height: 54px;
-        margin-top: 8px;
-      }
-      .desktop-cta-shadow {
-        position: absolute;
-        top: 3px;
-        left: 3px;
-        width: 100%;
-        height: 50px;
-        background: rgba(32, 26, 19, 0.22);
-        border-radius: 8px;
-      }
-      .desktop-cta {
-        position: relative;
-        width: 100%;
-        height: 50px;
-        background: var(--cv-ink);
-        border: none;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        font-family: var(--cv-font-grotesk);
-        font-weight: 600;
-        font-size: 15px;
-        letter-spacing: 0.3px;
-        color: var(--cv-cream);
-        cursor: pointer;
-        transition: transform 160ms ease-out;
-      }
-      .desktop-cta:active {
-        transform: scale(0.97);
-      }
-      .desktop-caption {
-        font-family: var(--cv-font-body);
-        font-size: 11.5px;
-        color: var(--cv-ink-40);
-        line-height: 1.5;
-        margin-top: 10px;
-      }
-      .desktop-footer {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-top: 16px;
-        font-family: var(--cv-font-body);
-        font-size: 12px;
-        color: rgba(32, 26, 19, 0.38);
-      }
-      .desktop-footer-link {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        color: inherit;
-        text-decoration: none;
-        transition: color .15s ease;
-      }
-      .desktop-footer-link:hover {
-        color: var(--cv-accent);
-      }
-      .desktop-footer-divider {
-        opacity: 0.6;
-      }
-      .desktop-main {
-        position: relative;
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-width: 0;
-      }
-      .desktop-main-blob {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        mix-blend-mode: multiply;
-        transition: background .8s cubic-bezier(0.23, 1, 0.32, 1);
-      }
-      .desktop-genre-label {
-        position: relative;
-        font-family: var(--cv-font-grotesk);
-        font-size: 12px;
-        letter-spacing: 3px;
-        color: var(--cv-ink-40);
-        text-transform: uppercase;
-      }
-      .mood-doodle {
-        position: relative;
-        width: 300px;
-        height: 300px;
-        margin-top: 20px;
-        animation: cv-line-float 7s ease-in-out infinite;
-      }
-      .mood-doodle path {
-        animation: cv-line-draw 2.6s cubic-bezier(0.65, 0, 0.35, 1) forwards;
-        transition: stroke .5s ease;
-      }
-      .desktop-mood-name {
-        position: relative;
-        font-family: var(--cv-font-serif);
-        font-style: italic;
-        font-weight: 700;
-        font-size: 34px;
-        margin-top: 14px;
-        transition: color .5s cubic-bezier(0.23, 1, 0.32, 1);
-      }
-      .desktop-subcopy {
-        position: relative;
-        font-family: var(--cv-font-body);
-        font-size: 15px;
-        color: var(--cv-ink-50);
-        margin-top: 10px;
-        max-width: 380px;
-        text-align: center;
-        line-height: 1.5;
-      }
+    @media (min-width: 640px) {
+      .content { max-width: 620px; }
+      .frame { padding-top: 56px; }
     }
   `;
 
@@ -561,54 +421,103 @@ export class SeedScreen extends LitElement {
     if (this.length < MAX_PROGRESSION_LENGTH) this.setLength(this.length + 1);
   }
 
+  private onFreeTextChange(e: Event) {
+    this.freeText = (e.target as HTMLInputElement).value;
+  }
+
+  private applyFreeTextSuggestion(genre: string, mood: string) {
+    this.selectGenre(genre);
+    this.selectMood(mood);
+  }
+
   render() {
     const moodColor = getMoodColor(this.mood);
-    const moodPath = getMoodPath(this.mood);
+    const freeTextTrimmed = this.freeText.trim();
+    let suggestion: { genre: string; mood: string; color: string } | null = null;
+    if (freeTextTrimmed.length > 2) {
+      const sMood = matchFromText(freeTextTrimmed, MOOD_KEYWORDS, MOODS.map(m => m.name));
+      const sGenre = matchFromText(freeTextTrimmed, GENRE_KEYWORDS, GENRES);
+      suggestion = { genre: sGenre, mood: sMood, color: getMoodColor(sMood) };
+    }
 
     return html`
       <div class="frame">
-        <div class="grain"></div>
+        <div class="wordmark">
+          <svg width="22" height="22" viewBox="0 0 30 30">
+            <circle cx="11" cy="11" r="9" fill="#F2A79B" />
+            <circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" />
+          </svg>
+          <div class="wordmark-text">Chroma Chords</div>
+        </div>
 
-        <div class="mobile-view">
-          <div class="ink-blobs">
-            <div class="ink-blob" style="top:-80px;left:-40px;width:340px;height:340px;border-radius:42% 58% 54% 46% / 46% 54% 46% 54%;background:${moodColor};filter:blur(46px);opacity:0.42;animation:cv-ink-1 13s ease-in-out infinite;"></div>
-            <div class="ink-blob" style="top:220px;right:-60px;width:220px;height:220px;border-radius:58% 42% 40% 60% / 54% 46% 54% 46%;background:${moodColor};filter:blur(36px);opacity:0.3;animation:cv-ink-2 16s ease-in-out infinite;"></div>
+        <div class="content">
+          <div class="hero">
+            <svg class="float-shape a" width="34" height="34" viewBox="0 0 38 38"><circle cx="19" cy="19" r="17" fill="#F6D98B" /></svg>
+            <svg class="float-shape b" width="26" height="26" viewBox="0 0 30 30"><rect x="2" y="2" width="26" height="26" rx="9" fill="#9CC0EC" /></svg>
+
+            <div class="step-badge">
+              <div class="step-dot" style="background:${moodColor}"></div>
+              Step 1 of 3
+            </div>
+            <h1>Describe a vibe,<br />hear it as chords.</h1>
+            <div class="subcopy">Type a feeling in your own words — or pick a genre and mood below.</div>
           </div>
 
-          <div class="wordmark">
-            <div class="dot" style="background:${moodColor}"></div>
-            <div class="wordmark-text">Chroma Chords</div>
+          <div class="vibe-input-wrap">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cv-label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+              <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />
+            </svg>
+            <input
+              type="text"
+              class="vibe-input"
+              .value=${this.freeText}
+              @input=${(e: Event) => this.onFreeTextChange(e)}
+              placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
+            />
+          </div>
+          ${suggestion ? html`
+            <div class="suggestion-wrap">
+              <div class="suggestion" style="border:1.5px solid ${suggestion.color}" @click=${() => this.applyFreeTextSuggestion(suggestion!.genre, suggestion!.mood)}>
+                Try <span>${suggestion.genre} · ${suggestion.mood}</span> →
+              </div>
+            </div>
+          ` : ''}
+
+          <div class="divider-row">
+            <div class="divider-rule"></div>
+            <div class="divider-label">or pick it yourself</div>
+            <div class="divider-rule"></div>
           </div>
 
-          <h1>Chords,<br /><em style="color:${moodColor}">by feel.</em></h1>
-          <div class="subcopy">Pick a genre and a mood. We'll build the progression.</div>
-
-          <div class="label-row">
-            <div class="section-label">Genre</div>
-            <div class="rule"></div>
-          </div>
-          <div class="chip-grid">
-            ${GENRES.map(name => html`
-              <div class="chip ${name === this.genre ? 'selected' : ''}" @click=${() => this.selectGenre(name)}>${name}</div>
-            `)}
-          </div>
-
-          <div class="label-row mood">
-            <div class="section-label">Mood</div>
-            <div class="rule"></div>
-          </div>
-          <div class="chip-grid">
-            ${MOODS.map(m => html`
-              <div class="chip mood-chip ${m.name === this.mood ? 'selected' : ''}" @click=${() => this.selectMood(m.name)}>
-                <div class="mood-dot" style="background:${m.dot}"></div>${m.name}
+          <div class="section-label">Genre</div>
+          <div class="pill-grid">
+            ${GENRES.map((name, i) => html`
+              <div class="pill ${name === this.genre ? 'selected' : ''}" style=${name === this.genre ? `background:${moodColor}` : ''} @click=${() => this.selectGenre(name)}>
+                <div class="genre-icon-wrap">
+                  <svg width="12" height="12" viewBox="0 0 24 24">
+                    <rect x="6" y="6" width="12" height="12" rx=${GENRE_ICON_RADIUS[i % 3]} fill=${GENRE_ICON_PALETTE[i % 3]} />
+                  </svg>
+                </div>
+                ${name}
               </div>
             `)}
           </div>
 
-          <div class="label-row mood">
-            <div class="section-label">Length</div>
-            <div class="rule"></div>
+          <div class="section-label">Mood</div>
+          <div class="pill-grid">
+            ${MOODS.map(m => html`
+              <div class="pill mood-pill ${m.name === this.mood ? 'selected' : ''}" style=${m.name === this.mood ? `background:${m.dot}` : ''} @click=${() => this.selectMood(m.name)}>
+                <div class="mood-badge" style="background:${m.name === this.mood ? 'rgba(46,39,31,0.1)' : m.dot + '33'}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke=${m.dot} stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d=${m.iconPath} />
+                  </svg>
+                </div>
+                ${m.name}
+              </div>
+            `)}
           </div>
+
+          <div class="section-label">Length</div>
           <div class="length-control">
             <div class="length-btn ${this.length <= MIN_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => this.decLength()}>−</div>
             <div class="length-segments">
@@ -620,96 +529,20 @@ export class SeedScreen extends LitElement {
             <div class="length-label-text">${this.length} ${this.length === 1 ? 'chord' : 'chords'}</div>
           </div>
 
-          <div class="spacer"></div>
-
-          <div class="cta-wrap">
-            <div class="cta-shadow"></div>
-            <button class="cta" @click=${this.generate}>
-              <div class="cta-dice">⚄</div>
-              <span>Generate loop →</span>
-            </button>
-          </div>
+          <button class="cta" style="background:${moodColor}" @click=${this.generate}>
+            Generate loop <span>→</span>
+          </button>
           <div class="caption">Nothing here is permanent — swap any chord after.</div>
 
           <div class="footer">
             <a class="footer-link" href="https://github.com/warmsynths/chroma-chords" target="_blank" rel="noopener">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" /></svg>
               GitHub
             </a>
             <span class="footer-divider">·</span>
             <span>Made with ❤️ by warmsynths</span>
             <span class="footer-divider">·</span>
             <a class="footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
-          </div>
-        </div>
-
-        <div class="desktop-view">
-          <div class="desktop-view-blobs">
-            <div class="desktop-main-blob" style="width:640px;height:640px;margin:-320px 0 0 -320px;border-radius:42% 58% 54% 46% / 46% 54% 46% 54%;background:${moodColor};filter:blur(90px);opacity:0.35;animation:cv-ink-1 15s ease-in-out infinite;"></div>
-            <div class="desktop-main-blob" style="width:420px;height:420px;margin:-160px 0 0 -260px;border-radius:58% 42% 40% 60% / 54% 46% 54% 46%;background:${moodColor};filter:blur(60px);opacity:0.26;animation:cv-ink-2 18s ease-in-out infinite;"></div>
-          </div>
-          <div class="desktop-sidebar">
-            <div class="desktop-wordmark">
-              <div class="dot" style="background:${moodColor}"></div>
-              <div class="wordmark-text">Chroma Chords</div>
-            </div>
-
-            <div class="desktop-section-label first">Genre</div>
-            <div class="desktop-chips">
-              ${GENRES.map(name => html`
-                <div class="desktop-chip ${name === this.genre ? 'selected' : ''}" @click=${() => this.selectGenre(name)}>${name}</div>
-              `)}
-            </div>
-
-            <div class="desktop-section-label">Mood</div>
-            <div class="desktop-chips">
-              ${MOODS.map(m => html`
-                <div class="desktop-chip ${m.name === this.mood ? 'selected' : ''}" @click=${() => this.selectMood(m.name)}>${m.name}</div>
-              `)}
-            </div>
-
-            <div class="desktop-section-label">Length</div>
-            <div class="length-control dark">
-              <div class="length-btn dark ${this.length <= MIN_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => this.decLength()}>−</div>
-              <div class="length-segments">
-                ${Array.from({ length: MAX_PROGRESSION_LENGTH }, (_, i) => html`
-                  <div class="length-segment dark ${i < this.length ? 'filled' : ''}"></div>
-                `)}
-              </div>
-              <div class="length-btn dark ${this.length >= MAX_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => this.incLength()}>+</div>
-              <div class="length-label-text dark">${this.length} ${this.length === 1 ? 'chord' : 'chords'}</div>
-            </div>
-
-            <div class="spacer"></div>
-            <div class="desktop-cta-wrap">
-              <div class="desktop-cta-shadow"></div>
-              <button class="desktop-cta" @click=${this.generate}>
-                <div class="cta-dice" style="font-size:17px">⚄</div>
-                <span>Generate loop →</span>
-              </button>
-            </div>
-            <div class="desktop-caption">Nothing here is permanent — swap any chord after.</div>
-            <div class="desktop-footer">
-              <a class="desktop-footer-link" href="https://github.com/warmsynths/chroma-chords" target="_blank" rel="noopener">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-                GitHub
-              </a>
-              <span class="desktop-footer-divider">·</span>
-              <a class="desktop-footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
-            </div>
-          </div>
-
-          <div class="desktop-main">
-            <div class="desktop-genre-label">${this.genre}</div>
-            ${repeat([this.mood], m => m, () => html`
-              <div class="mood-doodle">
-                <svg width="300" height="300" viewBox="0 0 300 300" style="overflow:visible;">
-                  <path d="${moodPath}" fill="none" stroke="${moodColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" pathLength="1" stroke-dasharray="1"></path>
-                </svg>
-              </div>
-            `)}
-            <div class="desktop-mood-name" style="color:${moodColor}">${this.mood}</div>
-            <div class="desktop-subcopy">Pick a genre and a mood. We'll build the progression.</div>
           </div>
         </div>
       </div>

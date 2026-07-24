@@ -3,7 +3,6 @@ export interface ProjectChord {
   tag: string;
   roman: string;
   color: string;
-  grain: number;
   functionLabel: string;
   notes: string[];
   scaleLabel: string;

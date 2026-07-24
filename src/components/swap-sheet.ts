@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
-import { Alternative, ChordBlock, buildVoicingNotes, rootOfChordName } from '../services/chord-engine';
+import { Alternative, ChordBlock, buildVoicingNotes, rootOfChordName, roleForTension } from '../services/chord-engine';
 
 const WHITE_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 // Chord notes come back flat-spelled for flat-rooted chords (e.g. Eb, Bb) but these keys
@@ -28,25 +28,14 @@ const EXTS = [
   { label: '9th', sub: 'wide, colorful' },
 ];
 
-// Each alternative's size/weight encodes how far it pulls from the current chord — the
-// biggest, boldest label ("More tension") reads as the most dramatic option, the smallest,
-// lightest one ("Resolve home") reads as the gentlest. Color still comes from the actual
-// generated chord so it stays tied to the real harmony, not a fixed palette.
-const VERSE_STYLE: Record<string, { size: number; weight: number }> = {
-  'Darker': { size: 22, weight: 600 },
-  'More tension': { size: 27, weight: 700 },
-  'Dreamier': { size: 21, weight: 500 },
-  'Resolve home': { size: 19, weight: 400 },
-};
-
 @customElement('swap-sheet')
 export class SwapSheet extends LitElement {
   @property({ type: Object }) chord!: ChordBlock;
   @property({ type: Array }) alternatives: Alternative[] = [];
   @property({ type: Boolean }) showTheory = false;
-  // 'sheet' (default): mobile bottom sheet with scrim. 'panel': inline, for the desktop
-  // right-hand column — same content, no overlay/scrim/grabber.
-  @property({ type: String }) variant: 'sheet' | 'panel' = 'sheet';
+  @property({ type: String }) moodColor = '#9B7CA8';
+  @property({ type: Number }) position = 0;
+  @property({ type: Number }) total = 4;
   // Drives the slide-in/out transition. The parent mounts this component slightly before
   // flipping this true (and unmounts it slightly after flipping it false) so the CSS
   // transition has time to play — see loop-screen's sheetMounted/sheetVisible.
@@ -75,43 +64,44 @@ export class SwapSheet extends LitElement {
   static styles = css`
     :host {
       display: contents;
+      font-family: var(--cv-font);
     }
     .scrim {
       position: fixed;
       inset: 0;
-      background: rgba(32, 26, 19, 0);
+      background: rgba(46, 39, 31, 0);
       z-index: 40;
-      transition: background .28s ease;
+      transition: background 0.28s ease;
     }
     .scrim.visible {
-      background: rgba(32, 26, 19, 0.55);
+      background: rgba(46, 39, 31, 0.5);
     }
     .sheet {
-      position: absolute;
+      position: fixed;
       left: 0;
       right: 0;
       bottom: 0;
-      height: auto;
-      max-height: 74%;
-      background: var(--cv-paper);
-      border-radius: 14px 14px 0 0;
+      max-width: 640px;
+      margin: 0 auto;
+      max-height: 84%;
+      background: var(--cv-cream);
+      border-radius: 24px 24px 0 0;
       z-index: 41;
-      padding: 14px 22px 30px;
+      padding: 14px 24px 30px;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
-      border-top: 1px solid var(--cv-ink-20);
-      box-shadow: 0 -2px 0 rgba(32, 26, 19, 0.06);
+      box-shadow: 0 -20px 50px -20px rgba(46, 39, 31, 0.3);
       transform: translateY(100%);
-      transition: transform .32s cubic-bezier(.32,.72,0,1);
+      transition: transform 0.32s cubic-bezier(.32,.72,0,1);
     }
     .sheet.visible {
       transform: translateY(0);
     }
     .grabber {
       width: 36px;
-      height: 3px;
-      background: rgba(32, 26, 19, 0.25);
+      height: 4px;
+      background: var(--cv-ink-16);
       align-self: center;
       margin-bottom: 16px;
       flex-shrink: 0;
@@ -119,98 +109,158 @@ export class SwapSheet extends LitElement {
       touch-action: none;
       cursor: grab;
     }
-    .sheet.panel {
-      position: static;
-      height: auto;
-      transform: none !important;
-      transition: none !important;
-      border-radius: 0;
-      border: none;
-      box-shadow: none;
-      padding: 0;
-    }
-    .sheet.panel .grabber {
-      display: none;
-    }
-    .sheet.panel .sheet-title {
-      font-size: 20px;
-    }
     .head-row {
       display: flex;
-      align-items: baseline;
+      align-items: flex-start;
       justify-content: space-between;
       flex-shrink: 0;
     }
+    .step-label {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      color: var(--cv-label);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
     .sheet-title {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-weight: 700;
       font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
       color: var(--cv-ink);
+      line-height: 1.2;
     }
     .close-btn {
-      font-size: 20px;
-      color: var(--cv-ink-40);
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--cv-surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      color: var(--cv-ink);
       cursor: pointer;
-      background: none;
       border: none;
-    }
-    .helper {
-      font-family: var(--cv-font-body);
-      font-size: 13px;
-      color: var(--cv-ink-45);
-      margin-top: 4px;
-      margin-bottom: 18px;
       flex-shrink: 0;
+    }
+    .theory-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 18px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .theory-track {
+      width: 38px;
+      height: 22px;
+      border-radius: 100px;
+      background: var(--cv-ink-16);
+      position: relative;
+      transition: background 150ms var(--cv-ease);
+      flex-shrink: 0;
+    }
+    .theory-track.on {
+      background: var(--cv-plum);
+    }
+    .theory-knob {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--cv-cream);
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      transition: left 150ms var(--cv-ease);
+    }
+    .theory-knob.on {
+      left: 19px;
+    }
+    .theory-label {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--cv-ink-muted);
+    }
+    .current-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--cv-surface);
+      border-radius: 18px;
+      padding: 16px 18px;
+      margin-top: 20px;
+      flex-shrink: 0;
+    }
+    .current-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cv-label);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .current-name {
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--cv-ink);
+      margin-top: 2px;
     }
     .alt-list {
       display: flex;
       flex-direction: column;
+      gap: 8px;
+      margin-top: 16px;
       overflow-y: auto;
-      overflow-x: hidden;
     }
     .alt-row {
-      padding: 9px 0;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--cv-surface);
+      border-radius: 16px;
+      padding: 12px 14px;
       cursor: pointer;
       flex-shrink: 0;
-      transition: transform .2s ease;
+      transition: transform 0.15s ease;
     }
     .alt-row:hover {
-      transform: translateX(4px);
+      transform: translateY(-2px);
     }
-    .alt-label {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      letter-spacing: -0.2px;
+    .alt-shape {
+      flex-shrink: 0;
+    }
+    .alt-name {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--cv-ink);
     }
     .alt-sub {
-      font-family: var(--cv-font-body);
-      font-size: 12px;
-      color: var(--cv-ink-45);
+      font-size: 12.5px;
+      color: var(--cv-ink-muted);
       margin-top: 2px;
     }
-    .alt-function {
-      font-family: var(--cv-font-grotesk);
-      font-size: 10px;
-      letter-spacing: 0.4px;
-      color: var(--cv-accent);
-      margin-top: 5px;
-      text-transform: uppercase;
+    .alt-tag {
+      font-size: 11px;
       font-weight: 700;
+      letter-spacing: 0.4px;
+      color: var(--cv-plum);
+      margin-top: 7px;
     }
-    .alt-rationale {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
+    .alt-desc {
       font-size: 12px;
-      line-height: 1.4;
-      color: var(--cv-ink-55);
+      color: var(--cv-ink-muted);
       margin-top: 3px;
-      margin-bottom: 2px;
+      line-height: 1.4;
+    }
+    .alt-arrow {
+      font-size: 15px;
+      color: var(--cv-ink-35);
+      flex-shrink: 0;
     }
     .voicing-section {
-      border-top: 1px solid var(--cv-ink-14);
-      margin-top: 14px;
-      padding-top: 12px;
+      border-top: 1px solid var(--cv-ink-10);
+      margin-top: 16px;
+      padding-top: 14px;
       flex-shrink: 0;
     }
     .voicing-toggle {
@@ -220,20 +270,18 @@ export class SwapSheet extends LitElement {
       cursor: pointer;
     }
     .voicing-chevron {
-      font-family: var(--cv-font-grotesk);
       font-size: 11px;
-      color: var(--cv-ink-40);
-      transition: transform .2s ease;
+      color: var(--cv-label);
+      transition: transform 0.2s ease;
       display: inline-block;
     }
     .voicing-chevron.open {
       transform: rotate(90deg);
     }
     .voicing-label {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
       font-size: 13px;
-      color: rgba(32, 26, 19, 0.6);
+      font-weight: 700;
+      color: var(--cv-ink-muted);
     }
     .bento {
       display: grid;
@@ -245,53 +293,40 @@ export class SwapSheet extends LitElement {
       margin-top: 6px;
     }
     .bento-card {
-      padding: 8px 12px;
-      border-radius: 8px;
+      padding: 10px 12px;
+      border-radius: 12px;
       cursor: pointer;
       display: flex;
       align-items: baseline;
       gap: 6px;
-      background: rgba(32, 26, 19, 0.03);
-      border: 1px solid var(--cv-ink-12);
+      background: var(--cv-surface);
+      transition: transform 150ms var(--cv-ease), background 150ms var(--cv-ease);
     }
     .bento-card.span {
       grid-column: 1 / -1;
     }
-    .bento-card.selected {
-      background: var(--cv-ink);
-      border-color: var(--cv-ink);
+    .bento-card:active {
+      transform: scale(0.97);
     }
     .bento-label {
-      font-family: var(--cv-font-grotesk);
       font-size: 12px;
       font-weight: 700;
       color: var(--cv-ink);
     }
-    .bento-card.selected .bento-label {
-      color: var(--cv-cream);
-    }
     .bento-sub {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
       font-size: 10.5px;
-      color: rgba(32, 26, 19, 0.42);
-    }
-    .bento-card.selected .bento-sub {
-      color: rgba(241, 232, 217, 0.6);
+      color: var(--cv-ink-45);
     }
     .kb-caption {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
       font-size: 11px;
-      color: var(--cv-ink-40);
+      color: var(--cv-ink-45);
       margin-top: 10px;
     }
     .keyboard {
       position: relative;
       display: flex;
       margin-top: 6px;
-      border: 1px solid var(--cv-ink-18);
-      border-radius: 8px;
+      border-radius: 10px;
       overflow: hidden;
     }
     .white-key {
@@ -301,28 +336,23 @@ export class SwapSheet extends LitElement {
       align-items: flex-end;
       justify-content: center;
       padding-bottom: 6px;
-      border-right: 1px solid rgba(32, 26, 19, 0.15);
-      font-family: var(--cv-font-grotesk);
+      border-right: 1px solid var(--cv-ink-08);
       font-size: 10px;
-      font-weight: 600;
-      background: var(--cv-key-white);
-      color: rgba(32, 26, 19, 0.35);
+      font-weight: 700;
+      background: var(--cv-cream);
+      color: var(--cv-ink-35);
     }
     .white-key.active {
-      background: var(--cv-accent);
-      color: #F1E8D9;
+      color: var(--cv-ink);
     }
     .black-key {
       position: absolute;
       top: 0;
       width: 8.5714%;
       height: 44px;
-      background: var(--cv-ink);
-      border-radius: 0 0 3px 3px;
+      background: var(--cv-plum);
+      border-radius: 0 0 6px 6px;
       z-index: 2;
-    }
-    .black-key.active {
-      background: var(--cv-accent);
     }
   `;
 
@@ -349,23 +379,15 @@ export class SwapSheet extends LitElement {
   }
 
   // Tapping empty sheet padding (not an alt row, button, or bento card) dismisses the sheet
-  // instead of silently swallowing the tap — otherwise a mis-tap there does nothing and the
-  // next tap lands on whatever's now underneath, which can read as the wrong chord's drawer
-  // opening or, worse, an accidental alternative selection.
-  //
-  // This (and the scrim's dismiss) listens on `pointerdown`, not `click`: on touch devices the
-  // chord card's own tap handling already resolves — and opens this sheet — on the raw
-  // pointerdown/pointerup pair, well before the browser's compatibility `click` event fires for
-  // that same touch. By the time that ghost click lands, the scrim/sheet-background are already
-  // sitting right where the finger is, so a `click` listener here would close the sheet an
-  // instant after it opened — every single tap, since the scrim covers the whole screen. Only a
-  // genuinely new pointerdown (a real, separate tap) should be able to dismiss it.
+  // instead of silently swallowing the tap. Listens on `pointerdown`, not `click` — see the
+  // original rationale: on touch devices the chord card's own tap already resolves on the raw
+  // pointerdown/pointerup pair well before the browser's compatibility `click` fires for that
+  // same touch, so a `click` listener here would close the sheet an instant after it opened.
   private onSheetBackgroundClick(e: PointerEvent) {
     if (e.target === e.currentTarget) this.close();
   }
 
   private onGrabberDown = (e: PointerEvent) => {
-    if (this.variant !== 'sheet') return;
     e.preventDefault();
     this.dragStartY = e.clientY;
     this.dragStartTime = performance.now();
@@ -376,8 +398,6 @@ export class SwapSheet extends LitElement {
 
   private onGrabberMove = (e: PointerEvent) => {
     if (!this.dragging) return;
-    // Only allow dragging down (toward closed) — resist upward drag rather than let it
-    // pull the sheet above its resting position.
     this.dragY = Math.max(0, e.clientY - this.dragStartY);
   };
 
@@ -385,7 +405,7 @@ export class SwapSheet extends LitElement {
     if (!this.dragging) return;
     this.dragging = false;
     const elapsed = Math.max(1, performance.now() - this.dragStartTime);
-    const velocity = this.dragY / elapsed; // px/ms
+    const velocity = this.dragY / elapsed;
     const sheetHeight = this.sheetEl?.getBoundingClientRect().height || 400;
     const pastThreshold = this.dragY > sheetHeight * 0.3 || velocity > 0.6;
 
@@ -401,6 +421,10 @@ export class SwapSheet extends LitElement {
 
   private toggleVoicing() {
     this.voicingOpen = !this.voicingOpen;
+  }
+
+  private toggleTheory() {
+    this.emit('theory-toggle');
   }
 
   private setQuality(label: string) {
@@ -442,31 +466,53 @@ export class SwapSheet extends LitElement {
     const root = rootOfChordName(c.name);
     const preferFlat = root.includes('b');
     const voicingNotes = this.voicingOpen ? buildVoicingNotes(root, this.quality, this.extension, preferFlat) : c.notes;
+    const currentRole = roleForTension(c.tension);
 
     const dragStyle = this.dragging || this.snapping
       ? `transform: translateY(${this.dragY}px); transition: ${this.dragging ? 'none' : 'transform .26s cubic-bezier(.32,.72,0,1)'};`
       : '';
 
     return html`
-      ${this.variant === 'sheet' ? html`<div class="scrim ${this.visible ? 'visible' : ''}" @pointerdown=${this.close}></div>` : ''}
-      <div class="sheet ${this.variant} ${this.visible ? 'visible' : ''}" style=${dragStyle} @pointerdown=${this.onSheetBackgroundClick}>
+      <div class="scrim ${this.visible ? 'visible' : ''}" @pointerdown=${this.close}></div>
+      <div class="sheet ${this.visible ? 'visible' : ''}" style=${dragStyle} @pointerdown=${this.onSheetBackgroundClick}>
         <div class="grabber" @pointerdown=${this.onGrabberDown}></div>
         <div class="head-row">
-          <div class="sheet-title">Swap ${c.name}</div>
+          <div>
+            <div class="step-label">Swap chord ${this.position} of ${this.total}</div>
+            <div class="sheet-title">Choose the feeling<br />you want instead.</div>
+          </div>
           <button class="close-btn" @click=${this.close}>×</button>
         </div>
-        <div class="helper">Choose the feeling you want instead.</div>
+
+        <div class="theory-toggle-row" @click=${this.toggleTheory}>
+          <div class="theory-track ${this.showTheory ? 'on' : ''}"><div class="theory-knob ${this.showTheory ? 'on' : ''}"></div></div>
+          <div class="theory-label">Show music theory</div>
+        </div>
+
+        <div class="current-row">
+          <div class="alt-shape" style="width:${Math.round(currentRole.size * 0.5)}px;height:${Math.round(currentRole.size * 0.5)}px;border-radius:${Math.round(currentRole.radius * 0.5)}px;background:${currentRole.color};"></div>
+          <div>
+            <div class="current-label">Currently</div>
+            <div class="current-name">${c.name} — ${c.functionLabel}</div>
+          </div>
+        </div>
+
         <div class="alt-list">
           ${this.alternatives.map(alt => {
-            const style = VERSE_STYLE[alt.label] || { size: 20, weight: 500 };
+            const role = roleForTension(alt.chord.tension);
+            const size = Math.round(role.size * 0.4);
             return html`
               <div class="alt-row" @click=${() => this.emit('select-alternative', alt)}>
-                <div class="alt-label" style="font-size:${style.size}px;font-weight:${style.weight};color:${alt.chord.color}">${alt.label}</div>
-                <div class="alt-sub">${alt.sub}</div>
-                ${this.showTheory ? html`
-                  <div class="alt-function">${alt.functionCaption}</div>
-                  <div class="alt-rationale">${alt.rationale}</div>
-                ` : ''}
+                <div class="alt-shape" style="width:${size}px;height:${size}px;border-radius:${Math.round(role.radius * (size / role.size))}px;background:${role.color};"></div>
+                <div style="flex:1;min-width:0;">
+                  <div class="alt-name">${alt.label}</div>
+                  <div class="alt-sub">${alt.sub}</div>
+                  ${this.showTheory ? html`
+                    <div class="alt-tag">${alt.functionCaption}</div>
+                    <div class="alt-desc">${alt.rationale}</div>
+                  ` : ''}
+                </div>
+                <div class="alt-arrow">→</div>
               </div>
             `;
           })}
@@ -482,7 +528,7 @@ export class SwapSheet extends LitElement {
               <div>
                 <div class="bento">
                   ${QUALITIES.map(q => html`
-                    <div class="bento-card ${q.label === this.quality ? 'selected' : ''}" @click=${() => this.setQuality(q.label)}>
+                    <div class="bento-card" style=${q.label === this.quality ? `background:${this.moodColor}` : ''} @click=${() => this.setQuality(q.label)}>
                       <div class="bento-label">${q.label}</div>
                       <div class="bento-sub">${q.sub}</div>
                     </div>
@@ -490,7 +536,7 @@ export class SwapSheet extends LitElement {
                 </div>
                 <div class="bento ext">
                   ${EXTS.map((e, i) => html`
-                    <div class="bento-card ${i === 0 ? 'span' : ''} ${e.label === this.extension ? 'selected' : ''}" @click=${() => this.setExtension(e.label)}>
+                    <div class="bento-card ${i === 0 ? 'span' : ''}" style=${e.label === this.extension ? `background:${this.moodColor}` : ''} @click=${() => this.setExtension(e.label)}>
                       <div class="bento-label">${e.label}</div>
                       <div class="bento-sub">${e.sub}</div>
                     </div>
@@ -499,10 +545,10 @@ export class SwapSheet extends LitElement {
                 <div class="kb-caption">A visual guide — the notes to play, left to right.</div>
                 <div class="keyboard">
                   ${WHITE_NOTES.map(n => html`
-                    <div class="white-key ${voicingNotes.includes(n) ? 'active' : ''}">${n}</div>
+                    <div class="white-key ${voicingNotes.includes(n) ? 'active' : ''}" style=${voicingNotes.includes(n) ? `background:${this.moodColor}` : ''}>${n}</div>
                   `)}
                   ${BLACK_NOTES.map(b => html`
-                    <div class="black-key ${(voicingNotes.includes(b.note) || voicingNotes.includes(b.flat)) ? 'active' : ''}" style="left:${b.left}"></div>
+                    <div class="black-key" style="left:${b.left};background:${(voicingNotes.includes(b.note) || voicingNotes.includes(b.flat)) ? this.moodColor : 'var(--cv-plum)'}"></div>
                   `)}
                 </div>
               </div>

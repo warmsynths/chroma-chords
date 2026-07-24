@@ -232,6 +232,13 @@ export class ChromaChordsApp extends LitElement {
     playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
   }
 
+  // A plain tap on a chord shape just previews the sound — it doesn't open the swap sheet.
+  // Only the shape's dedicated swap-icon badge does that (see onChordTap above).
+  private onChordPreview(e: CustomEvent<number>) {
+    if (!this.progression) return;
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
+  }
+
   private onSheetClose() {
     this.sheetOpen = false;
     this.swapIndex = null;
@@ -458,6 +465,7 @@ export class ChromaChordsApp extends LitElement {
         @theory-toggle=${this.onTheoryToggle}
         @toggle-play=${this.onTogglePlay}
         @chord-tap=${this.onChordTap}
+        @chord-preview=${this.onChordPreview}
         @close=${this.onSheetClose}
         @select-alternative=${this.onSelectAlternative}
         @voicing-preview=${this.onVoicingPreview}

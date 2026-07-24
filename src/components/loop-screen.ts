@@ -1,14 +1,13 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property, state, query } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import {
-  Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl, buildChordStaff,
-  MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor,
+  Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl,
+  MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension, MOODS,
 } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
 
 const MENU_GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
-const MENU_MOODS = ['Uplifting', 'Melancholy', 'Dreamy', 'Tense', 'Warm', 'Nostalgic'];
 const MENU_KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const MENU_SCALES: { label: string; value: string }[] = [
   { label: 'Major', value: 'MAJOR' },
@@ -23,12 +22,18 @@ const MENU_SCALES: { label: string; value: string }[] = [
 // set the `mounted` flag immediately, flip `visible` a frame later so the CSS transition
 // runs, and reverse that order on close so the fade-out plays before the DOM is removed.
 const MENU_CLOSE_MS = 220;
-
-// Same mount/visible pattern for the mobile swap sheet: it's driven by the parent's
-// `sheetOpen` prop rather than an internal open/close call, so `updated()` watches for that
-// prop flipping and drives the mount timing itself. Duration matches the sheet's own slide
-// transition (see swap-sheet.ts's `.sheet` transition).
 const SHEET_CLOSE_MS = 280;
+
+// Container-level "alive" motion per mood — the whole progression panel sways/ripples,
+// while each chord's own shape/size/color stays fixed to its harmonic role.
+const PANEL_ANIM: Record<string, { anim: string; dur: number; ease: string }> = {
+  Uplifting: { anim: 'cv-panel-uplifting', dur: 2.4, ease: 'ease-out' },
+  Melancholy: { anim: 'cv-panel-melancholy', dur: 6, ease: 'ease-in-out' },
+  Dreamy: { anim: 'cv-panel-dreamy', dur: 7, ease: 'ease-in-out' },
+  Tense: { anim: 'cv-panel-tense', dur: 0.9, ease: 'ease-in-out' },
+  Warm: { anim: 'cv-panel-warm', dur: 4.2, ease: 'ease-in-out' },
+  Nostalgic: { anim: 'cv-panel-nostalgic', dur: 5.4, ease: 'ease-in-out' },
+};
 
 @customElement('loop-screen')
 export class LoopScreen extends LitElement {
@@ -50,7 +55,7 @@ export class LoopScreen extends LitElement {
   @state() private sheetVisible = false;
   @state() private toast: string | null = null;
   @state() private spinning = false;
-  @state() private drag: { screen: 'mobile' | 'desktop'; pos: number; offsetX: number; offsetY: number } | null = null;
+  @state() private drag: { pos: number; offsetX: number; offsetY: number } | null = null;
 
   private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -58,32 +63,16 @@ export class LoopScreen extends LitElement {
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Drag-to-reorder: press-and-hold (150ms, without moving >8px) starts a drag instead of a
-  // tap, so a quick tap still opens the swap sheet. itemHeight/cellSize are measured from the
-  // container at drag-start so the reorder math works regardless of viewport size.
+  // tap, so a quick tap still previews the chord. On release, the dragged chip drops into
+  // whichever chip's measured center it's now closest to — simple nearest-neighbor placement
+  // that works regardless of how the flex-wrap panel has reflowed the (variably-sized, by
+  // tension) chips.
   private pressTimer: ReturnType<typeof setTimeout> | null = null;
   private pressTapFn: (() => void) | null = null;
   private pressStartX = 0;
   private pressStartY = 0;
-  private itemHeight = 0;
-  private cellSize = { w: 0, h: 0 };
-  private dragPageOffset = 0;
-  private dragPageLen = 0;
-  private prevOrderLength = this.order.length;
   private lastPointerX = 0;
   private lastPointerY = 0;
-
-  // Cross-page drag: hovering a dragged chord over a page tab for a beat switches the visible
-  // page and moves the chord there, so a stack that's paged (see below) can still be reordered
-  // across pages instead of only within the current one.
-  private pageHoverTimer: ReturnType<typeof setTimeout> | null = null;
-  private pageHoverIndex: number | null = null;
-
-  // Mobile paging: progressions longer than 4 chords page through 4 at a time (tabs above
-  // the stack, dots below) rather than cramming every block onto one screen.
-  @state() private page = 0;
-
-  @query('.chord-stack') private stackEl?: HTMLElement;
-  @query('.desktop-chord-grid') private gridEl?: HTMLElement;
 
   connectedCallback() {
     super.connectedCallback();
@@ -99,7 +88,6 @@ export class LoopScreen extends LitElement {
     if (this.sheetCloseTimer) clearTimeout(this.sheetCloseTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.pressTimer) clearTimeout(this.pressTimer);
-    if (this.pageHoverTimer) clearTimeout(this.pageHoverTimer);
     window.removeEventListener('pointermove', this.onDragMove);
     window.removeEventListener('pointerup', this.onDragEnd);
     window.removeEventListener('pointercancel', this.onDragEnd);
@@ -110,385 +98,334 @@ export class LoopScreen extends LitElement {
       display: block;
       position: relative;
       min-height: 100dvh;
-      background: var(--cv-paper);
-      overflow: hidden;
+      background: var(--cv-cream);
+      font-family: var(--cv-font);
     }
-    .grain {
-      position: absolute;
-      inset: 0;
-      background-image: var(--cv-noise);
-      background-size: 120px 120px;
-      mix-blend-mode: multiply;
-      opacity: 0.035;
-      pointer-events: none;
+    @keyframes cv-panel-uplifting {
+      0%, 100% { border-radius: 32px; transform: scale(1); }
+      50% { border-radius: 44px 24px 40px 26px; transform: scale(1.008); }
+    }
+    @keyframes cv-panel-melancholy {
+      0%, 100% { border-radius: 32px; transform: rotate(0deg); }
+      50% { border-radius: 22px 34px 46px 28px; transform: rotate(-0.4deg); }
+    }
+    @keyframes cv-panel-dreamy {
+      0%, 100% { border-radius: 32px; }
+      33% { border-radius: 44px 24px 42px 22px; }
+      66% { border-radius: 22px 42px 24px 44px; }
+    }
+    @keyframes cv-panel-tense {
+      0%, 100% { border-radius: 32px; transform: translateX(0); }
+      20% { border-radius: 38px 22px 28px 34px; transform: translateX(-1px); }
+      40% { border-radius: 22px 34px 38px 24px; transform: translateX(1px); }
+      60% { border-radius: 34px 24px 22px 38px; transform: translateX(-1px); }
+      80% { border-radius: 24px 38px 34px 22px; transform: translateX(1px); }
+    }
+    @keyframes cv-panel-warm {
+      0%, 100% { border-radius: 32px; transform: scale(1); }
+      50% { border-radius: 40px 34px 40px 34px; transform: scale(1.006); }
+    }
+    @keyframes cv-panel-nostalgic {
+      0%, 100% { border-radius: 32px; transform: rotate(0deg); }
+      50% { border-radius: 24px 40px 26px 38px; transform: rotate(-0.3deg); }
+    }
+    @keyframes cv-bg-drift-a {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      50% { transform: translate(0, -7px) rotate(1.5deg); }
+    }
+    @keyframes cv-bg-drift-b {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      50% { transform: translate(0, 6px) rotate(-1.5deg); }
+    }
+    @keyframes cv-now-pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
     }
     .frame {
       position: relative;
       width: 100%;
-      margin: 0 auto;
       min-height: 100dvh;
       display: flex;
       flex-direction: column;
-      padding: 58px 20px 26px;
+      align-items: center;
       box-sizing: border-box;
+      padding: 24px 20px 40px;
     }
     .top-bar {
+      width: 100%;
+      max-width: 640px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-shrink: 0;
     }
     .icon-btn {
       width: 36px;
       height: 36px;
       border-radius: 50%;
-      border: 1.5px solid var(--cv-ink-20);
+      border: none;
+      background: var(--cv-surface-2);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 19px;
-      color: var(--cv-ink-55);
+      font-size: 18px;
+      color: var(--cv-ink);
       cursor: pointer;
-      background: transparent;
     }
-    .top-label {
-      font-family: var(--cv-font-grotesk);
-      font-size: 11px;
-      letter-spacing: 1.8px;
-      color: var(--cv-ink-45);
-      text-transform: uppercase;
-      font-weight: 700;
-    }
-    .theory-toggle {
-      display: flex;
-      justify-content: center;
-      margin-top: 8px;
-      flex-shrink: 0;
-    }
-    .theory-inner {
+    .wordmark {
       display: flex;
       align-items: center;
-      gap: 6px;
-      cursor: pointer;
+      gap: 8px;
     }
-    .theory-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      transition: background .2s ease;
+    .wordmark-text {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--cv-ink);
     }
-    .theory-text {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
+    .content {
+      width: 100%;
+      max-width: 640px;
+      margin-top: 24px;
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--cv-surface);
+      border: 1.5px solid var(--cv-ink-10);
+      padding: 6px 15px;
+      border-radius: 100px;
       font-size: 11.5px;
-      transition: color .2s ease;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--cv-label);
+      text-transform: uppercase;
+      margin-bottom: 18px;
     }
-    .page-tabs {
-      display: flex;
-      justify-content: center;
-      margin-top: 12px;
-      flex-shrink: 0;
+    .step-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      transition: background 0.4s ease;
     }
-    .page-tab-wrap {
-      display: flex;
-      gap: 4px;
-      background: var(--cv-ink-04);
-      border-radius: 20px;
-      padding: 3px;
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 5vw, 36px);
+      font-weight: 800;
+      line-height: 1.16;
+      letter-spacing: -0.02em;
+      color: var(--cv-ink);
     }
-    .page-tab {
-      padding: 6px 14px;
-      border-radius: 16px;
-      font-family: var(--cv-font-grotesk);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all .15s ease;
-      color: var(--cv-ink-45);
-    }
-    .page-tab.selected {
-      background: var(--cv-ink);
-      color: var(--cv-cream);
-    }
-    .page-tab.drag-target {
-      box-shadow: inset 0 0 0 2px var(--cv-accent);
-    }
-    .page-dots {
-      display: flex;
-      justify-content: center;
-      gap: 6px;
+    .subcopy {
+      font-size: 14.5px;
+      line-height: 1.6;
+      color: var(--cv-ink-muted);
       margin-top: 10px;
-      flex-shrink: 0;
     }
-    .page-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 3px;
-      background: var(--cv-ink-20);
-      cursor: pointer;
-      transition: all .2s ease;
-    }
-    .page-dot.selected {
-      width: 16px;
-      background: var(--cv-ink);
-    }
-    .chord-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      flex: 1;
-      margin-top: 16px;
-      min-height: 0;
-      border-radius: 14px;
-      overflow: hidden;
-    }
-    .chord-block {
+    .panel {
       position: relative;
+      background: var(--cv-surface);
+      border: 1.5px solid var(--cv-ink-08);
+      padding: 34px 22px;
+      margin-top: 26px;
       overflow: hidden;
-      padding: 18px 20px;
+      min-height: 180px;
+      box-shadow: 0 30px 60px -30px rgba(46, 39, 31, 0.22);
+    }
+    .panel-blob {
+      position: absolute;
+      opacity: 0.9;
+      pointer-events: none;
+    }
+    .panel-blob.a {
+      left: -40px;
+      top: -40px;
+      animation: cv-bg-drift-a 11s ease-in-out infinite;
+    }
+    .panel-blob.b {
+      right: -30px;
+      bottom: -30px;
+      animation: cv-bg-drift-b 13s ease-in-out infinite;
+    }
+    .chip-row {
+      position: relative;
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      z-index: 2;
+    }
+    .chord-chip {
+      position: relative;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
       cursor: pointer;
-      flex: 1;
-      min-height: 0;
+      touch-action: none;
+      user-select: none;
+      box-shadow: 0 14px 28px -14px rgba(46, 39, 31, 0.2);
+      transition: transform 150ms var(--cv-ease), box-shadow 150ms var(--cv-ease);
     }
-    .chord-grain {
-      position: absolute;
-      inset: 0;
-      background-image: var(--cv-noise);
-      background-size: 80px 80px;
-      mix-blend-mode: multiply;
-      pointer-events: none;
-      border-radius: inherit;
+    .chord-chip.active {
+      transform: scale(1.06);
+      box-shadow: 0 18px 34px -14px rgba(46, 39, 31, 0.32);
+    }
+    .chord-name {
+      font-weight: 800;
+      color: var(--cv-ink);
+      line-height: 1;
+    }
+    .chord-role {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: rgba(46, 39, 31, 0.55);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-top: 6px;
     }
     .now-marker {
       position: absolute;
-      top: 16px;
-      right: 18px;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
     }
     .now-dot {
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: #F1E8D9;
-      animation: cv-pulse 1.6s ease-in-out infinite;
-    }
-    @keyframes cv-pulse {
-      0% { opacity: .45; }
-      50% { opacity: 1; }
-      100% { opacity: .45; }
-    }
-    .now-text {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-size: 12px;
-      color: rgba(241, 232, 217, 0.75);
-    }
-    .chord-name {
-      position: relative;
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-weight: 700;
-      font-size: 32px;
-      color: #F1E8D9;
-      display: inline-block;
-      transform-origin: left center;
-    }
-    @keyframes cv-breathe {
-      0% { transform: scale(1) skewX(0deg); letter-spacing: 0em; }
-      50% { transform: scale(calc(1 + 0.05 * var(--amp))) skewX(calc(-3deg * var(--amp))); letter-spacing: calc(-0.012em * var(--amp)); }
-      100% { transform: scale(1) skewX(0deg); letter-spacing: 0em; }
-    }
-    .chord-meta {
-      position: relative;
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-    .chord-tag {
-      font-family: var(--cv-font-grotesk);
-      font-size: 11.5px;
-      font-weight: 600;
-      letter-spacing: 0.6px;
-      text-transform: uppercase;
-      color: rgba(241, 232, 217, 0.72);
-    }
-    .chord-roman {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-size: 12.5px;
-      color: rgba(241, 232, 217, 0.55);
-    }
-    .chord-staff {
-      position: absolute;
-      right: 18px;
-      pointer-events: none;
-    }
-    .staff-line {
-      position: absolute;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: rgba(241, 232, 217, 0.3);
-    }
-    .staff-ledger {
-      position: absolute;
-      width: 18px;
-      height: 1px;
-      background: rgba(241, 232, 217, 0.35);
-    }
-    .staff-note {
-      position: absolute;
-      width: 12px;
-      height: 9px;
-      border-radius: 50%;
-      background: #F1E8D9;
-      transform: rotate(-14deg);
-    }
-    .staff-accidental {
-      position: absolute;
-      font-size: 13px;
-      line-height: 1;
-      color: rgba(241, 232, 217, 0.65);
-      transform: translate(0, -50%);
-    }
-    .theory-panel {
-      padding-top: 18px;
-      margin-top: 18px;
-      border-top: 1px solid var(--cv-ink-14);
-      flex-shrink: 0;
-    }
-    .theory-row {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .theory-function {
-      font-family: var(--cv-font-grotesk);
-      font-size: 10.5px;
-      letter-spacing: 0.8px;
-      text-transform: uppercase;
-      font-weight: 700;
-      color: var(--cv-accent);
-    }
-    .theory-notes {
-      font-family: var(--cv-font-grotesk);
-      font-size: 10.5px;
-      letter-spacing: 0.4px;
-      color: var(--cv-ink-40);
-    }
-    .theory-scale {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-size: 12px;
-      color: var(--cv-ink-40);
-    }
-    .theory-desc {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-size: 13.5px;
-      line-height: 1.5;
-      color: rgba(32, 26, 19, 0.68);
-      margin-top: 8px;
-    }
-    .transport {
-      height: 62px;
-      border-radius: 10px;
-      background: var(--cv-paper-deep);
-      border: 1px solid var(--cv-ink-14);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      margin-top: 18px;
-      flex-shrink: 0;
-    }
-    .play-btn {
-      width: 40px;
-      height: 40px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
       background: var(--cv-ink);
+      animation: cv-now-pulse 1.6s ease-in-out infinite;
+    }
+    .now-text {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: rgba(46, 39, 31, 0.55);
+    }
+    .swap-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: var(--cv-cream);
+      border: 1.5px solid var(--cv-ink-14);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(46, 39, 31, 0.15);
+      cursor: pointer;
+      transition: transform 150ms var(--cv-ease);
+      touch-action: manipulation;
+    }
+    .swap-badge:hover {
+      transform: scale(1.12);
+    }
+    .transport {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-top: 26px;
+    }
+    .play-btn {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.2s ease;
+    }
+    .play-btn:hover {
+      transform: scale(1.06);
+    }
+    .progress-track {
+      flex: 1;
+      height: 9px;
+      border-radius: 6px;
+      background: var(--cv-surface);
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 6px;
+      transition: width 0.3s var(--cv-ease), background 0.4s ease;
+    }
+    .dice-btn {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--cv-surface-2);
       border: none;
-    }
-    .play-square {
-      width: 13px;
-      height: 13px;
-      background: #F1E8D9;
-      border-radius: 2px;
-    }
-    .play-triangle {
-      width: 0;
-      height: 0;
-      border-top: 7px solid transparent;
-      border-bottom: 7px solid transparent;
-      border-left: 11px solid #F1E8D9;
-      margin-left: 2px;
-    }
-    .transport-label {
-      font-family: var(--cv-font-grotesk);
-      font-size: 12.5px;
-      color: var(--cv-ink-55);
-      font-weight: 600;
-      letter-spacing: 0.4px;
-    }
-    .dice-icon {
-      font-size: 16px;
-      color: var(--cv-ink-40);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
       cursor: pointer;
-      transition: transform .3s ease;
+      flex-shrink: 0;
+      transition: transform 0.3s ease, background 0.2s ease;
     }
-    .dice-icon.spinning {
+    .dice-btn:hover {
+      background: var(--cv-surface);
+    }
+    .dice-btn.spinning {
       transform: rotate(360deg);
+    }
+    .transport-meta {
+      text-align: center;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--cv-ink-muted);
+      margin-top: 12px;
     }
     .menu-scrim {
       position: fixed;
       inset: -2px;
       z-index: 48;
-      background: rgba(32, 26, 19, 0);
-      transition: background .22s ease, backdrop-filter .22s ease;
+      background: rgba(46, 39, 31, 0);
+      transition: background 0.22s ease, backdrop-filter 0.22s ease;
     }
     .menu-scrim.visible {
-      background: rgba(32, 26, 19, 0.06);
+      background: rgba(46, 39, 31, 0.06);
       backdrop-filter: blur(3px);
       -webkit-backdrop-filter: blur(3px);
     }
     .menu {
       position: absolute;
-      top: 96px;
-      right: 20px;
-      width: 230px;
-      background: var(--cv-paper);
-      border: 1px solid var(--cv-ink-18);
-      border-radius: 10px;
-      box-shadow: 4px 4px 0 rgba(32, 26, 19, 0.15), 0 24px 44px -18px rgba(32, 26, 19, 0.4);
+      top: 68px;
+      right: max(20px, calc(50% - 320px));
+      width: 250px;
+      background: var(--cv-cream);
+      border-radius: 18px;
+      box-shadow: 0 24px 44px -18px rgba(46, 39, 31, 0.35);
       z-index: 49;
-      padding: 14px;
+      padding: 16px;
       box-sizing: border-box;
       transform-origin: top right;
       opacity: 0;
       transform: translateY(-6px) scale(0.94);
-      transition: opacity .22s cubic-bezier(.16,1,.3,1), transform .26s cubic-bezier(.16,1,.3,1);
+      transition: opacity 0.22s cubic-bezier(.16,1,.3,1), transform 0.26s cubic-bezier(.16,1,.3,1);
     }
     .menu.visible {
       opacity: 1;
       transform: translateY(0) scale(1);
     }
     .menu-label {
-      font-family: var(--cv-font-grotesk);
-      font-size: 10px;
+      font-size: 10.5px;
       letter-spacing: 1.2px;
       text-transform: uppercase;
-      color: var(--cv-ink-40);
-      font-weight: 700;
+      color: var(--cv-label);
+      font-weight: 800;
     }
     .menu-label.spaced {
       margin-top: 14px;
@@ -496,81 +433,71 @@ export class LoopScreen extends LitElement {
     .menu-chips {
       display: flex;
       flex-wrap: wrap;
-      gap: 5px;
+      gap: 6px;
       margin-top: 8px;
     }
     .menu-chip {
-      padding: 5px 10px;
+      padding: 6px 12px;
       border-radius: 999px;
-      font-family: var(--cv-font-body);
       font-size: 11.5px;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
       white-space: nowrap;
-      background: var(--cv-ink-04);
-      color: var(--cv-ink-62);
-      border: 1px solid var(--cv-ink-18);
-      opacity: 0;
-      transform: translateY(5px);
-      transition: opacity .3s ease, transform .3s cubic-bezier(.2,.8,.2,1), background .15s ease, color .15s ease;
+      background: var(--cv-surface-2);
+      color: var(--cv-ink-muted);
+      transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
     }
-    .menu-chip.visible {
-      opacity: 1;
-      transform: translateY(0);
+    .menu-chip:active {
+      transform: scale(0.95);
     }
     .menu-chip.selected {
-      background: var(--cv-ink);
-      color: var(--cv-cream);
-      border-color: var(--cv-ink);
-    }
-    .menu-share-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-top: 14px;
-      padding-top: 12px;
-      border-top: 1px solid var(--cv-ink-14);
-      cursor: pointer;
-    }
-    .menu-share-label {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-size: 13px;
-      color: rgba(32, 26, 19, 0.65);
-    }
-    .menu-share-arrow {
-      font-size: 13px;
-      color: var(--cv-ink-40);
+      color: var(--cv-ink);
     }
     .menu-nav-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--cv-ink-10);
       cursor: pointer;
       text-decoration: none;
       color: inherit;
     }
+    .menu-nav-row.first {
+      border-top: none;
+      padding-top: 0;
+    }
+    .menu-nav-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--cv-ink);
+    }
+    .menu-nav-arrow {
+      font-size: 13px;
+      color: var(--cv-label);
+    }
     .length-control {
       display: flex;
       align-items: center;
-      gap: 10px;
-      border-radius: 10px;
-      background: var(--cv-ink);
-      padding: 12px 14px;
-      margin-top: 12px;
+      gap: 8px;
+      border-radius: 14px;
+      background: var(--cv-surface-2);
+      padding: 10px 12px;
+      margin-top: 8px;
     }
     .length-btn {
-      width: 26px;
-      height: 26px;
-      border-radius: 7px;
-      background: rgba(241, 232, 217, 0.12);
-      color: var(--cv-cream);
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--cv-cream);
+      color: var(--cv-ink);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 15px;
+      font-size: 14px;
+      font-weight: 700;
       cursor: pointer;
       flex-shrink: 0;
     }
@@ -580,43 +507,39 @@ export class LoopScreen extends LitElement {
     }
     .length-segments {
       display: flex;
-      gap: 4px;
+      gap: 3px;
       flex: 1;
     }
     .length-segment {
       flex: 1;
-      height: 6px;
-      border-radius: 3px;
-      background: rgba(241, 232, 217, 0.18);
-      transition: background .25s ease;
+      height: 8px;
+      border-radius: 4px;
+      background: var(--cv-ink-10);
+      transition: background 0.25s ease;
     }
     .length-segment.filled {
-      background: var(--cv-cream);
+      background: var(--cv-red);
     }
     .length-label-text {
-      font-family: var(--cv-font-grotesk);
-      font-size: 12px;
-      font-weight: 600;
-      color: rgba(241, 232, 217, 0.85);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cv-ink-muted);
       white-space: nowrap;
-      min-width: 56px;
-      text-align: right;
     }
     .toast {
-      position: absolute;
+      position: fixed;
       left: 50%;
-      bottom: 90px;
+      bottom: 40px;
       transform: translateX(-50%);
       background: var(--cv-ink);
       color: var(--cv-cream);
-      font-family: var(--cv-font-body);
       font-size: 12.5px;
       font-weight: 600;
-      padding: 10px 16px;
+      padding: 10px 18px;
       border-radius: 999px;
       z-index: 70;
-      box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.4);
-      animation: cv-toast-in .3s cubic-bezier(.16,1,.3,1);
+      box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.35);
+      animation: cv-toast-in 0.3s cubic-bezier(.16,1,.3,1);
       white-space: nowrap;
     }
     @keyframes cv-toast-in {
@@ -624,141 +547,9 @@ export class LoopScreen extends LitElement {
       to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
 
-    .desktop-view {
-      display: none;
-    }
-
-    /* Below this width the mobile single-column frame (bottom-sheet swap, popover
-       settings) is used as-is; above it, a 3-column workspace layout takes over. */
-    @media (min-width: 900px) {
-      .frame {
-        max-width: 1180px;
-        min-height: 0;
-        padding: 0;
-      }
-      .mobile-view {
-        display: none;
-      }
-      .desktop-view {
-        display: flex;
-        min-height: 100dvh;
-      }
-      .desktop-sidebar {
-        position: relative;
-        width: 272px;
-        flex-shrink: 0;
-        border-right: 1px solid var(--cv-ink-14);
-        padding: 32px 26px;
-        box-sizing: border-box;
-        overflow: auto;
-      }
-      .desktop-footer {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        margin-top: 20px;
-        padding-bottom: 2px;
-        font-family: var(--cv-font-body);
-        font-size: 12px;
-        color: rgba(32, 26, 19, 0.38);
-        flex-shrink: 0;
-      }
-      .desktop-footer-link {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        color: inherit;
-        text-decoration: none;
-        transition: color .15s ease;
-      }
-      .desktop-footer-link:hover {
-        color: var(--cv-accent);
-      }
-      .desktop-footer-divider {
-        opacity: 0.6;
-      }
-      .desktop-wordmark {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .desktop-wordmark .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        transition: background .6s cubic-bezier(0.23, 1, 0.32, 1);
-        flex-shrink: 0;
-      }
-      .desktop-wordmark .wordmark-text {
-        font-family: var(--cv-font-grotesk);
-        font-size: 12px;
-        letter-spacing: 2px;
-        color: var(--cv-ink-55);
-        text-transform: uppercase;
-      }
-      .desktop-section-label {
-        font-family: var(--cv-font-grotesk);
-        font-size: 11px;
-        letter-spacing: 1.5px;
-        color: var(--cv-ink-40);
-        text-transform: uppercase;
-        font-weight: 700;
-        margin-top: 24px;
-      }
-      .desktop-section-label.first {
-        margin-top: 30px;
-      }
-      .desktop-main {
-        position: relative;
-        flex: 1;
-        padding: 36px 40px;
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-      }
-      .desktop-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-shrink: 0;
-      }
-      .desktop-chord-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0;
-        flex: 1;
-        margin-top: 24px;
-        min-height: 0;
-        border-radius: 14px;
-        overflow: hidden;
-      }
-      .desktop-transport-hint {
-        font-family: var(--cv-font-serif);
-        font-style: italic;
-        font-size: 13px;
-        color: rgba(32, 26, 19, 0.5);
-      }
-      .desktop-swap-panel {
-        position: relative;
-        width: 340px;
-        flex-shrink: 0;
-        border-left: 1px solid var(--cv-ink-14);
-        padding: 32px 26px;
-        box-sizing: border-box;
-        overflow: auto;
-      }
-      .desktop-swap-empty {
-        height: 100%;
-        display: flex;
-        align-items: center;
-        font-family: var(--cv-font-serif);
-        font-style: italic;
-        font-size: 15px;
-        line-height: 1.5;
-        color: var(--cv-ink-40);
-      }
+    @media (min-width: 720px) {
+      .content { max-width: 760px; }
+      .panel { padding: 48px 40px; }
     }
   `;
 
@@ -767,17 +558,6 @@ export class LoopScreen extends LitElement {
   }
 
   updated(changed: Map<string, unknown>) {
-    if (changed.has('order') && this.order.length !== this.prevOrderLength) {
-      this.prevOrderLength = this.order.length;
-      this.page = 0;
-    }
-    // Autoplay following: as the active chord advances into a new page of 4, follow it there
-    // (and back to page 0 once the loop wraps around), so the visible page always shows
-    // what's currently playing.
-    if (changed.has('activeIndex') && !this.drag) {
-      const targetPage = Math.floor(this.activeIndex / 4);
-      if (targetPage !== this.page) this.page = targetPage;
-    }
     if (changed.has('sheetOpen')) {
       if (this.sheetOpen) {
         if (this.sheetCloseTimer) { clearTimeout(this.sheetCloseTimer); this.sheetCloseTimer = null; }
@@ -833,15 +613,7 @@ export class LoopScreen extends LitElement {
     this.emit('reroll');
   }
 
-  private chipClass(idx: number, selected: boolean): string {
-    return `menu-chip ${selected ? 'selected' : ''} ${this.menuVisible ? 'visible' : ''}`;
-  }
-
-  private chipStyle(idx: number): string {
-    return `transition-delay: ${idx * 0.025}s`;
-  }
-
-  private pressStart(screen: 'mobile' | 'desktop', pos: number, tapFn: () => void, e: PointerEvent, pageOffset = 0, pageLen = this.order.length) {
+  private pressStart(pos: number, tapFn: () => void, e: PointerEvent) {
     e.preventDefault();
     this.pressTapFn = tapFn;
     this.pressStartX = e.clientX;
@@ -849,19 +621,7 @@ export class LoopScreen extends LitElement {
     if (this.pressTimer) clearTimeout(this.pressTimer);
     this.pressTimer = setTimeout(() => {
       this.pressTimer = null;
-      if (screen === 'mobile') {
-        this.dragPageOffset = pageOffset;
-        this.dragPageLen = pageLen;
-        this.itemHeight = this.stackEl ? this.stackEl.offsetHeight / pageLen : 60;
-      } else {
-        const cols = 2;
-        const rows = Math.ceil(this.order.length / cols);
-        this.cellSize = {
-          w: this.gridEl ? this.gridEl.offsetWidth / cols : 100,
-          h: this.gridEl ? this.gridEl.offsetHeight / rows : 100,
-        };
-      }
-      this.drag = { screen, pos, offsetX: 0, offsetY: 0 };
+      this.drag = { pos, offsetX: 0, offsetY: 0 };
     }, 150);
   }
 
@@ -877,152 +637,44 @@ export class LoopScreen extends LitElement {
     }
     if (!this.drag) return;
     this.drag = { ...this.drag, offsetX: e.clientX - this.pressStartX, offsetY: e.clientY - this.pressStartY };
-    if (this.drag.screen === 'mobile') this.checkPageHover(e.clientX, e.clientY);
   };
-
-  // While dragging a chord on the (paged) mobile stack, hovering it over a page tab for a
-  // beat switches to that page and moves the chord there, so a drag can cross pages instead
-  // of only reordering within the one currently on screen.
-  private checkPageHover(x: number, y: number) {
-    const tabs = this.renderRoot.querySelectorAll('.page-tab');
-    let hoverIdx: number | null = null;
-    tabs.forEach((el, i) => {
-      const r = (el as HTMLElement).getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hoverIdx = i;
-    });
-    if (hoverIdx !== null && hoverIdx !== this.page) {
-      if (this.pageHoverIndex !== hoverIdx) {
-        this.pageHoverIndex = hoverIdx;
-        if (this.pageHoverTimer) clearTimeout(this.pageHoverTimer);
-        const target = hoverIdx;
-        this.pageHoverTimer = setTimeout(() => this.switchDragToPage(target), 450);
-      }
-    } else if (this.pageHoverIndex !== null) {
-      this.pageHoverIndex = null;
-      if (this.pageHoverTimer) { clearTimeout(this.pageHoverTimer); this.pageHoverTimer = null; }
-    }
-  }
-
-  private switchDragToPage(newPage: number) {
-    this.pageHoverTimer = null;
-    this.pageHoverIndex = null;
-    if (!this.drag || this.drag.screen !== 'mobile') return;
-    const fromPage = this.page;
-    if (newPage === fromPage) return;
-
-    const draggedAbsIndex = this.dragPageOffset + this.drag.pos;
-    const movedChordIndex = this.order[draggedAbsIndex];
-    if (movedChordIndex === undefined) return;
-
-    const newOrder = [...this.order];
-    newOrder.splice(draggedAbsIndex, 1);
-    const newOffset = newPage * 4;
-    const remainingInTargetPage = Math.min(4, newOrder.length - newOffset);
-    // Coming from a later page, the chord lands at the top of the target page (it was
-    // "pushed forward" into it); coming from an earlier page, it lands at the bottom.
-    const insertPos = newPage > fromPage ? newOffset : Math.min(newOrder.length, newOffset + remainingInTargetPage);
-    newOrder.splice(insertPos, 0, movedChordIndex);
-
-    this.page = newPage;
-    this.dragPageOffset = newOffset;
-    this.dragPageLen = Math.min(4, newOrder.length - newOffset);
-    this.itemHeight = this.stackEl ? this.stackEl.offsetHeight / this.dragPageLen : this.itemHeight;
-    this.pressStartX = this.lastPointerX;
-    this.pressStartY = this.lastPointerY;
-    this.drag = { screen: 'mobile', pos: insertPos - newOffset, offsetX: 0, offsetY: 0 };
-
-    this.emit('reorder', newOrder);
-  }
 
   private onDragEnd = () => {
     if (this.pressTimer) { clearTimeout(this.pressTimer); this.pressTimer = null; }
-    if (this.pageHoverTimer) { clearTimeout(this.pageHoverTimer); this.pageHoverTimer = null; }
-    this.pageHoverIndex = null;
     if (!this.drag) {
       if (this.pressTapFn) this.pressTapFn();
       this.pressTapFn = null;
       return;
     }
-    const { screen, pos, offsetX, offsetY } = this.drag;
-    let targetPos = pos;
-    if (screen === 'mobile') {
-      const itemH = this.itemHeight || 1;
-      const pageLen = this.dragPageLen || 1;
-      targetPos = Math.max(0, Math.min(pageLen - 1, pos + Math.round(offsetY / itemH)));
-    } else {
-      const cols = 2;
-      const rows = Math.ceil(this.order.length / cols);
-      const cellW = this.cellSize.w || 1, cellH = this.cellSize.h || 1;
-      const fromRow = Math.floor(pos / cols), fromCol = pos % cols;
-      const newRow = Math.max(0, Math.min(rows - 1, fromRow + Math.round(offsetY / cellH)));
-      const newCol = Math.max(0, Math.min(cols - 1, fromCol + Math.round(offsetX / cellW)));
-      targetPos = Math.min(this.order.length - 1, newRow * cols + newCol);
-    }
+    const fromPos = this.drag.pos;
     this.drag = null;
     this.pressTapFn = null;
-    if (targetPos !== pos) {
+
+    const chips = Array.from(this.renderRoot.querySelectorAll('.chord-chip')) as HTMLElement[];
+    let targetPos = fromPos;
+    let best = Infinity;
+    chips.forEach((el, i) => {
+      if (i === fromPos) return;
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const d = (this.lastPointerX - cx) ** 2 + (this.lastPointerY - cy) ** 2;
+      if (d < best) { best = d; targetPos = i; }
+    });
+
+    if (targetPos !== fromPos) {
       const newOrder = [...this.order];
-      const offset = screen === 'mobile' ? this.dragPageOffset : 0;
-      const [moved] = newOrder.splice(offset + pos, 1);
-      newOrder.splice(offset + targetPos, 0, moved);
+      const [moved] = newOrder.splice(fromPos, 1);
+      newOrder.splice(targetPos, 0, moved);
       this.emit('reorder', newOrder);
     }
   };
 
-  private renderChordStaff(c: ChordBlock, isActive: boolean) {
-    const staff = buildChordStaff(c.notes, this.progression.key, this.progression.scaleType);
-    return html`
-      <div class="chord-staff" style="top:${isActive ? 40 : 16}px;width:${staff.width}px;height:${staff.height}px;">
-        ${staff.lines.map(y => html`<div class="staff-line" style="top:${y}px;"></div>`)}
-        ${staff.ledgers.map(l => html`<div class="staff-ledger" style="left:${l.x}px;top:${l.y}px;"></div>`)}
-        ${staff.keySignature.map(k => html`<div class="staff-accidental" style="left:${k.x}px;top:${k.y}px;">${k.sign === 'sharp' ? '♯' : '♭'}</div>`)}
-        ${staff.notes.map(n => html`<div class="staff-note" style="left:${n.x}px;top:${n.y}px;"></div>`)}
-      </div>
-    `;
-  }
-
-  private dragStyleFor(pos: number, screen: 'mobile' | 'desktop'): string {
-    let tx = 0, ty = 0, transition = 'transform .22s cubic-bezier(.2,.8,.2,1)', scale = 1, rotate = 0, shadow = 'none', z = 1, opacity = 1;
+  private dragStyleFor(pos: number): string {
     const d = this.drag;
-    if (d && d.screen === screen) {
-      if (screen === 'mobile') {
-        const itemH = this.itemHeight || 1;
-        const pageLen = this.dragPageLen || 1;
-        const targetPos = Math.max(0, Math.min(pageLen - 1, d.pos + Math.round(d.offsetY / itemH)));
-        if (pos === d.pos) {
-          ty = d.offsetY; transition = 'none'; scale = 1.035; rotate = -0.6; shadow = '0 16px 32px rgba(0,0,0,0.35)'; z = 20;
-        } else {
-          const from = d.pos;
-          if (from < targetPos && pos > from && pos <= targetPos) ty = -itemH;
-          else if (from > targetPos && pos >= targetPos && pos < from) ty = itemH;
-          opacity = 0.86;
-        }
-      } else {
-        const cols = 2;
-        const rows = Math.ceil(this.order.length / cols);
-        const cellW = this.cellSize.w || 1, cellH = this.cellSize.h || 1;
-        const fromRow = Math.floor(d.pos / cols), fromCol = d.pos % cols;
-        const newRow = Math.max(0, Math.min(rows - 1, fromRow + Math.round(d.offsetY / cellH)));
-        const newCol = Math.max(0, Math.min(cols - 1, fromCol + Math.round(d.offsetX / cellW)));
-        const targetPos = Math.min(this.order.length - 1, newRow * cols + newCol);
-        if (pos === d.pos) {
-          tx = d.offsetX; ty = d.offsetY; transition = 'none'; scale = 1.045; rotate = -0.8; shadow = '0 20px 40px rgba(0,0,0,0.38)'; z = 20;
-        } else {
-          const arr = Array.from({ length: this.order.length }, (_, i) => i);
-          const [moved] = arr.splice(d.pos, 1);
-          arr.splice(targetPos, 0, moved);
-          const newPos = arr.indexOf(pos);
-          if (newPos !== pos) {
-            const oldRow = Math.floor(pos / cols), oldCol = pos % cols, nr = Math.floor(newPos / cols), nc = newPos % cols;
-            tx = (nc - oldCol) * cellW;
-            ty = (nr - oldRow) * cellH;
-          }
-          opacity = 0.86;
-        }
-      }
+    if (d && d.pos === pos) {
+      return `transform:translate(${d.offsetX}px, ${d.offsetY}px) scale(1.08) rotate(-1deg);transition:none;z-index:20;box-shadow:0 20px 40px rgba(46,39,31,0.35);cursor:grabbing;`;
     }
-    const cursor = d && d.screen === screen && pos === d.pos ? 'grabbing' : 'grab';
-    return `transform:translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rotate}deg);transition:${transition};box-shadow:${shadow};z-index:${z};opacity:${opacity};touch-action:none;user-select:none;cursor:${cursor};`;
+    return `cursor:grab;`;
   }
 
   private renderLengthControl() {
@@ -1034,27 +686,25 @@ export class LoopScreen extends LitElement {
           ${Array.from({ length: MAX_PROGRESSION_LENGTH }, (_, i) => html`<div class="length-segment ${i < len ? 'filled' : ''}"></div>`)}
         </div>
         <div class="length-btn ${len >= MAX_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => len < MAX_PROGRESSION_LENGTH && this.emit('set-length', len + 1)}>+</div>
-        <div class="length-label-text">${len} ${len === 1 ? 'chord' : 'chords'}</div>
+        <div class="length-label-text">${len}</div>
       </div>
     `;
   }
 
   render() {
     const p = this.progression;
-    const activeChordIndex = this.order[this.activeIndex] ?? 0;
-    const active = p.chords[activeChordIndex];
-    const pageCount = Math.ceil(this.order.length / 4);
-    const showPaging = pageCount > 1;
-    const page = Math.min(this.page, pageCount - 1);
-    const pageOffset = page * 4;
-    const pageOrder = this.order.slice(pageOffset, pageOffset + 4);
+    const moodColor = getMoodColor(p.mood);
+    const progressPct = ((this.activeIndex + 1) / Math.max(1, this.order.length)) * 100;
+    const panelAnim = PANEL_ANIM[p.mood] || PANEL_ANIM.Dreamy;
+
     return html`
       <div class="frame">
-        <div class="grain"></div>
-        <div class="mobile-view">
         <div class="top-bar">
           <div class="icon-btn" @click=${() => this.emit('back')}>‹</div>
-          <div class="top-label">${p.genre} · ${p.mood}</div>
+          <div class="wordmark">
+            <svg width="18" height="18" viewBox="0 0 30 30"><circle cx="11" cy="11" r="9" fill="#F2A79B" /><circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" /></svg>
+            <div class="wordmark-text">Chroma Chords</div>
+          </div>
           <div class="icon-btn" @click=${() => this.toggleMenu()}>…</div>
         </div>
 
@@ -1063,113 +713,90 @@ export class LoopScreen extends LitElement {
           <div class="menu ${this.menuVisible ? 'visible' : ''}">
             <div class="menu-label">Key &amp; scale</div>
             <div class="menu-chips">
-              ${MENU_KEYS.map((k, i) => html`
-                <div class="${this.chipClass(i, k === p.key)}" style=${this.chipStyle(i)} @click=${() => this.emit('set-key', k)}>${k}</div>
+              ${MENU_KEYS.map(k => html`
+                <div class="menu-chip ${k === p.key ? 'selected' : ''}" style=${k === p.key ? `background:${moodColor}` : ''} @click=${() => this.emit('set-key', k)}>${k}</div>
               `)}
             </div>
             <div class="menu-chips">
-              ${MENU_SCALES.map((s, i) => html`
-                <div class="${this.chipClass(i + 7, s.value === p.scaleType)}" style=${this.chipStyle(i + 7)} @click=${() => this.emit('set-scale', s.value)}>${s.label}</div>
+              ${MENU_SCALES.map(s => html`
+                <div class="menu-chip ${s.value === p.scaleType ? 'selected' : ''}" style=${s.value === p.scaleType ? `background:${moodColor}` : ''} @click=${() => this.emit('set-scale', s.value)}>${s.label}</div>
               `)}
             </div>
             <div class="menu-label spaced">Genre</div>
             <div class="menu-chips">
-              ${MENU_GENRES.map((g, i) => html`
-                <div class="${this.chipClass(i + 13, g === p.genre)}" style=${this.chipStyle(i + 13)} @click=${() => this.emit('set-genre', g)}>${g}</div>
+              ${MENU_GENRES.map(g => html`
+                <div class="menu-chip ${g === p.genre ? 'selected' : ''}" style=${g === p.genre ? `background:${moodColor}` : ''} @click=${() => this.emit('set-genre', g)}>${g}</div>
               `)}
             </div>
             <div class="menu-label spaced">Mood</div>
             <div class="menu-chips">
-              ${MENU_MOODS.map((m, i) => html`
-                <div class="${this.chipClass(i + 23, m === p.mood)}" style=${this.chipStyle(i + 23)} @click=${() => this.emit('set-mood', m)}>${m}</div>
+              ${MOODS.map(m => html`
+                <div class="menu-chip ${m.name === p.mood ? 'selected' : ''}" style=${m.name === p.mood ? `background:${m.dot}` : ''} @click=${() => this.emit('set-mood', m.name)}>${m.name}</div>
               `)}
             </div>
             <div class="menu-label spaced">Length</div>
             ${this.renderLengthControl()}
-            <div class="menu-share-row" style="border-top:none;padding-top:0;margin-top:14px;">
-              <div class="menu-nav-row" @click=${() => this.emit('view-song')}>
-                <div class="menu-share-label">View song</div>
-                <div class="menu-share-arrow">↗</div>
-              </div>
+            <div class="menu-nav-row" @click=${() => this.emit('view-song')}>
+              <div class="menu-nav-label">View song</div>
+              <div class="menu-nav-arrow">↗</div>
             </div>
-            <div class="menu-share-row" @click=${() => this.openShare()}>
-              <div class="menu-share-label">Share progression</div>
-              <div class="menu-share-arrow">↗</div>
+            <div class="menu-nav-row" @click=${() => this.openShare()}>
+              <div class="menu-nav-label">Share progression</div>
+              <div class="menu-nav-arrow">↗</div>
             </div>
           </div>
         ` : ''}
 
-        <div class="theory-toggle">
-          <div class="theory-inner" @click=${() => this.emit('theory-toggle')}>
-            <div class="theory-dot" style="background:${this.showTheory ? 'var(--cv-accent)' : 'var(--cv-ink-20)'}"></div>
-            <div class="theory-text" style="color:${this.showTheory ? 'rgba(32,26,19,0.65)' : 'rgba(32,26,19,0.32)'}">show music theory</div>
+        <div class="content">
+          <div class="step-badge">
+            <div class="step-dot" style="background:${moodColor}"></div>
+            Step 2 of 3
           </div>
-        </div>
+          <h1>Your progression, feeling <span style="color:${moodColor}">${p.mood.toLowerCase()}.</span></h1>
+          <div class="subcopy">${p.genre} · ${p.chords.length} ${p.chords.length === 1 ? 'chord' : 'chords'} · tap a chord to preview, tap the swap icon to change it.</div>
 
-        ${showPaging ? html`
-          <div class="page-tabs">
-            <div class="page-tab-wrap">
-              ${Array.from({ length: pageCount }, (_, i) => {
-                const start = i * 4 + 1, end = Math.min(this.order.length, i * 4 + 4);
-                return html`<div class="page-tab ${i === page ? 'selected' : ''} ${this.pageHoverIndex === i ? 'drag-target' : ''}" @click=${() => { this.page = i; }}>${start}–${end}</div>`;
+          <div class="panel" style="animation:${panelAnim.anim} ${panelAnim.dur}s ${panelAnim.ease} infinite;">
+            <svg class="panel-blob a" width="140" height="140" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B" /></svg>
+            <svg class="panel-blob b" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC" /></svg>
+            <div class="chip-row">
+              ${this.order.map((chordIndex, pos) => {
+                const c = p.chords[chordIndex];
+                const role = roleForTension(c.tension);
+                const isActive = pos === this.activeIndex;
+                return html`
+                  <div
+                    class="chord-chip ${isActive ? 'active' : ''}"
+                    style="width:${role.size}px;height:${role.size}px;border-radius:${role.radius}px;background:${role.color};${this.dragStyleFor(pos)}"
+                    @pointerdown=${(e: PointerEvent) => this.pressStart(pos, () => this.emit('chord-preview', chordIndex), e)}
+                  >
+                    ${isActive ? html`<div class="now-marker"><div class="now-dot"></div><div class="now-text">now</div></div>` : ''}
+                    <div class="chord-name" style="font-size:${role.fontSize}px;">${c.name}</div>
+                    <div class="chord-role">${c.functionLabel}</div>
+                    <div
+                      class="swap-badge"
+                      @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                      @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit('chord-tap', chordIndex); }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4" /><path d="M20 16H7M11 12l-4 4 4 4" /></svg>
+                    </div>
+                  </div>
+                `;
               })}
             </div>
           </div>
-        ` : ''}
 
-        <div class="chord-stack">
-          ${pageOrder.map((chordIndex, pos) => {
-            const c = p.chords[chordIndex];
-            const isActive = pageOffset + pos === this.activeIndex;
-            return html`
-              <div
-                class="chord-block"
-                style="background:${c.color};${this.dragStyleFor(pos, 'mobile')}"
-                @pointerdown=${(e: PointerEvent) => this.pressStart('mobile', pos, () => this.emit('chord-tap', chordIndex), e, pageOffset, pageOrder.length)}
-              >
-                <div class="chord-grain" style="opacity:${c.grain}"></div>
-                ${isActive ? html`
-                  <div class="now-marker">
-                    <div class="now-dot"></div>
-                    <div class="now-text">now</div>
-                  </div>
-                ` : ''}
-                ${this.showTheory ? this.renderChordStaff(c, isActive) : ''}
-                <div class="chord-name" style="--amp:${c.tension};${isActive ? `animation: cv-breathe ${2.6 - c.tension * 1.1}s ease-in-out infinite;` : ''}">${c.name}</div>
-                <div class="chord-meta">
-                  <div class="chord-tag">${c.tag}</div>
-                  ${this.showTheory ? html`<div class="chord-roman">${c.roman}</div>` : ''}
-                </div>
-              </div>
-            `;
-          })}
-        </div>
-
-        ${showPaging ? html`
-          <div class="page-dots">
-            ${Array.from({ length: pageCount }, (_, i) => html`
-              <div class="page-dot ${i === page ? 'selected' : ''}" @click=${() => { this.page = i; }}></div>
-            `)}
-          </div>
-        ` : ''}
-
-        ${this.showTheory ? html`
-          <div class="theory-panel">
-            <div class="theory-row">
-              <div class="theory-function">${active.functionLabel}</div>
-              <div class="theory-notes">${active.notes.join(' · ')}</div>
-              <div class="theory-scale">${active.scaleLabel}</div>
+          <div class="transport">
+            <button class="play-btn" style="background:${moodColor}" @click=${() => this.emit('toggle-play')}>
+              ${this.playing
+                ? html`<svg width="16" height="16" viewBox="0 0 20 20"><rect width="20" height="20" rx="3" fill="#2E271F" /></svg>`
+                : html`<svg width="20" height="22" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z" /></svg>`}
+            </button>
+            <div class="progress-track">
+              <div class="progress-fill" style="width:${progressPct}%;background:${moodColor}"></div>
             </div>
-            <div class="theory-desc">${active.desc}</div>
+            <div class="dice-btn ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
           </div>
-        ` : ''}
-
-        <div class="transport">
-          <button class="play-btn" @click=${() => this.emit('toggle-play')}>
-            ${this.playing ? html`<div class="play-square"></div>` : html`<div class="play-triangle"></div>`}
-          </button>
-          <div class="transport-label">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
-          <div class="dice-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
+          <div class="transport-meta">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
         </div>
 
         ${this.sheetMounted && this.swapChord ? html`
@@ -1177,135 +804,13 @@ export class LoopScreen extends LitElement {
             .chord=${this.swapChord}
             .alternatives=${this.alternatives}
             .showTheory=${this.showTheory}
+            .moodColor=${moodColor}
+            .position=${(this.swapIndex ?? 0) + 1}
+            .total=${this.order.length}
             .visible=${this.sheetVisible}
             .resetKey=${this.swapIndex}
           ></swap-sheet>
         ` : ''}
-        </div>
-
-        <div class="desktop-view">
-          <div class="desktop-sidebar">
-            <div class="desktop-wordmark">
-              <div class="dot" style="background:${getMoodColor(p.mood)}"></div>
-              <div class="wordmark-text">Chroma Chords</div>
-            </div>
-
-            <div class="desktop-section-label first">Genre</div>
-            <div class="menu-chips">
-              ${MENU_GENRES.map(g => html`
-                <div class="menu-chip visible ${g === p.genre ? 'selected' : ''}" @click=${() => this.emit('set-genre', g)}>${g}</div>
-              `)}
-            </div>
-
-            <div class="desktop-section-label">Mood</div>
-            <div class="menu-chips">
-              ${MENU_MOODS.map(m => html`
-                <div class="menu-chip visible ${m === p.mood ? 'selected' : ''}" @click=${() => this.emit('set-mood', m)}>${m}</div>
-              `)}
-            </div>
-
-            <div class="desktop-section-label">Key &amp; scale</div>
-            <div class="menu-chips">
-              ${MENU_KEYS.map(k => html`
-                <div class="menu-chip visible ${k === p.key ? 'selected' : ''}" @click=${() => this.emit('set-key', k)}>${k}</div>
-              `)}
-            </div>
-            <div class="menu-chips">
-              ${MENU_SCALES.map(s => html`
-                <div class="menu-chip visible ${s.value === p.scaleType ? 'selected' : ''}" @click=${() => this.emit('set-scale', s.value)}>${s.label}</div>
-              `)}
-            </div>
-
-            <div class="desktop-section-label">Length</div>
-            ${this.renderLengthControl()}
-
-            <div class="theory-toggle" style="justify-content:flex-start;margin-top:30px;">
-              <div class="theory-inner" @click=${() => this.emit('theory-toggle')}>
-                <div class="theory-dot" style="background:${this.showTheory ? 'var(--cv-accent)' : 'var(--cv-ink-20)'}"></div>
-                <div class="theory-text" style="color:${this.showTheory ? 'rgba(32,26,19,0.65)' : 'rgba(32,26,19,0.32)'}">show music theory</div>
-              </div>
-            </div>
-
-            <div class="menu-share-row" style="margin-top:24px;">
-              <div class="menu-nav-row" @click=${() => this.emit('view-song')}>
-                <div class="menu-share-label">View song</div>
-                <div class="menu-share-arrow">↗</div>
-              </div>
-            </div>
-            <div class="menu-share-row" style="border-top:none;padding-top:0;margin-top:12px;" @click=${() => this.openShare()}>
-              <div class="menu-share-label">Share progression</div>
-              <div class="menu-share-arrow">↗</div>
-            </div>
-          </div>
-
-          <div class="desktop-main">
-            <div class="desktop-top">
-              <div class="top-label">${p.genre} · ${p.mood}</div>
-              <div class="transport-label">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
-            </div>
-
-            <div class="desktop-chord-grid" style="grid-template-rows:repeat(${Math.ceil(this.order.length / 2)},1fr);max-height:${Math.min(640, Math.ceil(this.order.length / 2) * 170)}px">
-              ${this.order.map((chordIndex, pos) => {
-                const c = p.chords[chordIndex];
-                const isActive = pos === this.activeIndex;
-                return html`
-                  <div
-                    class="chord-block"
-                    style="background:${c.color};${this.dragStyleFor(pos, 'desktop')}"
-                    @pointerdown=${(e: PointerEvent) => this.pressStart('desktop', pos, () => this.emit('chord-tap', chordIndex), e)}
-                  >
-                    <div class="chord-grain" style="opacity:${c.grain}"></div>
-                    ${isActive ? html`
-                      <div class="now-marker">
-                        <div class="now-dot"></div>
-                        <div class="now-text">now</div>
-                      </div>
-                    ` : ''}
-                    ${this.showTheory ? this.renderChordStaff(c, isActive) : ''}
-                    <div class="chord-name" style="--amp:${c.tension};${isActive ? `animation: cv-breathe ${2.6 - c.tension * 1.1}s ease-in-out infinite;` : ''}">${c.name}</div>
-                    <div class="chord-meta">
-                      <div class="chord-tag">${c.tag}</div>
-                      ${this.showTheory ? html`<div class="chord-roman">${c.roman}</div>` : ''}
-                    </div>
-                  </div>
-                `;
-              })}
-            </div>
-
-            <div class="transport">
-              <button class="play-btn" @click=${() => this.emit('toggle-play')}>
-                ${this.playing ? html`<div class="play-square"></div>` : html`<div class="play-triangle"></div>`}
-              </button>
-              <div class="desktop-transport-hint">Click a chord to explore a swap, on the right.</div>
-              <div class="dice-icon ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>⚄</div>
-            </div>
-
-            <div class="desktop-footer">
-              <a class="desktop-footer-link" href="https://github.com/warmsynths/chroma-chords" target="_blank" rel="noopener">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-                GitHub
-              </a>
-              <span class="desktop-footer-divider">·</span>
-              <span>Made with ❤️ by warmsynths</span>
-              <span class="desktop-footer-divider">·</span>
-              <a class="desktop-footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
-            </div>
-          </div>
-
-          <div class="desktop-swap-panel">
-            ${this.sheetOpen && this.swapChord ? html`
-              <swap-sheet
-                variant="panel"
-                .chord=${this.swapChord}
-                .alternatives=${this.alternatives}
-                .showTheory=${this.showTheory}
-                .resetKey=${this.swapIndex}
-              ></swap-sheet>
-            ` : html`
-              <div class="desktop-swap-empty">Click a chord to hear it differently.</div>
-            `}
-          </div>
-        </div>
 
         ${this.shareMounted ? html`
           <share-modal

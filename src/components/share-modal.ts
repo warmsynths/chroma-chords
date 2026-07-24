@@ -281,16 +281,17 @@ export class ShareModal extends LitElement {
   static styles = css`
     :host {
       display: block;
+      font-family: var(--cv-font);
     }
     .backdrop {
       position: fixed;
       inset: -2px;
       z-index: 58;
-      background: rgba(32, 26, 19, 0);
-      transition: background .26s ease, backdrop-filter .26s ease;
+      background: rgba(46, 39, 31, 0);
+      transition: background 0.26s ease, backdrop-filter 0.26s ease;
     }
     .backdrop.visible {
-      background: rgba(32, 26, 19, 0.55);
+      background: rgba(46, 39, 31, 0.5);
       backdrop-filter: blur(2px);
       -webkit-backdrop-filter: blur(2px);
     }
@@ -298,17 +299,18 @@ export class ShareModal extends LitElement {
       position: absolute;
       left: 20px;
       right: 20px;
+      max-width: 560px;
+      margin: 0 auto;
       top: 50%;
-      background: var(--cv-paper);
-      border-radius: 14px;
-      border: 1px solid var(--cv-ink-16);
-      box-shadow: 4px 4px 0 rgba(32, 26, 19, 0.15), 0 30px 60px -20px rgba(32, 26, 19, 0.45);
+      background: var(--cv-cream);
+      border-radius: 24px;
+      box-shadow: 0 30px 60px -20px rgba(46, 39, 31, 0.4);
       z-index: 59;
-      padding: 22px;
+      padding: 26px;
       box-sizing: border-box;
       opacity: 0;
       transform: translateY(calc(-50% + 14px)) scale(0.92);
-      transition: opacity .26s cubic-bezier(.16,1,.3,1), transform .3s cubic-bezier(.16,1,.3,1);
+      transition: opacity 0.26s cubic-bezier(.16,1,.3,1), transform 0.3s cubic-bezier(.16,1,.3,1);
     }
     .modal.visible {
       opacity: 1;
@@ -320,53 +322,55 @@ export class ShareModal extends LitElement {
       justify-content: space-between;
     }
     .title {
-      font-family: var(--cv-font-serif);
-      font-style: italic;
-      font-weight: 700;
       font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
       color: var(--cv-ink);
     }
     .desc {
-      font-family: var(--cv-font-body);
       font-size: 12.5px;
-      color: var(--cv-ink-45);
+      color: var(--cv-ink-muted);
       margin-top: 6px;
       line-height: 1.5;
-      max-width: 230px;
+      max-width: 260px;
     }
     .close-btn {
-      font-size: 19px;
-      color: var(--cv-ink-40);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--cv-surface);
+      font-size: 16px;
+      color: var(--cv-ink);
       cursor: pointer;
       flex-shrink: 0;
       margin-left: 10px;
-      background: transparent;
       border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .dest-row {
       display: flex;
-      gap: 10px;
-      margin-top: 18px;
+      gap: 12px;
+      margin-top: 20px;
     }
     .dest-card {
       flex: 1;
-      background: var(--cv-paper-deep);
-      border: 1px solid var(--cv-ink-14);
-      border-radius: 12px;
-      padding: 12px 10px 14px;
+      background: var(--cv-surface);
+      border-radius: 18px;
+      padding: 14px 10px 16px;
       box-sizing: border-box;
       cursor: pointer;
-      box-shadow: 3px 3px 0 rgba(32, 26, 19, 0.1);
       display: flex;
       flex-direction: column;
       align-items: center;
       text-align: center;
       opacity: 0;
       transform: translateY(8px);
-      transition: transform .18s ease, box-shadow .18s ease, opacity .3s ease, transform .3s ease;
+      transition: transform 0.18s ease, opacity 0.3s ease;
     }
     .dest-card:nth-child(2) {
-      transition-delay: .06s;
+      transition-delay: 0.06s;
     }
     .dest-card.visible {
       opacity: 1;
@@ -374,20 +378,17 @@ export class ShareModal extends LitElement {
     }
     .dest-card:hover {
       transform: translateY(-3px);
-      box-shadow: 5px 5px 0 rgba(32, 26, 19, 0.16);
     }
     .dest-name {
-      font-family: var(--cv-font-grotesk);
-      font-size: 11.5px;
+      font-size: 12px;
       letter-spacing: 0.4px;
       font-weight: 700;
       color: var(--cv-ink);
       margin-top: 8px;
     }
     .dest-desc {
-      font-family: var(--cv-font-body);
       font-size: 11px;
-      color: var(--cv-ink-45);
+      color: var(--cv-ink-muted);
       margin-top: 3px;
       line-height: 1.4;
     }
