@@ -673,6 +673,7 @@
           <button class="close-btn" @click=${this.close}>×</button>
         </div>
 
+        <div class="sheet-body">
         ${this.mode==="swap"?B`
           <div class="theory-toggle-row" @click=${this.toggleTheory}>
             <div class="theory-track ${this.showTheory?"on":""}"><div class="theory-knob ${this.showTheory?"on":""}"></div></div>
@@ -746,6 +747,7 @@
             `:""}
           </div>
         `:""}
+        </div>
       </div>
     `}};we.styles=_s`
     :host {
@@ -780,6 +782,12 @@
       box-shadow: 0 -20px 50px -20px rgba(46, 39, 31, 0.3);
       transform: translateY(100%);
       transition: transform 0.32s cubic-bezier(.32,.72,0,1);
+    }
+    .sheet-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .sheet.visible {
       transform: translateY(0);

@@ -100,6 +100,12 @@ export class SwapSheet extends LitElement {
       transform: translateY(100%);
       transition: transform 0.32s cubic-bezier(.32,.72,0,1);
     }
+    .sheet-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
     .sheet.visible {
       transform: translateY(0);
     }
@@ -495,6 +501,7 @@ export class SwapSheet extends LitElement {
           <button class="close-btn" @click=${this.close}>×</button>
         </div>
 
+        <div class="sheet-body">
         ${this.mode === 'swap' ? html`
           <div class="theory-toggle-row" @click=${this.toggleTheory}>
             <div class="theory-track ${this.showTheory ? 'on' : ''}"><div class="theory-knob ${this.showTheory ? 'on' : ''}"></div></div>
@@ -572,6 +579,7 @@ export class SwapSheet extends LitElement {
             ` : ''}
           </div>
         ` : ''}
+        </div>
       </div>
     `;
   }
