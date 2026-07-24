@@ -4,6 +4,7 @@ import { Progression, getMoodColor, roleForTension } from '../services/chord-eng
 
 export interface SongSection {
   name: string;
+  desc: string;
   progression: Progression;
   order: number[];
 }
@@ -183,13 +184,12 @@ export class SongScreen extends LitElement {
           <div class="section-list">
             ${this.sections.map((sec, i) => {
               const active = i === this.activeSectionIdx;
-              const chordNames = sec.order.map(idx => sec.progression.chords[idx].name).join(' · ');
               const ringColor = getMoodColor(sec.progression.mood);
               return html`
                 <div class="section-row ${active ? 'active' : ''}" style=${active ? `--ring-color:${ringColor}` : ''} @click=${() => this.selectSection(i)}>
                   <div>
                     <div class="section-name">${sec.name.toUpperCase()}</div>
-                    <div class="section-chords">${chordNames}</div>
+                    <div class="section-chords">${sec.desc}</div>
                   </div>
                   <div class="section-chips">
                     ${sec.order.map(idx => {

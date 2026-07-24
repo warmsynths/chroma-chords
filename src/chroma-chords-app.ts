@@ -15,7 +15,23 @@ import { SongSection } from './components/song-screen';
 
 type Screen = 'seed' | 'loop' | 'song';
 
-const SECTION_NAMES = ['Verse', 'Chorus', 'Bridge', 'Pre-chorus', 'Outro'];
+// Each song section reuses the exact same progression (same chords, key, scale) as the one
+// generated on the seed screen — only the order they play in changes, via a reorder pattern
+// that works for any progression length. "Related but never identical," not a fresh random
+// re-roll per section.
+interface SectionTemplate {
+  name: string;
+  desc: string;
+  reorder: (n: number) => number[];
+}
+
+const SECTION_TEMPLATES: SectionTemplate[] = [
+  { name: 'Verse', desc: 'Settled, familiar.', reorder: n => Array.from({ length: n }, (_, i) => i) },
+  { name: 'Chorus', desc: 'Brighter, opens the key up.', reorder: n => Array.from({ length: n }, (_, i) => (i + Math.ceil(n / 2)) % n) },
+  { name: 'Pre-chorus', desc: 'Leans in, sets up the turn.', reorder: n => Array.from({ length: n }, (_, i) => (i + 1) % n) },
+  { name: 'Bridge', desc: 'Detours, borrows a shadow chord.', reorder: n => Array.from({ length: n }, (_, i) => n - 1 - i) },
+  { name: 'Outro', desc: 'Settles back down.', reorder: n => Array.from({ length: n }, (_, i) => (i - 1 + n) % n) },
+];
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
@@ -144,7 +160,7 @@ export class ChromaChordsApp extends LitElement {
     this.progressStep = 0;
     this.playing = false;
     this.screen = 'loop';
-    this.sections = [{ name: SECTION_NAMES[0], progression, order: this.order.slice() }];
+    this.sections = [{ name: SECTION_TEMPLATES[0].name, desc: SECTION_TEMPLATES[0].desc, progression, order: this.order.slice() }];
     this.activeSectionIdx = 0;
     this.pendingChordSuggestion = null;
     this.saveProject();
@@ -333,14 +349,10 @@ export class ChromaChordsApp extends LitElement {
   }
 
   private onAddSection() {
-    if (!this.progression || this.sections.length >= SECTION_NAMES.length) return;
-    const progression = generateProgression(this.chordData, this.genre, this.mood, {
-      key: this.progression.key,
-      scaleType: this.progression.scaleType,
-      length: this.length,
-    });
-    const order = Array.from({ length: this.length }, (_, i) => i);
-    const section: SongSection = { name: SECTION_NAMES[this.sections.length], progression, order };
+    if (!this.progression || this.sections.length >= SECTION_TEMPLATES.length) return;
+    const template = SECTION_TEMPLATES[this.sections.length];
+    const order = template.reorder(this.progression.chords.length);
+    const section: SongSection = { name: template.name, desc: template.desc, progression: this.progression, order };
     this.sections = [...this.sections, section];
     this.activeSectionIdx = this.sections.length - 1;
   }
@@ -477,7 +489,7 @@ export class ChromaChordsApp extends LitElement {
         <song-screen
           .sections=${this.sections}
           .activeSectionIdx=${this.activeSectionIdx}
-          .canAddSection=${this.sections.length < SECTION_NAMES.length}
+          .canAddSection=${this.sections.length < SECTION_TEMPLATES.length}
           @select-section=${this.onSelectSection}
           @add-section=${this.onAddSection}
         ></song-screen>
