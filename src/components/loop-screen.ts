@@ -3,13 +3,12 @@ import { customElement, property, state } from 'lit/decorators.js';
 import {
   Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl,
   MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension, MOODS,
-  AUTOPLAY_INTERVAL_MS, displayKeyName,
+  AUTOPLAY_INTERVAL_MS, displayKeyName, ROOT_KEYS,
 } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
 
 const MENU_GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
-const MENU_KEYS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const MENU_SCALES: { label: string; value: string }[] = [
   { label: 'Major', value: 'MAJOR' },
   { label: 'Minor', value: 'NATURAL_MINOR' },
@@ -755,8 +754,8 @@ export class LoopScreen extends LitElement {
           <div class="menu ${this.menuVisible ? 'visible' : ''}">
             <div class="menu-label">Key &amp; scale</div>
             <div class="menu-chips">
-              ${MENU_KEYS.map(k => html`
-                <div class="menu-chip ${k === p.key ? 'selected' : ''}" style=${k === p.key ? `background:${moodColor}` : ''} @click=${() => this.emit('set-key', k)}>${k}</div>
+              ${ROOT_KEYS.map(k => html`
+                <div class="menu-chip ${k === p.key ? 'selected' : ''}" style=${k === p.key ? `background:${moodColor}` : ''} @click=${() => this.emit('set-key', k)}>${displayKeyName(k, p.scaleType)}</div>
               `)}
             </div>
             <div class="menu-chips">
