@@ -2,6 +2,11 @@ import { GENRES, MOODS } from './chord-engine';
 import { normalize, NormalizedPrompt } from './freetext-schema';
 import { getPreferredModel } from './model-picker';
 
+// Last-resort filler for normalize()'s per-field substitution — only used when the LLM's
+// response has a single malformed field (e.g. a garbled mood) and the keyword heuristic also
+// had no signal to substitute instead. Never used to represent "the" answer on its own.
+const NEUTRAL_FALLBACK = { genre: GENRES[0], mood: MOODS[0].name };
+
 // Deployed Worker URL (see worker/README.md) — override in dev via VITE_CLASSIFIER_ENDPOINT
 // without needing to edit source.
 const CLASSIFIER_ENDPOINT =
@@ -33,7 +38,11 @@ const GENRE_KEYWORDS: Record<string, string[]> = {
   'House/Dance': ['house', 'edm', 'club', 'rave', 'four on the floor', 'dance floor'],
 };
 
-function matchFromText(text: string, map: Record<string, string[]>, fallbackList: string[]): string {
+// Returns null on zero keyword hits rather than guessing — a hash-of-the-string pick used to
+// fill this gap, which reads as a confident answer while actually being arbitrary (e.g. "Metallica"
+// hits no keyword and would land on a random genre like Synthwave). No signal should mean no
+// suggestion, not a fabricated one.
+function matchFromText(text: string, map: Record<string, string[]>): string | null {
   const lower = text.toLowerCase();
   let best: string | null = null;
   let bestScore = 0;
@@ -41,15 +50,15 @@ function matchFromText(text: string, map: Record<string, string[]>, fallbackList
     const score = map[key].reduce((s, k) => s + (lower.includes(k) ? 1 : 0), 0);
     if (score > bestScore) { bestScore = score; best = key; }
   });
-  if (best) return best;
-  let h = 0;
-  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) >>> 0;
-  return fallbackList[h % fallbackList.length];
+  return best;
 }
 
-export function heuristicClassify(text: string): NormalizedPrompt {
-  const genre = matchFromText(text, GENRE_KEYWORDS, GENRES);
-  const mood = matchFromText(text, MOOD_KEYWORDS, MOODS.map(m => m.name));
+// Null means "no real signal" — both genre and mood need an actual keyword hit, otherwise the
+// caller should show no suggestion rather than a half-guessed one.
+export function heuristicClassify(text: string): NormalizedPrompt | null {
+  const genre = matchFromText(text, GENRE_KEYWORDS);
+  const mood = matchFromText(text, MOOD_KEYWORDS);
+  if (!genre || !mood) return null;
   return { genre, mood };
 }
 
@@ -80,11 +89,16 @@ async function llmClassify(text: string, model: string | undefined): Promise<unk
 // Worker proxy, so the OpenRouter key never reaches the client), and falls back to the local
 // keyword heuristic on any network failure, timeout, or invalid response. The LLM's raw
 // response is always re-validated/fuzzy-matched against the controlled vocabulary before use.
-export async function classifyFreeText(text: string, model: string | undefined = getPreferredModel()): Promise<NormalizedPrompt> {
+//
+// Returns null when there's genuinely no confident answer (LLM failed and the keyword
+// heuristic had no real signal either) — callers should treat that as "show no suggestion,"
+// never substitute a guess of their own, since an unrelated guess reads as flatly wrong to
+// anyone who typed something specific (an artist name, a song title) it didn't recognize.
+export async function classifyFreeText(text: string, model: string | undefined = getPreferredModel()): Promise<NormalizedPrompt | null> {
   const fallback = heuristicClassify(text);
   try {
     const raw = await llmClassify(text, model);
-    return normalize(raw, fallback);
+    return normalize(raw, fallback ?? NEUTRAL_FALLBACK);
   } catch (e) {
     console.warn('LLM classification failed, falling back to keyword heuristic:', e);
     return fallback;

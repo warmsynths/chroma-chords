@@ -20,9 +20,12 @@ export class SeedScreen extends LitElement {
 
   @state() private freeText = '';
   @state() private placeholderIdx = 0;
-  // Upgraded suggestion from the LLM classifier, once it resolves for the current text.
-  // The instant keyword heuristic (see render()) covers the gap while this is in flight.
+  // Upgraded suggestion from the LLM classifier, once it resolves for the current text — null
+  // can mean either "hasn't resolved yet" or "resolved, and there's genuinely no confident
+  // answer," which llmResolved disambiguates. Falling back to the instant keyword heuristic in
+  // the latter case would show a wrong guess as if it were real signal.
   @state() private llmSuggestion: NormalizedPrompt | null = null;
+  @state() private llmResolved = false;
 
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -397,6 +400,7 @@ export class SeedScreen extends LitElement {
   private onFreeTextChange(e: Event) {
     this.freeText = (e.target as HTMLInputElement).value;
     this.llmSuggestion = null;
+    this.llmResolved = false;
     this.scheduleClassify();
   }
 
@@ -410,6 +414,7 @@ export class SeedScreen extends LitElement {
       const result = await classifyFreeText(text);
       if (token !== this.classifyToken) return; // text changed while the call was in flight
       this.llmSuggestion = result;
+      this.llmResolved = true;
     }, CLASSIFY_DEBOUNCE_MS);
   }
 
@@ -424,8 +429,10 @@ export class SeedScreen extends LitElement {
     const freeTextTrimmed = this.freeText.trim();
     let suggestion: (NormalizedPrompt & { color: string }) | null = null;
     if (freeTextTrimmed.length > 2) {
-      const best = this.llmSuggestion ?? heuristicClassify(freeTextTrimmed);
-      suggestion = { ...best, color: getMoodColor(best.mood) };
+      // Once the LLM call has resolved, trust its answer even if that answer is "no idea"
+      // (null) — only fall back to the instant heuristic guess while still waiting on it.
+      const best = this.llmResolved ? this.llmSuggestion : heuristicClassify(freeTextTrimmed);
+      if (best) suggestion = { ...best, color: getMoodColor(best.mood) };
     }
 
     return html`
