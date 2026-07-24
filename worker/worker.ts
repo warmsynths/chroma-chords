@@ -70,6 +70,18 @@ function supportsJsonMode(m: OpenRouterModel): boolean {
     && (m.supported_parameters.includes('response_format') || m.supported_parameters.includes('structured_outputs'));
 }
 
+// Chain-of-thought "reasoning" models (DeepSeek R1 distills, QwQ, etc.) tend to spend the whole
+// completion budget thinking out loud before ever reaching an answer, or ignore the
+// reasoning:exclude request param entirely — a poor fit for a task that's just "pick 2-3 tags
+// from a short list." Deprioritized for auto-selection (an explicit override still works),
+// matched on id/name since OpenRouter doesn't expose a clean "is reasoning model" flag.
+const REASONING_MODEL_HINTS = ['r1', 'reasoner', 'reasoning', 'thinking', 'cot', 'o1', 'o3', 'qwq'];
+
+function looksLikeReasoningModel(m: OpenRouterModel): boolean {
+  const haystack = `${m.id} ${m.name ?? ''}`.toLowerCase();
+  return REASONING_MODEL_HINTS.some(hint => haystack.includes(hint));
+}
+
 // OpenRouter's model listing is public and needs no API key — safe to call from here without
 // the secret, and safe to expose filtered results to the client via GET /models.
 async function fetchAllModels(): Promise<OpenRouterModel[]> {
@@ -105,8 +117,11 @@ async function resolveModel(requestedId: string | undefined): Promise<{ id: stri
   const freeText = all.filter(isFreeTextModel);
   if (!freeText.length) throw new Error('No free text-only models currently available on OpenRouter');
 
-  const jsonCapable = freeText.filter(supportsJsonMode);
-  const chosen = jsonCapable.length ? jsonCapable[0] : freeText[0];
+  const nonReasoning = freeText.filter(m => !looksLikeReasoningModel(m));
+  const pool = nonReasoning.length ? nonReasoning : freeText;
+
+  const jsonCapable = pool.filter(supportsJsonMode);
+  const chosen = jsonCapable.length ? jsonCapable[0] : pool[0];
   return { id: chosen.id, useJsonMode: supportsJsonMode(chosen) };
 }
 
