@@ -1,6 +1,9 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
-import { Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl, buildChordStaff } from '../services/chord-engine';
+import {
+  Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl, buildChordStaff,
+  MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor,
+} from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
 
@@ -63,6 +66,21 @@ export class LoopScreen extends LitElement {
   private pressStartY = 0;
   private itemHeight = 0;
   private cellSize = { w: 0, h: 0 };
+  private dragPageOffset = 0;
+  private dragPageLen = 0;
+  private prevOrderLength = this.order.length;
+  private lastPointerX = 0;
+  private lastPointerY = 0;
+
+  // Cross-page drag: hovering a dragged chord over a page tab for a beat switches the visible
+  // page and moves the chord there, so a stack that's paged (see below) can still be reordered
+  // across pages instead of only within the current one.
+  private pageHoverTimer: ReturnType<typeof setTimeout> | null = null;
+  private pageHoverIndex: number | null = null;
+
+  // Mobile paging: progressions longer than 4 chords page through 4 at a time (tabs above
+  // the stack, dots below) rather than cramming every block onto one screen.
+  @state() private page = 0;
 
   @query('.chord-stack') private stackEl?: HTMLElement;
   @query('.desktop-chord-grid') private gridEl?: HTMLElement;
@@ -81,6 +99,7 @@ export class LoopScreen extends LitElement {
     if (this.sheetCloseTimer) clearTimeout(this.sheetCloseTimer);
     if (this.toastTimer) clearTimeout(this.toastTimer);
     if (this.pressTimer) clearTimeout(this.pressTimer);
+    if (this.pageHoverTimer) clearTimeout(this.pageHoverTimer);
     window.removeEventListener('pointermove', this.onDragMove);
     window.removeEventListener('pointerup', this.onDragEnd);
     window.removeEventListener('pointercancel', this.onDragEnd);
@@ -105,7 +124,7 @@ export class LoopScreen extends LitElement {
     }
     .frame {
       position: relative;
-      max-width: 402px;
+      width: 100%;
       margin: 0 auto;
       min-height: 100dvh;
       display: flex;
@@ -163,6 +182,55 @@ export class LoopScreen extends LitElement {
       font-style: italic;
       font-size: 11.5px;
       transition: color .2s ease;
+    }
+    .page-tabs {
+      display: flex;
+      justify-content: center;
+      margin-top: 12px;
+      flex-shrink: 0;
+    }
+    .page-tab-wrap {
+      display: flex;
+      gap: 4px;
+      background: var(--cv-ink-04);
+      border-radius: 20px;
+      padding: 3px;
+    }
+    .page-tab {
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-family: var(--cv-font-grotesk);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s ease;
+      color: var(--cv-ink-45);
+    }
+    .page-tab.selected {
+      background: var(--cv-ink);
+      color: var(--cv-cream);
+    }
+    .page-tab.drag-target {
+      box-shadow: inset 0 0 0 2px var(--cv-accent);
+    }
+    .page-dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 10px;
+      flex-shrink: 0;
+    }
+    .page-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--cv-ink-20);
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+    .page-dot.selected {
+      width: 16px;
+      background: var(--cv-ink);
     }
     .chord-stack {
       display: flex;
@@ -269,17 +337,24 @@ export class LoopScreen extends LitElement {
     }
     .staff-ledger {
       position: absolute;
-      width: 16px;
+      width: 18px;
       height: 1px;
       background: rgba(241, 232, 217, 0.35);
     }
     .staff-note {
       position: absolute;
-      width: 11px;
-      height: 8px;
+      width: 12px;
+      height: 9px;
       border-radius: 50%;
       background: #F1E8D9;
       transform: rotate(-14deg);
+    }
+    .staff-accidental {
+      position: absolute;
+      font-size: 13px;
+      line-height: 1;
+      color: rgba(241, 232, 217, 0.65);
+      transform: translate(0, -50%);
     }
     .theory-panel {
       padding-top: 18px;
@@ -468,6 +543,65 @@ export class LoopScreen extends LitElement {
       font-size: 13px;
       color: var(--cv-ink-40);
     }
+    .menu-nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      color: inherit;
+    }
+    .length-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 10px;
+      background: var(--cv-ink);
+      padding: 12px 14px;
+      margin-top: 12px;
+    }
+    .length-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      background: rgba(241, 232, 217, 0.12);
+      color: var(--cv-cream);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .length-btn.disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .length-segments {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+    }
+    .length-segment {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(241, 232, 217, 0.18);
+      transition: background .25s ease;
+    }
+    .length-segment.filled {
+      background: var(--cv-cream);
+    }
+    .length-label-text {
+      font-family: var(--cv-font-grotesk);
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(241, 232, 217, 0.85);
+      white-space: nowrap;
+      min-width: 56px;
+      text-align: right;
+    }
     .toast {
       position: absolute;
       left: 50%;
@@ -553,15 +687,8 @@ export class LoopScreen extends LitElement {
         width: 8px;
         height: 8px;
         border-radius: 50%;
-        animation: cv-dot-cycle 12s ease-in-out infinite;
+        transition: background .6s cubic-bezier(0.23, 1, 0.32, 1);
         flex-shrink: 0;
-      }
-      @keyframes cv-dot-cycle {
-        0%, 20% { background: oklch(0.42 0.11 187); }
-        25%, 45% { background: oklch(0.40 0.13 154); }
-        50%, 70% { background: oklch(0.40 0.14 131); }
-        75%, 95% { background: oklch(0.38 0.16 88); }
-        100% { background: oklch(0.42 0.11 187); }
       }
       .desktop-wordmark .wordmark-text {
         font-family: var(--cv-font-grotesk);
@@ -600,12 +727,10 @@ export class LoopScreen extends LitElement {
       .desktop-chord-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        grid-template-rows: 1fr 1fr;
         gap: 0;
         flex: 1;
         margin-top: 24px;
         min-height: 0;
-        max-height: 420px;
         border-radius: 14px;
         overflow: hidden;
       }
@@ -642,6 +767,17 @@ export class LoopScreen extends LitElement {
   }
 
   updated(changed: Map<string, unknown>) {
+    if (changed.has('order') && this.order.length !== this.prevOrderLength) {
+      this.prevOrderLength = this.order.length;
+      this.page = 0;
+    }
+    // Autoplay following: as the active chord advances into a new page of 4, follow it there
+    // (and back to page 0 once the loop wraps around), so the visible page always shows
+    // what's currently playing.
+    if (changed.has('activeIndex') && !this.drag) {
+      const targetPage = Math.floor(this.activeIndex / 4);
+      if (targetPage !== this.page) this.page = targetPage;
+    }
     if (changed.has('sheetOpen')) {
       if (this.sheetOpen) {
         if (this.sheetCloseTimer) { clearTimeout(this.sheetCloseTimer); this.sheetCloseTimer = null; }
@@ -705,7 +841,7 @@ export class LoopScreen extends LitElement {
     return `transition-delay: ${idx * 0.025}s`;
   }
 
-  private pressStart(screen: 'mobile' | 'desktop', pos: number, tapFn: () => void, e: PointerEvent) {
+  private pressStart(screen: 'mobile' | 'desktop', pos: number, tapFn: () => void, e: PointerEvent, pageOffset = 0, pageLen = this.order.length) {
     e.preventDefault();
     this.pressTapFn = tapFn;
     this.pressStartX = e.clientX;
@@ -714,11 +850,15 @@ export class LoopScreen extends LitElement {
     this.pressTimer = setTimeout(() => {
       this.pressTimer = null;
       if (screen === 'mobile') {
-        this.itemHeight = this.stackEl ? this.stackEl.offsetHeight / this.order.length : 60;
+        this.dragPageOffset = pageOffset;
+        this.dragPageLen = pageLen;
+        this.itemHeight = this.stackEl ? this.stackEl.offsetHeight / pageLen : 60;
       } else {
+        const cols = 2;
+        const rows = Math.ceil(this.order.length / cols);
         this.cellSize = {
-          w: this.gridEl ? this.gridEl.offsetWidth / 2 : 100,
-          h: this.gridEl ? this.gridEl.offsetHeight / 2 : 100,
+          w: this.gridEl ? this.gridEl.offsetWidth / cols : 100,
+          h: this.gridEl ? this.gridEl.offsetHeight / rows : 100,
         };
       }
       this.drag = { screen, pos, offsetX: 0, offsetY: 0 };
@@ -726,6 +866,8 @@ export class LoopScreen extends LitElement {
   }
 
   private onDragMove = (e: PointerEvent) => {
+    this.lastPointerX = e.clientX;
+    this.lastPointerY = e.clientY;
     if (this.pressTimer && !this.drag) {
       if (Math.abs(e.clientY - this.pressStartY) > 8 || Math.abs(e.clientX - this.pressStartX) > 8) {
         clearTimeout(this.pressTimer);
@@ -735,10 +877,67 @@ export class LoopScreen extends LitElement {
     }
     if (!this.drag) return;
     this.drag = { ...this.drag, offsetX: e.clientX - this.pressStartX, offsetY: e.clientY - this.pressStartY };
+    if (this.drag.screen === 'mobile') this.checkPageHover(e.clientX, e.clientY);
   };
+
+  // While dragging a chord on the (paged) mobile stack, hovering it over a page tab for a
+  // beat switches to that page and moves the chord there, so a drag can cross pages instead
+  // of only reordering within the one currently on screen.
+  private checkPageHover(x: number, y: number) {
+    const tabs = this.renderRoot.querySelectorAll('.page-tab');
+    let hoverIdx: number | null = null;
+    tabs.forEach((el, i) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hoverIdx = i;
+    });
+    if (hoverIdx !== null && hoverIdx !== this.page) {
+      if (this.pageHoverIndex !== hoverIdx) {
+        this.pageHoverIndex = hoverIdx;
+        if (this.pageHoverTimer) clearTimeout(this.pageHoverTimer);
+        const target = hoverIdx;
+        this.pageHoverTimer = setTimeout(() => this.switchDragToPage(target), 450);
+      }
+    } else if (this.pageHoverIndex !== null) {
+      this.pageHoverIndex = null;
+      if (this.pageHoverTimer) { clearTimeout(this.pageHoverTimer); this.pageHoverTimer = null; }
+    }
+  }
+
+  private switchDragToPage(newPage: number) {
+    this.pageHoverTimer = null;
+    this.pageHoverIndex = null;
+    if (!this.drag || this.drag.screen !== 'mobile') return;
+    const fromPage = this.page;
+    if (newPage === fromPage) return;
+
+    const draggedAbsIndex = this.dragPageOffset + this.drag.pos;
+    const movedChordIndex = this.order[draggedAbsIndex];
+    if (movedChordIndex === undefined) return;
+
+    const newOrder = [...this.order];
+    newOrder.splice(draggedAbsIndex, 1);
+    const newOffset = newPage * 4;
+    const remainingInTargetPage = Math.min(4, newOrder.length - newOffset);
+    // Coming from a later page, the chord lands at the top of the target page (it was
+    // "pushed forward" into it); coming from an earlier page, it lands at the bottom.
+    const insertPos = newPage > fromPage ? newOffset : Math.min(newOrder.length, newOffset + remainingInTargetPage);
+    newOrder.splice(insertPos, 0, movedChordIndex);
+
+    this.page = newPage;
+    this.dragPageOffset = newOffset;
+    this.dragPageLen = Math.min(4, newOrder.length - newOffset);
+    this.itemHeight = this.stackEl ? this.stackEl.offsetHeight / this.dragPageLen : this.itemHeight;
+    this.pressStartX = this.lastPointerX;
+    this.pressStartY = this.lastPointerY;
+    this.drag = { screen: 'mobile', pos: insertPos - newOffset, offsetX: 0, offsetY: 0 };
+
+    this.emit('reorder', newOrder);
+  }
 
   private onDragEnd = () => {
     if (this.pressTimer) { clearTimeout(this.pressTimer); this.pressTimer = null; }
+    if (this.pageHoverTimer) { clearTimeout(this.pageHoverTimer); this.pageHoverTimer = null; }
+    this.pageHoverIndex = null;
     if (!this.drag) {
       if (this.pressTapFn) this.pressTapFn();
       this.pressTapFn = null;
@@ -748,30 +947,35 @@ export class LoopScreen extends LitElement {
     let targetPos = pos;
     if (screen === 'mobile') {
       const itemH = this.itemHeight || 1;
-      targetPos = Math.max(0, Math.min(this.order.length - 1, pos + Math.round(offsetY / itemH)));
+      const pageLen = this.dragPageLen || 1;
+      targetPos = Math.max(0, Math.min(pageLen - 1, pos + Math.round(offsetY / itemH)));
     } else {
+      const cols = 2;
+      const rows = Math.ceil(this.order.length / cols);
       const cellW = this.cellSize.w || 1, cellH = this.cellSize.h || 1;
-      const fromRow = Math.floor(pos / 2), fromCol = pos % 2;
-      const newRow = Math.max(0, Math.min(1, fromRow + Math.round(offsetY / cellH)));
-      const newCol = Math.max(0, Math.min(1, fromCol + Math.round(offsetX / cellW)));
-      targetPos = newRow * 2 + newCol;
+      const fromRow = Math.floor(pos / cols), fromCol = pos % cols;
+      const newRow = Math.max(0, Math.min(rows - 1, fromRow + Math.round(offsetY / cellH)));
+      const newCol = Math.max(0, Math.min(cols - 1, fromCol + Math.round(offsetX / cellW)));
+      targetPos = Math.min(this.order.length - 1, newRow * cols + newCol);
     }
     this.drag = null;
     this.pressTapFn = null;
     if (targetPos !== pos) {
       const newOrder = [...this.order];
-      const [moved] = newOrder.splice(pos, 1);
-      newOrder.splice(targetPos, 0, moved);
+      const offset = screen === 'mobile' ? this.dragPageOffset : 0;
+      const [moved] = newOrder.splice(offset + pos, 1);
+      newOrder.splice(offset + targetPos, 0, moved);
       this.emit('reorder', newOrder);
     }
   };
 
   private renderChordStaff(c: ChordBlock, isActive: boolean) {
-    const staff = buildChordStaff(c.notes);
+    const staff = buildChordStaff(c.notes, this.progression.key, this.progression.scaleType);
     return html`
       <div class="chord-staff" style="top:${isActive ? 40 : 16}px;width:${staff.width}px;height:${staff.height}px;">
         ${staff.lines.map(y => html`<div class="staff-line" style="top:${y}px;"></div>`)}
         ${staff.ledgers.map(l => html`<div class="staff-ledger" style="left:${l.x}px;top:${l.y}px;"></div>`)}
+        ${staff.keySignature.map(k => html`<div class="staff-accidental" style="left:${k.x}px;top:${k.y}px;">${k.sign === 'sharp' ? '♯' : '♭'}</div>`)}
         ${staff.notes.map(n => html`<div class="staff-note" style="left:${n.x}px;top:${n.y}px;"></div>`)}
       </div>
     `;
@@ -783,7 +987,8 @@ export class LoopScreen extends LitElement {
     if (d && d.screen === screen) {
       if (screen === 'mobile') {
         const itemH = this.itemHeight || 1;
-        const targetPos = Math.max(0, Math.min(this.order.length - 1, d.pos + Math.round(d.offsetY / itemH)));
+        const pageLen = this.dragPageLen || 1;
+        const targetPos = Math.max(0, Math.min(pageLen - 1, d.pos + Math.round(d.offsetY / itemH)));
         if (pos === d.pos) {
           ty = d.offsetY; transition = 'none'; scale = 1.035; rotate = -0.6; shadow = '0 16px 32px rgba(0,0,0,0.35)'; z = 20;
         } else {
@@ -793,20 +998,22 @@ export class LoopScreen extends LitElement {
           opacity = 0.86;
         }
       } else {
+        const cols = 2;
+        const rows = Math.ceil(this.order.length / cols);
         const cellW = this.cellSize.w || 1, cellH = this.cellSize.h || 1;
-        const fromRow = Math.floor(d.pos / 2), fromCol = d.pos % 2;
-        const newRow = Math.max(0, Math.min(1, fromRow + Math.round(d.offsetY / cellH)));
-        const newCol = Math.max(0, Math.min(1, fromCol + Math.round(d.offsetX / cellW)));
-        const targetPos = newRow * 2 + newCol;
+        const fromRow = Math.floor(d.pos / cols), fromCol = d.pos % cols;
+        const newRow = Math.max(0, Math.min(rows - 1, fromRow + Math.round(d.offsetY / cellH)));
+        const newCol = Math.max(0, Math.min(cols - 1, fromCol + Math.round(d.offsetX / cellW)));
+        const targetPos = Math.min(this.order.length - 1, newRow * cols + newCol);
         if (pos === d.pos) {
           tx = d.offsetX; ty = d.offsetY; transition = 'none'; scale = 1.045; rotate = -0.8; shadow = '0 20px 40px rgba(0,0,0,0.38)'; z = 20;
         } else {
-          const arr = [0, 1, 2, 3];
+          const arr = Array.from({ length: this.order.length }, (_, i) => i);
           const [moved] = arr.splice(d.pos, 1);
           arr.splice(targetPos, 0, moved);
           const newPos = arr.indexOf(pos);
           if (newPos !== pos) {
-            const oldRow = Math.floor(pos / 2), oldCol = pos % 2, nr = Math.floor(newPos / 2), nc = newPos % 2;
+            const oldRow = Math.floor(pos / cols), oldCol = pos % cols, nr = Math.floor(newPos / cols), nc = newPos % cols;
             tx = (nc - oldCol) * cellW;
             ty = (nr - oldRow) * cellH;
           }
@@ -818,10 +1025,29 @@ export class LoopScreen extends LitElement {
     return `transform:translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rotate}deg);transition:${transition};box-shadow:${shadow};z-index:${z};opacity:${opacity};touch-action:none;user-select:none;cursor:${cursor};`;
   }
 
+  private renderLengthControl() {
+    const len = this.progression.chords.length;
+    return html`
+      <div class="length-control">
+        <div class="length-btn ${len <= MIN_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => len > MIN_PROGRESSION_LENGTH && this.emit('set-length', len - 1)}>−</div>
+        <div class="length-segments">
+          ${Array.from({ length: MAX_PROGRESSION_LENGTH }, (_, i) => html`<div class="length-segment ${i < len ? 'filled' : ''}"></div>`)}
+        </div>
+        <div class="length-btn ${len >= MAX_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => len < MAX_PROGRESSION_LENGTH && this.emit('set-length', len + 1)}>+</div>
+        <div class="length-label-text">${len} ${len === 1 ? 'chord' : 'chords'}</div>
+      </div>
+    `;
+  }
+
   render() {
     const p = this.progression;
     const activeChordIndex = this.order[this.activeIndex] ?? 0;
     const active = p.chords[activeChordIndex];
+    const pageCount = Math.ceil(this.order.length / 4);
+    const showPaging = pageCount > 1;
+    const page = Math.min(this.page, pageCount - 1);
+    const pageOffset = page * 4;
+    const pageOrder = this.order.slice(pageOffset, pageOffset + 4);
     return html`
       <div class="frame">
         <div class="grain"></div>
@@ -858,6 +1084,14 @@ export class LoopScreen extends LitElement {
                 <div class="${this.chipClass(i + 23, m === p.mood)}" style=${this.chipStyle(i + 23)} @click=${() => this.emit('set-mood', m)}>${m}</div>
               `)}
             </div>
+            <div class="menu-label spaced">Length</div>
+            ${this.renderLengthControl()}
+            <div class="menu-share-row" style="border-top:none;padding-top:0;margin-top:14px;">
+              <div class="menu-nav-row" @click=${() => this.emit('view-song')}>
+                <div class="menu-share-label">View song</div>
+                <div class="menu-share-arrow">↗</div>
+              </div>
+            </div>
             <div class="menu-share-row" @click=${() => this.openShare()}>
               <div class="menu-share-label">Share progression</div>
               <div class="menu-share-arrow">↗</div>
@@ -872,15 +1106,26 @@ export class LoopScreen extends LitElement {
           </div>
         </div>
 
+        ${showPaging ? html`
+          <div class="page-tabs">
+            <div class="page-tab-wrap">
+              ${Array.from({ length: pageCount }, (_, i) => {
+                const start = i * 4 + 1, end = Math.min(this.order.length, i * 4 + 4);
+                return html`<div class="page-tab ${i === page ? 'selected' : ''} ${this.pageHoverIndex === i ? 'drag-target' : ''}" @click=${() => { this.page = i; }}>${start}–${end}</div>`;
+              })}
+            </div>
+          </div>
+        ` : ''}
+
         <div class="chord-stack">
-          ${this.order.map((chordIndex, pos) => {
+          ${pageOrder.map((chordIndex, pos) => {
             const c = p.chords[chordIndex];
-            const isActive = pos === this.activeIndex;
+            const isActive = pageOffset + pos === this.activeIndex;
             return html`
               <div
                 class="chord-block"
                 style="background:${c.color};${this.dragStyleFor(pos, 'mobile')}"
-                @pointerdown=${(e: PointerEvent) => this.pressStart('mobile', pos, () => this.emit('chord-tap', chordIndex), e)}
+                @pointerdown=${(e: PointerEvent) => this.pressStart('mobile', pos, () => this.emit('chord-tap', chordIndex), e, pageOffset, pageOrder.length)}
               >
                 <div class="chord-grain" style="opacity:${c.grain}"></div>
                 ${isActive ? html`
@@ -899,6 +1144,14 @@ export class LoopScreen extends LitElement {
             `;
           })}
         </div>
+
+        ${showPaging ? html`
+          <div class="page-dots">
+            ${Array.from({ length: pageCount }, (_, i) => html`
+              <div class="page-dot ${i === page ? 'selected' : ''}" @click=${() => { this.page = i; }}></div>
+            `)}
+          </div>
+        ` : ''}
 
         ${this.showTheory ? html`
           <div class="theory-panel">
@@ -933,7 +1186,7 @@ export class LoopScreen extends LitElement {
         <div class="desktop-view">
           <div class="desktop-sidebar">
             <div class="desktop-wordmark">
-              <div class="dot"></div>
+              <div class="dot" style="background:${getMoodColor(p.mood)}"></div>
               <div class="wordmark-text">Chroma Chords</div>
             </div>
 
@@ -963,6 +1216,9 @@ export class LoopScreen extends LitElement {
               `)}
             </div>
 
+            <div class="desktop-section-label">Length</div>
+            ${this.renderLengthControl()}
+
             <div class="theory-toggle" style="justify-content:flex-start;margin-top:30px;">
               <div class="theory-inner" @click=${() => this.emit('theory-toggle')}>
                 <div class="theory-dot" style="background:${this.showTheory ? 'var(--cv-accent)' : 'var(--cv-ink-20)'}"></div>
@@ -970,7 +1226,13 @@ export class LoopScreen extends LitElement {
               </div>
             </div>
 
-            <div class="menu-share-row" style="margin-top:24px;" @click=${() => this.openShare()}>
+            <div class="menu-share-row" style="margin-top:24px;">
+              <div class="menu-nav-row" @click=${() => this.emit('view-song')}>
+                <div class="menu-share-label">View song</div>
+                <div class="menu-share-arrow">↗</div>
+              </div>
+            </div>
+            <div class="menu-share-row" style="border-top:none;padding-top:0;margin-top:12px;" @click=${() => this.openShare()}>
               <div class="menu-share-label">Share progression</div>
               <div class="menu-share-arrow">↗</div>
             </div>
@@ -982,7 +1244,7 @@ export class LoopScreen extends LitElement {
               <div class="transport-label">${p.key.toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
             </div>
 
-            <div class="desktop-chord-grid">
+            <div class="desktop-chord-grid" style="grid-template-rows:repeat(${Math.ceil(this.order.length / 2)},1fr);max-height:${Math.min(640, Math.ceil(this.order.length / 2) * 170)}px">
               ${this.order.map((chordIndex, pos) => {
                 const c = p.chords[chordIndex];
                 const isActive = pos === this.activeIndex;

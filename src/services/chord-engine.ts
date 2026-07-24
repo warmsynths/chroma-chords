@@ -160,6 +160,50 @@ const MOOD_DEGREE_BIAS: Record<string, string[]> = {
   Nostalgic: ['SUBMEDIANT', 'MEDIANT', 'DOMINANT'],
 };
 
+export interface MoodDef {
+  name: string;
+  dot: string;
+  desc: string;
+  pathD: string;
+}
+
+// Shared mood data: dot/accent color (also used to tint the ink-blob background and wordmark),
+// a short caption, and an abstract line-art "doodle" path drawn on the desktop Seed screen.
+export const MOODS: MoodDef[] = [
+  {
+    name: 'Uplifting', dot: 'oklch(0.55 0.12 165)', desc: 'Bright, major, forward-moving',
+    pathD: 'M55 240 C35 215 34 185 55 165 C40 145 48 118 72 112 C64 92 82 70 104 76 C112 55 138 46 152 64 C168 48 192 56 190 78 C212 74 228 96 214 116 C232 124 234 150 214 160 C222 182 206 204 184 198 C182 218 158 228 144 210 C126 226 102 220 98 200 C76 206 58 194 58 172 C48 172 44 254 55 240',
+  },
+  {
+    name: 'Melancholy', dot: 'oklch(0.42 0.09 245)', desc: 'Minor-leaning, unresolved longing',
+    pathD: 'M40 76 C64 60 82 82 74 106 C68 126 88 140 104 128 C96 150 114 168 134 156 C128 178 148 194 166 180 C160 202 180 216 198 202 C196 220 214 232 230 220 C230 236 244 244 258 250',
+  },
+  {
+    name: 'Dreamy', dot: 'oklch(0.60 0.08 205)', desc: 'Suspended, floating, reverb-soaked',
+    pathD: 'M48 176 C36 148 60 128 84 138 C66 108 94 84 122 96 C126 66 164 60 172 88 C202 78 222 104 202 126 C226 138 220 168 194 168 C204 190 184 214 158 206 C158 226 128 232 116 210 C90 220 70 202 78 180 C58 192 42 196 48 176 C58 158 66 162 78 168',
+  },
+  {
+    name: 'Tense', dot: 'oklch(0.45 0.20 35)', desc: 'Chromatic pulls, unresolved tension',
+    pathD: 'M46 232 L88 176 L64 148 L112 122 L84 96 L136 78 L108 52 L166 42 L142 22 L200 26 L184 8 L226 34 L206 58 L238 84 L212 100 L228 128',
+  },
+  {
+    name: 'Warm', dot: 'oklch(0.55 0.15 55)', desc: 'Rich, consonant, close voicings',
+    pathD: 'M138 148 C168 150 190 130 182 104 C176 78 142 74 128 98 C116 118 132 138 154 134 C176 130 186 104 166 92 C148 82 122 94 116 118 C110 142 128 164 152 168 C132 178 112 170 106 150 C100 128 116 106 138 96 C160 86 186 92 198 112',
+  },
+  {
+    name: 'Nostalgic', dot: 'oklch(0.50 0.11 20)', desc: 'Bittersweet, borrowed chords',
+    pathD: 'M36 210 C60 192 78 216 104 200 C130 184 112 156 96 164 C82 170 86 186 100 184 C118 182 122 158 146 148 C170 138 194 150 202 174 C208 192 196 208 178 204 C186 224 168 238 148 228 C128 218 128 198 146 190',
+  },
+];
+
+export function getMoodColor(mood: string): string {
+  return (MOODS.find(m => m.name === mood) || MOODS[0]).dot;
+}
+
+export function getMoodPath(mood: string): string {
+  return (MOODS.find(m => m.name === mood) || MOODS[0]).pathD;
+}
+
 interface ProgressionTemplate {
   degrees: string[];
 }
@@ -230,7 +274,9 @@ function pickOne<T>(items: T[]): T | undefined {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-const PROGRESSION_LENGTH = 4;
+const DEFAULT_PROGRESSION_LENGTH = 4;
+export const MIN_PROGRESSION_LENGTH = 1;
+export const MAX_PROGRESSION_LENGTH = 8;
 
 const DEFAULT_MARKOV_TRANSITIONS: Record<string, Record<string, number>> = {
   TONIC: { SUBDOMINANT: 0.35, SUBMEDIANT: 0.25, SUPERTONIC: 0.15, DOMINANT: 0.15, MEDIANT: 0.05, SUBTONIC: 0.05 },
@@ -284,7 +330,8 @@ function walkMarkovGraph(
   degreeOrder: string[],
   bias: string[],
   genre: string,
-  mood: string
+  mood: string,
+  length: number = DEFAULT_PROGRESSION_LENGTH
 ): string[] {
   let firstDegree = 'TONIC';
   if ((scale.type.includes('MINOR') || scale.type === 'DORIAN') && (mood === 'Melancholy' || mood === 'Nostalgic') && Math.random() < 0.4) {
@@ -293,8 +340,8 @@ function walkMarkovGraph(
   const chosenDegrees: string[] = [firstDegree];
   let currentDegree = firstDegree;
 
-  for (let i = 1; i < PROGRESSION_LENGTH; i++) {
-    const isLast = i === PROGRESSION_LENGTH - 1;
+  for (let i = 1; i < length; i++) {
+    const isLast = i === length - 1;
 
     let candidates = degreeOrder.filter(d => scale.degrees[d]);
     if (!candidates.length) candidates = degreeOrder;
@@ -515,9 +562,11 @@ function prettifyChordName(symbol: string): string {
 export interface ProgressionOverrides {
   key?: string;
   scaleType?: string;
+  length?: number;
 }
 
 export function generateProgression(data: RawChordData, genre: string, mood: string, overrides?: ProgressionOverrides): Progression {
+  const length = Math.max(MIN_PROGRESSION_LENGTH, Math.min(MAX_PROGRESSION_LENGTH, overrides?.length ?? DEFAULT_PROGRESSION_LENGTH));
   const baseScaleType = GENRE_SCALE[genre] || 'MAJOR';
   const shift = MOOD_SHIFT[mood];
   const scaleType = overrides?.scaleType || (shift && (baseScaleType === 'MAJOR') ? shift : baseScaleType);
@@ -530,18 +579,20 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
     scaleKey = `${root}_${scaleType}`;
   }
   const scale = data.scales[scaleKey];
-  const preferFlat = FLAT_TONICS.has(root) || root.includes('b');
+  const preferFlat = preferFlatSpelling(root, scaleType);
 
   const degreeOrder = Object.keys(scale.degrees);
   const bias = MOOD_DEGREE_BIAS[mood] || [];
 
   const templates = PROGRESSION_TEMPLATES[scaleType] || [];
-  const validTemplates = templates.filter(t => t.degrees.every(d => degreeOrder.includes(d)));
+  const validTemplates = length === DEFAULT_PROGRESSION_LENGTH
+    ? templates.filter(t => t.degrees.every(d => degreeOrder.includes(d)))
+    : [];
 
   const useTemplate = validTemplates.length && Math.random() < 0.25;
   const chosenDegrees = useTemplate
     ? pickWeighted(validTemplates, t => degreeBiasWeight(t, bias)).degrees
-    : walkMarkovGraph(scale, scaleKey, degreeOrder, bias, genre, mood);
+    : walkMarkovGraph(scale, scaleKey, degreeOrder, bias, genre, mood, length);
 
   const chords = chosenDegrees.map(degree => buildChordBlock(scaleKey, degree, scale, preferFlat));
 
@@ -634,15 +685,64 @@ export interface ChordStaff {
   lines: number[];
   ledgers: { x: number; y: number }[];
   notes: { x: number; y: number }[];
+  keySignature: { x: number; y: number; sign: 'sharp' | 'flat' }[];
 }
 
 const LETTER_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-const STAFF_WIDTH = 96;
-const STAFF_LINE_GAP = 6;
+const STAFF_WIDTH = 116;
+const STAFF_LINE_GAP = 7.5;
 const BOTTOM_LINE_STEP = LETTER_ORDER.indexOf('E') + 4 * 7;
 const TOP_LINE_STEP = BOTTOM_LINE_STEP + 4 * 2;
 const STAFF_TOP_Y = 20;
 const STAFF_BOTTOM_Y = STAFF_TOP_Y + 4 * STAFF_LINE_GAP;
+
+// Standard treble-clef key signatures for the 12 major keys this app's roots can canonically
+// spell as (see ROOT_KEYS/CANONICAL_ROOT_BY_PC below) — sharps/flats always added in this order.
+const MAJOR_KEY_SIGNATURES: Record<string, string[]> = {
+  C: [],
+  G: ['F#'], D: ['F#', 'C#'], A: ['F#', 'C#', 'G#'], E: ['F#', 'C#', 'G#', 'D#'],
+  B: ['F#', 'C#', 'G#', 'D#', 'A#'], 'F#': ['F#', 'C#', 'G#', 'D#', 'A#', 'E#'],
+  F: ['Bb'], Bb: ['Bb', 'Eb'], Eb: ['Bb', 'Eb', 'Ab'], Ab: ['Bb', 'Eb', 'Ab', 'Db'], Db: ['Bb', 'Eb', 'Ab', 'Db', 'Gb'],
+};
+
+// Semitone offset of each mode's tonic within its parent major scale (e.g. Dorian is the major
+// scale's 2nd degree, a whole step up), used to find the parent major whose key signature this
+// mode is notated with. Harmonic minor is notated with natural minor's signature plus an
+// explicit accidental on the raised 7th wherever it occurs, not its own signature.
+const MODE_PARENT_OFFSET: Record<string, number> = {
+  MAJOR: 0, LYDIAN: 5, MIXOLYDIAN: 7, DORIAN: 2, NATURAL_MINOR: 9, HARMONIC_MINOR: 9,
+};
+
+const CANONICAL_ROOT_BY_PC: Record<number, string> = {};
+ROOT_KEYS.forEach(r => { CANONICAL_ROOT_BY_PC[PITCH_CLASS[r]] = r; });
+
+// The major key whose signature/spelling a given key+scaleType is notated with — e.g. C Dorian
+// is notated in Bb major's 2 flats, since C Dorian is the 2nd mode of Bb major and shares all of
+// its pitches. Used both to pick the key signature and to decide whether individual chord tones
+// should be spelled with sharps or flats (a mode's notes must use its parent's spelling, not
+// whatever the mode's own tonic letter would suggest — e.g. C Dorian's notes are Eb/Bb, not D#/A#).
+function parentMajorKeyFor(key: string, scaleType: string): string {
+  const offset = MODE_PARENT_OFFSET[scaleType] ?? 0;
+  const rootPc = PITCH_CLASS[key] ?? 0;
+  const parentPc = ((rootPc - offset) % 12 + 12) % 12;
+  return CANONICAL_ROOT_BY_PC[parentPc] ?? 'C';
+}
+
+export function getKeySignature(key: string, scaleType: string): string[] {
+  return MAJOR_KEY_SIGNATURES[parentMajorKeyFor(key, scaleType)] ?? [];
+}
+
+export function preferFlatSpelling(key: string, scaleType: string): boolean {
+  const parentName = parentMajorKeyFor(key, scaleType);
+  return FLAT_TONICS.has(parentName) || parentName.includes('b');
+}
+
+// Standard treble-clef vertical placement (in the same letter+octave "step" units as
+// diatonicSteps/stepToY) for each accidental that can appear in one of the signatures above.
+const KEY_SIG_STEP: Record<string, number> = {
+  'F#': 38, 'C#': 35, 'G#': 39, 'D#': 36, 'A#': 33, 'E#': 37, 'B#': 34,
+  'Bb': 34, 'Eb': 37, 'Ab': 33, 'Db': 36, 'Gb': 32, 'Cb': 35, 'Fb': 31,
+};
 
 function diatonicSteps(notes: string[]): number[] {
   let octave = 4;
@@ -659,20 +759,25 @@ function stepToY(step: number): number {
   return STAFF_BOTTOM_Y - (step - BOTTOM_LINE_STEP) * (STAFF_LINE_GAP / 2);
 }
 
-export function buildChordStaff(notes: string[]): ChordStaff {
+export function buildChordStaff(notes: string[], key: string, scaleType: string): ChordStaff {
   const steps = diatonicSteps(notes);
-  const margin = 8;
-  const noteWidth = 11;
+  const margin = 9;
+  const noteWidth = 12;
 
-  const rawMinY = Math.min(STAFF_TOP_Y, ...steps.map(stepToY));
-  const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...steps.map(stepToY));
+  const sigLetters = getKeySignature(key, scaleType);
+  const sigGlyphSpacing = 8;
+  const sigWidth = sigLetters.length ? sigLetters.length * sigGlyphSpacing + 5 : 0;
+  const sigSteps = sigLetters.map(l => KEY_SIG_STEP[l]);
+
+  const rawMinY = Math.min(STAFF_TOP_Y, ...steps.map(stepToY), ...sigSteps.map(stepToY));
+  const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...steps.map(stepToY), ...sigSteps.map(stepToY));
   const offsetY = margin - rawMinY;
   const height = rawMaxY - rawMinY + noteWidth + margin;
 
   const lines = [0, 1, 2, 3, 4].map(i => STAFF_TOP_Y + i * STAFF_LINE_GAP + offsetY);
 
-  const usable = STAFF_WIDTH - margin * 2 - noteWidth;
-  const noteX = (i: number) => margin + (steps.length > 1 ? (i * usable) / (steps.length - 1) : usable / 2);
+  const usable = STAFF_WIDTH - margin * 2 - noteWidth - sigWidth;
+  const noteX = (i: number) => margin + sigWidth + (steps.length > 1 ? (i * usable) / (steps.length - 1) : usable / 2);
 
   const noteDots = steps.map((step, i) => ({ x: noteX(i), y: stepToY(step) + offsetY - noteWidth / 2 }));
 
@@ -684,7 +789,13 @@ export function buildChordStaff(notes: string[]): ChordStaff {
     }
   });
 
-  return { width: STAFF_WIDTH, height, lines, ledgers, notes: noteDots };
+  const keySignature = sigLetters.map((l, i) => ({
+    x: margin + i * sigGlyphSpacing,
+    y: stepToY(KEY_SIG_STEP[l]) + offsetY,
+    sign: (l.includes('#') ? 'sharp' : 'flat') as 'sharp' | 'flat',
+  }));
+
+  return { width: STAFF_WIDTH, height, lines, ledgers, notes: noteDots, keySignature };
 }
 
 export function applyVoicingToChord(chord: ChordBlock, quality: string, extension: string): ChordBlock {
@@ -701,7 +812,7 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
   const chord = progression.chords[chordIndex];
   const scale = data.scales[chord.scaleKey];
   const degreeOrder = Object.keys(scale.degrees);
-  const preferFlat = FLAT_TONICS.has(progression.key) || progression.key.includes('b');
+  const preferFlat = preferFlatSpelling(progression.key, progression.scaleType);
   const results: Alternative[] = [];
 
   const prevIndex = (chordIndex - 1 + progression.chords.length) % progression.chords.length;
@@ -710,11 +821,12 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
   const parallelType = progression.scaleType.includes('MINOR') ? 'MAJOR' : 'NATURAL_MINOR';
   const parallelKey = `${progression.key}_${parallelType}`;
   const parallelScale = data.scales[parallelKey];
+  const preferFlatParallel = preferFlatSpelling(progression.key, parallelType);
   const borrowCandidates = parallelType === 'NATURAL_MINOR' ? ['SUBMEDIANT', 'MEDIANT', 'SUBDOMINANT'] : ['SUBDOMINANT', 'SUBMEDIANT'];
   if (parallelScale) {
     const borrowedDegree = pickDegreeWithMarkov(borrowCandidates, Object.keys(parallelScale.degrees), chord.degree, prevDegree, progression.scaleType, progression.genre, progression.mood);
     if (borrowedDegree) {
-      const block = buildChordBlock(parallelKey, borrowedDegree, parallelScale, preferFlat);
+      const block = buildChordBlock(parallelKey, borrowedDegree, parallelScale, preferFlatParallel);
       results.push({
         label: 'Darker',
         sub: 'heavier, more shadow',
@@ -725,8 +837,8 @@ export function generateAlternatives(data: RawChordData, progression: Progressio
     }
   } else {
     const block = parallelType === 'NATURAL_MINOR'
-      ? synthBorrowedBlock(progression.key, 8, 'maj', 'Submediant', 'bVI', 'hold', preferFlat)
-      : synthBorrowedBlock(progression.key, 5, 'maj', 'Subdominant', 'IV', 'lift', preferFlat);
+      ? synthBorrowedBlock(progression.key, 8, 'maj', 'Submediant', 'bVI', 'hold', preferFlatParallel)
+      : synthBorrowedBlock(progression.key, 5, 'maj', 'Subdominant', 'IV', 'lift', preferFlatParallel);
     results.push({
       label: 'Darker',
       sub: 'heavier, more shadow',
