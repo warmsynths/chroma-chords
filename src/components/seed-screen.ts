@@ -60,6 +60,11 @@ export class SeedScreen extends LitElement {
   @state() private expandedMood = false;
   @state() private mascot = rollMascot(0.35);
   @state() private mascotSlot = pickSlot(MASCOT_SLOTS);
+  // A second, independent roll: very occasionally, a mascot peeks up from behind the vibe-input
+  // pill instead — like the pill is a little window it's looking out of. Separate from the
+  // gutter mascot above so the two don't always show together.
+  @state() private peekMascot = rollMascot(0.18);
+  @state() private peekSide: 'left' | 'right' = pickSlot(['left', 'right'] as const);
 
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -153,7 +158,13 @@ export class SeedScreen extends LitElement {
       color: var(--cv-ink-muted);
       margin-top: 12px;
     }
+    .vibe-input-shell {
+      position: relative;
+      margin-top: 28px;
+    }
     .vibe-input-wrap {
+      position: relative;
+      z-index: 1;
       display: flex;
       align-items: center;
       gap: 10px;
@@ -162,8 +173,18 @@ export class SeedScreen extends LitElement {
       border-radius: 100px;
       padding: 8px 10px 8px 20px;
       box-shadow: 0 14px 30px -20px rgba(46, 39, 31, 0.5);
-      margin-top: 28px;
     }
+    /* Peeks up from behind the pill's top edge — z-index 0 vs. the pill's 1 means the pill's
+       own (opaque) background paints over the lower portion, so only the top sliver shows,
+       like the character is looking out over the rim of a little window. */
+    .vibe-peek {
+      position: absolute;
+      top: -14px;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .vibe-peek.left { left: 22px; }
+    .vibe-peek.right { right: 34px; }
     .vibe-input {
       flex: 1;
       border: none;
@@ -410,7 +431,8 @@ export class SeedScreen extends LitElement {
       .hero { margin-bottom: 14px; }
       h1 { font-size: clamp(24px, 6.5vw, 34px); }
       .subcopy { margin-top: 6px; font-size: 13.5px; line-height: 1.45; }
-      .vibe-input-wrap { margin-top: 16px; padding: 6px 8px 6px 16px; }
+      .vibe-input-shell { margin-top: 16px; }
+      .vibe-input-wrap { padding: 6px 8px 6px 16px; }
       .vibe-input { padding: 7px 0; font-size: 14px; }
       .suggestion-wrap { margin-top: 6px; }
       .divider-row { margin: 16px 0 4px; }
@@ -543,17 +565,24 @@ export class SeedScreen extends LitElement {
             <div class="subcopy">Type a feeling in your own words — or pick a genre and mood below.</div>
           </div>
 
-          <div class="vibe-input-wrap">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cv-label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-              <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />
-            </svg>
-            <input
-              type="text"
-              class="vibe-input"
-              .value=${this.freeText}
-              @input=${(e: Event) => this.onFreeTextChange(e)}
-              placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
-            />
+          <div class="vibe-input-shell">
+            ${this.peekMascot.show ? html`
+              <div class="vibe-peek ${this.peekSide}">
+                <mascot-character .kind=${this.peekMascot.kind} .scale=${0.4}></mascot-character>
+              </div>
+            ` : ''}
+            <div class="vibe-input-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cv-label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+                <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />
+              </svg>
+              <input
+                type="text"
+                class="vibe-input"
+                .value=${this.freeText}
+                @input=${(e: Event) => this.onFreeTextChange(e)}
+                placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
+              />
+            </div>
           </div>
           ${best ? html`
             <div class="suggestion-wrap">

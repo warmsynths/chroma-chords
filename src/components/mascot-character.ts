@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 
 // Four small CSS-only critters (bean, bird, cat, note) adapted from a design mockup — used as
@@ -18,6 +18,18 @@ export function pickSlot<T>(slots: readonly T[]): T {
   return slots[Math.floor(Math.random() * slots.length)];
 }
 
+// Natural (unscaled) footprint of each character — callers that position a mascot with `right`
+// (rather than `left`) need this to size their wrapper accurately, since the element's layout
+// box stays at natural size even when the visible content is scaled down (see the top-left
+// transform-origin below): without an explicit matching size, `right:Npx` would measure from
+// the wrong edge — the far side of the unscaled box, not the visible scaled content.
+export const MASCOT_NATURAL_SIZE: Record<MascotKind, { width: number; height: number }> = {
+  bean: { width: 92, height: 86 },
+  bird: { width: 88, height: 88 },
+  cat: { width: 90, height: 88 },
+  note: { width: 74, height: 67 },
+};
+
 @customElement('mascot-character')
 export class MascotCharacter extends LitElement {
   @property({ type: String }) kind: MascotKind = 'bean';
@@ -25,11 +37,23 @@ export class MascotCharacter extends LitElement {
   // instead of a pixel prop, so each character's internal proportions stay correct.
   @property({ type: Number }) scale = 1;
 
+  // The host's own box is sized to the SCALED visual footprint (not the natural, pre-transform
+  // size) — so a caller positioning this element with `right`/`bottom` gets the edge of what's
+  // actually visible, not the edge of an invisible, larger unscaled box.
+  willUpdate(changed: PropertyValues) {
+    if (changed.has('kind') || changed.has('scale')) {
+      const { width, height } = MASCOT_NATURAL_SIZE[this.kind];
+      this.style.width = `${width * this.scale}px`;
+      this.style.height = `${height * this.scale}px`;
+    }
+  }
+
   static styles = css`
     :host {
       display: block;
       pointer-events: none;
       user-select: none;
+      overflow: visible;
     }
     @keyframes mascot-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
     @keyframes mascot-sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
@@ -268,7 +292,10 @@ export class MascotCharacter extends LitElement {
       : this.kind === 'note' ? this.renderNote()
       : this.renderBean();
     if (!inner) return nothing;
-    return html`<div style="transform:scale(${this.scale}); transform-origin:center;">${inner}</div>`;
+    // transform-origin top-left, not center — so a caller positioning this element via
+    // top/left CSS gets a predictable visual top-left corner regardless of scale, instead of
+    // the scaled content floating in the middle of its unscaled (pre-transform) layout box.
+    return html`<div style="transform:scale(${this.scale}); transform-origin:top left;">${inner}</div>`;
   }
 }
 

@@ -81,6 +81,11 @@ export class LoopScreen extends LitElement {
   // a fixture. Mobile has no reliable empty space here, so it's desktop-only (see CSS).
   @state() private mascot = rollMascot(0.35);
   @state() private mascotSlot = pickSlot(MASCOT_SLOTS);
+  // A second, independent, very-occasional roll: a mascot peeking up from behind the chord
+  // panel's top edge, like the panel is a little window it's looking in through. Unlike the
+  // side-gutter mascot above, this doesn't need spare width, so it shows on every screen size.
+  @state() private panelPeekMascot = rollMascot(0.18);
+  @state() private panelPeekSide: 'left' | 'right' = pickSlot(['left', 'right'] as const);
 
   private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -232,16 +237,31 @@ export class LoopScreen extends LitElement {
       color: var(--cv-ink-muted);
       margin-top: 10px;
     }
+    .panel-shell {
+      position: relative;
+      margin-top: 26px;
+    }
     .panel {
       position: relative;
+      z-index: 1;
       background: var(--cv-surface);
       border: 1.5px solid var(--cv-ink-08);
       padding: 34px 22px;
-      margin-top: 26px;
       overflow: hidden;
       min-height: 180px;
       box-shadow: 0 30px 60px -30px rgba(46, 39, 31, 0.22);
     }
+    /* Peeks up from behind the panel's top edge — z-index 0 vs. the panel's 1 means the
+       panel's own (opaque) background paints over the lower portion, so only a small sliver
+       shows above the rim, like the character is looking in through a little window. */
+    .panel-peek {
+      position: absolute;
+      top: -16px;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .panel-peek.left { left: 26px; }
+    .panel-peek.right { right: 26px; }
     .panel-blob {
       position: absolute;
       opacity: 0.9;
@@ -953,10 +973,16 @@ export class LoopScreen extends LitElement {
           <h1>Your progression, feeling <span style="color:${moodColor}">${p.mood.toLowerCase()}.</span></h1>
           <div class="subcopy">${p.genre} · ${p.chords.length} ${p.chords.length === 1 ? 'chord' : 'chords'} · tap a chord to preview it — use the icons to swap it or view its voicing.</div>
 
-          <div class="panel" style="animation:${panelAnim.anim} ${panelAnim.dur}s ${panelAnim.ease} infinite;">
-            <svg class="panel-blob a" width="140" height="140" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B" /></svg>
-            <svg class="panel-blob b" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC" /></svg>
-            <div class="chip-row">
+          <div class="panel-shell">
+            ${this.panelPeekMascot.show ? html`
+              <div class="panel-peek ${this.panelPeekSide}">
+                <mascot-character .kind=${this.panelPeekMascot.kind} .scale=${0.45}></mascot-character>
+              </div>
+            ` : ''}
+            <div class="panel" style="animation:${panelAnim.anim} ${panelAnim.dur}s ${panelAnim.ease} infinite;">
+              <svg class="panel-blob a" width="140" height="140" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B" /></svg>
+              <svg class="panel-blob b" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC" /></svg>
+              <div class="chip-row">
               ${this.order.map((chordIndex, pos) => {
                 const c = p.chords[chordIndex];
                 const role = roleForTension(c.tension);
@@ -989,6 +1015,7 @@ export class LoopScreen extends LitElement {
                   </div>
                 `;
               })}
+            </div>
             </div>
           </div>
 
