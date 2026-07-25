@@ -701,6 +701,17 @@ export class LoopScreen extends LitElement {
   }
 
   updated(changed: Map<string, unknown>) {
+    // On a wrap (progressStep drops back to 0), that render paints the bar snapped instantly
+    // to 0% with no transition. Clear the snap flag on the next frame so the very next paint
+    // (still progressStep 0, sweep target 1/length) picks up the transition again and sweeps
+    // forward for the new loop's first chord, instead of leaving the bar frozen at 0% for a
+    // whole interval or jumping straight to the target with no motion.
+    if (changed.has('progressStep') && this.snapProgress) {
+      // Double rAF: the snapped (transition:none, width:0%) frame must actually paint before
+      // transitions are re-enabled, or the browser never commits that intermediate state and
+      // instead animates straight from the old (near-100%) width down to the new target.
+      requestAnimationFrame(() => requestAnimationFrame(() => { this.snapProgress = false; }));
+    }
     if (changed.has('sheetOpen')) {
       if (this.sheetOpen) {
         if (this.sheetCloseTimer) { clearTimeout(this.sheetCloseTimer); this.sheetCloseTimer = null; }
@@ -837,7 +848,19 @@ export class LoopScreen extends LitElement {
   render() {
     const p = this.progression;
     const moodColor = getMoodColor(p.mood);
-    const progressPct = (this.progressStep / Math.max(1, this.order.length)) * 100;
+    // While playing, the fill sweeps toward the END of the chord currently sounding — i.e.
+    // chord N (progressStep N) sweeps toward (N+1)/length, landing exactly on that mark right
+    // as chord N finishes — so a 4-chord loop's bar reaches 100% precisely when the last chord
+    // ends, not 75%. At rest (never started, or just stopped) there's nothing to show yet. The
+    // one exception is the snap render right after a loop wrap: that frame must paint the bar
+    // at its pre-sweep baseline (N/length, i.e. 0% for the new loop's first chord) instead of
+    // the sweep target, or there's nothing for the following transition to visibly sweep from.
+    const staffLength = Math.max(1, this.order.length);
+    const progressPct = !this.playing
+      ? 0
+      : this.snapProgress
+        ? (this.progressStep / staffLength) * 100
+        : ((this.progressStep + 1) / staffLength) * 100;
     const panelAnim = PANEL_ANIM[p.mood] || PANEL_ANIM.Dreamy;
     // Staff mirrors the same left-to-right order the chip row shows (post drag-reorder), not
     // the progression's original array order, so the two views always read the same sequence.
