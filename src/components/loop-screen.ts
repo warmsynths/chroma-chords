@@ -515,6 +515,36 @@ export class LoopScreen extends LitElement {
       gap: 10px;
       margin-top: 18px;
     }
+    /* Mobile shows the compact icon-only buttons next to the dice instead of this text row —
+       see .control-icon-btn below. */
+    @media (max-width: 600px) {
+      .control-row { display: none; }
+    }
+    .control-icon-btn {
+      display: none;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--cv-surface);
+      border: 2px solid var(--cv-ink-12);
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-sizing: border-box;
+      transition: transform 0.2s ease;
+    }
+    .control-icon-btn:active {
+      transform: scale(0.92);
+    }
+    @media (max-width: 600px) {
+      .control-icon-btn { display: flex; }
+      /* Two extra fixed-width buttons join the transport row here — tighten gap/sizes so the
+         progress bar keeps a comfortable width instead of getting squeezed to a sliver. */
+      .transport { gap: 10px; }
+      .play-btn { width: 48px; height: 48px; }
+      .dice-btn { width: 44px; height: 44px; }
+    }
     .control-chip {
       display: inline-flex;
       align-items: center;
@@ -1142,6 +1172,12 @@ export class LoopScreen extends LitElement {
                 <circle cx="8" cy="16" r="1.7" fill="#2E271F" />
                 <circle cx="16" cy="16" r="1.7" fill="#2E271F" />
               </svg>
+            </div>
+            <div class="control-icon-btn" aria-label="Instrument: ${effectiveInstrument}" @click=${() => { this.expandedInstrument = !this.expandedInstrument; this.expandedPlayStyle = false; }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+            </div>
+            <div class="control-icon-btn" aria-label="Play style: ${effectivePlayStyle}" @click=${() => { this.expandedPlayStyle = !this.expandedPlayStyle; this.expandedInstrument = false; }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h13M3 12h9M3 18h13" /></svg>
             </div>
           </div>
           <div class="transport-meta">${displayKeyName(p.key, p.scaleType).toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
