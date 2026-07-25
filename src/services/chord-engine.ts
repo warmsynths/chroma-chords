@@ -881,6 +881,7 @@ export interface ProgressionStaffChord {
   roman: string;
   notes: { x: number; y: number }[];
   ledgers: { x: number; y: number }[];
+  labelY: number;
 }
 
 export interface ProgressionStaff {
@@ -911,7 +912,11 @@ export function buildProgressionStaff(chords: ChordBlock[], key: string, scaleTy
 
   const rawMinY = Math.min(STAFF_TOP_Y, ...allSteps.map(stepToY), ...sigSteps.map(stepToY));
   const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...allSteps.map(stepToY), ...sigSteps.map(stepToY));
-  const offsetY = PSTAFF_MARGIN - rawMinY;
+  // Reserve PSTAFF_LABEL_HEIGHT of headroom above the highest note of ANY chord, not just the
+  // staff itself — a chord voiced higher than the others (e.g. a bass note that lands near the
+  // top of its octave) would otherwise land right where a fixed label position sits, and its
+  // notehead would paint directly over the chord name text.
+  const offsetY = PSTAFF_MARGIN + PSTAFF_LABEL_HEIGHT - rawMinY;
   const height = rawMaxY - rawMinY + 12 + PSTAFF_MARGIN + PSTAFF_LABEL_HEIGHT;
 
   const lines = [0, 1, 2, 3, 4].map(i => STAFF_TOP_Y + i * STAFF_LINE_GAP + offsetY);
@@ -935,7 +940,9 @@ export function buildProgressionStaff(chords: ChordBlock[], key: string, scaleTy
         ledgers.push({ x: cx - 9, y: stepToY(step) + offsetY });
       }
     });
-    return { cx, name: chord.name, roman: chord.roman, notes, ledgers };
+    const topNoteY = Math.min(...notes.map(n => n.y));
+    const labelY = topNoteY - 10;
+    return { cx, name: chord.name, roman: chord.roman, notes, ledgers, labelY };
   });
 
   const width = chordStartX + chords.length * PSTAFF_CHORD_GAP + PSTAFF_MARGIN;
