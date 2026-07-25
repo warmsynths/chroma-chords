@@ -155,6 +155,7 @@ export class ChromaChordsApp extends LitElement {
   private onLogoutRequest = () => {
     localStorage.removeItem('chroma-chords-auth');
     localStorage.removeItem('chroma-chords-user');
+    localStorage.removeItem('chord-voyager-auth');
     this.userEmail = null;
     this.isAuthenticated = false;
     this.requestUpdate();
