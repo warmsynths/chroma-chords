@@ -1,8 +1,9 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { Progression, getMoodColor, roleForTension } from '../services/chord-engine';
-import { rollMascot, pickSlot } from './mascot-character';
+import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
+import './mascot-parade';
 
 const MASCOT_ALIGN = ['flex-start', 'center', 'flex-end'] as const;
 
@@ -24,6 +25,14 @@ export class SongScreen extends LitElement {
   // where there's reliably empty space, so it never competes with real content.
   @state() private mascot = rollMascot(0.5);
   @state() private mascotAlign: (typeof MASCOT_ALIGN)[number] = pickSlot([...MASCOT_ALIGN]);
+
+  // Easter egg: click the wordmark 7 times fast to bring out the whole gang.
+  private eggCounter = new EasterEggCounter();
+  @state() private paradeTrigger = 0;
+
+  private onWordmarkClick() {
+    if (this.eggCounter.click()) this.paradeTrigger++;
+  }
 
   static styles = css`
     :host {
@@ -47,6 +56,7 @@ export class SongScreen extends LitElement {
       display: flex;
       align-items: center;
       gap: 9px;
+      cursor: pointer;
     }
     .wordmark-text {
       font-size: 15.5px;
@@ -189,10 +199,11 @@ export class SongScreen extends LitElement {
   render() {
     return html`
       <div class="frame">
-        <div class="wordmark">
+        <div class="wordmark" @click=${() => this.onWordmarkClick()}>
           <svg width="22" height="22" viewBox="0 0 30 30"><circle cx="11" cy="11" r="9" fill="#F2A79B" /><circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" /></svg>
           <div class="wordmark-text">Chroma Chords</div>
         </div>
+        <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 
         <div class="content">
           <div class="hero">

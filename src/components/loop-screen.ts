@@ -7,8 +7,9 @@ import {
 } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
-import { rollMascot, pickSlot } from './mascot-character';
+import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
+import './mascot-parade';
 
 // Side-gutter slots for the desktop-only background mascot — only shows once there's real
 // gutter space beside the centered .content column (see the min-width:900px media query below).
@@ -86,6 +87,14 @@ export class LoopScreen extends LitElement {
   // side-gutter mascot above, this doesn't need spare width, so it shows on every screen size.
   @state() private panelPeekMascot = rollMascot(0.18);
   @state() private panelPeekSide: 'left' | 'right' = pickSlot(['left', 'right'] as const);
+
+  // Easter egg: click the wordmark 7 times fast to bring out the whole gang.
+  private eggCounter = new EasterEggCounter();
+  @state() private paradeTrigger = 0;
+
+  private onWordmarkClick() {
+    if (this.eggCounter.click()) this.paradeTrigger++;
+  }
 
   private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -212,6 +221,7 @@ export class LoopScreen extends LitElement {
       display: flex;
       align-items: center;
       gap: 8px;
+      cursor: pointer;
     }
     .wordmark-text {
       font-size: 14px;
@@ -927,12 +937,13 @@ export class LoopScreen extends LitElement {
         ` : ''}
         <div class="top-bar">
           <div class="icon-btn" @click=${() => this.emit('back')}>‹</div>
-          <div class="wordmark">
+          <div class="wordmark" @click=${() => this.onWordmarkClick()}>
             <svg width="18" height="18" viewBox="0 0 30 30"><circle cx="11" cy="11" r="9" fill="#F2A79B" /><circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" /></svg>
             <div class="wordmark-text">Chroma Chords</div>
           </div>
           <div class="icon-btn" @click=${() => this.toggleMenu()}>…</div>
         </div>
+        <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 
         ${this.menuMounted ? html`
           <div class="menu-scrim ${this.menuVisible ? 'visible' : ''}" @click=${() => this.closeMenu()}></div>

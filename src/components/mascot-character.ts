@@ -18,6 +18,30 @@ export function pickSlot<T>(slots: readonly T[]): T {
   return slots[Math.floor(Math.random() * slots.length)];
 }
 
+// Easter egg: click the wordmark this many times in a row, each within `windowMs` of the last,
+// to bring out the whole gang. A pause longer than the window resets the count, so it has to be
+// a real rapid-fire click streak, not just idly clicking the logo a handful of times over a
+// session.
+export class EasterEggCounter {
+  private count = 0;
+  private lastClickAt = 0;
+
+  constructor(private threshold = 7, private windowMs = 1800) {}
+
+  // Returns true the instant the streak reaches the threshold (and resets for the next one).
+  click(): boolean {
+    const now = Date.now();
+    if (now - this.lastClickAt > this.windowMs) this.count = 0;
+    this.lastClickAt = now;
+    this.count += 1;
+    if (this.count >= this.threshold) {
+      this.count = 0;
+      return true;
+    }
+    return false;
+  }
+}
+
 // Natural (unscaled) footprint of each character — callers that position a mascot with `right`
 // (rather than `left`) need this to size their wrapper accurately, since the element's layout
 // box stays at natural size even when the visible content is scaled down (see the top-left

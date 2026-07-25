@@ -3,8 +3,9 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, GENRES, getMoodColor } from '../services/chord-engine';
 import { heuristicClassify, classifyFreeText } from '../services/freetext-service';
 import { NormalizedPrompt } from '../services/freetext-schema';
-import { rollMascot, pickSlot } from './mascot-character';
+import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
+import './mascot-parade';
 
 // Side-gutter slots for the desktop-only background mascot — mobile has zero spare vertical
 // room here (the whole picker is tuned to fit one screen), so it only appears once there's
@@ -66,6 +67,14 @@ export class SeedScreen extends LitElement {
   @state() private peekMascot = rollMascot(0.18);
   @state() private peekSide: 'left' | 'right' = pickSlot(['left', 'right'] as const);
 
+  // Easter egg: click the wordmark 7 times fast to bring out the whole gang.
+  private eggCounter = new EasterEggCounter();
+  @state() private paradeTrigger = 0;
+
+  private onWordmarkClick() {
+    if (this.eggCounter.click()) this.paradeTrigger++;
+  }
+
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
   private classifyToken = 0;
@@ -105,6 +114,7 @@ export class SeedScreen extends LitElement {
       display: flex;
       align-items: center;
       gap: 9px;
+      cursor: pointer;
     }
     .wordmark-text {
       font-size: 15.5px;
@@ -548,13 +558,14 @@ export class SeedScreen extends LitElement {
             <mascot-character .kind=${this.mascot.kind} .scale=${0.75}></mascot-character>
           </div>
         ` : ''}
-        <div class="wordmark">
+        <div class="wordmark" @click=${() => this.onWordmarkClick()}>
           <svg width="22" height="22" viewBox="0 0 30 30">
             <circle cx="11" cy="11" r="9" fill="#F2A79B" />
             <circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" />
           </svg>
           <div class="wordmark-text">Chroma Chords</div>
         </div>
+        <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 
         <div class="content">
           <div class="hero">
