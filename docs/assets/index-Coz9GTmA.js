@@ -666,7 +666,7 @@
       flex-direction: column;
       align-items: center;
       box-sizing: border-box;
-      padding: 36px 22px 40px;
+      padding: 36px 40px 80px;
     }
     .wordmark {
       display: flex;
@@ -995,7 +995,7 @@
     /* Short mobile viewports (the constraint is vertical space, not width) — tighten spacing
        throughout so the whole picker, including the CTA, stays visible without scrolling. */
     @media (max-height: 920px) {
-      .frame { padding: 18px 20px 16px; }
+      .frame { padding: 18px 26px 16px; }
       .hero { margin-bottom: 14px; }
       h1 { font-size: clamp(24px, 6.5vw, 34px); }
       .subcopy { margin-top: 6px; font-size: 13.5px; line-height: 1.45; }
