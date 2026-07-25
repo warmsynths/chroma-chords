@@ -73,7 +73,40 @@ const stab = new Tone.PolySynth(Tone.MonoSynth, {
   volume: -14,
 }).connect(limiter);
 
-export type InstrumentId = 'rhodes' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab';
+// User-selectable "Rhodes" instrument option: a synthesized FM electric piano — brighter and
+// more bell-like than the sampled Rhodes above (labeled "Piano"), so the two options in the
+// instrument picker are audibly distinct rather than both pointing at the same sampler.
+const epiano = new Tone.PolySynth(Tone.FMSynth, {
+  harmonicity: 2,
+  modulationIndex: 3.5,
+  envelope: { attack: 0.008, decay: 0.6, sustain: 0.25, release: 1.2 },
+  modulationEnvelope: { attack: 0.008, decay: 0.4, sustain: 0.1, release: 0.6 },
+  volume: -14,
+}).connect(limiter);
+
+// User-selectable "Nylon Guitar" instrument option. Tone.PluckSynth (true Karplus-Strong
+// string synthesis) would be the closest match, but it extends Instrument rather than
+// Monophonic and has no triggerAttackRelease — incompatible with both PolySynth and this
+// file's existing triggerAttackRelease-based playback path. A triangle oscillator with a fast
+// pluck-like envelope approximates the character instead; worth revisiting with a proper
+// Karplus-Strong voice pool later.
+const guitar = new Tone.PolySynth(Tone.Synth, {
+  oscillator: { type: 'triangle' },
+  envelope: { attack: 0.004, decay: 0.5, sustain: 0.05, release: 0.6 },
+  volume: -13,
+}).connect(limiter);
+
+// User-selectable "Synth Bell" instrument option — high harmonicity/modulation FM bell, fast
+// decay, minimal sustain.
+const bell = new Tone.PolySynth(Tone.FMSynth, {
+  harmonicity: 5.5,
+  modulationIndex: 12,
+  envelope: { attack: 0.002, decay: 1.1, sustain: 0.05, release: 0.8 },
+  modulationEnvelope: { attack: 0.002, decay: 0.5, sustain: 0, release: 0.4 },
+  volume: -16,
+}).connect(limiter);
+
+export type InstrumentId = 'rhodes' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab' | 'epiano' | 'guitar' | 'bell';
 
 function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
   switch (instrument) {
@@ -81,10 +114,34 @@ function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
     case 'pad-strings': return padStrings;
     case 'juno-pad': return junoPad;
     case 'stab': return stab;
+    case 'epiano': return epiano;
+    case 'guitar': return guitar;
+    case 'bell': return bell;
     case 'rhodes':
     default: return sampler;
   }
 }
+
+// The instrument picker's five user-facing options (design: "Instrument" chip) — each maps to
+// one of the voices above. Colors match the dots used in the picker's option pills.
+export const USER_INSTRUMENTS: { name: string; instrument: InstrumentId; color: string }[] = [
+  { name: 'Piano', instrument: 'rhodes', color: '#9CC0EC' },
+  { name: 'Rhodes', instrument: 'epiano', color: '#F2A79B' },
+  { name: 'Nylon Guitar', instrument: 'guitar', color: '#F6D98B' },
+  { name: 'Warm Pad', instrument: 'pad-strings', color: '#C9A9E0' },
+  { name: 'Synth Bell', instrument: 'bell', color: '#B8CC9E' },
+];
+
+// The play-style picker's five options (design: "Play style" chip) — each is a humanState
+// override applied on top of the genre's normal humanize profile. Colors match USER_INSTRUMENTS'
+// pattern (arbitrary per-option accent, not tied to genre/mood).
+export const USER_PLAY_STYLES: { name: string; color: string; patch: Record<string, unknown> }[] = [
+  { name: 'Block chords', color: '#F2A79B', patch: { arpMode: 'off', spread: 0.3 } },
+  { name: 'Arpeggio', color: '#9CC0EC', patch: { arpMode: 'up', arpRate: '1/8', arpRange: 1 } },
+  { name: 'Strum', color: '#F6D98B', patch: { arpMode: 'up', arpRate: '1/32', arpRange: 1 } },
+  { name: 'Broken (swing)', color: '#C9A9E0', patch: { arpMode: 'up', arpRate: '1/8T', arpRange: 1 } },
+  { name: 'Half-time', color: '#B8CC9E', patch: { arpMode: 'off', spread: 0.1, durationMultiplier: 1.8 } },
+];
 
 const GENRE_INSTRUMENT: Record<string, InstrumentId> = {
   'Pop': 'rhodes',
@@ -171,6 +228,7 @@ function arpRateToSeconds(arpRate: string, bpm: number): number {
     case '1/8':  return 0.5 / beatsPerSecond;         // half beat
     case '1/8T': return (0.5 / beatsPerSecond) * (2 / 3); // triplet eighth
     case '1/16': return 0.25 / beatsPerSecond;        // quarter beat
+    case '1/32': return 0.125 / beatsPerSecond;       // eighth beat — fast cascade, strum feel
     default:     return 0.25 / beatsPerSecond;
   }
 }
@@ -302,11 +360,25 @@ export function playChord(noteNames: string[], duration = 0.7, humanState?: any,
  * Plays a chord using the voice and humanize feel mapped to the given genre
  * (see GENRE_INSTRUMENT/GENRE_HUMANIZE) instead of always using the flat Rhodes hit.
  */
-export function playChordForGenre(noteNames: string[], genre: string, opts?: { bpm?: number; duration?: number }): void {
-  const instrument = GENRE_INSTRUMENT[genre] || 'rhodes';
+export function playChordForGenre(
+  noteNames: string[],
+  genre: string,
+  opts?: { bpm?: number; duration?: number; instrument?: string; playStyle?: string }
+): void {
+  // User overrides (from the Instrument/Play style pickers) win over the genre's defaults —
+  // when unset, playback falls back to the existing per-genre auto-selection untouched.
+  const userInstrument = opts?.instrument ? USER_INSTRUMENTS.find(i => i.name === opts.instrument) : undefined;
+  const userPlayStyle = opts?.playStyle ? USER_PLAY_STYLES.find(p => p.name === opts.playStyle) : undefined;
+
+  const instrument = userInstrument?.instrument ?? GENRE_INSTRUMENT[genre] ?? 'rhodes';
   const profile = GENRE_HUMANIZE[genre] || {};
-  const humanState = { ...profile, bpm: opts?.bpm ?? profile.bpm ?? 90 };
-  playChord(noteNames, opts?.duration ?? profile.duration ?? 0.9, humanState, instrument);
+  const stylePatch = (userPlayStyle?.patch ?? {}) as { durationMultiplier?: number; [k: string]: unknown };
+  const humanState = { ...profile, ...stylePatch, bpm: opts?.bpm ?? profile.bpm ?? 90 };
+
+  const baseDuration = opts?.duration ?? profile.duration ?? 0.9;
+  const duration = stylePatch.durationMultiplier ? baseDuration * stylePatch.durationMultiplier : baseDuration;
+
+  playChord(noteNames, duration, humanState, instrument);
 }
 
 /**

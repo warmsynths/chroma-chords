@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { ProjectService, ProjectData } from './services/project-service';
 import { GoogleDriveService } from './services/google-drive-service';
-import { playChordForGenre } from './services/audio-service';
+import { playChordForGenre, USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
 import {
   loadChordData, generateProgression, alignChordsToScale, generateAlternatives, applyVoicingToChord,
   RawChordData, Progression, ChordBlock, Alternative, AUTOPLAY_INTERVAL_MS,
@@ -51,6 +51,8 @@ export class ChromaChordsApp extends LitElement {
   @state() private scaleOverride: string | null = null;
   @state() private playing = true;
   @state() private showTheory = false;
+  @state() private instrument = USER_INSTRUMENTS[0].name;
+  @state() private playStyle = USER_PLAY_STYLES[0].name;
   @state() private sheetOpen = false;
   @state() private sheetMode: 'swap' | 'voicing' = 'swap';
   @state() private swapIndex: number | null = null;
@@ -85,6 +87,10 @@ export class ChromaChordsApp extends LitElement {
 
   async firstUpdated() {
     this.showTheory = (localStorage.getItem('chroma-chords-show-theory') || localStorage.getItem('chord-voyager-show-theory')) === 'true';
+    const savedInstrument = localStorage.getItem('chroma-chords-instrument');
+    if (savedInstrument && USER_INSTRUMENTS.some(i => i.name === savedInstrument)) this.instrument = savedInstrument;
+    const savedPlayStyle = localStorage.getItem('chroma-chords-play-style');
+    if (savedPlayStyle && USER_PLAY_STYLES.some(p => p.name === savedPlayStyle)) this.playStyle = savedPlayStyle;
 
     try {
       this.chordData = await loadChordData();
@@ -122,7 +128,7 @@ export class ChromaChordsApp extends LitElement {
     if (!this.progression) return;
     const chordIndex = this.order[this.activeIndex] ?? 0;
     const chord = this.progression.chords[chordIndex];
-    playChordForGenre(chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm });
+    playChordForGenre(chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, instrument: this.instrument, playStyle: this.playStyle });
   }
 
   private onGenreChange(e: CustomEvent<string>) {
@@ -256,6 +262,16 @@ export class ChromaChordsApp extends LitElement {
     localStorage.setItem('chroma-chords-show-theory', String(this.showTheory));
   }
 
+  private onSetInstrument(e: CustomEvent<string>) {
+    this.instrument = e.detail;
+    localStorage.setItem('chroma-chords-instrument', e.detail);
+  }
+
+  private onSetPlayStyle(e: CustomEvent<string>) {
+    this.playStyle = e.detail;
+    localStorage.setItem('chroma-chords-play-style', e.detail);
+  }
+
   // Play/Stop, not play/pause: stopping always returns to the first chord and halts the
   // loop entirely, rather than leaving a stale autoplay interval running in the background
   // (which was the source of the "resumes and immediately skips ahead" glitch — the old
@@ -281,7 +297,7 @@ export class ChromaChordsApp extends LitElement {
     this.sheetMode = 'swap';
     this.alternatives = generateAlternatives(this.chordData, this.progression, e.detail);
     this.sheetOpen = true;
-    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument, playStyle: this.playStyle });
   }
 
   // Opens the same sheet in 'voicing' mode — straight to the quality/extension/keyboard
@@ -292,14 +308,14 @@ export class ChromaChordsApp extends LitElement {
     this.sheetMode = 'voicing';
     this.alternatives = [];
     this.sheetOpen = true;
-    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument, playStyle: this.playStyle });
   }
 
   // A plain tap on a chord shape just previews the sound — it doesn't open the swap sheet.
   // Only the shape's dedicated swap-icon badge does that (see onChordTap above).
   private onChordPreview(e: CustomEvent<number>) {
     if (!this.progression) return;
-    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument, playStyle: this.playStyle });
   }
 
   private onSheetClose() {
@@ -316,12 +332,12 @@ export class ChromaChordsApp extends LitElement {
     this.swapIndex = null;
     this.syncActiveSection();
     this.saveProject();
-    playChordForGenre(e.detail.chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
+    playChordForGenre(e.detail.chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument, playStyle: this.playStyle });
   }
 
   private onVoicingPreview(e: CustomEvent<string[]>) {
     if (!this.progression) return;
-    playChordForGenre(e.detail.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.6 });
+    playChordForGenre(e.detail.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.6, instrument: this.instrument, playStyle: this.playStyle });
   }
 
   // Applying a quality/extension in the swap sheet used to only preview the sound — the
@@ -524,6 +540,8 @@ export class ChromaChordsApp extends LitElement {
         .order=${this.order}
         .playing=${this.playing}
         .showTheory=${this.showTheory}
+        .instrument=${this.instrument}
+        .playStyle=${this.playStyle}
         .sheetOpen=${this.sheetOpen}
         .sheetMode=${this.sheetMode}
         .swapChord=${swapChord}
@@ -531,6 +549,8 @@ export class ChromaChordsApp extends LitElement {
         .alternatives=${this.alternatives}
         @back=${this.onBack}
         @theory-toggle=${this.onTheoryToggle}
+        @set-instrument=${this.onSetInstrument}
+        @set-play-style=${this.onSetPlayStyle}
         @toggle-play=${this.onTogglePlay}
         @chord-tap=${this.onChordTap}
         @chord-voicing-tap=${this.onChordVoicingTap}

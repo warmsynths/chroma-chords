@@ -10,6 +10,7 @@ import './share-modal';
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
 import './mascot-parade';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES } from '../services/audio-service';
 
 // Side-gutter slots for the desktop-only background mascot — only shows once there's real
 // gutter space beside the centered .content column (see the min-width:900px media query below).
@@ -58,6 +59,8 @@ export class LoopScreen extends LitElement {
   @property({ type: Array }) order: number[] = [0, 1, 2, 3];
   @property({ type: Boolean }) playing = true;
   @property({ type: Boolean }) showTheory = false;
+  @property({ type: String }) instrument = USER_INSTRUMENTS[0].name;
+  @property({ type: String }) playStyle = USER_PLAY_STYLES[0].name;
   @property({ type: Boolean }) sheetOpen = false;
   @property({ type: String }) sheetMode: 'swap' | 'voicing' = 'swap';
   @property({ type: Object }) swapChord: ChordBlock | null = null;
@@ -77,6 +80,8 @@ export class LoopScreen extends LitElement {
   // disables the progress-fill transition for that one render so the bar resets instantly
   // instead of visibly sliding backward, then clears itself on the very next forward step.
   @state() private snapProgress = false;
+  @state() private expandedInstrument = false;
+  @state() private expandedPlayStyle = false;
   // Rolled fresh every time this screen mounts — a small background critter in the desktop
   // side gutter, shown roughly a third of the time so it's a rare, subtle surprise rather than
   // a fixture. Mobile has no reliable empty space here, so it's desktop-only (see CSS).
@@ -501,6 +506,61 @@ export class LoopScreen extends LitElement {
       font-weight: 700;
       color: var(--cv-label);
       cursor: pointer;
+    }
+    .control-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .control-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--cv-surface-2);
+      color: #5B5145;
+      padding: 9px 16px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: transform 150ms var(--cv-ease);
+    }
+    .control-chip:active {
+      transform: scale(0.96);
+    }
+    .control-chevron {
+      opacity: 0.6;
+    }
+    .control-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .control-option {
+      display: inline-flex;
+      align-items: center;
+      background: var(--cv-surface-2);
+      color: #5B5145;
+      padding: 7px 14px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 150ms var(--cv-ease);
+    }
+    .control-option:active {
+      transform: scale(0.96);
+    }
+    .control-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+      flex-shrink: 0;
     }
     .theory-toggle-row {
       display: flex;
@@ -1079,6 +1139,35 @@ export class LoopScreen extends LitElement {
             </div>
           </div>
           <div class="transport-meta">${displayKeyName(p.key, p.scaleType).toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
+
+          <div class="control-row">
+            <div class="control-chip" @click=${() => { this.expandedInstrument = !this.expandedInstrument; this.expandedPlayStyle = false; }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+              ${this.instrument} <span class="control-chevron">${this.expandedInstrument ? '⌃' : '⌄'}</span>
+            </div>
+            <div class="control-chip" @click=${() => { this.expandedPlayStyle = !this.expandedPlayStyle; this.expandedInstrument = false; }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h13M3 12h9M3 18h13" /></svg>
+              ${this.playStyle} <span class="control-chevron">${this.expandedPlayStyle ? '⌃' : '⌄'}</span>
+            </div>
+          </div>
+          ${this.expandedInstrument ? html`
+            <div class="control-options">
+              ${USER_INSTRUMENTS.filter(i => i.name !== this.instrument).map(i => html`
+                <div class="control-option" @click=${() => { this.emit('set-instrument', i.name); this.expandedInstrument = false; }}>
+                  <span class="control-dot" style="background:${i.color}"></span>${i.name}
+                </div>
+              `)}
+            </div>
+          ` : ''}
+          ${this.expandedPlayStyle ? html`
+            <div class="control-options">
+              ${USER_PLAY_STYLES.filter(s => s.name !== this.playStyle).map(s => html`
+                <div class="control-option" @click=${() => { this.emit('set-play-style', s.name); this.expandedPlayStyle = false; }}>
+                  <span class="control-dot" style="background:${s.color}"></span>${s.name}
+                </div>
+              `)}
+            </div>
+          ` : ''}
 
           <button class="build-song-btn" style="background:${moodColor}" @click=${() => this.emit('view-song')}>
             Build the full song <span>→</span>
