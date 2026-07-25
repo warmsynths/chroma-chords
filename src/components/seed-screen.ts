@@ -91,6 +91,7 @@ export class SeedScreen extends LitElement {
   @state() private peekSide: 'left' | 'right' = pickSlot(['left', 'right'] as const);
 
   @property({ type: Boolean }) isAuthenticated = false;
+  @property({ type: Boolean }) isAdmin = false;
   @state() private currentProvider: LLMProvider = getLLMProvider();
   @state() private showAdminModal = false;
   @state() private isClassifying = false;
@@ -248,6 +249,27 @@ export class SeedScreen extends LitElement {
       border-radius: 100px;
       padding: 8px 10px 8px 20px;
       box-shadow: 0 14px 30px -20px rgba(46, 39, 31, 0.5);
+    }
+    .vibe-admin-btn {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: inherit;
+      color: var(--cv-ink-70);
+      background: rgba(46, 39, 31, 0.06);
+      border: 1.5px solid var(--cv-ink-14);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .vibe-admin-btn:hover {
+      background: rgba(46, 39, 31, 0.12);
+      color: var(--cv-ink);
+      border-color: var(--cv-ink-30);
     }
     @keyframes cv-spin {
       from { transform: rotate(0deg); }
@@ -885,6 +907,11 @@ export class SeedScreen extends LitElement {
                 @input=${(e: Event) => this.onFreeTextChange(e)}
                 placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
               />
+              ${this.isAdmin ? html`
+                <button class="vibe-admin-btn" @click=${() => { this.showAdminModal = true; }} title="AI Model Configuration">
+                  ⚡ ${this.currentProvider === 'anthropic' ? 'Claude' : 'OpenRouter'}
+                </button>
+              ` : ''}
             </div>
           </div>
           ${this.isClassifying ? html`
@@ -976,9 +1003,7 @@ export class SeedScreen extends LitElement {
             <a class="footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
             <span class="footer-divider">·</span>
             ${this.isAuthenticated ? html`
-              <button class="footer-admin-btn" @click=${() => { this.showAdminModal = true; }}>
-                AI: ${this.currentProvider === 'anthropic' ? 'Claude' : 'OpenRouter'}
-              </button>
+              <button class="footer-login-btn" @click=${this.onLogoutClick}>Sign out</button>
             ` : html`
               <button class="footer-login-btn" @click=${this.onLoginClick}>Sign in</button>
             `}

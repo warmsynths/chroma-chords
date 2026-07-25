@@ -103,8 +103,15 @@ export class ChromaChordsApp extends LitElement {
 
     const savedAuth = localStorage.getItem('chroma-chords-auth') || localStorage.getItem('chroma-chords-user') || localStorage.getItem('chord-voyager-auth');
     if (savedAuth) {
+      this.userEmail = savedAuth;
       this.isAuthenticated = true;
     }
+  }
+
+  @state() private userEmail: string | null = localStorage.getItem('chroma-chords-auth') || null;
+
+  get isAdmin(): boolean {
+    return Boolean(this.userEmail && this.userEmail.toLowerCase().trim() === 'warmsynthsiloveyou@gmail.com');
   }
 
   private onLoginRequest = () => {
@@ -122,6 +129,7 @@ export class ChromaChordsApp extends LitElement {
                 const info = await userRes?.json().catch(() => null);
                 const email = info?.email || 'google-user@chromachords.app';
                 localStorage.setItem('chroma-chords-auth', email);
+                this.userEmail = email;
                 this.isAuthenticated = true;
                 this.requestUpdate();
               }
@@ -135,9 +143,10 @@ export class ChromaChordsApp extends LitElement {
       }
     }
 
-    const email = prompt('Sign in with Google Account email:', 'user@google.com');
+    const email = prompt('Sign in with Google Account email:', 'warmsynthsiloveyou@gmail.com');
     if (email) {
       localStorage.setItem('chroma-chords-auth', email);
+      this.userEmail = email;
       this.isAuthenticated = true;
       this.requestUpdate();
     }
@@ -146,6 +155,7 @@ export class ChromaChordsApp extends LitElement {
   private onLogoutRequest = () => {
     localStorage.removeItem('chroma-chords-auth');
     localStorage.removeItem('chroma-chords-user');
+    this.userEmail = null;
     this.isAuthenticated = false;
     this.requestUpdate();
   };
@@ -576,6 +586,7 @@ export class ChromaChordsApp extends LitElement {
           .mood=${this.mood}
           .length=${this.length}
           .isAuthenticated=${this.isAuthenticated}
+          .isAdmin=${this.isAdmin}
           @genre-change=${this.onGenreChange}
           @mood-change=${this.onMoodChange}
           @length-change=${this.onLengthChange}

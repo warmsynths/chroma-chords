@@ -261,6 +261,9 @@ async function tryOpenRouterModel(text: string, model: string, apiKey: string): 
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
+      if (res.status === 429 && errText.includes('free-models-per-day')) {
+        throw new Error('OpenRouter daily free limit reached (50 requests/day). Add credits to your OpenRouter account to unlock 1,000/day, or switch AI to Claude in the footer.');
+      }
       throw new Error(`OpenRouter HTTP ${res.status}: ${errText}`);
     }
 
@@ -284,6 +287,9 @@ async function classifyOpenRouter(text: string, apiKey: string): Promise<unknown
     try {
       return await tryOpenRouterModel(text, model, apiKey);
     } catch (err) {
+      if (err instanceof Error && err.message.includes('daily free limit reached')) {
+        throw err;
+      }
       console.warn(`OpenRouter free model ${model} failed, trying next:`, err);
       lastError = err;
     }
