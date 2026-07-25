@@ -40,6 +40,7 @@ export interface Progression {
   scaleType: string;
   bpm: number;
   chords: ChordBlock[];
+  searchTerm?: string;
 }
 
 export interface Alternative {

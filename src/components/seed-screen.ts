@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, GENRES, getMoodColor } from '../services/chord-engine';
-import { heuristicClassify, classifyFreeText } from '../services/freetext-service';
+import { heuristicClassify, classifyFreeText, getLLMProvider, setLLMProvider, LLMProvider } from '../services/freetext-service';
 import { NormalizedPrompt } from '../services/freetext-schema';
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
@@ -42,6 +42,29 @@ const CLASSIFY_ERROR_MESSAGES = [
   "No idea, honestly — but you clearly do. Pick a genre & mood below.",
 ];
 
+const CUTE_WAITING_MESSAGES = [
+  'Rummaging through crates of old vinyl...',
+  'Asking the chord wizards nicely...',
+  'Warming up the analog vacuum tubes...',
+  'Dusting off the Fender Rhodes...',
+  'Consulting the musical oracle...',
+  'Polishing major 7th chords...',
+  'Tuning the vintage synthesizer...',
+  'Translating feelings into frequencies...',
+  'Listening to the cosmic frequency...',
+  'Channeling 80s synthwave energy...',
+  'Humming a secret little melody...',
+  'Strumming invisible guitar strings...',
+  'Checking the vibe meters...',
+  'Brewing a fresh cup of lo-fi beats...',
+  'Setting the tape delay to 120ms...',
+  'Counting the beats per minute...',
+  'Mixing harmonizing magic...',
+  'Summoning smooth jazz cats...',
+  'Tweaking the resonance knob...',
+  'Scanning the musical multiverse...',
+];
+
 @customElement('seed-screen')
 export class SeedScreen extends LitElement {
   @property({ type: String }) genre = 'Pop';
@@ -67,12 +90,53 @@ export class SeedScreen extends LitElement {
   @state() private peekMascot = rollMascot(0.18);
   @state() private peekSide: 'left' | 'right' = pickSlot(['left', 'right'] as const);
 
+  @property({ type: Boolean }) isAuthenticated = false;
+  @state() private currentProvider: LLMProvider = getLLMProvider();
+  @state() private showAdminModal = false;
+  @state() private isClassifying = false;
+  @state() private loadingMsgIdx = 0;
+
+  private loadingTimer: ReturnType<typeof setInterval> | null = null;
+
+  private startLoadingTimer() {
+    this.stopLoadingTimer();
+    this.loadingMsgIdx = Math.floor(Math.random() * CUTE_WAITING_MESSAGES.length);
+    this.loadingTimer = setInterval(() => {
+      let nextIdx = Math.floor(Math.random() * CUTE_WAITING_MESSAGES.length);
+      if (nextIdx === this.loadingMsgIdx) {
+        nextIdx = (nextIdx + 1) % CUTE_WAITING_MESSAGES.length;
+      }
+      this.loadingMsgIdx = nextIdx;
+    }, 800);
+  }
+
+  private stopLoadingTimer() {
+    if (this.loadingTimer) {
+      clearInterval(this.loadingTimer);
+      this.loadingTimer = null;
+    }
+  }
+
+  private onLoginClick() {
+    this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }));
+  }
+
+  private onLogoutClick() {
+    this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }));
+    this.showAdminModal = false;
+  }
+
   // Easter egg: click the wordmark 7 times fast to bring out the whole gang.
   private eggCounter = new EasterEggCounter();
   @state() private paradeTrigger = 0;
 
   private onWordmarkClick() {
     if (this.eggCounter.click()) this.paradeTrigger++;
+  }
+
+  private changeProvider(provider: LLMProvider) {
+    this.currentProvider = provider;
+    setLLMProvider(provider);
   }
 
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
@@ -90,6 +154,7 @@ export class SeedScreen extends LitElement {
     super.disconnectedCallback();
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
     if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
+    this.stopLoadingTimer();
   }
 
   static styles = css`
@@ -184,6 +249,20 @@ export class SeedScreen extends LitElement {
       padding: 8px 10px 8px 20px;
       box-shadow: 0 14px 30px -20px rgba(46, 39, 31, 0.5);
     }
+    @keyframes cv-spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .vibe-input-icon {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      color: var(--cv-label);
+      animation: cv-spin 1s linear infinite;
+    }
     /* Peeks up from behind the pill's top edge — z-index 0 vs. the pill's 1 means the pill's
        own (opaque) background paints over the lower portion, so only the top sliver shows,
        like the character is looking out over the rim of a little window. */
@@ -225,6 +304,16 @@ export class SeedScreen extends LitElement {
     }
     .suggestion-note.error {
       font-style: italic;
+    }
+    .suggestion-note.loading {
+      color: var(--cv-ink-muted);
+      font-style: italic;
+      font-weight: 600;
+      animation: cv-pulse-fade 1.4s ease-in-out infinite;
+    }
+    @keyframes cv-pulse-fade {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1.0; }
     }
     .suggestion-highlight {
       font-weight: 800;
@@ -457,6 +546,192 @@ export class SeedScreen extends LitElement {
       .caption { margin-top: 6px; font-size: 11px; }
       .footer { margin-top: 12px; font-size: 11px; }
     }
+
+    .footer-admin-btn {
+      background: none;
+      border: 1.5px solid var(--cv-ink-14);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cv-ink-55);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+    .footer-admin-btn:hover {
+      border-color: var(--cv-ink-30);
+      color: var(--cv-ink);
+      background: rgba(255,255,255,0.4);
+    }
+    .admin-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(46, 39, 31, 0.4);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .admin-modal {
+      background: var(--cv-cream);
+      border: 1.5px solid var(--cv-ink-14);
+      border-radius: 24px;
+      padding: 24px;
+      max-width: 440px;
+      width: 100%;
+      box-shadow: 0 24px 48px -12px rgba(46, 39, 31, 0.35);
+      text-align: left;
+    }
+    .admin-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--cv-ink);
+      margin-bottom: 6px;
+    }
+    .admin-desc {
+      font-size: 13px;
+      color: var(--cv-ink-muted);
+      margin-bottom: 18px;
+      line-height: 1.45;
+    }
+    .admin-options {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .admin-opt {
+      text-align: left;
+      background: rgba(255, 255, 255, 0.6);
+      border: 1.5px solid var(--cv-ink-12);
+      border-radius: 14px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+    .admin-opt.active {
+      border-color: var(--cv-ink);
+      background: #ffffff;
+      box-shadow: 0 4px 14px rgba(46, 39, 31, 0.08);
+    }
+    .admin-opt:hover {
+      border-color: var(--cv-ink-30);
+    }
+    .opt-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--cv-ink);
+    }
+    .opt-detail {
+      font-size: 11.5px;
+      color: var(--cv-ink-muted);
+      margin-top: 3px;
+      line-height: 1.35;
+    }
+    .admin-close {
+      width: 100%;
+      background: var(--cv-ink);
+      color: #ffffff;
+      border: none;
+      border-radius: 12px;
+      padding: 12px;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.2s ease;
+    }
+    .admin-close:hover {
+      opacity: 0.9;
+    }
+    .logged-out-box {
+      margin-top: 28px;
+      background: rgba(255, 255, 255, 0.65);
+      border: 1.5px solid var(--cv-ink-12);
+      border-radius: 24px;
+      padding: 36px 24px;
+      text-align: center;
+      box-shadow: 0 16px 36px -12px rgba(46, 39, 31, 0.12);
+    }
+    .logged-out-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--cv-ink);
+      margin-bottom: 8px;
+    }
+    .logged-out-sub {
+      font-size: 14px;
+      color: var(--cv-ink-muted);
+      margin-bottom: 24px;
+      line-height: 1.5;
+      max-width: 380px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .cta-google {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: #ffffff;
+      color: var(--cv-ink);
+      border: 1.5px solid var(--cv-ink-14);
+      border-radius: 100px;
+      padding: 12px 24px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(46, 39, 31, 0.08);
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+    .cta-google:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(46, 39, 31, 0.14);
+      border-color: var(--cv-ink-30);
+    }
+    .footer-login-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: 1.5px solid var(--cv-ink-14);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cv-ink-55);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+    .footer-login-btn:hover {
+      border-color: var(--cv-ink-30);
+      color: var(--cv-ink);
+      background: rgba(255, 255, 255, 0.4);
+    }
+    .admin-logout {
+      margin-top: 12px;
+      background: transparent;
+      border: 1.5px solid var(--cv-ink-14);
+      color: var(--cv-ink-muted);
+      border-radius: 12px;
+      padding: 10px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      width: 100%;
+      font-family: inherit;
+      transition: all 0.2s ease;
+    }
+    .admin-logout:hover {
+      border-color: #e53935;
+      color: #e53935;
+    }
   `;
 
   private selectGenre(name: string) {
@@ -468,7 +743,7 @@ export class SeedScreen extends LitElement {
   }
 
   private generate() {
-    this.dispatchEvent(new CustomEvent('generate', { bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('generate', { detail: { promptText: this.freeText.trim() }, bubbles: true, composed: true }));
   }
 
   private setLength(n: number) {
@@ -488,6 +763,9 @@ export class SeedScreen extends LitElement {
     this.llmSuggestion = null;
     this.llmResolved = false;
     this.classifyError = null;
+    if (this.freeText.trim().length <= 2) {
+      this.isClassifying = false;
+    }
     this.scheduleClassify();
 
     // Instant feedback: auto-apply the offline keyword guess the moment it has real signal,
@@ -503,16 +781,26 @@ export class SeedScreen extends LitElement {
   private scheduleClassify() {
     if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
     const text = this.freeText.trim();
-    if (text.length <= 2) return;
+    if (text.length <= 2) {
+      this.isClassifying = false;
+      return;
+    }
 
     const token = ++this.classifyToken;
     this.classifyDebounce = setTimeout(async () => {
-      const result = await classifyFreeText(text);
-      if (token !== this.classifyToken) return; // text changed while the call was in flight
-      this.llmSuggestion = result;
-      this.llmResolved = true;
-      this.classifyError = result ? null : CLASSIFY_ERROR_MESSAGES[Math.floor(Math.random() * CLASSIFY_ERROR_MESSAGES.length)];
-      if (result) this.applyBest(result);
+      this.isClassifying = true;
+      try {
+        const result = await classifyFreeText(text);
+        if (token !== this.classifyToken) return; // text changed while the call was in flight
+        this.llmSuggestion = result;
+        this.llmResolved = true;
+        this.classifyError = result ? null : CLASSIFY_ERROR_MESSAGES[Math.floor(Math.random() * CLASSIFY_ERROR_MESSAGES.length)];
+        if (result) this.applyBest(result);
+      } finally {
+        if (token === this.classifyToken) {
+          this.isClassifying = false;
+        }
+      }
     }, CLASSIFY_DEBOUNCE_MS);
   }
 
@@ -523,8 +811,8 @@ export class SeedScreen extends LitElement {
   private applyBest(best: NormalizedPrompt) {
     this.selectGenre(best.genre);
     this.selectMood(best.mood);
-    if (best.length) this.setLength(best.length);
-    this.dispatchEvent(new CustomEvent('freetext-suggestion-applied', { detail: best, bubbles: true, composed: true }));
+    const detail = { ...best, promptText: this.freeText.trim() };
+    this.dispatchEvent(new CustomEvent('freetext-suggestion-applied', { detail, bubbles: true, composed: true }));
   }
 
   render() {
@@ -583,9 +871,13 @@ export class SeedScreen extends LitElement {
               </div>
             ` : ''}
             <div class="vibe-input-wrap">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cv-label)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
-                <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />
-              </svg>
+              ${this.isClassifying ? html`
+                <div class="vibe-input-icon" title="Classifying vibe...">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                  </svg>
+                </div>
+              ` : ''}
               <input
                 type="text"
                 class="vibe-input"
@@ -595,7 +887,11 @@ export class SeedScreen extends LitElement {
               />
             </div>
           </div>
-          ${best ? html`
+          ${this.isClassifying ? html`
+            <div class="suggestion-wrap">
+              <div class="suggestion-note loading">✨ ${CUTE_WAITING_MESSAGES[this.loadingMsgIdx]}</div>
+            </div>
+          ` : best ? html`
             <div class="suggestion-wrap">
               <div class="suggestion-note">Sounds like <span class="suggestion-highlight" style="color:${moodColor}">${best.genre} · ${best.mood}</span> — the picks below already match.</div>
             </div>
@@ -678,8 +974,37 @@ export class SeedScreen extends LitElement {
             <span>Made with ❤️ by warmsynths</span>
             <span class="footer-divider">·</span>
             <a class="footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
+            <span class="footer-divider">·</span>
+            ${this.isAuthenticated ? html`
+              <button class="footer-admin-btn" @click=${() => { this.showAdminModal = true; }}>
+                AI: ${this.currentProvider === 'anthropic' ? 'Claude' : 'OpenRouter'}
+              </button>
+            ` : html`
+              <button class="footer-login-btn" @click=${this.onLoginClick}>Sign in</button>
+            `}
           </div>
         </div>
+
+        ${this.showAdminModal ? html`
+          <div class="admin-modal-backdrop" @click=${() => { this.showAdminModal = false; }}>
+            <div class="admin-modal" @click=${(e: Event) => e.stopPropagation()}>
+              <div class="admin-title">AI Provider Config</div>
+              <div class="admin-desc">Select which backend model service classifies free-text prompts into chord progressions:</div>
+              <div class="admin-options">
+                <button class="admin-opt ${this.currentProvider === 'openrouter' ? 'active' : ''}" @click=${() => this.changeProvider('openrouter')}>
+                  <div class="opt-name">⚡ OpenRouter (Free Tier LLMs)</div>
+                  <div class="opt-detail">Google Gemma 4, GPT-OSS, Ling 3.0 (Automatic multi-model fallback)</div>
+                </button>
+                <button class="admin-opt ${this.currentProvider === 'anthropic' ? 'active' : ''}" @click=${() => this.changeProvider('anthropic')}>
+                  <div class="opt-name">🧠 Anthropic (Claude Haiku 4.5)</div>
+                  <div class="opt-detail">Direct call to Claude Haiku via Worker (requires ANTHROPIC_API_KEY secret set on Cloudflare)</div>
+                </button>
+              </div>
+              <button class="admin-close" @click=${() => { this.showAdminModal = false; }}>Done</button>
+              <button class="admin-logout" @click=${this.onLogoutClick}>Sign Out</button>
+            </div>
+          </div>
+        ` : ''}
       </div>
     `;
   }

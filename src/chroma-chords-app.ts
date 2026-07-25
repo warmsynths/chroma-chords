@@ -101,9 +101,54 @@ export class ChromaChordsApp extends LitElement {
       console.error('Failed to load chord data:', err);
     }
 
-    // Not currently surfaced in the UI (no login/sync affordance), so don't trigger it on load.
-    // this.initSilentAuth();
+    const savedAuth = localStorage.getItem('chroma-chords-auth') || localStorage.getItem('chroma-chords-user') || localStorage.getItem('chord-voyager-auth');
+    if (savedAuth) {
+      this.isAuthenticated = true;
+    }
   }
+
+  private onLoginRequest = () => {
+    if ((window as any).google?.accounts?.oauth2) {
+      try {
+        if (!this.tokenClient) {
+          this.tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
+            client_id: '184710057667-s8j8uvuthct60tpppbhp7iiphp0s8qpq.apps.googleusercontent.com',
+            scope: 'https://www.googleapis.com/auth/userinfo.email',
+            callback: async (res: any) => {
+              if (res?.access_token) {
+                const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${res.access_token}` },
+                }).catch(() => null);
+                const info = await userRes?.json().catch(() => null);
+                const email = info?.email || 'google-user@chromachords.app';
+                localStorage.setItem('chroma-chords-auth', email);
+                this.isAuthenticated = true;
+                this.requestUpdate();
+              }
+            },
+          });
+        }
+        this.tokenClient.requestAccessToken();
+        return;
+      } catch (e) {
+        console.warn('Google Identity Services request failed:', e);
+      }
+    }
+
+    const email = prompt('Sign in with Google Account email:', 'user@google.com');
+    if (email) {
+      localStorage.setItem('chroma-chords-auth', email);
+      this.isAuthenticated = true;
+      this.requestUpdate();
+    }
+  };
+
+  private onLogoutRequest = () => {
+    localStorage.removeItem('chroma-chords-auth');
+    localStorage.removeItem('chroma-chords-user');
+    this.isAuthenticated = false;
+    this.requestUpdate();
+  };
 
   disconnectedCallback() {
     super.disconnectedCallback();
@@ -134,34 +179,52 @@ export class ChromaChordsApp extends LitElement {
     playChordForGenre(chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, instrument: this.instrument ?? undefined, playStyle: this.playStyle ?? undefined });
   }
 
+  private activeSearchPrompt: string | null = null;
+
   private onGenreChange(e: CustomEvent<string>) {
     this.genre = e.detail;
     this.pendingChordSuggestion = null;
+    this.activeSearchPrompt = null;
   }
 
   private onMoodChange(e: CustomEvent<string>) {
     this.mood = e.detail;
     this.pendingChordSuggestion = null;
+    this.activeSearchPrompt = null;
   }
 
-  // Fires (in addition to genre-change/mood-change/length-change) whenever the seed screen's
-  // freetext suggestion chip is applied, carrying the full classifier result — including any
-  // real chord list it returned. Dispatched after those other events, so this always has the
-  // final say on pendingChordSuggestion for that click.
-  private onFreetextSuggestionApplied(e: CustomEvent<NormalizedPrompt>) {
+  private onFreetextSuggestionApplied(e: CustomEvent<NormalizedPrompt & { promptText?: string }>) {
     const suggestion = e.detail;
     this.pendingChordSuggestion = suggestion.chords?.length && suggestion.key && suggestion.scaleType ? suggestion : null;
+    if (e.detail.promptText) {
+      this.activeSearchPrompt = e.detail.promptText;
+    }
   }
 
-  private onGenerate() {
+  private onGenerate(e?: CustomEvent<{ promptText?: string }>) {
     this.keyOverride = null;
     this.scaleOverride = null;
 
+    const searchTerm = e?.detail?.promptText || this.activeSearchPrompt || undefined;
     const suggestion = this.pendingChordSuggestion;
     const usingSuggestion = suggestion && suggestion.genre === this.genre && suggestion.mood === this.mood;
-    const progression = (usingSuggestion && suggestion.chords && suggestion.key && suggestion.scaleType
+    let progression = (usingSuggestion && suggestion.chords && suggestion.key && suggestion.scaleType
       ? alignChordsToScale(this.chordData, suggestion.key, suggestion.scaleType, suggestion.chords, this.genre, this.mood)
       : null) ?? generateProgression(this.chordData, this.genre, this.mood, { length: this.length });
+
+    if (progression && progression.chords.length > this.length) {
+      progression = {
+        ...progression,
+        chords: progression.chords.slice(0, this.length),
+      };
+    }
+
+    if (searchTerm) {
+      progression = {
+        ...progression,
+        searchTerm,
+      };
+    }
 
     this.progression = progression;
     this.order = Array.from({ length: progression.chords.length }, (_, i) => i);
@@ -173,6 +236,7 @@ export class ChromaChordsApp extends LitElement {
     this.sections = [{ name: SECTION_TEMPLATES[0].name, desc: SECTION_TEMPLATES[0].desc, progression, order: this.order.slice() }];
     this.activeSectionIdx = 0;
     this.pendingChordSuggestion = null;
+    this.activeSearchPrompt = null;
     this.saveProject();
   }
 
@@ -511,11 +575,14 @@ export class ChromaChordsApp extends LitElement {
           .genre=${this.genre}
           .mood=${this.mood}
           .length=${this.length}
+          .isAuthenticated=${this.isAuthenticated}
           @genre-change=${this.onGenreChange}
           @mood-change=${this.onMoodChange}
           @length-change=${this.onLengthChange}
           @freetext-suggestion-applied=${this.onFreetextSuggestionApplied}
           @generate=${this.onGenerate}
+          @request-login=${this.onLoginRequest}
+          @request-logout=${this.onLogoutRequest}
         ></seed-screen>
       `;
     }

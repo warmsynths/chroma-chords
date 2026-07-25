@@ -1,6 +1,19 @@
 import { GENRES, MOODS } from './chord-engine';
 import { normalize, NormalizedPrompt } from './freetext-schema';
 
+export type LLMProvider = 'openrouter' | 'anthropic';
+
+const STORAGE_KEY_PROVIDER = 'chroma-chords-llm-provider';
+
+export function getLLMProvider(): LLMProvider {
+  const saved = localStorage.getItem(STORAGE_KEY_PROVIDER);
+  return saved === 'anthropic' ? 'anthropic' : 'openrouter';
+}
+
+export function setLLMProvider(provider: LLMProvider): void {
+  localStorage.setItem(STORAGE_KEY_PROVIDER, provider);
+}
+
 // Last-resort filler for normalize()'s per-field substitution — only used when the LLM's
 // response has a single malformed field (e.g. a garbled mood) and the keyword heuristic also
 // had no signal to substitute instead. Never used to represent "the" answer on its own.
@@ -71,7 +84,7 @@ async function llmClassify(text: string): Promise<unknown> {
     const res = await fetch(CLASSIFIER_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, provider: getLLMProvider() }),
       signal: controller.signal,
     });
     const data = await res.json().catch(() => null);
@@ -88,14 +101,8 @@ async function llmClassify(text: string): Promise<unknown> {
 }
 
 // Turns free text into a NormalizedPrompt: tries the LLM classifier first (via the Cloudflare
-// Worker proxy, so the Anthropic key never reaches the client), and falls back to the local
-// keyword heuristic on any network failure, timeout, or invalid response. The LLM's raw
-// response is always re-validated/fuzzy-matched against the controlled vocabulary before use.
-//
-// Returns null when there's genuinely no confident answer (LLM failed and the keyword
-// heuristic had no real signal either) — callers should treat that as "show no suggestion,"
-// never substitute a guess of their own, since an unrelated guess reads as flatly wrong to
-// anyone who typed something specific (an artist name, a song title) it didn't recognize.
+// Worker proxy, sending the selected provider: OpenRouter or Anthropic Claude), and falls back to
+// the local keyword heuristic on any network failure, timeout, or invalid response.
 export async function classifyFreeText(text: string): Promise<NormalizedPrompt | null> {
   const fallback = heuristicClassify(text);
   try {

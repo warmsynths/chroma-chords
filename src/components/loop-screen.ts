@@ -983,6 +983,22 @@ export class LoopScreen extends LitElement {
     return `cursor:grab;`;
   }
 
+  private renderHeaderTitle(p: Progression, moodColor: string) {
+    if (p.searchTerm) {
+      const raw = p.searchTerm.trim();
+      const cleaned = raw.endsWith('.') ? raw.slice(0, -1) : raw;
+      const words = cleaned.split(/\s+/);
+      if (words.length === 1) {
+        return html`<h1><span style="color:${moodColor}">${words[0]}.</span></h1>`;
+      }
+      const leading = words.slice(0, -1).join(' ');
+      const lastWord = words[words.length - 1];
+      return html`<h1>${leading} <span style="color:${moodColor}">${lastWord}.</span></h1>`;
+    }
+
+    return html`<h1>Your progression, feeling <span style="color:${moodColor}">${p.mood.toLowerCase()}.</span></h1>`;
+  }
+
   private renderLengthControl() {
     const len = this.progression.chords.length;
     return html`
@@ -1077,7 +1093,7 @@ export class LoopScreen extends LitElement {
         ` : ''}
 
         <div class="content">
-          <h1>Your progression, feeling <span style="color:${moodColor}">${p.mood.toLowerCase()}.</span></h1>
+          ${this.renderHeaderTitle(p, moodColor)}
           <div class="subcopy">${p.genre} · ${p.chords.length} ${p.chords.length === 1 ? 'chord' : 'chords'} · tap a chord to preview it — use the icons to swap it or view its voicing.</div>
 
           <div class="panel-shell">

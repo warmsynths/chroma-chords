@@ -3,7 +3,7 @@ main = "worker.ts"
 compatibility_date = "2024-11-01"
 
 # Set the real secret with:
-#   wrangler secret put ANTHROPIC_API_KEY
+#   wrangler secret put OPENROUTER_API_KEY
 # (do not put it in this file or in vars below)
 
 [vars]
