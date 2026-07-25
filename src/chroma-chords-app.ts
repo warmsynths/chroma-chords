@@ -51,8 +51,11 @@ export class ChromaChordsApp extends LitElement {
   @state() private scaleOverride: string | null = null;
   @state() private playing = true;
   @state() private showTheory = false;
-  @state() private instrument = USER_INSTRUMENTS[0].name;
-  @state() private playStyle = USER_PLAY_STYLES[0].name;
+  // null = no explicit user override yet, so playback and the picker's chip label both fall
+  // back to the genre's existing default (see genreDefaultInstrumentName/PlayStyleName in
+  // audio-service.ts) instead of a fixed value that would flatten every genre's natural voice.
+  @state() private instrument: string | null = null;
+  @state() private playStyle: string | null = null;
   @state() private sheetOpen = false;
   @state() private sheetMode: 'swap' | 'voicing' = 'swap';
   @state() private swapIndex: number | null = null;
@@ -128,7 +131,7 @@ export class ChromaChordsApp extends LitElement {
     if (!this.progression) return;
     const chordIndex = this.order[this.activeIndex] ?? 0;
     const chord = this.progression.chords[chordIndex];
-    playChordForGenre(chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, instrument: this.instrument, playStyle: this.playStyle });
+    playChordForGenre(chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, instrument: this.instrument ?? undefined, playStyle: this.playStyle ?? undefined });
   }
 
   private onGenreChange(e: CustomEvent<string>) {
@@ -297,7 +300,7 @@ export class ChromaChordsApp extends LitElement {
     this.sheetMode = 'swap';
     this.alternatives = generateAlternatives(this.chordData, this.progression, e.detail);
     this.sheetOpen = true;
-    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument, playStyle: this.playStyle });
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument ?? undefined, playStyle: this.playStyle ?? undefined });
   }
 
   // Opens the same sheet in 'voicing' mode — straight to the quality/extension/keyboard
@@ -308,14 +311,14 @@ export class ChromaChordsApp extends LitElement {
     this.sheetMode = 'voicing';
     this.alternatives = [];
     this.sheetOpen = true;
-    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument, playStyle: this.playStyle });
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument ?? undefined, playStyle: this.playStyle ?? undefined });
   }
 
   // A plain tap on a chord shape just previews the sound — it doesn't open the swap sheet.
   // Only the shape's dedicated swap-icon badge does that (see onChordTap above).
   private onChordPreview(e: CustomEvent<number>) {
     if (!this.progression) return;
-    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument, playStyle: this.playStyle });
+    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument ?? undefined, playStyle: this.playStyle ?? undefined });
   }
 
   private onSheetClose() {
@@ -332,12 +335,12 @@ export class ChromaChordsApp extends LitElement {
     this.swapIndex = null;
     this.syncActiveSection();
     this.saveProject();
-    playChordForGenre(e.detail.chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument, playStyle: this.playStyle });
+    playChordForGenre(e.detail.chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8, instrument: this.instrument ?? undefined, playStyle: this.playStyle ?? undefined });
   }
 
   private onVoicingPreview(e: CustomEvent<string[]>) {
     if (!this.progression) return;
-    playChordForGenre(e.detail.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.6, instrument: this.instrument, playStyle: this.playStyle });
+    playChordForGenre(e.detail.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.6, instrument: this.instrument ?? undefined, playStyle: this.playStyle ?? undefined });
   }
 
   // Applying a quality/extension in the swap sheet used to only preview the sound — the

@@ -171,6 +171,32 @@ const GENRE_HUMANIZE: Record<string, any> = {
   'House/Dance': { minVelocity: 100, maxVelocity: 127, spread: 0, microTiming: 0.1, humanVariance: 0.15, duration: 0.5 },
 };
 
+// Maps each internal auto-selected instrument voice to the closest of the 5 user-facing
+// picker names, for display purposes — several genres (Gospel/organ, Synthwave/juno-pad,
+// House-Dance/stab) use a voice that isn't one of the 5 selectable options at all, so those
+// fall back to the nearest sonic category rather than a literal match.
+const INSTRUMENT_ID_TO_USER_NAME: Record<InstrumentId, string> = {
+  rhodes: 'Piano',
+  epiano: 'Rhodes',
+  guitar: 'Nylon Guitar',
+  'pad-strings': 'Warm Pad',
+  'juno-pad': 'Warm Pad',
+  bell: 'Synth Bell',
+  organ: 'Piano',
+  stab: 'Nylon Guitar',
+};
+
+/** The instrument name (one of USER_INSTRUMENTS) this genre plays with by default. */
+export function genreDefaultInstrumentName(genre: string): string {
+  const id = GENRE_INSTRUMENT[genre] ?? 'rhodes';
+  return INSTRUMENT_ID_TO_USER_NAME[id] ?? 'Piano';
+}
+
+/** The play style name (one of USER_PLAY_STYLES) this genre plays with by default. */
+export function genreDefaultPlayStyleName(genre: string): string {
+  return (GENRE_HUMANIZE[genre]?.arpMode ?? 'off') === 'off' ? 'Block chords' : 'Arpeggio';
+}
+
 // Note names for MIDI-to-note conversion
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
