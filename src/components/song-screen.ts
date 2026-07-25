@@ -1,6 +1,10 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { Progression, getMoodColor, roleForTension } from '../services/chord-engine';
+import { rollMascot, pickSlot } from './mascot-character';
+import './mascot-character';
+
+const MASCOT_ALIGN = ['flex-start', 'center', 'flex-end'] as const;
 
 export interface SongSection {
   name: string;
@@ -14,6 +18,12 @@ export class SongScreen extends LitElement {
   @property({ type: Array }) sections: SongSection[] = [];
   @property({ type: Number }) activeSectionIdx = 0;
   @property({ type: Boolean }) canAddSection = true;
+
+  // Rolled fresh every time this screen mounts (see rollMascot) — a small decorative critter,
+  // shown roughly half the time, in one of a few horizontal positions below the section list
+  // where there's reliably empty space, so it never competes with real content.
+  @state() private mascot = rollMascot(0.5);
+  @state() private mascotAlign: (typeof MASCOT_ALIGN)[number] = pickSlot([...MASCOT_ALIGN]);
 
   static styles = css`
     :host {
@@ -155,6 +165,12 @@ export class SongScreen extends LitElement {
       text-align: center;
       margin-top: 24px;
     }
+    .mascot-row {
+      display: flex;
+      margin-top: 40px;
+      padding: 0 4px;
+      opacity: 0.9;
+    }
   `;
 
   private selectSection(i: number) {
@@ -212,6 +228,12 @@ export class SongScreen extends LitElement {
           </div>
 
           <div class="caption">Tap a section to open it in the Loop screen.</div>
+
+          ${this.mascot.show ? html`
+            <div class="mascot-row" style="justify-content:${this.mascotAlign}">
+              <mascot-character .kind=${this.mascot.kind} .scale=${0.8}></mascot-character>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;

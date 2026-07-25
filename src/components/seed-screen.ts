@@ -3,6 +3,18 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, GENRES, getMoodColor } from '../services/chord-engine';
 import { heuristicClassify, classifyFreeText } from '../services/freetext-service';
 import { NormalizedPrompt } from '../services/freetext-schema';
+import { rollMascot, pickSlot } from './mascot-character';
+import './mascot-character';
+
+// Side-gutter slots for the desktop-only background mascot — mobile has zero spare vertical
+// room here (the whole picker is tuned to fit one screen), so it only appears once there's
+// real gutter space beside the centered content column.
+const MASCOT_SLOTS = [
+  { side: 'left', top: '20%' },
+  { side: 'left', top: '62%' },
+  { side: 'right', top: '30%' },
+  { side: 'right', top: '68%' },
+] as const;
 
 const CLASSIFY_DEBOUNCE_MS = 500;
 
@@ -46,6 +58,8 @@ export class SeedScreen extends LitElement {
   @state() private classifyError: string | null = null;
   @state() private expandedGenre = false;
   @state() private expandedMood = false;
+  @state() private mascot = rollMascot(0.35);
+  @state() private mascotSlot = pickSlot(MASCOT_SLOTS);
 
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -375,6 +389,20 @@ export class SeedScreen extends LitElement {
       .frame { padding-top: 56px; }
     }
 
+    .mascot-slot {
+      display: none;
+      position: absolute;
+      z-index: 1;
+      opacity: 0.9;
+    }
+    /* Real gutter space beside the centered .content column only exists on wider viewports —
+       and mobile's short-viewport spacing above is tuned to fit exactly, with nothing to spare. */
+    @media (min-width: 980px) and (min-height: 700px) {
+      .mascot-slot { display: block; }
+      .mascot-slot.left { left: 40px; }
+      .mascot-slot.right { right: 40px; }
+    }
+
     /* Short mobile viewports (the constraint is vertical space, not width) — tighten spacing
        throughout so the whole picker, including the CTA, stays visible without scrolling. */
     @media (max-height: 920px) {
@@ -493,6 +521,11 @@ export class SeedScreen extends LitElement {
 
     return html`
       <div class="frame">
+        ${this.mascot.show ? html`
+          <div class="mascot-slot ${this.mascotSlot.side}" style="top:${this.mascotSlot.top}">
+            <mascot-character .kind=${this.mascot.kind} .scale=${0.75}></mascot-character>
+          </div>
+        ` : ''}
         <div class="wordmark">
           <svg width="22" height="22" viewBox="0 0 30 30">
             <circle cx="11" cy="11" r="9" fill="#F2A79B" />

@@ -7,6 +7,17 @@ import {
 } from '../services/chord-engine';
 import './swap-sheet';
 import './share-modal';
+import { rollMascot, pickSlot } from './mascot-character';
+import './mascot-character';
+
+// Side-gutter slots for the desktop-only background mascot — only shows once there's real
+// gutter space beside the centered .content column (see the min-width:900px media query below).
+const MASCOT_SLOTS = [
+  { side: 'left', top: '18%' },
+  { side: 'left', top: '58%' },
+  { side: 'right', top: '24%' },
+  { side: 'right', top: '64%' },
+] as const;
 
 const MENU_GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
 const MENU_SCALES: { label: string; value: string }[] = [
@@ -65,6 +76,11 @@ export class LoopScreen extends LitElement {
   // disables the progress-fill transition for that one render so the bar resets instantly
   // instead of visibly sliding backward, then clears itself on the very next forward step.
   @state() private snapProgress = false;
+  // Rolled fresh every time this screen mounts — a small background critter in the desktop
+  // side gutter, shown roughly a third of the time so it's a rare, subtle surprise rather than
+  // a fixture. Mobile has no reliable empty space here, so it's desktop-only (see CSS).
+  @state() private mascot = rollMascot(0.35);
+  @state() private mascotSlot = pickSlot(MASCOT_SLOTS);
 
   private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
   private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -675,6 +691,20 @@ export class LoopScreen extends LitElement {
       .panel { padding: 48px 40px; }
     }
 
+    .mascot-slot {
+      display: none;
+      position: absolute;
+      z-index: 1;
+      opacity: 0.9;
+    }
+    /* Only once the frame is wide enough to leave real gutter space beside the centered
+       .content column (760px content + generous margin) does the background mascot appear. */
+    @media (min-width: 980px) {
+      .mascot-slot { display: block; }
+      .mascot-slot.left { left: 36px; }
+      .mascot-slot.right { right: 36px; }
+    }
+
     /* flex-wrap greedily fits as many chips as their (tension-varying) widths allow per row,
        which on a narrow phone can wrap unevenly (e.g. 3 then 1). A strict 2-column grid forces
        an even 2-per-row layout without touching each chip's own size — grid tracks just divide
@@ -870,6 +900,11 @@ export class LoopScreen extends LitElement {
 
     return html`
       <div class="frame">
+        ${this.mascot.show ? html`
+          <div class="mascot-slot ${this.mascotSlot.side}" style="top:${this.mascotSlot.top}">
+            <mascot-character .kind=${this.mascot.kind} .scale=${0.75}></mascot-character>
+          </div>
+        ` : ''}
         <div class="top-bar">
           <div class="icon-btn" @click=${() => this.emit('back')}>‹</div>
           <div class="wordmark">
