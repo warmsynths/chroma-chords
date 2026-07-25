@@ -8,6 +8,7 @@ import {
   RawChordData, Progression, ChordBlock, Alternative, AUTOPLAY_INTERVAL_MS,
 } from './services/chord-engine';
 import { NormalizedPrompt } from './services/freetext-schema';
+import { setGoogleToken } from './services/freetext-service';
 import './components/seed-screen';
 import './components/loop-screen';
 import './components/song-screen';
@@ -123,6 +124,9 @@ export class ChromaChordsApp extends LitElement {
             scope: 'https://www.googleapis.com/auth/userinfo.email',
             callback: async (res: any) => {
               if (res?.access_token) {
+                this.driveService.setAccessToken(res.access_token);
+                const { setGoogleToken } = await import('./services/freetext-service');
+                setGoogleToken(res.access_token);
                 const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                   headers: { Authorization: `Bearer ${res.access_token}` },
                 }).catch(() => null);

@@ -102,13 +102,29 @@ export function heuristicClassify(text: string): NormalizedPrompt | null {
   return { genre, mood };
 }
 
-async function llmClassify(text: string): Promise<unknown> {
+let activeGoogleToken: string | null = null;
+
+export function setGoogleToken(token: string | null): void {
+  activeGoogleToken = token;
+}
+
+export function getGoogleToken(): string | null {
+  return activeGoogleToken;
+}
+
+async function llmClassify(text: string, authToken?: string | null): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+  const token = authToken ?? activeGoogleToken;
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const res = await fetch(CLASSIFIER_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ text, provider: getLLMProvider() }),
       signal: controller.signal,
     });
@@ -132,10 +148,10 @@ async function llmClassify(text: string): Promise<unknown> {
 // Turns free text into a NormalizedPrompt: tries the LLM classifier first (via the Cloudflare
 // Worker proxy, sending the selected provider: OpenRouter or Anthropic Claude), and falls back to
 // the local keyword heuristic on any network failure, timeout, or invalid response.
-export async function classifyFreeText(text: string): Promise<NormalizedPrompt | null> {
+export async function classifyFreeText(text: string, authToken?: string | null): Promise<NormalizedPrompt | null> {
   const fallback = heuristicClassify(text);
   try {
-    const raw = await llmClassify(text);
+    const raw = await llmClassify(text, authToken);
     return normalize(raw, fallback ?? NEUTRAL_FALLBACK);
   } catch (e: any) {
     console.warn('LLM classification failed, falling back to keyword heuristic:', e);

@@ -12,6 +12,23 @@ export interface Env {
   OPENROUTER_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   ALLOWED_ORIGIN?: string;
+  ALLOWED_EMAILS?: string;
+}
+
+async function verifyGoogleAccount(token: string): Promise<{ email?: string; verified: boolean }> {
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return { verified: false };
+    const info = (await res.json()) as { email?: string; email_verified?: boolean };
+    if (info && info.email && info.email_verified !== false) {
+      return { email: info.email.toLowerCase(), verified: true };
+    }
+    return { verified: false };
+  } catch {
+    return { verified: false };
+  }
 }
 
 interface OpenRouterModel {
@@ -106,13 +123,17 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
 
   let allowOrigin = configuredOrigin;
   if (reqOrigin) {
-    if (
-      reqOrigin === configuredOrigin ||
-      reqOrigin.startsWith('http://localhost') ||
-      reqOrigin.startsWith('http://127.0.0.1') ||
-      reqOrigin.endsWith('.github.io')
-    ) {
-      allowOrigin = reqOrigin;
+    try {
+      const parsedOrigin = new URL(reqOrigin);
+      const hostname = parsedOrigin.hostname.toLowerCase();
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+      const isAllowedDomain = reqOrigin === configuredOrigin || hostname === 'warmsynths.github.io';
+
+      if (isLocalhost || isAllowedDomain) {
+        allowOrigin = reqOrigin;
+      }
+    } catch {
+      // Invalid Origin header format, default back to configured origin
     }
   }
 
@@ -221,7 +242,7 @@ async function classifyAnthropic(text: string, apiKey: string): Promise<unknown>
     });
 
     if (!res.ok) {
-      throw new Error(`Anthropic HTTP ${res.status}: ${await res.text()}`);
+      throw new Error(`Anthropic API error (status ${res.status})`);
     }
 
     const data = (await res.json()) as { content?: { type: string; text?: string }[] };
@@ -260,13 +281,12 @@ async function tryOpenRouterModel(text: string, model: string, apiKey: string): 
     });
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
       if (res.status === 429) {
         const rateErr = new Error('OpenRouter daily free limit reached (50 requests/day). Add credits to your OpenRouter account to unlock 1,000/day, or switch AI to Claude.');
         (rateErr as any)._rateLimit = { limit: 50, remaining: 0 };
         throw rateErr;
       }
-      throw new Error(`OpenRouter HTTP ${res.status}: ${errText}`);
+      throw new Error(`OpenRouter API error (status ${res.status})`);
     }
 
     const limitHeader = res.headers.get('x-ratelimit-limit');
@@ -308,7 +328,7 @@ async function classifyOpenRouter(text: string, apiKey: string): Promise<unknown
     }
   }
 
-  throw new Error(`All OpenRouter free models failed. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+  throw new Error(`All OpenRouter free models failed. Last status: ${lastError instanceof Error ? lastError.message : 'Unavailable'}`);
 }
 
 export default {
@@ -322,23 +342,16 @@ export default {
         return jsonResponse({ error: 'OPENROUTER_API_KEY secret is not configured' }, 500, request, env);
       }
       try {
-        const testRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
+        const testRes = await fetch('https://openrouter.ai/api/v1/auth/key', {
+          method: 'GET',
           headers: {
             'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
             'HTTP-Referer': 'https://warmsynths.github.io/chroma-chords',
-            'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            model: 'google/gemma-4-31b-it:free',
-            max_tokens: 1,
-            messages: [{ role: 'user', content: 'ping' }],
-          }),
         });
 
         if (!testRes.ok) {
-          const errText = await testRes.text().catch(() => '');
-          if (testRes.status === 429 || errText.includes('free-models-per-day')) {
+          if (testRes.status === 429) {
             return jsonResponse({ remaining: 0, limit: 50, isFreeTier: true }, 200, request, env);
           }
         }
@@ -378,6 +391,32 @@ export default {
         if (!env.ANTHROPIC_API_KEY) {
           return jsonResponse({ error: 'ANTHROPIC_API_KEY secret is not configured on Cloudflare Worker' }, 500, request, env);
         }
+
+        const authHeader = request.headers.get('Authorization');
+        const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+
+        if (!token) {
+          return jsonResponse({ error: 'Google Sign-In authentication token is required to use Claude' }, 401, request, env);
+        }
+
+        const userAccount = await verifyGoogleAccount(token);
+        if (!userAccount.verified || !userAccount.email) {
+          return jsonResponse({ error: 'Invalid or expired Google token' }, 401, request, env);
+        }
+
+        if (!env.ALLOWED_EMAILS) {
+          return jsonResponse({ error: 'ALLOWED_EMAILS secret is not configured on Cloudflare Worker' }, 500, request, env);
+        }
+
+        const allowedEmails = env.ALLOWED_EMAILS
+          .split(',')
+          .map(e => e.trim().toLowerCase())
+          .filter(Boolean);
+
+        if (!allowedEmails.includes(userAccount.email)) {
+          return jsonResponse({ error: `Account (${userAccount.email}) is not authorized to use Claude` }, 403, request, env);
+        }
+
         const result = await classifyAnthropic(text, env.ANTHROPIC_API_KEY);
         return jsonResponse(result, 200, request, env);
       } else {
