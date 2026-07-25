@@ -837,7 +837,7 @@ export class LoopScreen extends LitElement {
   render() {
     const p = this.progression;
     const moodColor = getMoodColor(p.mood);
-    const progressPct = ((this.progressStep + 1) / Math.max(1, this.order.length)) * 100;
+    const progressPct = (this.progressStep / Math.max(1, this.order.length)) * 100;
     const panelAnim = PANEL_ANIM[p.mood] || PANEL_ANIM.Dreamy;
     // Staff mirrors the same left-to-right order the chip row shows (post drag-reorder), not
     // the progression's original array order, so the two views always read the same sequence.

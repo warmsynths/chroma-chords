@@ -1444,7 +1444,7 @@
         <div class="length-btn ${n>=tt?"disabled":""}" @click=${()=>n<tt&&this.emit("set-length",n+1)}>+</div>
         <div class="length-label-text">${n}</div>
       </div>
-    `}render(){const n=this.progression,e=kr(n.mood),t=(this.progressStep+1)/Math.max(1,this.order.length)*100,s=Ao[n.mood]||Ao.Dreamy,i=this.showTheory?_m(this.order.map(a=>n.chords[a]),n.key,n.scaleType):null,r=Ya(n.key,n.scaleType).length,o=r===0?"no sharps or flats":`${r} ${r===1?"sharp/flat":"sharps/flats"}`;return B`
+    `}render(){const n=this.progression,e=kr(n.mood),t=this.progressStep/Math.max(1,this.order.length)*100,s=Ao[n.mood]||Ao.Dreamy,i=this.showTheory?_m(this.order.map(a=>n.chords[a]),n.key,n.scaleType):null,r=Ya(n.key,n.scaleType).length,o=r===0?"no sharps or flats":`${r} ${r===1?"sharp/flat":"sharps/flats"}`;return B`
       <div class="frame">
         <div class="top-bar">
           <div class="icon-btn" @click=${()=>this.emit("back")}>‹</div>
