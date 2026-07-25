@@ -38,7 +38,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
   @state() private screen: Screen = 'seed';
   @state() private genre = 'Pop';
-  @state() private mood = 'Uplifting';
+  @state() private mood = 'Dreamy';
   @state() private progression: Progression | null = null;
   @state() private activeIndex = 0;
   // Drives the progress bar. Deliberately separate from activeIndex: activeIndex tracks which

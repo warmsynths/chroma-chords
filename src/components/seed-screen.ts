@@ -12,6 +12,13 @@ const GENRE_ICON_RADIUS = [6, 3, 12];
 
 const VIBE_EXAMPLES = ['rainy drive at 2am, first day of summer...', 'Portishead', 'Bohemian Rhapsody'];
 
+// Genre/mood pill grids default to just these, with the rest tucked behind a "+N more" toggle —
+// keeps the whole seed screen visible without scrolling on mobile. If the current selection
+// falls outside this set (e.g. restored from a saved project) it's swapped into the last slot
+// so the active pick is never hidden behind the collapsed toggle.
+const GENRE_PRIMARY = ['Lo-fi/Chill', 'R&B/Soul', 'Pop', 'Synthwave'];
+const MOOD_PRIMARY = ['Warm', 'Melancholy', 'Nostalgic', 'Dreamy'];
+
 // Shown when classification genuinely fails (LLM errored and the keyword heuristic had no
 // signal either) — the real error is logged to console (see freetext-service.ts), this is just
 // a gentle nudge toward the manual pickers rather than leaving the box looking broken.
@@ -25,7 +32,7 @@ const CLASSIFY_ERROR_MESSAGES = [
 @customElement('seed-screen')
 export class SeedScreen extends LitElement {
   @property({ type: String }) genre = 'Pop';
-  @property({ type: String }) mood = 'Uplifting';
+  @property({ type: String }) mood = 'Dreamy';
   @property({ type: Number }) length = 4;
 
   @state() private freeText = '';
@@ -37,6 +44,8 @@ export class SeedScreen extends LitElement {
   @state() private llmSuggestion: NormalizedPrompt | null = null;
   @state() private llmResolved = false;
   @state() private classifyError: string | null = null;
+  @state() private expandedGenre = false;
+  @state() private expandedMood = false;
 
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -239,6 +248,12 @@ export class SeedScreen extends LitElement {
       margin-right: 8px;
       flex-shrink: 0;
     }
+    .pill.toggle {
+      background: transparent;
+      border: 1.5px dashed var(--cv-ink-25);
+      color: var(--cv-label);
+      padding: 9px 18px;
+    }
     .mood-pill {
       padding: 8px 18px 8px 8px;
     }
@@ -359,6 +374,29 @@ export class SeedScreen extends LitElement {
       .content { max-width: 620px; }
       .frame { padding-top: 56px; }
     }
+
+    /* Short mobile viewports (the constraint is vertical space, not width) — tighten spacing
+       throughout so the whole picker, including the CTA, stays visible without scrolling. */
+    @media (max-height: 920px) {
+      .frame { padding: 18px 20px 16px; }
+      .hero { margin-bottom: 14px; }
+      h1 { font-size: clamp(24px, 6.5vw, 34px); }
+      .subcopy { margin-top: 6px; font-size: 13.5px; line-height: 1.45; }
+      .vibe-input-wrap { margin-top: 16px; padding: 6px 8px 6px 16px; }
+      .vibe-input { padding: 7px 0; font-size: 14px; }
+      .suggestion-wrap { margin-top: 6px; }
+      .divider-row { margin: 16px 0 4px; }
+      .section-label { margin-top: 14px; margin-bottom: 7px; }
+      .pill-grid { gap: 6px; }
+      .pill { padding: 6px 14px 6px 9px; font-size: 13px; }
+      .genre-icon-wrap { width: 18px; height: 18px; margin-right: 6px; }
+      .mood-badge { width: 20px; height: 20px; margin-right: 6px; }
+      .length-control { padding: 10px 16px; gap: 10px; }
+      .length-btn { width: 26px; height: 26px; }
+      .cta { margin-top: 16px; padding: 13px; font-size: 14.5px; }
+      .caption { margin-top: 6px; font-size: 11px; }
+      .footer { margin-top: 12px; font-size: 11px; }
+    }
   `;
 
   private selectGenre(name: string) {
@@ -431,6 +469,20 @@ export class SeedScreen extends LitElement {
 
   render() {
     const moodColor = getMoodColor(this.mood);
+
+    // Primary set always shown, current selection swapped into the last slot if it falls
+    // outside that set (e.g. a restored project), rest tucked behind a "+N more" toggle.
+    let primaryGenres = GENRE_PRIMARY.filter(n => GENRES.includes(n));
+    if (!primaryGenres.includes(this.genre)) primaryGenres = primaryGenres.slice(0, -1).concat(this.genre);
+    const restGenres = GENRES.filter(n => !primaryGenres.includes(n));
+    const shownGenres = this.expandedGenre ? primaryGenres.concat(restGenres) : primaryGenres;
+
+    const allMoodNames = MOODS.map(m => m.name);
+    let primaryMoodNames = MOOD_PRIMARY.filter(n => allMoodNames.includes(n));
+    if (!primaryMoodNames.includes(this.mood)) primaryMoodNames = primaryMoodNames.slice(0, -1).concat(this.mood);
+    const restMoodNames = allMoodNames.filter(n => !primaryMoodNames.includes(n));
+    const shownMoodNames = this.expandedMood ? primaryMoodNames.concat(restMoodNames) : primaryMoodNames;
+    const shownMoods = shownMoodNames.map(n => MOODS.find(m => m.name === n)!);
     const freeTextTrimmed = this.freeText.trim();
     let best: NormalizedPrompt | null = null;
     if (freeTextTrimmed.length > 2) {
@@ -488,21 +540,29 @@ export class SeedScreen extends LitElement {
 
           <div class="section-label">Genre</div>
           <div class="pill-grid">
-            ${GENRES.map((name, i) => html`
-              <div class="pill ${name === this.genre ? 'selected' : ''}" style=${name === this.genre ? `background:${moodColor}` : ''} @click=${() => this.selectGenre(name)}>
-                <div class="genre-icon-wrap">
-                  <svg width="12" height="12" viewBox="0 0 24 24">
-                    <rect x="6" y="6" width="12" height="12" rx=${GENRE_ICON_RADIUS[i % 3]} fill=${GENRE_ICON_PALETTE[i % 3]} />
-                  </svg>
+            ${shownGenres.map(name => {
+              const i = GENRES.indexOf(name);
+              return html`
+                <div class="pill ${name === this.genre ? 'selected' : ''}" style=${name === this.genre ? `background:${moodColor}` : ''} @click=${() => this.selectGenre(name)}>
+                  <div class="genre-icon-wrap">
+                    <svg width="12" height="12" viewBox="0 0 24 24">
+                      <rect x="6" y="6" width="12" height="12" rx=${GENRE_ICON_RADIUS[i % 3]} fill=${GENRE_ICON_PALETTE[i % 3]} />
+                    </svg>
+                  </div>
+                  ${name}
                 </div>
-                ${name}
+              `;
+            })}
+            ${restGenres.length ? html`
+              <div class="pill toggle" @click=${() => { this.expandedGenre = !this.expandedGenre; }}>
+                ${this.expandedGenre ? 'Show less ⌃' : `+${restGenres.length} more ⌄`}
               </div>
-            `)}
+            ` : ''}
           </div>
 
           <div class="section-label">Mood</div>
           <div class="pill-grid">
-            ${MOODS.map(m => html`
+            ${shownMoods.map(m => html`
               <div class="pill mood-pill ${m.name === this.mood ? 'selected' : ''}" style=${m.name === this.mood ? `background:${m.dot}` : ''} @click=${() => this.selectMood(m.name)}>
                 <div class="mood-badge" style="background:${m.name === this.mood ? 'rgba(46,39,31,0.1)' : m.dot + '33'}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke=${m.dot} stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -512,6 +572,11 @@ export class SeedScreen extends LitElement {
                 ${m.name}
               </div>
             `)}
+            ${restMoodNames.length ? html`
+              <div class="pill toggle" @click=${() => { this.expandedMood = !this.expandedMood; }}>
+                ${this.expandedMood ? 'Show less ⌃' : `+${restMoodNames.length} more ⌄`}
+              </div>
+            ` : ''}
           </div>
 
           <div class="section-label">Length</div>
