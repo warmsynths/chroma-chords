@@ -758,7 +758,7 @@ export interface ChordStaff {
 
 const LETTER_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const STAFF_WIDTH = 116;
-const STAFF_LINE_GAP = 7.5;
+const STAFF_LINE_GAP = 10;
 const BOTTOM_LINE_STEP = LETTER_ORDER.indexOf('E') + 4 * 7;
 const TOP_LINE_STEP = BOTTOM_LINE_STEP + 4 * 2;
 const STAFF_TOP_Y = 20;
@@ -932,7 +932,7 @@ export function buildProgressionStaff(chords: ChordBlock[], key: string, scaleTy
     steps.forEach(step => {
       const isLinePosition = (step - BOTTOM_LINE_STEP) % 2 === 0;
       if (isLinePosition && (step < BOTTOM_LINE_STEP || step > TOP_LINE_STEP)) {
-        ledgers.push({ x: cx - 8, y: stepToY(step) + offsetY });
+        ledgers.push({ x: cx - 9, y: stepToY(step) + offsetY });
       }
     });
     return { cx, name: chord.name, roman: chord.roman, notes, ledgers };

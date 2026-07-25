@@ -945,13 +945,13 @@ export class LoopScreen extends LitElement {
                 ${svg`
                   <svg width="${staff.width}" height="${staff.height}" viewBox="0 0 ${staff.width} ${staff.height}">
                     ${staff.lines.map(y => svg`<rect x="6" y="${y}" width="${staff.width - 12}" height="1.4" fill="rgba(46,39,31,0.35)" />`)}
-                    <text x="8" y="${staff.lines[3] + 12}" font-size="42" font-family="Georgia, 'Times New Roman', serif" fill="var(--cv-ink)">𝄞</text>
-                    ${staff.keySignature.map(sig => svg`<text x="${sig.x}" y="${sig.y + 5}" font-size="18" fill="var(--cv-ink)">${sig.sign === 'sharp' ? '♯' : '♭'}</text>`)}
+                    <text x="8" y="${staff.lines[3] + 14}" font-size="46" font-family="Georgia, 'Times New Roman', serif" fill="var(--cv-ink)">𝄞</text>
+                    ${staff.keySignature.map(sig => svg`<text x="${sig.x}" y="${sig.y + 6}" font-size="20" fill="var(--cv-ink)">${sig.sign === 'sharp' ? '♯' : '♭'}</text>`)}
                     ${staff.chords.map(ch => svg`
-                      <text x="${ch.cx}" y="12" font-size="10" font-weight="800" fill="var(--cv-ink)" text-anchor="middle">${ch.name}</text>
-                      ${ch.ledgers.map(lg => svg`<rect x="${lg.x}" y="${lg.y}" width="16" height="1.4" fill="rgba(46,39,31,0.5)" />`)}
-                      ${ch.notes.map(n => svg`<ellipse cx="${n.x}" cy="${n.y}" rx="5" ry="3.9" fill="var(--cv-ink)" />`)}
-                      <text x="${ch.cx}" y="${staff.height - 4}" font-size="11" font-weight="800" fill="${moodColor}" text-anchor="middle">${ch.roman}</text>
+                      <text x="${ch.cx}" y="13" font-size="11" font-weight="800" fill="var(--cv-ink)" text-anchor="middle">${ch.name}</text>
+                      ${ch.ledgers.map(lg => svg`<rect x="${lg.x}" y="${lg.y}" width="18" height="1.6" fill="rgba(46,39,31,0.5)" />`)}
+                      ${ch.notes.map(n => svg`<ellipse cx="${n.x}" cy="${n.y}" rx="6" ry="5.2" fill="var(--cv-ink)" />`)}
+                      <text x="${ch.cx}" y="${staff.height - 4}" font-size="12" font-weight="800" fill="${moodColor}" text-anchor="middle">${ch.roman}</text>
                     `)}
                   </svg>
                 `}

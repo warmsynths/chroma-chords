@@ -336,6 +336,10 @@ export class ChromaChordsApp extends LitElement {
     this.saveProject();
   }
 
+  private onBackToProgression() {
+    this.screen = 'loop';
+  }
+
   private onViewSong() {
     this.stopAutoplay();
     this.sheetOpen = false;
@@ -505,6 +509,7 @@ export class ChromaChordsApp extends LitElement {
           .canAddSection=${this.sections.length < SECTION_TEMPLATES.length}
           @select-section=${this.onSelectSection}
           @add-section=${this.onAddSection}
+          @back-to-progression=${this.onBackToProgression}
         ></song-screen>
       `;
     }
