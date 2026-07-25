@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, GENRES, getMoodColor } from '../services/chord-engine';
-import { heuristicClassify, classifyFreeText, getLLMProvider, setLLMProvider, LLMProvider } from '../services/freetext-service';
+import { heuristicClassify, classifyFreeText, getLLMProvider, setLLMProvider, LLMProvider, fetchOpenRouterKeyInfo } from '../services/freetext-service';
 import { NormalizedPrompt } from '../services/freetext-schema';
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
@@ -96,6 +96,7 @@ export class SeedScreen extends LitElement {
   @state() private showAdminModal = false;
   @state() private isClassifying = false;
   @state() private loadingMsgIdx = 0;
+  @state() private remainingRequests: number | null = null;
 
   private loadingTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -144,11 +145,33 @@ export class SeedScreen extends LitElement {
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
   private classifyToken = 0;
 
+  private loadKeyInfo() {
+    if (this.isAdmin) {
+      fetchOpenRouterKeyInfo().then(info => {
+        if (info && typeof info.remaining === 'number') {
+          this.remainingRequests = info.remaining;
+        }
+      });
+    }
+  }
+
   connectedCallback() {
     super.connectedCallback();
     this.placeholderTimer = setInterval(() => {
       this.placeholderIdx = (this.placeholderIdx + 1) % VIBE_EXAMPLES.length;
     }, 2800);
+    this.loadKeyInfo();
+  }
+
+  firstUpdated() {
+    this.loadKeyInfo();
+  }
+
+  updated(changedProperties: Map<string, any>) {
+    super.updated(changedProperties);
+    if (changedProperties.has('isAdmin') && this.isAdmin) {
+      this.loadKeyInfo();
+    }
   }
 
   disconnectedCallback() {
@@ -814,6 +837,9 @@ export class SeedScreen extends LitElement {
       try {
         const result = await classifyFreeText(text);
         if (token !== this.classifyToken) return; // text changed while the call was in flight
+        if (result?._rateLimit?.remaining !== undefined) {
+          this.remainingRequests = result._rateLimit.remaining;
+        }
         this.llmSuggestion = result;
         this.llmResolved = true;
         this.classifyError = result ? null : CLASSIFY_ERROR_MESSAGES[Math.floor(Math.random() * CLASSIFY_ERROR_MESSAGES.length)];
@@ -909,7 +935,11 @@ export class SeedScreen extends LitElement {
               />
               ${this.isAdmin ? html`
                 <button class="vibe-admin-btn" @click=${() => { this.showAdminModal = true; }} title="AI Model Configuration">
-                  ⚡ ${this.currentProvider === 'anthropic' ? 'Claude' : 'OpenRouter'}
+                  ⚡ ${this.currentProvider === 'anthropic'
+                    ? 'Claude'
+                    : this.remainingRequests !== null
+                      ? `OpenRouter (${this.remainingRequests} left)`
+                      : 'OpenRouter'}
                 </button>
               ` : ''}
             </div>
@@ -1015,6 +1045,11 @@ export class SeedScreen extends LitElement {
             <div class="admin-modal" @click=${(e: Event) => e.stopPropagation()}>
               <div class="admin-title">AI Provider Config</div>
               <div class="admin-desc">Select which backend model service classifies free-text prompts into chord progressions:</div>
+              ${this.remainingRequests !== null ? html`
+                <div class="admin-desc" style="color: var(--cv-ink); font-weight: 700; margin-top: 4px;">
+                  📊 Daily OpenRouter Quota: ${this.remainingRequests} remaining requests left today.
+                </div>
+              ` : ''}
               <div class="admin-options">
                 <button class="admin-opt ${this.currentProvider === 'openrouter' ? 'active' : ''}" @click=${() => this.changeProvider('openrouter')}>
                   <div class="opt-name">⚡ OpenRouter (Free Tier LLMs)</div>

@@ -261,11 +261,16 @@ async function tryOpenRouterModel(text: string, model: string, apiKey: string): 
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      if (res.status === 429 && errText.includes('free-models-per-day')) {
-        throw new Error('OpenRouter daily free limit reached (50 requests/day). Add credits to your OpenRouter account to unlock 1,000/day, or switch AI to Claude in the footer.');
+      if (res.status === 429) {
+        const rateErr = new Error('OpenRouter daily free limit reached (50 requests/day). Add credits to your OpenRouter account to unlock 1,000/day, or switch AI to Claude.');
+        (rateErr as any)._rateLimit = { limit: 50, remaining: 0 };
+        throw rateErr;
       }
       throw new Error(`OpenRouter HTTP ${res.status}: ${errText}`);
     }
+
+    const limitHeader = res.headers.get('x-ratelimit-limit');
+    const remainingHeader = res.headers.get('x-ratelimit-remaining');
 
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
@@ -273,7 +278,15 @@ async function tryOpenRouterModel(text: string, model: string, apiKey: string): 
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw new Error('Empty completion content from OpenRouter');
 
-    return parseClassifierJson(content);
+    const parsed = parseClassifierJson(content);
+    if (parsed && typeof parsed === 'object') {
+      const rateLimit: Record<string, number> = {
+        limit: limitHeader ? parseInt(limitHeader, 10) : 50,
+        remaining: remainingHeader ? parseInt(remainingHeader, 10) : 0,
+      };
+      (parsed as any)._rateLimit = rateLimit;
+    }
+    return parsed;
   } finally {
     clearTimeout(timeout);
   }
@@ -287,7 +300,7 @@ async function classifyOpenRouter(text: string, apiKey: string): Promise<unknown
     try {
       return await tryOpenRouterModel(text, model, apiKey);
     } catch (err) {
-      if (err instanceof Error && err.message.includes('daily free limit reached')) {
+      if (err && typeof err === 'object' && ('_rateLimit' in err || (err instanceof Error && err.message.includes('daily free limit reached')))) {
         throw err;
       }
       console.warn(`OpenRouter free model ${model} failed, trying next:`, err);
@@ -302,6 +315,44 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+    }
+
+    if (request.method === 'GET') {
+      if (!env.OPENROUTER_API_KEY) {
+        return jsonResponse({ error: 'OPENROUTER_API_KEY secret is not configured' }, 500, request, env);
+      }
+      try {
+        const testRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+            'HTTP-Referer': 'https://warmsynths.github.io/chroma-chords',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'google/gemma-4-31b-it:free',
+            max_tokens: 1,
+            messages: [{ role: 'user', content: 'ping' }],
+          }),
+        });
+
+        if (!testRes.ok) {
+          const errText = await testRes.text().catch(() => '');
+          if (testRes.status === 429 || errText.includes('free-models-per-day')) {
+            return jsonResponse({ remaining: 0, limit: 50, isFreeTier: true }, 200, request, env);
+          }
+        }
+
+        const remHeader = testRes.headers.get('x-ratelimit-remaining');
+        const limHeader = testRes.headers.get('x-ratelimit-limit');
+
+        const remaining = remHeader ? parseInt(remHeader, 10) : 50;
+        const limit = limHeader ? parseInt(limHeader, 10) : 50;
+
+        return jsonResponse({ remaining, limit, isFreeTier: true }, 200, request, env);
+      } catch {
+        return jsonResponse({ remaining: 0, limit: 50, isFreeTier: true }, 200, request, env);
+      }
     }
 
     if (request.method !== 'POST') {
@@ -336,8 +387,14 @@ export default {
         const result = await classifyOpenRouter(text, env.OPENROUTER_API_KEY);
         return jsonResponse(result, 200, request, env);
       }
-    } catch (err) {
-      return jsonResponse({ error: err instanceof Error ? err.message : 'Classification failed' }, 502, request, env);
+    } catch (err: any) {
+      const errRes: Record<string, unknown> = {
+        error: err instanceof Error ? err.message : 'Classification failed'
+      };
+      if (err && typeof err === 'object' && '_rateLimit' in err) {
+        errRes._rateLimit = err._rateLimit;
+      }
+      return jsonResponse(errRes, 502, request, env);
     }
   },
 };

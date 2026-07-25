@@ -18,6 +18,7 @@ export interface NormalizedPrompt {
   scaleType?: string;
   length?: number;
   chords?: RequestedChordTag[];
+  _rateLimit?: { limit?: number; remaining?: number };
 }
 
 const MOOD_NAMES = MOODS.map(m => m.name);
@@ -104,5 +105,7 @@ export function normalize(raw: unknown, fallback: NormalizeFallback): Normalized
     length = Math.max(MIN_PROGRESSION_LENGTH, Math.min(MAX_PROGRESSION_LENGTH, Math.round(obj.length)));
   }
 
-  return { genre, mood, key, scaleType, length, chords };
+  const _rateLimit = obj._rateLimit && typeof obj._rateLimit === 'object' ? (obj._rateLimit as { limit?: number; remaining?: number }) : undefined;
+
+  return { genre, mood, key, scaleType, length, chords, _rateLimit };
 }

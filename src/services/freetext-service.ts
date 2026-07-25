@@ -28,6 +28,31 @@ const CLASSIFIER_ENDPOINT =
 // real error, and every slow-but-working model call looks like a generic AbortError instead.
 const LLM_TIMEOUT_MS = 12000;
 
+export interface KeyRateLimitInfo {
+  limit?: number;
+  remaining?: number;
+  isFreeTier?: boolean;
+}
+
+export async function fetchOpenRouterKeyInfo(): Promise<KeyRateLimitInfo | null> {
+  try {
+    const res = await fetch(CLASSIFIER_ENDPOINT);
+    if (res.ok) {
+      const json = await res.json();
+      if (json && typeof json.remaining === 'number') {
+        return {
+          remaining: json.remaining,
+          limit: json.limit,
+          isFreeTier: json.isFreeTier,
+        };
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 // Local, offline classifier — no network involved. Used both as the always-on instant
 // suggestion while the user is still typing, and as the fallback when the LLM call fails,
 // times out, or returns something that doesn't survive validation.
@@ -92,7 +117,11 @@ async function llmClassify(text: string): Promise<unknown> {
       const detail = data && typeof data === 'object' && 'error' in data
         ? String((data as { error: unknown }).error)
         : `HTTP ${res.status}`;
-      throw new Error(`Classifier request failed: ${detail}`);
+      const err = new Error(`Classifier request failed: ${detail}`);
+      if (data && typeof data === 'object' && '_rateLimit' in data) {
+        (err as any)._rateLimit = (data as any)._rateLimit;
+      }
+      throw err;
     }
     return data;
   } finally {
@@ -108,8 +137,12 @@ export async function classifyFreeText(text: string): Promise<NormalizedPrompt |
   try {
     const raw = await llmClassify(text);
     return normalize(raw, fallback ?? NEUTRAL_FALLBACK);
-  } catch (e) {
+  } catch (e: any) {
     console.warn('LLM classification failed, falling back to keyword heuristic:', e);
-    return fallback;
+    const result = normalize(fallback ?? NEUTRAL_FALLBACK, NEUTRAL_FALLBACK);
+    if (e && typeof e === 'object' && '_rateLimit' in e) {
+      result._rateLimit = e._rateLimit;
+    }
+    return result;
   }
 }
