@@ -49,4 +49,26 @@ describe('ProjectStorageManager Deep Module', () => {
     const hash = await manager.hashEmail('warmsynthsiloveyou@gmail.com');
     expect(AUTHORIZED_HASHES).toContain(hash);
   });
+
+  it('triggers setupGoogleAuth with prompt: none during silent auth without throwing', async () => {
+    localStorage.setItem('chroma-chords-auth', 'warmsynthsiloveyou@gmail.com');
+    const requestAccessTokenMock = vi.fn();
+    (globalThis as any).google = {
+      accounts: {
+        oauth2: {
+          initTokenClient: vi.fn().mockReturnValue({
+            requestAccessToken: requestAccessTokenMock,
+          }),
+        },
+      },
+    };
+
+    manager.initSilentAuth();
+
+    // Allow promise microtask to resolve
+    await new Promise(r => setTimeout(r, 250));
+
+    expect((globalThis as any).google.accounts.oauth2.initTokenClient).toHaveBeenCalled();
+    expect(requestAccessTokenMock).toHaveBeenCalledWith({ prompt: 'none' });
+  });
 });

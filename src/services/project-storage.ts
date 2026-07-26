@@ -94,7 +94,7 @@ export class ProjectStorageManager {
         client_id: '184710057667-s8j8uvuthct60tpppbhp7iiphp0s8qpq.apps.googleusercontent.com',
         scope: 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email',
         callback: async (tokenResponse: any) => {
-          if (!tokenResponse || !tokenResponse.access_token) return;
+          if (!tokenResponse || tokenResponse.error || !tokenResponse.access_token) return;
           try {
             const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
               headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
@@ -119,7 +119,7 @@ export class ProjectStorageManager {
       });
 
       try {
-        this.tokenClient.requestAccessToken({ prompt: '' });
+        this.tokenClient.requestAccessToken({ prompt: 'none' });
       } catch (e) {
         console.error('Failed to request Drive access silently', e);
       }
