@@ -141,6 +141,247 @@ export class SeedScreen extends LitElement {
     setLLMProvider(provider);
   }
 
+  // Jelly Aquarium 2D Physics Engine
+  private jellyBodies: Array<{
+    id: number;
+    shapeKey: string;
+    width: number;
+    height: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    maxSpeed: number;
+    drag: number;
+    driftForce: number;
+    restitution: number;
+    radius: number;
+    mass: number;
+    angle: number;
+    vRot: number;
+    squishX: number;
+    squishY: number;
+    driftPhaseX: number;
+    driftPhaseY: number;
+    driftFreqX: number;
+    driftFreqY: number;
+  }> = [];
+
+  private animFrameId: number | null = null;
+  private mouseX: number | null = null;
+  private mouseY: number | null = null;
+
+  private initJellyBodies() {
+    const rect = this.getBoundingClientRect();
+    const width = rect.width > 0 ? rect.width : (typeof window !== 'undefined' ? window.innerWidth : 800);
+    const height = rect.height > 0 ? rect.height : (typeof window !== 'undefined' ? window.innerHeight : 600);
+
+    // Serene, soft, round jelly shapes
+    const SHAPES = [
+      { key: 'blob1', r: 20 },
+      { key: 'blob2', r: 14 },
+      { key: 'blob3', r: 17 },
+      { key: 'circle', r: 16 },
+      { key: 'ring', r: 22 },
+      { key: 'doubleRing', r: 18 },
+      { key: 'pill', r: 16 },
+      { key: 'crescent', r: 16 },
+      { key: 'arch', r: 15 },
+      { key: 'squircle', r: 16 }
+    ];
+
+    // Reduced count (10 shapes) for open negative space & serene atmosphere
+    const count = 10;
+    const bodies = [];
+
+    for (let i = 0; i < count; i++) {
+      const s = SHAPES[i % SHAPES.length];
+      const margin = s.r + 30;
+      const x = margin + Math.random() * Math.max(100, width - margin * 2);
+      const y = margin + Math.random() * Math.max(100, height - margin * 2);
+
+      // Ultra-slow, serene aquarium float speeds (0.08 - 0.25 px/frame)
+      const speed = 0.08 + Math.random() * 0.18;
+      const maxSpeed = 0.35 + Math.random() * 0.25;
+      const drag = 0.985;
+      const driftForce = 0.006 + Math.random() * 0.008;
+      const restitution = 0.35;
+
+      const angleDir = Math.random() * Math.PI * 2;
+
+      bodies.push({
+        id: i,
+        shapeKey: s.key,
+        width: s.r * 2,
+        height: s.r * 2,
+        x,
+        y,
+        vx: Math.cos(angleDir) * speed,
+        vy: Math.sin(angleDir) * speed,
+        maxSpeed,
+        drag,
+        driftForce,
+        restitution,
+        radius: s.r,
+        mass: s.r * s.r,
+        angle: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 0.05,
+        squishX: 1.0,
+        squishY: 1.0,
+        driftPhaseX: Math.random() * Math.PI * 2,
+        driftPhaseY: Math.random() * Math.PI * 2,
+        driftFreqX: 0.6 + Math.random() * 0.5,
+        driftFreqY: 0.6 + Math.random() * 0.5,
+      });
+    }
+    this.jellyBodies = bodies;
+  }
+
+  private physicsLoop = () => {
+    if (!this.isConnected) return;
+
+    const now = performance.now();
+    const rect = this.getBoundingClientRect();
+    const width = rect.width > 0 ? rect.width : (typeof window !== 'undefined' ? window.innerWidth : 800);
+    const height = rect.height > 0 ? rect.height : (typeof window !== 'undefined' ? window.innerHeight : 600);
+
+    const bodies = this.jellyBodies;
+    const numBodies = bodies.length;
+
+    // 1. Fluid currents, mouse repulsion, & drag integration
+    for (let i = 0; i < numBodies; i++) {
+      const b = bodies[i];
+
+      // Ultra-gentle ambient water currents
+      b.vx += Math.sin(now * 0.0006 * b.driftFreqX + b.driftPhaseX) * b.driftForce;
+      b.vy += Math.cos(now * 0.0007 * b.driftFreqY + b.driftPhaseY) * b.driftForce;
+
+      // Soft mouse repulsion (gentle water ripple)
+      if (this.mouseX !== null && this.mouseY !== null) {
+        const dx = b.x - this.mouseX;
+        const dy = b.y - this.mouseY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 140 && dist > 0) {
+          const force = (1 - dist / 140) * 0.12;
+          b.vx += (dx / dist) * force;
+          b.vy += (dy / dist) * force;
+        }
+      }
+
+      // Fluid drag damping
+      b.vx *= b.drag;
+      b.vy *= b.drag;
+
+      // Serene speed cap
+      const speed = Math.hypot(b.vx, b.vy);
+      if (speed > b.maxSpeed) {
+        b.vx = (b.vx / speed) * b.maxSpeed;
+        b.vy = (b.vy / speed) * b.maxSpeed;
+      }
+
+      // Position & slow rotation step
+      b.x += b.vx;
+      b.y += b.vy;
+      b.angle += b.vRot;
+
+      // Soft boundary wall bounce
+      const margin = b.radius;
+      if (b.x < margin) {
+        b.x = margin;
+        b.vx = Math.abs(b.vx) * b.restitution + 0.02;
+        b.squishX = 0.88;
+        b.squishY = 1.12;
+      } else if (b.x > width - margin) {
+        b.x = width - margin;
+        b.vx = -Math.abs(b.vx) * b.restitution - 0.02;
+        b.squishX = 0.88;
+        b.squishY = 1.12;
+      }
+
+      if (b.y < margin) {
+        b.y = margin;
+        b.vy = Math.abs(b.vy) * b.restitution + 0.02;
+        b.squishX = 1.12;
+        b.squishY = 0.88;
+      } else if (b.y > height - margin) {
+        b.y = height - margin;
+        b.vy = -Math.abs(b.vy) * b.restitution - 0.02;
+        b.squishX = 1.12;
+        b.squishY = 0.88;
+      }
+
+      // Gentle spring recovery for jelly squish
+      b.squishX += (1.0 - b.squishX) * 0.08;
+      b.squishY += (1.0 - b.squishY) * 0.08;
+    }
+
+    // 2. Soft, Cushion-like Bubble Collisions (Zero Chaos)
+    for (let i = 0; i < numBodies; i++) {
+      for (let j = i + 1; j < numBodies; j++) {
+        const b1 = bodies[i];
+        const b2 = bodies[j];
+        const dx = b2.x - b1.x;
+        const dy = b2.y - b1.y;
+        const dist = Math.hypot(dx, dy);
+        const minDist = b1.radius + b2.radius;
+
+        if (dist < minDist && dist > 0) {
+          const overlap = minDist - dist;
+          const nx = dx / dist;
+          const ny = dy / dist;
+
+          // Gently push apart
+          b1.x -= nx * overlap * 0.4;
+          b1.y -= ny * overlap * 0.4;
+          b2.x += nx * overlap * 0.4;
+          b2.y += ny * overlap * 0.4;
+
+          // Soft impulse response (bubble nudge)
+          const kx = b1.vx - b2.vx;
+          const ky = b1.vy - b2.vy;
+          const p = (nx * kx + ny * ky) / (b1.mass + b2.mass);
+          const restitution = 0.35;
+
+          b1.vx -= p * b2.mass * nx * restitution;
+          b1.vy -= p * b2.mass * ny * restitution;
+          b2.vx += p * b1.mass * nx * restitution;
+          b2.vy += p * b1.mass * ny * restitution;
+
+          // Subtle organic jelly compression
+          const squishAmt = 0.12;
+          b1.squishX = Math.max(0.85, 1 - squishAmt * Math.abs(nx));
+          b1.squishY = Math.max(0.85, 1 - squishAmt * Math.abs(ny));
+          b2.squishX = Math.max(0.85, 1 - squishAmt * Math.abs(nx));
+          b2.squishY = Math.max(0.85, 1 - squishAmt * Math.abs(ny));
+        }
+      }
+    }
+
+    // 3. Ultra-fast hardware accelerated DOM update
+    if (this.shadowRoot) {
+      for (let i = 0; i < numBodies; i++) {
+        const b = bodies[i];
+        const el = this.shadowRoot.getElementById(`jelly-${b.id}`);
+        if (el) {
+          el.style.transform = `translate3d(${b.x - b.radius}px, ${b.y - b.radius}px, 0) rotate(${b.angle}deg) scale(${b.squishX}, ${b.squishY})`;
+        }
+      }
+    }
+
+    this.animFrameId = requestAnimationFrame(this.physicsLoop);
+  };
+
+  private onFrameMouseMove(e: MouseEvent) {
+    const rect = this.getBoundingClientRect();
+    this.mouseX = e.clientX - rect.left;
+    this.mouseY = e.clientY - rect.top;
+  }
+
+  private onFrameMouseLeave() {
+    this.mouseX = null;
+    this.mouseY = null;
+  }
+
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
   private classifyToken = 0;
@@ -161,10 +402,14 @@ export class SeedScreen extends LitElement {
       this.placeholderIdx = (this.placeholderIdx + 1) % VIBE_EXAMPLES.length;
     }, 2800);
     this.loadKeyInfo();
+    this.initJellyBodies();
   }
 
   firstUpdated() {
     this.loadKeyInfo();
+    if (typeof window !== 'undefined' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.animFrameId = requestAnimationFrame(this.physicsLoop);
+    }
   }
 
   updated(changedProperties: Map<string, any>) {
@@ -176,6 +421,7 @@ export class SeedScreen extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
     if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
     this.stopLoadingTimer();
@@ -221,27 +467,24 @@ export class SeedScreen extends LitElement {
       text-align: center;
       margin-bottom: 24px;
     }
-    .float-shape {
+    .aquarium-layer {
       position: absolute;
+      inset: 0;
       pointer-events: none;
+      overflow: hidden;
+      z-index: 1;
     }
-    .float-shape.a {
-      top: -22px;
-      left: 4px;
-      animation: cv-float-1 7s ease-in-out infinite;
+    .jelly-shape-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      will-change: transform;
+      transform-origin: center;
     }
-    .float-shape.b {
-      bottom: -26px;
-      right: -18px;
-      animation: cv-float-2 6.5s ease-in-out infinite;
-    }
-    @keyframes cv-float-1 {
-      0%, 100% { transform: translate(0, 0) rotate(0deg); }
-      50% { transform: translate(0, -14px) rotate(4deg); }
-    }
-    @keyframes cv-float-2 {
-      0%, 100% { transform: translate(0, 0) rotate(0deg); }
-      50% { transform: translate(10px, -8px) rotate(-5deg); }
+    .wordmark, .mascot-parade, .content, .admin-modal-backdrop {
+      position: relative;
+      z-index: 2;
     }
     h1 {
       margin: 0;
@@ -904,15 +1147,44 @@ export class SeedScreen extends LitElement {
     }, CLASSIFY_DEBOUNCE_MS);
   }
 
-  // Applies a classification result to the genre/mood/length controls and carries it up to
-  // chroma-chords-app (which uses it to build a real progression on Generate, including any
-  // key/scaleType/chords the LLM returned) — called automatically as soon as there's a
-  // confident answer, not on a separate click.
   private applyBest(best: NormalizedPrompt) {
     this.selectGenre(best.genre);
     this.selectMood(best.mood);
     const detail = { ...best, promptText: this.freeText.trim() };
     this.dispatchEvent(new CustomEvent('freetext-suggestion-applied', { detail, bubbles: true, composed: true }));
+  }
+
+  private renderJellySvg(key: string) {
+    switch (key) {
+      case 'blob1':
+        return html`<svg width="38" height="38" viewBox="0 0 38 38"><path d="M19 2C28 2 36 9 36 19C36 29 28 36 18 36C8 36 2 27 2 18C2 9 10 2 19 2Z" fill="#F6D98B"/></svg>`;
+      case 'blob2':
+        return html`<svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 2C18 2 22 8 22 14C22 20 16 22 10 22C4 22 2 16 2 10C2 4 6 2 12 2Z" fill="#F2A79B" opacity="0.9"/></svg>`;
+      case 'blob3':
+        return html`<svg width="32" height="32" viewBox="0 0 32 32"><path d="M16 2C24 2 30 7 30 16C30 25 22 30 14 30C6 30 2 23 2 14C2 5 8 2 16 2Z" fill="#F2C9A0"/></svg>`;
+      case 'circle':
+        return html`<svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="14" fill="#9CC0EC"/></svg>`;
+      case 'dot':
+        return html`<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#9CC0EC"/></svg>`;
+      case 'ring':
+        return html`<svg width="44" height="44" viewBox="0 0 46 46"><circle cx="23" cy="23" r="20" fill="none" stroke="#9CC0EC" stroke-width="6" opacity="0.6"/></svg>`;
+      case 'doubleRing':
+        return html`<svg width="36" height="36" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="#9CC0EC" stroke-width="3"/><circle cx="18" cy="18" r="7" fill="#9CC0EC"/></svg>`;
+      case 'pill':
+        return html`<svg width="34" height="20" viewBox="0 0 34 20"><rect x="2" y="2" width="30" height="16" rx="8" fill="#F2C9A0"/></svg>`;
+      case 'crescent':
+        return html`<svg width="30" height="30" viewBox="0 0 30 30"><path d="M18 4A14 14 0 1 0 28 22 11 11 0 1 1 18 4z" fill="#C9A9E0"/></svg>`;
+      case 'arch':
+        return html`<svg width="36" height="22" viewBox="0 0 36 20"><path d="M2 18 A 16 16 0 0 1 34 18 Z" fill="#B8CC9E" opacity="0.85"/></svg>`;
+      case 'squircle':
+        return html`<svg width="32" height="32" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="12" fill="#9CC0EC"/></svg>`;
+      case 'oval':
+        return html`<svg width="32" height="22" viewBox="0 0 32 22"><ellipse cx="16" cy="11" rx="14" ry="9" fill="#B8CC9E"/></svg>`;
+      case 'donut':
+        return html`<svg width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="#C6564B" stroke-width="6" opacity="0.75"/></svg>`;
+      default:
+        return html`<svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#F6D98B"/></svg>`;
+    }
   }
 
   render() {
@@ -940,7 +1212,15 @@ export class SeedScreen extends LitElement {
     }
 
     return html`
-      <div class="frame">
+      <div class="frame" @mousemove=${this.onFrameMouseMove} @mouseleave=${this.onFrameMouseLeave}>
+        <div class="aquarium-layer">
+          ${this.jellyBodies.map(b => html`
+            <div class="jelly-shape-wrapper" id="jelly-${b.id}" style="transform: translate3d(${b.x - b.radius}px, ${b.y - b.radius}px, 0) rotate(${b.angle}deg) scale(${b.squishX}, ${b.squishY})">
+              ${this.renderJellySvg(b.shapeKey)}
+            </div>
+          `)}
+        </div>
+
         ${this.mascot.show ? html`
           <div class="mascot-slot ${this.mascotSlot.side}" style="top:${this.mascotSlot.top}">
             <mascot-character .kind=${this.mascot.kind} .scale=${0.75}></mascot-character>
@@ -957,9 +1237,6 @@ export class SeedScreen extends LitElement {
 
         <div class="content">
           <div class="hero">
-            <svg class="float-shape a" width="34" height="34" viewBox="0 0 38 38"><circle cx="19" cy="19" r="17" fill="#F6D98B" /></svg>
-            <svg class="float-shape b" width="26" height="26" viewBox="0 0 30 30"><rect x="2" y="2" width="26" height="26" rx="9" fill="#9CC0EC" /></svg>
-
             <h1>Describe a vibe,<br />hear it as chords.</h1>
             <div class="subcopy">Type a feeling in your own words — or pick a genre and mood below.</div>
           </div>
