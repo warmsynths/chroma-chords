@@ -54,6 +54,25 @@ export class ChromaChordsApp extends LitElement {
       display: block;
       min-height: 100dvh;
     }
+    .screen-view {
+      display: block;
+      min-height: 100dvh;
+      opacity: 1;
+      transform: scale(1);
+      transition: opacity 200ms var(--cv-ease), transform 240ms var(--cv-ease);
+    }
+    @starting-style {
+      .screen-view {
+        opacity: 0;
+        transform: scale(0.985);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .screen-view {
+        transition: opacity 150ms ease;
+        transform: none !important;
+      }
+    }
   `;
 
   async firstUpdated() {
@@ -388,8 +407,9 @@ export class ChromaChordsApp extends LitElement {
   }
 
   render() {
+    let screenContent;
     if (this.screen === 'seed' || !this.progression) {
-      return html`
+      screenContent = html`
         <seed-screen
           .genre=${this.genre}
           .mood=${this.mood}
@@ -405,10 +425,8 @@ export class ChromaChordsApp extends LitElement {
           @request-logout=${this.onLogoutRequest}
         ></seed-screen>
       `;
-    }
-
-    if (this.screen === 'song') {
-      return html`
+    } else if (this.screen === 'song') {
+      screenContent = html`
         <song-screen
           .sections=${this.sections}
           .activeSectionIdx=${this.activeSectionIdx}
@@ -418,47 +436,49 @@ export class ChromaChordsApp extends LitElement {
           @back-to-progression=${this.onBackToProgression}
         ></song-screen>
       `;
+    } else {
+      const swapChord = this.swapIndex !== null ? this.progression.chords[this.swapIndex] : null;
+
+      screenContent = html`
+        <loop-screen
+          .progression=${this.progression}
+          .activeIndex=${this.activeIndex}
+          .progressStep=${this.progressStep}
+          .order=${this.order}
+          .playing=${this.playing}
+          .showTheory=${this.showTheory}
+          .instrument=${this.instrument}
+          .playStyle=${this.playStyle}
+          .sheetOpen=${this.sheetOpen}
+          .sheetMode=${this.sheetMode}
+          .swapChord=${swapChord}
+          .swapIndex=${this.swapIndex}
+          .alternatives=${this.alternatives}
+          @back=${this.onBack}
+          @theory-toggle=${this.onTheoryToggle}
+          @set-instrument=${this.onSetInstrument}
+          @set-play-style=${this.onSetPlayStyle}
+          @toggle-play=${this.onTogglePlay}
+          @chord-tap=${this.onChordTap}
+          @chord-voicing-tap=${this.onChordVoicingTap}
+          @chord-preview=${this.onChordPreview}
+          @close=${this.onSheetClose}
+          @select-alternative=${this.onSelectAlternative}
+          @voicing-preview=${this.onVoicingPreview}
+          @voicing-change=${this.onVoicingChange}
+          @set-key=${this.onSetKey}
+          @set-scale=${this.onSetScale}
+          @set-genre=${this.onSetGenre}
+          @set-mood=${this.onSetMood}
+          @reroll=${this.onReroll}
+          @reorder=${this.onReorder}
+          @set-length=${this.onSetLength}
+          @view-song=${this.onViewSong}
+        ></loop-screen>
+      `;
     }
 
-    const swapChord = this.swapIndex !== null ? this.progression.chords[this.swapIndex] : null;
-
-    return html`
-      <loop-screen
-        .progression=${this.progression}
-        .activeIndex=${this.activeIndex}
-        .progressStep=${this.progressStep}
-        .order=${this.order}
-        .playing=${this.playing}
-        .showTheory=${this.showTheory}
-        .instrument=${this.instrument}
-        .playStyle=${this.playStyle}
-        .sheetOpen=${this.sheetOpen}
-        .sheetMode=${this.sheetMode}
-        .swapChord=${swapChord}
-        .swapIndex=${this.swapIndex}
-        .alternatives=${this.alternatives}
-        @back=${this.onBack}
-        @theory-toggle=${this.onTheoryToggle}
-        @set-instrument=${this.onSetInstrument}
-        @set-play-style=${this.onSetPlayStyle}
-        @toggle-play=${this.onTogglePlay}
-        @chord-tap=${this.onChordTap}
-        @chord-voicing-tap=${this.onChordVoicingTap}
-        @chord-preview=${this.onChordPreview}
-        @close=${this.onSheetClose}
-        @select-alternative=${this.onSelectAlternative}
-        @voicing-preview=${this.onVoicingPreview}
-        @voicing-change=${this.onVoicingChange}
-        @set-key=${this.onSetKey}
-        @set-scale=${this.onSetScale}
-        @set-genre=${this.onSetGenre}
-        @set-mood=${this.onSetMood}
-        @reroll=${this.onReroll}
-        @reorder=${this.onReorder}
-        @set-length=${this.onSetLength}
-        @view-song=${this.onViewSong}
-      ></loop-screen>
-    `;
+    return html`<div class="screen-view">${screenContent}</div>`;
   }
 }
 

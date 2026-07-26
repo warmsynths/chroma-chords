@@ -114,7 +114,22 @@ export class SongScreen extends LitElement {
       gap: 12px;
       cursor: pointer;
       background: var(--cv-surface);
-      transition: transform 0.15s ease, box-shadow 0.2s ease;
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 200ms var(--cv-ease);
+    }
+    @starting-style {
+      .section-row {
+        opacity: 0;
+        transform: translateY(10px) scale(0.98);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      @starting-style {
+        .section-row {
+          transform: none;
+        }
+      }
     }
     .section-row:hover {
       transform: translateY(-2px);

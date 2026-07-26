@@ -346,6 +346,22 @@ export class SeedScreen extends LitElement {
       font-size: 12.5px;
       font-weight: 600;
       color: var(--cv-ink-55);
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity 180ms var(--cv-ease), transform 180ms var(--cv-ease);
+    }
+    @starting-style {
+      .suggestion-note {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      @starting-style {
+        .suggestion-note {
+          transform: none;
+        }
+      }
     }
     .suggestion-note.error {
       font-style: italic;
@@ -408,7 +424,22 @@ export class SeedScreen extends LitElement {
       cursor: pointer;
       background: var(--cv-surface-2);
       color: #5B5145;
-      transition: transform 150ms var(--cv-ease), background 150ms var(--cv-ease), color 150ms var(--cv-ease);
+      opacity: 1;
+      transform: translateY(0);
+      transition: transform 150ms var(--cv-ease), background 150ms var(--cv-ease), color 150ms var(--cv-ease), opacity 180ms var(--cv-ease);
+    }
+    @starting-style {
+      .pill {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      @starting-style {
+        .pill {
+          transform: none;
+        }
+      }
     }
     .pill:active {
       transform: scale(0.96);
@@ -619,6 +650,8 @@ export class SeedScreen extends LitElement {
       align-items: center;
       justify-content: center;
       padding: 20px;
+      opacity: 1;
+      transition: opacity 220ms ease, backdrop-filter 220ms ease;
     }
     .admin-modal {
       background: var(--cv-cream);
@@ -629,6 +662,24 @@ export class SeedScreen extends LitElement {
       width: 100%;
       box-shadow: 0 24px 48px -12px rgba(46, 39, 31, 0.35);
       text-align: left;
+      opacity: 1;
+      transform: scale(1) translateY(0);
+      transition: opacity 240ms var(--cv-ease), transform 260ms var(--cv-ease);
+    }
+    @starting-style {
+      .admin-modal-backdrop {
+        opacity: 0;
+      }
+      .admin-modal {
+        opacity: 0;
+        transform: scale(0.95) translateY(8px);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .admin-modal {
+        transition: opacity 150ms ease;
+        transform: none !important;
+      }
     }
     .admin-title {
       font-size: 18px;
