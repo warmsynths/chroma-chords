@@ -244,7 +244,7 @@ export const USER_PLAY_STYLES: { name: string; color: string; patch: Record<stri
   }
 ];
 
-const GENRE_INSTRUMENT: Record<string, InstrumentId> = {
+export const GENRE_INSTRUMENT: Record<string, InstrumentId> = {
   "Pop": "rhodes",
   "Rock": "rhodes",
   "Indie/Folk": "rhodes",
@@ -272,7 +272,7 @@ const GENRE_INSTRUMENT: Record<string, InstrumentId> = {
 
 // Per-genre humanize profile: velocity range, timing looseness, note duration, and
 // (for Lo-fi/Jazz) a gentle arpeggiation instead of a flat hit.
-const GENRE_HUMANIZE: Record<string, any> = {
+export const GENRE_HUMANIZE: Record<string, any> = {
   "Pop": {
     "minVelocity": 90,
     "maxVelocity": 110,
@@ -544,7 +544,7 @@ export function playNote(noteName: string, duration = 0.35): void {
 /**
  * Converts an arp rate string + bpm to a note interval in seconds.
  */
-function arpRateToSeconds(arpRate: string, bpm: number): number {
+export function arpRateToSeconds(arpRate: string, bpm: number): number {
   const beatsPerSecond = bpm / 60;
   switch (arpRate) {
     case '1/4':  return 1 / beatsPerSecond;           // 1 beat
@@ -560,7 +560,7 @@ function arpRateToSeconds(arpRate: string, bpm: number): number {
  * Expands a set of note names across multiple octaves for arp range.
  * Returns a flat array of note names spanning `arpRange` octaves.
  */
-function expandNotesAcrossOctaves(noteNames: string[], arpRange: number): string[] {
+export function expandNotesAcrossOctaves(noteNames: string[], arpRange: number): string[] {
   const expanded: string[] = [];
   for (let oct = 0; oct < arpRange; oct++) {
     for (const note of noteNames) {
@@ -581,7 +581,7 @@ function expandNotesAcrossOctaves(noteNames: string[], arpRange: number): string
 /**
  * Orders notes according to arpeggiator mode.
  */
-function orderNotesForArp(notes: string[], arpMode: string): string[] {
+export function orderNotesForArp(notes: string[], arpMode: string): string[] {
   const sorted = [...notes]; // assume already sorted ascending
   switch (arpMode) {
     case 'up':      return sorted;

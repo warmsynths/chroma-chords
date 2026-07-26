@@ -40,6 +40,8 @@ export class ChromaChordsApp extends LitElement {
   @state() private length = 4;
   @state() private sections: SongSection[] = [];
   @state() private activeSectionIdx = 0;
+  @state() private activePlayingSectionIdx = 0;
+  @state() private totalSongSteps = 0;
   @state() private pendingChordSuggestion: NormalizedPrompt | null = null;
   @state() private userEmail: string | null = null;
   @state() private isAuthenticated = false;
@@ -91,9 +93,15 @@ export class ChromaChordsApp extends LitElement {
       this.requestUpdate();
     });
 
-    this.unsubscribeTick = playbackEngine.subscribeTick((activeIdx, step) => {
+    this.unsubscribeTick = playbackEngine.subscribeTick((activeIdx, step, secIdx, totalSteps, isSongMode) => {
       this.activeIndex = activeIdx;
       this.progressStep = step;
+      if (typeof secIdx === 'number') {
+        this.activePlayingSectionIdx = secIdx;
+      }
+      if (typeof totalSteps === 'number') {
+        this.totalSongSteps = totalSteps;
+      }
       this.playing = playbackEngine.isPlaying();
       this.requestUpdate();
     });
@@ -293,6 +301,11 @@ export class ChromaChordsApp extends LitElement {
     this.playing = playbackEngine.togglePlay();
   }
 
+  private onTogglePlaySong() {
+    playbackEngine.setSong(this.sections);
+    this.playing = playbackEngine.togglePlay();
+  }
+
   private onChordTap(e: CustomEvent<number>) {
     if (!this.progression) return;
     this.swapIndex = e.detail;
@@ -349,7 +362,12 @@ export class ChromaChordsApp extends LitElement {
   }
 
   private onBackToProgression() {
+    playbackEngine.stopAutoplay();
+    this.playing = false;
     this.screen = 'loop';
+    if (this.progression) {
+      playbackEngine.setProgression(this.progression, this.order);
+    }
   }
 
   private onViewSong() {
@@ -357,6 +375,7 @@ export class ChromaChordsApp extends LitElement {
     this.playing = false;
     this.sheetOpen = false;
     this.screen = 'song';
+    playbackEngine.setSong(this.sections);
   }
 
   private onSelectSection(e: CustomEvent<number>) {
@@ -385,6 +404,9 @@ export class ChromaChordsApp extends LitElement {
     const res = SongArranger.addSection(this.sections, this.progression);
     this.sections = res.sections;
     this.activeSectionIdx = res.activeIndex;
+    if (this.screen === 'song') {
+      playbackEngine.setSong(this.sections);
+    }
   }
 
   private saveProject() {
@@ -430,10 +452,19 @@ export class ChromaChordsApp extends LitElement {
         <song-screen
           .sections=${this.sections}
           .activeSectionIdx=${this.activeSectionIdx}
+          .activePlayingSectionIdx=${this.activePlayingSectionIdx}
           .canAddSection=${this.sections.length < SECTION_TEMPLATES.length}
+          .playing=${this.playing}
+          .progressStep=${this.progressStep}
+          .totalSteps=${this.totalSongSteps}
+          .instrument=${this.instrument}
+          .playStyle=${this.playStyle}
           @select-section=${this.onSelectSection}
           @add-section=${this.onAddSection}
           @back-to-progression=${this.onBackToProgression}
+          @toggle-play-song=${this.onTogglePlaySong}
+          @set-instrument=${this.onSetInstrument}
+          @set-play-style=${this.onSetPlayStyle}
         ></song-screen>
       `;
     } else {

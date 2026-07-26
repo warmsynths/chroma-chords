@@ -392,6 +392,78 @@ export class ShareModal extends LitElement {
       margin-top: 3px;
       line-height: 1.4;
     }
+    .section-header {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      color: var(--cv-label, #8A6B3F);
+      text-transform: uppercase;
+      margin-top: 24px;
+      margin-bottom: 12px;
+    }
+    .save-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .save-card {
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 18px;
+      padding: 14px 18px;
+      box-sizing: border-box;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: transform 0.18s ease, opacity 0.3s ease, background-color 0.15s ease;
+    }
+    .save-card:nth-child(1) {
+      transition-delay: 0.08s;
+    }
+    .save-card:nth-child(2) {
+      transition-delay: 0.14s;
+    }
+    .save-card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .save-card:hover {
+      transform: translateY(-2px);
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .save-badge {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-label, #8A6B3F);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .save-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      text-align: left;
+    }
+    .save-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      letter-spacing: -0.01em;
+    }
+    .save-desc {
+      font-size: 12.5px;
+      color: var(--cv-ink-muted, #6B5F50);
+      line-height: 1.4;
+    }
   `;
 
   private emit(name: string, detail?: unknown) {
@@ -417,6 +489,23 @@ export class ShareModal extends LitElement {
               <div class="dest-desc">${d.desc}</div>
             </div>
           `)}
+        </div>
+        <div class="section-header">SAVE TO THIS DEVICE</div>
+        <div class="save-list">
+          <div class="save-card ${this.visible ? 'visible' : ''}" @click=${() => this.emit('export-wav')}>
+            <div class="save-badge">WAV</div>
+            <div class="save-info">
+              <div class="save-title">Save as WAV</div>
+              <div class="save-desc">Rendered audio, ready to drop into any player.</div>
+            </div>
+          </div>
+          <div class="save-card ${this.visible ? 'visible' : ''}" @click=${() => this.emit('export-midi')}>
+            <div class="save-badge">MID</div>
+            <div class="save-info">
+              <div class="save-title">Save as MIDI</div>
+              <div class="save-desc">Just the notes — reopen it in your own instrument.</div>
+            </div>
+          </div>
         </div>
       </div>
     `;

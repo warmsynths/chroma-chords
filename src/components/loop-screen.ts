@@ -11,6 +11,7 @@ import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
 import './mascot-parade';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, genreDefaultInstrumentName, genreDefaultPlayStyleName } from '../services/audio-service';
+import { downloadWav, downloadMidi } from '../services/export-service';
 
 // Side-gutter slots for the desktop-only background mascot — only shows once there's real
 // gutter space beside the centered .content column (see the min-width:900px media query below).
@@ -46,6 +47,10 @@ const MENU_GENRES = [
   "Afrobeats",
   "Shoegaze"
 ];
+const GENRE_PRIMARY = ['Lo-fi/Chill', 'R&B/Soul', 'Pop', 'Synthwave'];
+const MOOD_PRIMARY = ['Warm', 'Melancholy', 'Nostalgic', 'Dreamy'];
+const INSTRUMENT_PRIMARY = ['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad'];
+const PLAY_STYLE_PRIMARY = ['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)'];
 const MENU_SCALES: { label: string; value: string }[] = [
   { label: 'Major', value: 'MAJOR' },
   { label: 'Minor', value: 'NATURAL_MINOR' },
@@ -95,6 +100,10 @@ export class LoopScreen extends LitElement {
 
   @state() private menuMounted = false;
   @state() private menuVisible = false;
+  @state() private expandedMenuGenre = false;
+  @state() private expandedMenuMood = false;
+  @state() private expandedAllInstruments = false;
+  @state() private expandedAllPlayStyles = false;
   @state() private shareMounted = false;
   @state() private shareVisible = false;
   @state() private sheetMounted = false;
@@ -610,6 +619,11 @@ export class LoopScreen extends LitElement {
     .control-option:active {
       transform: scale(0.96);
     }
+    .control-option.toggle {
+      background: transparent;
+      border: 1.5px dashed var(--cv-ink-25);
+      color: var(--cv-label);
+    }
     .control-dot {
       width: 8px;
       height: 8px;
@@ -737,6 +751,12 @@ export class LoopScreen extends LitElement {
     }
     .menu-chip.selected {
       color: var(--cv-ink);
+    }
+    .menu-chip.toggle {
+      background: transparent;
+      border: 1.5px dashed var(--cv-ink-25);
+      color: var(--cv-label);
+      padding: 5px 11px;
     }
     .menu-nav-row {
       display: flex;
@@ -913,7 +933,12 @@ export class LoopScreen extends LitElement {
 
   private closeMenu() {
     this.menuVisible = false;
-    this.menuCloseTimer = setTimeout(() => { this.menuMounted = false; }, MENU_CLOSE_MS);
+    if (this.menuCloseTimer) clearTimeout(this.menuCloseTimer);
+    this.menuCloseTimer = setTimeout(() => {
+      this.menuMounted = false;
+      this.expandedMenuGenre = false;
+      this.expandedMenuMood = false;
+    }, MENU_CLOSE_MS);
   }
 
   private openShare() {
@@ -933,8 +958,41 @@ export class LoopScreen extends LitElement {
     const url = buildDeviceShareUrl(this.progression, device);
     window.open(url, '_blank');
     if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toast = name;
+    this.toast = `Sent to ${name}`;
     this.toastTimer = setTimeout(() => { this.toast = null; }, 2000);
+  }
+
+  private async handleExportWav() {
+    this.closeShare();
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toast = 'Rendering WAV audio...';
+    try {
+      const p = this.progression;
+      const effectiveInst = this.instrument ?? genreDefaultInstrumentName(p.genre);
+      const effectiveStyle = this.playStyle ?? genreDefaultPlayStyleName(p.genre);
+      await downloadWav(p, this.order, effectiveInst, effectiveStyle);
+      this.toast = 'Saved WAV audio file';
+    } catch (err) {
+      console.error('WAV export error:', err);
+      this.toast = 'Failed to export WAV';
+    }
+    this.toastTimer = setTimeout(() => { this.toast = null; }, 2500);
+  }
+
+  private handleExportMidi() {
+    this.closeShare();
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    try {
+      const p = this.progression;
+      const effectiveInst = this.instrument ?? genreDefaultInstrumentName(p.genre);
+      const effectiveStyle = this.playStyle ?? genreDefaultPlayStyleName(p.genre);
+      downloadMidi(p, this.order, effectiveInst, effectiveStyle);
+      this.toast = 'Saved MIDI file';
+    } catch (err) {
+      console.error('MIDI export error:', err);
+      this.toast = 'Failed to export MIDI';
+    }
+    this.toastTimer = setTimeout(() => { this.toast = null; }, 2500);
   }
 
   private reroll() {
@@ -1064,6 +1122,30 @@ export class LoopScreen extends LitElement {
     const sigCount = getKeySignature(p.key, p.scaleType).length;
     const sigLabel = sigCount === 0 ? 'no sharps or flats' : `${sigCount} ${sigCount === 1 ? 'sharp/flat' : 'sharps/flats'}`;
 
+    // Configure popup menu option filtering (primary vs rest with less/more toggle)
+    let primaryMenuGenres = GENRE_PRIMARY.filter(n => MENU_GENRES.includes(n));
+    if (!primaryMenuGenres.includes(p.genre)) primaryMenuGenres = primaryMenuGenres.slice(0, -1).concat(p.genre);
+    const restMenuGenres = MENU_GENRES.filter(n => !primaryMenuGenres.includes(n));
+    const shownMenuGenres = this.expandedMenuGenre ? MENU_GENRES : primaryMenuGenres;
+
+    const allMoodNames = MOODS.map(m => m.name);
+    let primaryMenuMoodNames = MOOD_PRIMARY.filter(n => allMoodNames.includes(n));
+    if (!primaryMenuMoodNames.includes(p.mood)) primaryMenuMoodNames = primaryMenuMoodNames.slice(0, -1).concat(p.mood);
+    const restMenuMoodNames = allMoodNames.filter(n => !primaryMenuMoodNames.includes(n));
+    const shownMenuMoodNames = this.expandedMenuMood ? allMoodNames : primaryMenuMoodNames;
+    const shownMenuMoods = shownMenuMoodNames.map(n => MOODS.find(m => m.name === n)!);
+
+    // Instrument and Play Style option filtering
+    const availInstruments = USER_INSTRUMENTS.filter(i => i.name !== effectiveInstrument);
+    let primaryInst = INSTRUMENT_PRIMARY.filter(name => availInstruments.some(i => i.name === name));
+    const restInst = availInstruments.filter(i => !primaryInst.includes(i.name));
+    const shownInst = this.expandedAllInstruments ? availInstruments : availInstruments.filter(i => primaryInst.includes(i.name));
+
+    const availPlayStyles = USER_PLAY_STYLES.filter(s => s.name !== effectivePlayStyle);
+    let primaryStyles = PLAY_STYLE_PRIMARY.filter(name => availPlayStyles.some(s => s.name === name));
+    const restStyles = availPlayStyles.filter(s => !primaryStyles.includes(s.name));
+    const shownStyles = this.expandedAllPlayStyles ? availPlayStyles : availPlayStyles.filter(s => primaryStyles.includes(s.name));
+
     return html`
       <div class="frame">
         ${this.mascot.show ? html`
@@ -1097,15 +1179,25 @@ export class LoopScreen extends LitElement {
             </div>
             <div class="menu-label spaced">Genre</div>
             <div class="menu-chips">
-              ${MENU_GENRES.map(g => html`
+              ${shownMenuGenres.map(g => html`
                 <div class="menu-chip ${g === p.genre ? 'selected' : ''}" style=${g === p.genre ? `background:${moodColor}` : ''} @click=${() => this.emit('set-genre', g)}>${g}</div>
               `)}
+              ${restMenuGenres.length ? html`
+                <div class="menu-chip toggle" @click=${() => { this.expandedMenuGenre = !this.expandedMenuGenre; }}>
+                  ${this.expandedMenuGenre ? 'Show less ⌃' : `+${restMenuGenres.length} more ⌄`}
+                </div>
+              ` : ''}
             </div>
             <div class="menu-label spaced">Mood</div>
             <div class="menu-chips">
-              ${MOODS.map(m => html`
+              ${shownMenuMoods.map(m => html`
                 <div class="menu-chip ${m.name === p.mood ? 'selected' : ''}" style=${m.name === p.mood ? `background:${m.dot}` : ''} @click=${() => this.emit('set-mood', m.name)}>${m.name}</div>
               `)}
+              ${restMenuMoodNames.length ? html`
+                <div class="menu-chip toggle" @click=${() => { this.expandedMenuMood = !this.expandedMenuMood; }}>
+                  ${this.expandedMenuMood ? 'Show less ⌃' : `+${restMenuMoodNames.length} more ⌄`}
+                </div>
+              ` : ''}
             </div>
             <div class="menu-label spaced">Length</div>
             ${this.renderLengthControl()}
@@ -1234,20 +1326,30 @@ export class LoopScreen extends LitElement {
           </div>
           ${this.expandedInstrument ? html`
             <div class="control-options">
-              ${USER_INSTRUMENTS.filter(i => i.name !== effectiveInstrument).map(i => html`
+              ${shownInst.map(i => html`
                 <div class="control-option" @click=${() => { this.emit('set-instrument', i.name); this.expandedInstrument = false; }}>
                   <span class="control-dot" style="background:${i.color}"></span>${i.name}
                 </div>
               `)}
+              ${restInst.length ? html`
+                <div class="control-option toggle" @click=${() => { this.expandedAllInstruments = !this.expandedAllInstruments; }}>
+                  ${this.expandedAllInstruments ? 'Show less ⌃' : `+${restInst.length} more ⌄`}
+                </div>
+              ` : ''}
             </div>
           ` : ''}
           ${this.expandedPlayStyle ? html`
             <div class="control-options">
-              ${USER_PLAY_STYLES.filter(s => s.name !== effectivePlayStyle).map(s => html`
+              ${shownStyles.map(s => html`
                 <div class="control-option" @click=${() => { this.emit('set-play-style', s.name); this.expandedPlayStyle = false; }}>
                   <span class="control-dot" style="background:${s.color}"></span>${s.name}
                 </div>
               `)}
+              ${restStyles.length ? html`
+                <div class="control-option toggle" @click=${() => { this.expandedAllPlayStyles = !this.expandedAllPlayStyles; }}>
+                  ${this.expandedAllPlayStyles ? 'Show less ⌃' : `+${restStyles.length} more ⌄`}
+                </div>
+              ` : ''}
             </div>
           ` : ''}
 
@@ -1278,10 +1380,12 @@ export class LoopScreen extends LitElement {
             .visible=${this.shareVisible}
             @close=${() => this.closeShare()}
             @export=${(e: CustomEvent<{ device: ShareDevice; name: string }>) => this.exportDevice(e.detail.device, e.detail.name)}
+            @export-wav=${() => this.handleExportWav()}
+            @export-midi=${() => this.handleExportMidi()}
           ></share-modal>
         ` : ''}
 
-        ${this.toast ? html`<div class="toast">Sent to ${this.toast}</div>` : ''}
+        ${this.toast ? html`<div class="toast">${this.toast.startsWith('Sent to') || this.toast.startsWith('Saved') || this.toast.startsWith('Rendering') || this.toast.startsWith('Failed') ? this.toast : `Sent to ${this.toast}`}</div>` : ''}
       </div>
     `;
   }

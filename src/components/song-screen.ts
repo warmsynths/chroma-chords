@@ -1,6 +1,10 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import { Progression, getMoodColor, roleForTension } from '../services/chord-engine';
+import { Progression, getMoodColor, roleForTension, AUTOPLAY_INTERVAL_MS } from '../services/chord-engine';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES, genreDefaultInstrumentName, genreDefaultPlayStyleName } from '../services/audio-service';
+
+const INSTRUMENT_PRIMARY = ['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad'];
+const PLAY_STYLE_PRIMARY = ['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)'];
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
 import './mascot-parade';
@@ -18,7 +22,19 @@ export interface SongSection {
 export class SongScreen extends LitElement {
   @property({ type: Array }) sections: SongSection[] = [];
   @property({ type: Number }) activeSectionIdx = 0;
+  @property({ type: Number }) activePlayingSectionIdx = 0;
   @property({ type: Boolean }) canAddSection = true;
+  @property({ type: Boolean }) playing = false;
+  @property({ type: Number }) progressStep = 0;
+  @property({ type: Number }) totalSteps = 0;
+  @property({ type: String }) instrument: string | null = null;
+  @property({ type: String }) playStyle: string | null = null;
+
+  @state() private expandedInstrument = false;
+  @state() private expandedPlayStyle = false;
+  @state() private expandedAllInstruments = false;
+  @state() private expandedAllPlayStyles = false;
+  @state() private snapProgress = false;
 
   // Rolled fresh every time this screen mounts (see rollMascot) — a small decorative critter,
   // shown roughly half the time, in one of a few horizontal positions below the section list
@@ -32,6 +48,19 @@ export class SongScreen extends LitElement {
 
   private onWordmarkClick() {
     if (this.eggCounter.click()) this.paradeTrigger++;
+  }
+
+  willUpdate(changed: PropertyValues) {
+    if (changed.has('progressStep')) {
+      const prevStep = changed.get('progressStep') as number | undefined;
+      this.snapProgress = prevStep !== undefined && this.progressStep < prevStep;
+    }
+  }
+
+  updated(changed: Map<string, unknown>) {
+    if (changed.has('progressStep') && this.snapProgress) {
+      requestAnimationFrame(() => requestAnimationFrame(() => { this.snapProgress = false; }));
+    }
   }
 
   static styles = css`
@@ -188,7 +217,114 @@ export class SongScreen extends LitElement {
       font-size: 12.5px;
       color: var(--cv-ink-45);
       text-align: center;
-      margin-top: 24px;
+      margin-top: 20px;
+    }
+    .divider {
+      border: none;
+      border-top: 1.5px dashed var(--cv-ink-16);
+      margin: 32px 0 28px;
+    }
+    .whole-song-section {
+      width: 100%;
+    }
+    .whole-song-label {
+      font-size: 11.5px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--cv-label);
+      margin-bottom: 16px;
+    }
+    .transport {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .play-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.2s ease;
+    }
+    .play-btn:hover {
+      transform: scale(1.06);
+    }
+    .progress-track {
+      flex: 1;
+      min-width: 120px;
+      height: 9px;
+      border-radius: 6px;
+      background: var(--cv-surface);
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 6px;
+      transition: width var(--progress-duration, 1.7s) linear, background 0.4s ease;
+    }
+    .progress-fill.snap {
+      transition: none;
+    }
+    .control-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--cv-surface-2);
+      color: #5B5145;
+      padding: 9px 16px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: transform 150ms var(--cv-ease);
+    }
+    .control-chip:active {
+      transform: scale(0.96);
+    }
+    .control-chevron {
+      opacity: 0.6;
+    }
+    .control-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 12px;
+    }
+    .control-option {
+      display: inline-flex;
+      align-items: center;
+      background: var(--cv-surface-2);
+      color: #5B5145;
+      padding: 7px 14px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 150ms var(--cv-ease);
+    }
+    .control-option:active {
+      transform: scale(0.96);
+    }
+    .control-option.toggle {
+      background: transparent;
+      border: 1.5px dashed var(--cv-ink-25);
+      color: var(--cv-label);
+    }
+    .control-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+      flex-shrink: 0;
     }
     .mascot-row {
       display: flex;
@@ -212,6 +348,31 @@ export class SongScreen extends LitElement {
   }
 
   render() {
+    const firstGenre = this.sections[0]?.progression.genre ?? 'Pop';
+    const effectiveInstrument = this.instrument ?? genreDefaultInstrumentName(firstGenre);
+    const effectivePlayStyle = this.playStyle ?? genreDefaultPlayStyleName(firstGenre);
+
+    const totalSongSteps = this.totalSteps || this.sections.reduce((acc, s) => acc + s.order.length, 0);
+    const progressPct = !this.playing || totalSongSteps <= 0
+      ? 0
+      : this.snapProgress
+        ? (this.progressStep / totalSongSteps) * 100
+        : ((this.progressStep + 1) / totalSongSteps) * 100;
+
+    // Instrument and Play Style option filtering
+    const availInstruments = USER_INSTRUMENTS.filter(i => i.name !== effectiveInstrument);
+    let primaryInst = INSTRUMENT_PRIMARY.filter(name => availInstruments.some(i => i.name === name));
+    const restInst = availInstruments.filter(i => !primaryInst.includes(i.name));
+    const shownInst = this.expandedAllInstruments ? availInstruments : availInstruments.filter(i => primaryInst.includes(i.name));
+
+    const availPlayStyles = USER_PLAY_STYLES.filter(s => s.name !== effectivePlayStyle);
+    let primaryStyles = PLAY_STYLE_PRIMARY.filter(name => availPlayStyles.some(s => s.name === name));
+    const restStyles = availPlayStyles.filter(s => !primaryStyles.includes(s.name));
+    const shownStyles = this.expandedAllPlayStyles ? availPlayStyles : availPlayStyles.filter(s => primaryStyles.includes(s.name));
+
+    const currentPlayingSec = this.sections[this.playing ? this.activePlayingSectionIdx : 0] || this.sections[0];
+    const moodColor = currentPlayingSec ? getMoodColor(currentPlayingSec.progression.mood) : '#C9A9E0';
+
     return html`
       <div class="frame">
         <div class="wordmark" @click=${() => this.onWordmarkClick()}>
@@ -229,7 +390,7 @@ export class SongScreen extends LitElement {
 
           <div class="section-list">
             ${this.sections.map((sec, i) => {
-              const active = i === this.activeSectionIdx;
+              const active = this.playing ? i === this.activePlayingSectionIdx : i === this.activeSectionIdx;
               const ringColor = getMoodColor(sec.progression.mood);
               return html`
                 <div class="section-row ${active ? 'active' : ''}" style=${active ? `--ring-color:${ringColor}` : ''} @click=${() => this.selectSection(i)}>
@@ -255,6 +416,62 @@ export class SongScreen extends LitElement {
 
           <div class="caption">Tap a section to open it in the Loop screen.</div>
 
+          <hr class="divider" />
+
+          <div class="whole-song-section">
+            <div class="whole-song-label">HEAR THE WHOLE SONG</div>
+            <div class="transport">
+              <button class="play-btn" style="background:${moodColor}" @click=${() => this.dispatchEvent(new CustomEvent('toggle-play-song', { bubbles: true, composed: true }))}>
+                ${this.playing
+                  ? html`<svg width="16" height="16" viewBox="0 0 20 20"><rect width="20" height="20" rx="3" fill="#2E271F" /></svg>`
+                  : html`<svg width="20" height="22" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z" /></svg>`}
+              </button>
+              <div class="progress-track">
+                <div
+                  class="progress-fill ${this.snapProgress ? 'snap' : ''}"
+                  style="width:${progressPct}%;background:${moodColor};--progress-duration:${AUTOPLAY_INTERVAL_MS}ms"
+                ></div>
+              </div>
+              <div class="control-chip" @click=${() => { this.expandedInstrument = !this.expandedInstrument; this.expandedPlayStyle = false; }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+                ${effectiveInstrument} <span class="control-chevron">${this.expandedInstrument ? '⌃' : '⌄'}</span>
+              </div>
+              <div class="control-chip" @click=${() => { this.expandedPlayStyle = !this.expandedPlayStyle; this.expandedInstrument = false; }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h13M3 12h9M3 18h13" /></svg>
+                ${effectivePlayStyle} <span class="control-chevron">${this.expandedPlayStyle ? '⌃' : '⌄'}</span>
+              </div>
+            </div>
+
+            ${this.expandedInstrument ? html`
+              <div class="control-options">
+                ${shownInst.map(i => html`
+                  <div class="control-option" @click=${() => { this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true })); this.expandedInstrument = false; }}>
+                    <span class="control-dot" style="background:${i.color}"></span>${i.name}
+                  </div>
+                `)}
+                ${restInst.length ? html`
+                  <div class="control-option toggle" @click=${() => { this.expandedAllInstruments = !this.expandedAllInstruments; }}>
+                    ${this.expandedAllInstruments ? 'Show less ⌃' : `+${restInst.length} more ⌄`}
+                  </div>
+                ` : ''}
+              </div>
+            ` : ''}
+            ${this.expandedPlayStyle ? html`
+              <div class="control-options">
+                ${shownStyles.map(s => html`
+                  <div class="control-option" @click=${() => { this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true })); this.expandedPlayStyle = false; }}>
+                    <span class="control-dot" style="background:${s.color}"></span>${s.name}
+                  </div>
+                `)}
+                ${restStyles.length ? html`
+                  <div class="control-option toggle" @click=${() => { this.expandedAllPlayStyles = !this.expandedAllPlayStyles; }}>
+                    ${this.expandedAllPlayStyles ? 'Show less ⌃' : `+${restStyles.length} more ⌄`}
+                  </div>
+                ` : ''}
+              </div>
+            ` : ''}
+          </div>
+
           ${this.mascot.show ? html`
             <div class="mascot-row" style="justify-content:${this.mascotAlign}">
               <mascot-character .kind=${this.mascot.kind} .scale=${0.8}></mascot-character>
@@ -271,3 +488,4 @@ declare global {
     'song-screen': SongScreen;
   }
 }
+

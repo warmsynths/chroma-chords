@@ -69,4 +69,27 @@ describe('PlaybackEngine Deep Module', () => {
     engine.setOrder([1, 0], 1);
     expect(engine.getActiveIndex()).toBe(1);
   });
+
+  it('handles song mode and loops whole song across sections', () => {
+    const sections = [
+      { name: 'Verse', desc: '', progression: sampleProgression, order: [0, 1] },
+      { name: 'Chorus', desc: '', progression: sampleProgression, order: [1, 0] },
+    ];
+    engine.setSong(sections);
+    expect(engine.isSongMode()).toBe(true);
+    expect(engine.getTotalSteps()).toBe(4);
+
+    const tickSpy = vi.fn();
+    engine.subscribeTick(tickSpy);
+
+    engine.togglePlay();
+    expect(engine.isPlaying()).toBe(true);
+
+    vi.advanceTimersByTime(2000); // Step 1
+    expect(tickSpy).toHaveBeenCalledWith(expect.any(Number), 1, 0, 4, true);
+
+    vi.advanceTimersByTime(2000); // Step 2 (moves to section 1, index 0)
+    expect(tickSpy).toHaveBeenCalledWith(expect.any(Number), 2, 1, 4, true);
+  });
 });
+
