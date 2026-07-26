@@ -135,37 +135,128 @@ const SCALE_LABEL: Record<string, string> = {
 
 // Canonical genre list/order — also drives the seed-screen pill grid, so this is the one
 // place that order should be edited.
-export const GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
+export const GENRES = [
+  "Pop",
+  "Lo-fi/Chill",
+  "R&B/Soul",
+  "Indie/Folk",
+  "Synthwave",
+  "Jazz-ish",
+  "Gospel",
+  "Cinematic",
+  "Rock",
+  "House/Dance",
+  "Blues",
+  "Funk/Disco",
+  "Country/Bluegrass",
+  "Reggae/Dub",
+  "Metal",
+  "Punk",
+  "Ambient/Drone",
+  "Trap/Hip-Hop",
+  "Bossa Nova/Latin",
+  "Classical/Orchestral",
+  "EDM/Trance",
+  "Afrobeats",
+  "Shoegaze"
+];
 
 const GENRE_SCALE: Record<string, string> = {
-  'Pop': 'MAJOR',
-  'Rock': 'MAJOR',
-  'Gospel': 'MAJOR',
-  'Indie/Folk': 'MAJOR',
-  'Lo-fi/Chill': 'DORIAN',
-  'Jazz-ish': 'DORIAN',
-  'R&B/Soul': 'MIXOLYDIAN',
-  'House/Dance': 'MIXOLYDIAN',
-  'Synthwave': 'LYDIAN',
-  'Cinematic': 'LYDIAN',
+  "Pop": "MAJOR",
+  "Rock": "MAJOR",
+  "Gospel": "MAJOR",
+  "Indie/Folk": "MAJOR",
+  "Lo-fi/Chill": "DORIAN",
+  "Jazz-ish": "DORIAN",
+  "R&B/Soul": "MIXOLYDIAN",
+  "House/Dance": "MIXOLYDIAN",
+  "Synthwave": "LYDIAN",
+  "Cinematic": "LYDIAN",
+  "Blues": "MIXOLYDIAN",
+  "Funk/Disco": "MIXOLYDIAN",
+  "Country/Bluegrass": "MAJOR",
+  "Reggae/Dub": "DORIAN",
+  "Metal": "HARMONIC_MINOR",
+  "Punk": "MAJOR",
+  "Ambient/Drone": "LYDIAN",
+  "Trap/Hip-Hop": "NATURAL_MINOR",
+  "Bossa Nova/Latin": "DORIAN",
+  "Classical/Orchestral": "MAJOR",
+  "EDM/Trance": "NATURAL_MINOR",
+  "Afrobeats": "MIXOLYDIAN",
+  "Shoegaze": "LYDIAN"
 };
 
 const MOOD_SHIFT: Record<string, string | null> = {
-  Uplifting: null,
-  Melancholy: 'NATURAL_MINOR',
-  Dreamy: null,
-  Tense: 'HARMONIC_MINOR',
-  Warm: null,
-  Nostalgic: 'NATURAL_MINOR',
+  "Uplifting": null,
+  "Melancholy": "NATURAL_MINOR",
+  "Dreamy": null,
+  "Tense": "HARMONIC_MINOR",
+  "Warm": null,
+  "Nostalgic": "NATURAL_MINOR",
+  "Energetic": null,
+  "Dark": "HARMONIC_MINOR",
+  "Peaceful": null,
+  "Groovy": "MIXOLYDIAN",
+  "Epic": "MAJOR"
 };
 
 const MOOD_DEGREE_BIAS: Record<string, string[]> = {
-  Uplifting: ['DOMINANT', 'SUBDOMINANT', 'SUBMEDIANT'],
-  Melancholy: ['SUBMEDIANT', 'SUBTONIC', 'SUPERTONIC'],
-  Dreamy: ['MEDIANT', 'SUBDOMINANT', 'SUPERTONIC'],
-  Tense: ['DOMINANT', 'LEADING-TONE', 'SUPERTONIC'],
-  Warm: ['SUBDOMINANT', 'MEDIANT', 'SUBMEDIANT'],
-  Nostalgic: ['SUBMEDIANT', 'MEDIANT', 'DOMINANT'],
+  "Uplifting": [
+    "DOMINANT",
+    "SUBDOMINANT",
+    "SUBMEDIANT"
+  ],
+  "Melancholy": [
+    "SUBMEDIANT",
+    "SUBTONIC",
+    "SUPERTONIC"
+  ],
+  "Dreamy": [
+    "MEDIANT",
+    "SUBDOMINANT",
+    "SUPERTONIC"
+  ],
+  "Tense": [
+    "DOMINANT",
+    "LEADING-TONE",
+    "SUPERTONIC"
+  ],
+  "Warm": [
+    "SUBDOMINANT",
+    "MEDIANT",
+    "SUBMEDIANT"
+  ],
+  "Nostalgic": [
+    "SUBMEDIANT",
+    "MEDIANT",
+    "DOMINANT"
+  ],
+  "Energetic": [
+    "DOMINANT",
+    "SUBDOMINANT",
+    "SUPERTONIC"
+  ],
+  "Dark": [
+    "SUBMEDIANT",
+    "SUBTONIC",
+    "SUPERTONIC"
+  ],
+  "Peaceful": [
+    "TONIC",
+    "SUBDOMINANT",
+    "MEDIANT"
+  ],
+  "Groovy": [
+    "SUBDOMINANT",
+    "DOMINANT",
+    "SUBTONIC"
+  ],
+  "Epic": [
+    "TONIC",
+    "DOMINANT",
+    "SUBMEDIANT"
+  ]
 };
 
 export interface MoodDef {
@@ -180,12 +271,72 @@ export interface MoodDef {
 // mood-colored action elements — CTA, play button, dice, selected chips) plus a short
 // caption and a small line-icon shown in the mood pill's badge.
 export const MOODS: MoodDef[] = [
-  { name: 'Uplifting', dot: '#F6D98B', desc: 'Bright, major, forward-moving', iconPath: 'M4 18 C 8 18 8 11 12 11 C 16 11 16 5 20 5' },
-  { name: 'Melancholy', dot: '#9CC0EC', desc: 'Minor-leaning, unresolved longing', iconPath: 'M3 9 Q 8 9 9 14 T 15 17 Q 19 18 21 15' },
-  { name: 'Dreamy', dot: '#C9A9E0', desc: 'Suspended, floating, reverb-soaked', iconPath: 'M4 15 a4 4 0 1 1 8 0 a4 4 0 1 1 8 0' },
-  { name: 'Tense', dot: '#F2735F', desc: 'Chromatic pulls, unresolved tension', iconPath: 'M3 12 L7 6 L11 16 L15 6 L19 16 L21 12' },
-  { name: 'Warm', dot: '#F2C9A0', desc: 'Rich, consonant, close voicings', iconPath: 'M12 4 a6.5 6.5 0 1 0 6.5 6.5' },
-  { name: 'Nostalgic', dot: '#B8CC9E', desc: 'Bittersweet, borrowed chords', iconPath: 'M3 12 C 7 6 9 18 13 12 C 17 6 19 18 21 12' },
+  {
+    "name": "Uplifting",
+    "dot": "#F6D98B",
+    "desc": "Bright, major, forward-moving",
+    "iconPath": "M4 18 C 8 18 8 11 12 11 C 16 11 16 5 20 5"
+  },
+  {
+    "name": "Melancholy",
+    "dot": "#9CC0EC",
+    "desc": "Minor-leaning, unresolved longing",
+    "iconPath": "M3 9 Q 8 9 9 14 T 15 17 Q 19 18 21 15"
+  },
+  {
+    "name": "Dreamy",
+    "dot": "#C9A9E0",
+    "desc": "Suspended, floating, reverb-soaked",
+    "iconPath": "M4 15 a4 4 0 1 1 8 0 a4 4 0 1 1 8 0"
+  },
+  {
+    "name": "Tense",
+    "dot": "#F2735F",
+    "desc": "Chromatic pulls, unresolved tension",
+    "iconPath": "M3 12 L7 6 L11 16 L15 6 L19 16 L21 12"
+  },
+  {
+    "name": "Warm",
+    "dot": "#F2C9A0",
+    "desc": "Rich, consonant, close voicings",
+    "iconPath": "M12 4 a6.5 6.5 0 1 0 6.5 6.5"
+  },
+  {
+    "name": "Nostalgic",
+    "dot": "#B8CC9E",
+    "desc": "Bittersweet, borrowed chords",
+    "iconPath": "M3 12 C 7 6 9 18 13 12 C 17 6 19 18 21 12"
+  },
+  {
+    "name": "Energetic",
+    "dot": "#FF8C42",
+    "desc": "High velocity, driving rhythm",
+    "iconPath": "M13 2 L4 14 h7 l-2 8 11-12 h-7 z"
+  },
+  {
+    "name": "Dark",
+    "dot": "#7B61FF",
+    "desc": "Deep minor, ominous resonance",
+    "iconPath": "M12 3 a9 9 0 1 0 9 9 a9 9 0 0 1-9-9 z"
+  },
+  {
+    "name": "Peaceful",
+    "dot": "#7CD9B6",
+    "desc": "Serene, gentle acoustic space",
+    "iconPath": "M12 2 a10 10 0 1 0 10 10 A10 10 0 0 0 12 2 z M12 6 a6 6 0 1 1-6 6 a6 6 0 0 1 6-6 z"
+  },
+  {
+    "name": "Groovy",
+    "dot": "#E8609A",
+    "desc": "Syncopated, rhythmic bounce",
+    "iconPath": "M4 12 c4-4 8 4 12-4 s8 4 4 8"
+  },
+  {
+    "name": "Epic",
+    "dot": "#E5C158",
+    "desc": "Sweeping dynamics, triumphant power",
+    "iconPath": "M12 2 l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 z"
+  }
 ];
 
 export function getMoodColor(mood: string): string {
@@ -581,8 +732,29 @@ export interface ProgressionOverrides {
 }
 
 const GENRE_BPM: Record<string, number> = {
-  Pop: 100, Rock: 118, Gospel: 84, 'Indie/Folk': 92, 'Lo-fi/Chill': 76,
-  'Jazz-ish': 96, 'R&B/Soul': 88, 'House/Dance': 124, Synthwave: 108, Cinematic: 72,
+  "Pop": 116,
+  "Lo-fi/Chill": 80,
+  "R&B/Soul": 90,
+  "Indie/Folk": 105,
+  "Synthwave": 118,
+  "Jazz-ish": 95,
+  "Gospel": 85,
+  "Cinematic": 75,
+  "Rock": 124,
+  "House/Dance": 126,
+  "Blues": 88,
+  "Funk/Disco": 114,
+  "Country/Bluegrass": 110,
+  "Reggae/Dub": 78,
+  "Metal": 140,
+  "Punk": 155,
+  "Ambient/Drone": 65,
+  "Trap/Hip-Hop": 135,
+  "Bossa Nova/Latin": 120,
+  "Classical/Orchestral": 72,
+  "EDM/Trance": 132,
+  "Afrobeats": 108,
+  "Shoegaze": 112
 };
 
 export function bpmForGenreMood(genre: string, mood: string): number {

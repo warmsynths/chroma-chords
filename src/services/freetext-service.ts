@@ -57,25 +57,297 @@ export async function fetchOpenRouterKeyInfo(): Promise<KeyRateLimitInfo | null>
 // suggestion while the user is still typing, and as the fallback when the LLM call fails,
 // times out, or returns something that doesn't survive validation.
 const MOOD_KEYWORDS: Record<string, string[]> = {
-  Uplifting: ['happy', 'joy', 'bright', 'hope', 'celebrat', 'win', 'sun', 'morning', 'triumph'],
-  Melancholy: ['sad', 'rain', 'lonely', 'grief', 'loss', 'blue', 'tear', 'goodbye'],
-  Dreamy: ['dream', 'float', 'cloud', 'soft', 'sleep', 'hazy', 'ethereal', 'stars'],
-  Tense: ['fear', 'anxious', 'dark', 'storm', 'fight', 'chase', 'danger', 'thriller'],
-  Warm: ['cozy', 'home', 'fire', 'love', 'autumn', 'familiar', 'fireplace'],
-  Nostalgic: ['memory', 'childhood', 'old', 'faded', 'remember', 'summer', 'photo', 'yearbook'],
+  "Uplifting": [
+    "happy",
+    "joy",
+    "bright",
+    "hope",
+    "celebrat",
+    "win",
+    "sun",
+    "morning",
+    "triumph"
+  ],
+  "Melancholy": [
+    "sad",
+    "rain",
+    "lonely",
+    "grief",
+    "loss",
+    "blue",
+    "tear",
+    "goodbye"
+  ],
+  "Dreamy": [
+    "dream",
+    "float",
+    "cloud",
+    "soft",
+    "sleep",
+    "hazy",
+    "ethereal",
+    "stars"
+  ],
+  "Tense": [
+    "fear",
+    "anxious",
+    "dark",
+    "storm",
+    "fight",
+    "chase",
+    "danger",
+    "thriller"
+  ],
+  "Warm": [
+    "cozy",
+    "home",
+    "fire",
+    "love",
+    "autumn",
+    "familiar",
+    "fireplace"
+  ],
+  "Nostalgic": [
+    "memory",
+    "childhood",
+    "old",
+    "faded",
+    "remember",
+    "summer",
+    "photo",
+    "yearbook"
+  ],
+  "Energetic": [
+    "energetic",
+    "pumped",
+    "hype",
+    "fast",
+    "running",
+    "workout",
+    "power",
+    "fire"
+  ],
+  "Dark": [
+    "dark",
+    "creepy",
+    "night",
+    "evil",
+    "shadow",
+    "gothic",
+    "gloomy"
+  ],
+  "Peaceful": [
+    "peaceful",
+    "calm",
+    "quiet",
+    "zen",
+    "relax",
+    "nature",
+    "gentle",
+    "still"
+  ],
+  "Groovy": [
+    "groovy",
+    "funky",
+    "danceable",
+    "rhythm",
+    "swing",
+    "bounce",
+    "jam"
+  ],
+  "Epic": [
+    "epic",
+    "heroic",
+    "grand",
+    "triumphant",
+    "majestic",
+    "legendary",
+    "glory"
+  ]
 };
 
 const GENRE_KEYWORDS: Record<string, string[]> = {
-  'Pop': ['pop', 'radio', 'dance', 'catchy', 'hit'],
-  'Lo-fi/Chill': ['lofi', 'lo-fi', 'study', 'bedroom', 'tape', 'chill', 'relax'],
-  'R&B/Soul': ['rnb', 'r&b', 'soul', 'smooth', 'slow jam', 'sultry'],
-  'Indie/Folk': ['folk', 'acoustic', 'campfire', 'porch', 'story', 'indie'],
-  'Synthwave': ['synth', '80s', 'neon', 'retro', 'synthwave', 'arcade'],
-  'Jazz-ish': ['jazz', 'smoky', 'bar', 'lounge', 'late night', 'saxophone'],
-  'Gospel': ['gospel', 'church', 'choir', 'soulful', 'worship'],
-  'Cinematic': ['movie', 'film', 'epic', 'trailer', 'scene', 'cinematic'],
-  'Rock': ['rock', 'guitar', 'drive', 'loud', 'energy', 'highway'],
-  'House/Dance': ['house', 'edm', 'club', 'rave', 'four on the floor', 'dance floor'],
+  "Pop": [
+    "pop",
+    "radio",
+    "dance",
+    "catchy",
+    "hit"
+  ],
+  "Lo-fi/Chill": [
+    "lofi",
+    "lo-fi",
+    "study",
+    "bedroom",
+    "tape",
+    "chill",
+    "relax"
+  ],
+  "R&B/Soul": [
+    "rnb",
+    "r&b",
+    "soul",
+    "smooth",
+    "slow jam",
+    "sultry"
+  ],
+  "Indie/Folk": [
+    "folk",
+    "acoustic",
+    "campfire",
+    "porch",
+    "story",
+    "indie"
+  ],
+  "Synthwave": [
+    "synth",
+    "80s",
+    "neon",
+    "retro",
+    "synthwave",
+    "arcade"
+  ],
+  "Jazz-ish": [
+    "jazz",
+    "smoky",
+    "bar",
+    "lounge",
+    "late night",
+    "saxophone"
+  ],
+  "Gospel": [
+    "gospel",
+    "church",
+    "choir",
+    "soulful",
+    "worship"
+  ],
+  "Cinematic": [
+    "movie",
+    "film",
+    "epic",
+    "trailer",
+    "scene",
+    "cinematic"
+  ],
+  "Rock": [
+    "rock",
+    "guitar",
+    "drive",
+    "loud",
+    "energy",
+    "highway"
+  ],
+  "House/Dance": [
+    "house",
+    "edm",
+    "club",
+    "rave",
+    "four on the floor",
+    "dance floor"
+  ],
+  "Blues": [
+    "blues",
+    "12 bar",
+    "delta",
+    "chicago blues",
+    "harmonica"
+  ],
+  "Funk/Disco": [
+    "funk",
+    "funky",
+    "groovy",
+    "disco",
+    "slap bass",
+    "boogie"
+  ],
+  "Country/Bluegrass": [
+    "country",
+    "bluegrass",
+    "nashville",
+    "banjo",
+    "twang"
+  ],
+  "Reggae/Dub": [
+    "reggae",
+    "dub",
+    "jamaica",
+    "ska",
+    "offbeat",
+    "roots"
+  ],
+  "Metal": [
+    "metal",
+    "heavy metal",
+    "thrash",
+    "riff",
+    "shred",
+    "headbang",
+    "metallica",
+    "megadeth",
+    "slayer",
+    "iron maiden"
+  ],
+  "Punk": [
+    "punk",
+    "garage",
+    "mosh",
+    "rebel",
+    "skate"
+  ],
+  "Ambient/Drone": [
+    "ambient",
+    "drone",
+    "atmospheric",
+    "soundscape",
+    "meditation",
+    "space"
+  ],
+  "Trap/Hip-Hop": [
+    "trap",
+    "hiphop",
+    "hip-hop",
+    "rap",
+    "808",
+    "beat"
+  ],
+  "Bossa Nova/Latin": [
+    "bossa",
+    "bossa nova",
+    "samba",
+    "latin",
+    "rio",
+    "habanera"
+  ],
+  "Classical/Orchestral": [
+    "classical",
+    "orchestra",
+    "symphony",
+    "concerto",
+    "violin",
+    "chamber"
+  ],
+  "EDM/Trance": [
+    "trance",
+    "techno",
+    "buildup",
+    "drop",
+    "festival"
+  ],
+  "Afrobeats": [
+    "afrobeats",
+    "afropop",
+    "lagos",
+    "highlife",
+    "afro"
+  ],
+  "Shoegaze": [
+    "shoegaze",
+    "fuzz",
+    "wall of sound",
+    "dream pop",
+    "gazer"
+  ]
 };
 
 // Returns null on zero keyword hits rather than guessing — a hash-of-the-string pick used to
@@ -148,7 +420,129 @@ async function llmClassify(text: string, authToken?: string | null): Promise<unk
 // Turns free text into a NormalizedPrompt: tries the LLM classifier first (via the Cloudflare
 // Worker proxy, sending the selected provider: OpenRouter or Anthropic Claude), and falls back to
 // the local keyword heuristic on any network failure, timeout, or invalid response.
+// Supports 'mock:' or 'test:' prefix for testing full plumbing locally with 0 LLM API calls.
 export async function classifyFreeText(text: string, authToken?: string | null): Promise<NormalizedPrompt | null> {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('mock') || lower.startsWith('test')) {
+    const query = trimmed.replace(/^(mock|test)\s*:?\s*/i, '').trim();
+    const matchedGenre = matchFromText(query, GENRE_KEYWORDS) ?? 'Synthwave';
+    const matchedMood = matchFromText(query, MOOD_KEYWORDS) ?? 'Dreamy';
+
+    const presetIdByGenre: Record<string, string> = {
+      "Metal": "stab",
+      "Rock": "guitar",
+      "Punk": "stab",
+      "Lo-fi/Chill": "epiano",
+      "Synthwave": "juno-pad",
+      "EDM/Trance": "juno-pad",
+      "Gospel": "organ",
+      "Reggae/Dub": "organ",
+      "Country/Bluegrass": "guitar",
+      "Bossa Nova/Latin": "guitar",
+      "Ambient/Drone": "pad-strings",
+      "Cinematic": "pad-strings",
+      "Classical/Orchestral": "pad-strings",
+      "Jazz-ish": "rhodes",
+      "Pop": "rhodes",
+      "R&B/Soul": "epiano",
+    };
+
+    const rhythmByGenre: Record<string, string> = {
+      "Metal": "heavy_strum",
+      "Rock": "driving_strum",
+      "Punk": "fast_power_strum",
+      "Lo-fi/Chill": "slow_arpeggio",
+      "Synthwave": "retro_16th_arp",
+      "EDM/Trance": "fast_triplets",
+      "Gospel": "block_chords",
+      "Reggae/Dub": "offbeat_ska",
+      "Jazz-ish": "swing_feel",
+      "Bossa Nova/Latin": "syncopated_bossa",
+      "Ambient/Drone": "sustained_pad",
+      "Classical/Orchestral": "slow_arpeggio",
+      "Pop": "straight_8ths",
+    };
+
+    const keyByGenre: Record<string, { key: string; scaleType: string; chords: Array<{ root: string; quality: string }> }> = {
+      "Metal": {
+        key: "E", scaleType: "NATURAL_MINOR",
+        chords: [
+          { root: "E", quality: "min" }, { root: "G", quality: "maj" },
+          { root: "D", quality: "maj" }, { root: "C", quality: "maj" },
+          { root: "E", quality: "min" }, { root: "A", quality: "min" },
+          { root: "B", quality: "dom7" }, { root: "E", quality: "min" }
+        ]
+      },
+      "Rock": {
+        key: "A", scaleType: "MAJOR",
+        chords: [
+          { root: "A", quality: "maj" }, { root: "D", quality: "maj" },
+          { root: "E", quality: "dom7" }, { root: "F#", quality: "min" },
+          { root: "D", quality: "maj" }, { root: "A", quality: "maj" },
+          { root: "E", quality: "dom7" }, { root: "A", quality: "maj" }
+        ]
+      },
+      "Jazz-ish": {
+        key: "F", scaleType: "DORIAN",
+        chords: [
+          { root: "F", quality: "min7" }, { root: "A#", quality: "dom7" },
+          { root: "D#", quality: "maj7" }, { root: "G#", quality: "maj7" },
+          { root: "D", quality: "min7" }, { root: "G", quality: "dom7" },
+          { root: "C", quality: "min7" }, { root: "F", quality: "dom7" }
+        ]
+      },
+      "Lo-fi/Chill": {
+        key: "C", scaleType: "DORIAN",
+        chords: [
+          { root: "C", quality: "min7" }, { root: "F", quality: "maj7" },
+          { root: "A#", quality: "maj7" }, { root: "D#", quality: "maj7" },
+          { root: "C", quality: "min7" }, { root: "D#", quality: "maj7" },
+          { root: "F", quality: "min7" }, { root: "G", quality: "min7" }
+        ]
+      },
+      "Gospel": {
+        key: "C", scaleType: "MAJOR",
+        chords: [
+          { root: "C", quality: "maj" }, { root: "E", quality: "min7" },
+          { root: "F", quality: "maj7" }, { root: "G", quality: "dom7" },
+          { root: "A", quality: "min7" }, { root: "D", quality: "min7" },
+          { root: "G", quality: "dom7" }, { root: "C", quality: "maj" }
+        ]
+      },
+      "_default": {
+        key: "F#", scaleType: "DORIAN",
+        chords: [
+          { root: "F#", quality: "min7" }, { root: "B", quality: "maj" },
+          { root: "C#", quality: "min7" }, { root: "E", quality: "maj" },
+          { root: "F#", quality: "min7" }, { root: "A", quality: "maj7" },
+          { root: "B", quality: "min7" }, { root: "C#", quality: "dom7" }
+        ]
+      }
+    };
+
+    const keyData = keyByGenre[matchedGenre] || keyByGenre["_default"];
+    const presetId = presetIdByGenre[matchedGenre] || "rhodes";
+    const rhythmStyle = rhythmByGenre[matchedGenre] || "slow_arpeggio";
+
+    const rawMock = {
+      genre: matchedGenre,
+      mood: matchedMood,
+      key: keyData.key,
+      scaleType: keyData.scaleType,
+      length: 8,
+      chords: keyData.chords,
+      rhythmStyle,
+      instrumentConfig: {
+        presetId,
+        customConfig: {
+          envelope: { attack: 0.05, decay: 0.5, sustain: 0.6, release: 1.2 }
+        }
+      }
+    };
+    return normalize(rawMock, { genre: matchedGenre, mood: matchedMood });
+  }
+
   const fallback = heuristicClassify(text);
   try {
     const raw = await llmClassify(text, authToken);

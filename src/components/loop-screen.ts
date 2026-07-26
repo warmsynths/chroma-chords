@@ -21,7 +21,31 @@ const MASCOT_SLOTS = [
   { side: 'right', top: '64%' },
 ] as const;
 
-const MENU_GENRES = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Gospel', 'Cinematic', 'Rock', 'House/Dance'];
+const MENU_GENRES = [
+  "Pop",
+  "Lo-fi/Chill",
+  "R&B/Soul",
+  "Indie/Folk",
+  "Synthwave",
+  "Jazz-ish",
+  "Gospel",
+  "Cinematic",
+  "Rock",
+  "House/Dance",
+  "Blues",
+  "Funk/Disco",
+  "Country/Bluegrass",
+  "Reggae/Dub",
+  "Metal",
+  "Punk",
+  "Ambient/Drone",
+  "Trap/Hip-Hop",
+  "Bossa Nova/Latin",
+  "Classical/Orchestral",
+  "EDM/Trance",
+  "Afrobeats",
+  "Shoegaze"
+];
 const MENU_SCALES: { label: string; value: string }[] = [
   { label: 'Major', value: 'MAJOR' },
   { label: 'Minor', value: 'NATURAL_MINOR' },

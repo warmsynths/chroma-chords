@@ -154,6 +154,7 @@ function jsonResponse(body: unknown, status: number, request: Request, env: Env)
 
 function systemPrompt(): string {
   const moodNames = MOODS.map(m => m.name);
+  const baselineInstruments = ['rhodes', 'epiano', 'guitar', 'pad-strings', 'bell', 'organ', 'juno-pad', 'stab'];
   return [
     'You are a strict music-taxonomy classifier for the app Chroma Chords.',
     'You output ONLY a single JSON object, no prose, no markdown fences, no reasoning preambles.',
@@ -168,6 +169,11 @@ function systemPrompt(): string {
     '- length: integer 8 (always generate a full 8-chord progression)',
     '- chords: required array of exactly 8 objects, each { "root": ..., "quality": ... } where',
     `  root is one of ${JSON.stringify(ROOT_KEYS)} and quality is one of ${JSON.stringify(CHORD_QUALITIES)}.`,
+    '- rhythmStyle: required string defining the rhythmic playback feel (e.g., "syncopated_16ths", "slow_arpeggio", "trip_hop_groove", "straight_8ths", "strum").',
+    '- instrumentConfig: required object defining the Tone.js instrument state containing:',
+    `  * presetId: required string, closest match from baseline library keys: ${JSON.stringify(baselineInstruments)}`,
+    '  * customConfig: optional nested JSON object containing valid Tone.js parameters to override the base preset and match requested aesthetic.',
+    '    CRITICAL: Only use standard, valid Tone.js properties in customConfig (e.g. envelope, oscillator, filterEnvelope, harmonicity, modulationIndex) to prevent audio context errors.',
     '',
     'Always return a full 8-chord progression, not just genre/mood. If the text names a specific',
     'well-known song, use that song\'s real chords/key (extending or repeating the progression to 8 chords if needed).',
@@ -178,7 +184,9 @@ function systemPrompt(): string {
     'Example output:',
     '{"genre":"Lo-fi/Chill","mood":"Melancholy","key":"D","scaleType":"DORIAN","length":8,' +
       '"chords":[{"root":"D","quality":"min7"},{"root":"G","quality":"maj"},{"root":"A","quality":"min7"},{"root":"C","quality":"maj"},' +
-      '{"root":"D","quality":"min7"},{"root":"F","quality":"maj7"},{"root":"G","quality":"min7"},{"root":"A","quality":"dom7"}]}',
+      '{"root":"D","quality":"min7"},{"root":"F","quality":"maj7"},{"root":"G","quality":"min7"},{"root":"A","quality":"dom7"}],' +
+      '"rhythmStyle":"slow_arpeggio",' +
+      '"instrumentConfig":{"presetId":"rhodes","customConfig":{"envelope":{"attack":0.02,"decay":0.8,"sustain":0.3,"release":1.2}}}}',
   ].join('\n');
 }
 
@@ -234,7 +242,7 @@ async function classifyAnthropic(text: string, apiKey: string): Promise<unknown>
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 500,
+        max_tokens: 750,
         system: systemPrompt(),
         messages: [{ role: 'user', content: text }],
       }),
@@ -271,7 +279,7 @@ async function tryOpenRouterModel(text: string, model: string, apiKey: string): 
       body: JSON.stringify({
         model,
         temperature: 0.1,
-        max_tokens: 450,
+        max_tokens: 750,
         messages: [
           { role: 'system', content: systemPrompt() },
           { role: 'user', content: text },

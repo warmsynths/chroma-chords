@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { ProjectService, ProjectData } from './services/project-service';
 import { GoogleDriveService } from './services/google-drive-service';
-import { playChordForGenre, USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
+import { playChordForGenre, USER_INSTRUMENTS, USER_PLAY_STYLES, presetIdToUserInstrumentName, matchRhythmStyleToPlayStyleName } from './services/audio-service';
 import {
   loadChordData, generateProgression, alignChordsToScale, generateAlternatives, applyVoicingToChord,
   RawChordData, Progression, ChordBlock, Alternative, AUTOPLAY_INTERVAL_MS,
@@ -226,6 +226,23 @@ export class ChromaChordsApp extends LitElement {
     let progression = (usingSuggestion && suggestion.chords && suggestion.key && suggestion.scaleType
       ? alignChordsToScale(this.chordData, suggestion.key, suggestion.scaleType, suggestion.chords, this.genre, this.mood)
       : null) ?? generateProgression(this.chordData, this.genre, this.mood, { length: this.length });
+
+    if (usingSuggestion && suggestion) {
+      if (suggestion.instrumentConfig?.presetId) {
+        const mappedInst = presetIdToUserInstrumentName(suggestion.instrumentConfig.presetId);
+        if (mappedInst) {
+          this.instrument = mappedInst;
+          localStorage.setItem('chroma-chords-instrument', mappedInst);
+        }
+      }
+      if (suggestion.rhythmStyle) {
+        const mappedStyle = matchRhythmStyleToPlayStyleName(suggestion.rhythmStyle);
+        if (mappedStyle) {
+          this.playStyle = mappedStyle;
+          localStorage.setItem('chroma-chords-play-style', mappedStyle);
+        }
+      }
+    }
 
     if (progression && progression.chords.length > this.length) {
       progression = {

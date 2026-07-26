@@ -1,0 +1,1016 @@
+{
+  "metadata": {
+    "generatedAt": "2026-07-26T02:44:14.625Z",
+    "source": "MusicBrainz Web API & Curated Real-World Music Taxonomy",
+    "totalGenres": 23,
+    "totalMoods": 11,
+    "totalInstruments": 8,
+    "totalPlayStyles": 8,
+    "fetchedMBInstrumentsCount": 100,
+    "fetchedMBTagsCount": 280
+  },
+  "genres": [
+    {
+      "name": "Pop",
+      "scale": "MAJOR",
+      "bpm": 116,
+      "defaultInstrument": "rhodes",
+      "humanize": {
+        "minVelocity": 90,
+        "maxVelocity": 110,
+        "spread": 0.5,
+        "microTiming": 0.3,
+        "humanVariance": 0.3,
+        "duration": 1
+      },
+      "keywords": [
+        "pop",
+        "radio",
+        "dance",
+        "catchy",
+        "hit"
+      ]
+    },
+    {
+      "name": "Lo-fi/Chill",
+      "scale": "DORIAN",
+      "bpm": 80,
+      "defaultInstrument": "rhodes",
+      "humanize": {
+        "minVelocity": 55,
+        "maxVelocity": 85,
+        "spread": 2.5,
+        "microTiming": 1.2,
+        "humanVariance": 0.8,
+        "duration": 1.4,
+        "arpMode": "up",
+        "arpRate": "1/8",
+        "arpRange": 1
+      },
+      "keywords": [
+        "lofi",
+        "lo-fi",
+        "study",
+        "bedroom",
+        "tape",
+        "chill",
+        "relax"
+      ]
+    },
+    {
+      "name": "R&B/Soul",
+      "scale": "MIXOLYDIAN",
+      "bpm": 90,
+      "defaultInstrument": "rhodes",
+      "humanize": {
+        "minVelocity": 75,
+        "maxVelocity": 105,
+        "spread": 1.2,
+        "microTiming": 0.6,
+        "humanVariance": 0.5,
+        "duration": 1.3
+      },
+      "keywords": [
+        "rnb",
+        "r&b",
+        "soul",
+        "smooth",
+        "slow jam",
+        "sultry"
+      ]
+    },
+    {
+      "name": "Indie/Folk",
+      "scale": "MAJOR",
+      "bpm": 105,
+      "defaultInstrument": "rhodes",
+      "humanize": {
+        "minVelocity": 80,
+        "maxVelocity": 105,
+        "spread": 1,
+        "microTiming": 0.5,
+        "humanVariance": 0.4,
+        "duration": 1.1
+      },
+      "keywords": [
+        "folk",
+        "acoustic",
+        "campfire",
+        "porch",
+        "story",
+        "indie"
+      ]
+    },
+    {
+      "name": "Synthwave",
+      "scale": "LYDIAN",
+      "bpm": 118,
+      "defaultInstrument": "juno-pad",
+      "humanize": {
+        "minVelocity": 70,
+        "maxVelocity": 95,
+        "spread": 0,
+        "microTiming": 0,
+        "humanVariance": 0.1,
+        "duration": 1.8
+      },
+      "keywords": [
+        "synth",
+        "80s",
+        "neon",
+        "retro",
+        "synthwave",
+        "arcade"
+      ]
+    },
+    {
+      "name": "Jazz-ish",
+      "scale": "DORIAN",
+      "bpm": 95,
+      "defaultInstrument": "rhodes",
+      "humanize": {
+        "minVelocity": 70,
+        "maxVelocity": 100,
+        "spread": 1.8,
+        "microTiming": 1,
+        "humanVariance": 0.6,
+        "duration": 1.2,
+        "arpMode": "up",
+        "arpRate": "1/8T",
+        "arpRange": 1
+      },
+      "keywords": [
+        "jazz",
+        "smoky",
+        "bar",
+        "lounge",
+        "late night",
+        "saxophone"
+      ]
+    },
+    {
+      "name": "Gospel",
+      "scale": "MAJOR",
+      "bpm": 85,
+      "defaultInstrument": "organ",
+      "humanize": {
+        "minVelocity": 95,
+        "maxVelocity": 120,
+        "spread": 0.4,
+        "microTiming": 0.2,
+        "humanVariance": 0.2,
+        "duration": 1.5
+      },
+      "keywords": [
+        "gospel",
+        "church",
+        "choir",
+        "soulful",
+        "worship"
+      ]
+    },
+    {
+      "name": "Cinematic",
+      "scale": "LYDIAN",
+      "bpm": 75,
+      "defaultInstrument": "pad-strings",
+      "humanize": {
+        "minVelocity": 60,
+        "maxVelocity": 90,
+        "spread": 0,
+        "microTiming": 0,
+        "humanVariance": 0.1,
+        "duration": 2.2
+      },
+      "keywords": [
+        "movie",
+        "film",
+        "epic",
+        "trailer",
+        "scene",
+        "cinematic"
+      ]
+    },
+    {
+      "name": "Rock",
+      "scale": "MAJOR",
+      "bpm": 124,
+      "defaultInstrument": "rhodes",
+      "humanize": {
+        "minVelocity": 105,
+        "maxVelocity": 127,
+        "spread": 0.2,
+        "microTiming": 0.1,
+        "humanVariance": 0.15,
+        "duration": 0.9
+      },
+      "keywords": [
+        "rock",
+        "guitar",
+        "drive",
+        "loud",
+        "energy",
+        "highway"
+      ]
+    },
+    {
+      "name": "House/Dance",
+      "scale": "MIXOLYDIAN",
+      "bpm": 126,
+      "defaultInstrument": "stab",
+      "humanize": {
+        "minVelocity": 100,
+        "maxVelocity": 127,
+        "spread": 0,
+        "microTiming": 0.1,
+        "humanVariance": 0.15,
+        "duration": 0.5
+      },
+      "keywords": [
+        "house",
+        "edm",
+        "club",
+        "rave",
+        "four on the floor",
+        "dance floor"
+      ]
+    },
+    {
+      "name": "Blues",
+      "scale": "MIXOLYDIAN",
+      "bpm": 88,
+      "defaultInstrument": "rhodes",
+      "humanize": {
+        "minVelocity": 80,
+        "maxVelocity": 110,
+        "spread": 1.4,
+        "microTiming": 0.7,
+        "humanVariance": 0.5,
+        "duration": 1.2
+      },
+      "keywords": [
+        "blues",
+        "12 bar",
+        "delta",
+        "chicago blues",
+        "harmonica"
+      ]
+    },
+    {
+      "name": "Funk/Disco",
+      "scale": "MIXOLYDIAN",
+      "bpm": 114,
+      "defaultInstrument": "epiano",
+      "humanize": {
+        "minVelocity": 95,
+        "maxVelocity": 125,
+        "spread": 0.3,
+        "microTiming": 0.2,
+        "humanVariance": 0.2,
+        "duration": 0.8
+      },
+      "keywords": [
+        "funk",
+        "funky",
+        "groovy",
+        "disco",
+        "slap bass",
+        "boogie"
+      ]
+    },
+    {
+      "name": "Country/Bluegrass",
+      "scale": "MAJOR",
+      "bpm": 110,
+      "defaultInstrument": "guitar",
+      "humanize": {
+        "minVelocity": 85,
+        "maxVelocity": 115,
+        "spread": 1,
+        "microTiming": 0.4,
+        "humanVariance": 0.3,
+        "duration": 1
+      },
+      "keywords": [
+        "country",
+        "bluegrass",
+        "nashville",
+        "banjo",
+        "twang"
+      ]
+    },
+    {
+      "name": "Reggae/Dub",
+      "scale": "DORIAN",
+      "bpm": 78,
+      "defaultInstrument": "organ",
+      "humanize": {
+        "minVelocity": 70,
+        "maxVelocity": 100,
+        "spread": 2,
+        "microTiming": 1,
+        "humanVariance": 0.6,
+        "duration": 1.3
+      },
+      "keywords": [
+        "reggae",
+        "dub",
+        "jamaica",
+        "ska",
+        "offbeat",
+        "roots"
+      ]
+    },
+    {
+      "name": "Metal",
+      "scale": "HARMONIC_MINOR",
+      "bpm": 140,
+      "defaultInstrument": "stab",
+      "humanize": {
+        "minVelocity": 110,
+        "maxVelocity": 127,
+        "spread": 0.1,
+        "microTiming": 0.05,
+        "humanVariance": 0.1,
+        "duration": 0.8
+      },
+      "keywords": [
+        "metal",
+        "heavy metal",
+        "thrash",
+        "riff",
+        "shred",
+        "headbang"
+      ]
+    },
+    {
+      "name": "Punk",
+      "scale": "MAJOR",
+      "bpm": 155,
+      "defaultInstrument": "stab",
+      "humanize": {
+        "minVelocity": 115,
+        "maxVelocity": 127,
+        "spread": 0.1,
+        "microTiming": 0.1,
+        "humanVariance": 0.1,
+        "duration": 0.7
+      },
+      "keywords": [
+        "punk",
+        "garage",
+        "mosh",
+        "rebel",
+        "skate"
+      ]
+    },
+    {
+      "name": "Ambient/Drone",
+      "scale": "LYDIAN",
+      "bpm": 65,
+      "defaultInstrument": "pad-strings",
+      "humanize": {
+        "minVelocity": 45,
+        "maxVelocity": 75,
+        "spread": 0,
+        "microTiming": 0,
+        "humanVariance": 0.05,
+        "duration": 3
+      },
+      "keywords": [
+        "ambient",
+        "drone",
+        "atmospheric",
+        "soundscape",
+        "meditation",
+        "space"
+      ]
+    },
+    {
+      "name": "Trap/Hip-Hop",
+      "scale": "NATURAL_MINOR",
+      "bpm": 135,
+      "defaultInstrument": "epiano",
+      "humanize": {
+        "minVelocity": 90,
+        "maxVelocity": 120,
+        "spread": 0.2,
+        "microTiming": 0.2,
+        "humanVariance": 0.2,
+        "duration": 1
+      },
+      "keywords": [
+        "trap",
+        "hiphop",
+        "hip-hop",
+        "rap",
+        "808",
+        "beat"
+      ]
+    },
+    {
+      "name": "Bossa Nova/Latin",
+      "scale": "DORIAN",
+      "bpm": 120,
+      "defaultInstrument": "guitar",
+      "humanize": {
+        "minVelocity": 75,
+        "maxVelocity": 105,
+        "spread": 1.5,
+        "microTiming": 0.8,
+        "humanVariance": 0.5,
+        "duration": 1.1,
+        "arpMode": "up",
+        "arpRate": "1/8T",
+        "arpRange": 1
+      },
+      "keywords": [
+        "bossa",
+        "bossa nova",
+        "samba",
+        "latin",
+        "rio",
+        "habanera"
+      ]
+    },
+    {
+      "name": "Classical/Orchestral",
+      "scale": "MAJOR",
+      "bpm": 72,
+      "defaultInstrument": "pad-strings",
+      "humanize": {
+        "minVelocity": 50,
+        "maxVelocity": 115,
+        "spread": 0.5,
+        "microTiming": 0.3,
+        "humanVariance": 0.3,
+        "duration": 2
+      },
+      "keywords": [
+        "classical",
+        "orchestra",
+        "symphony",
+        "concerto",
+        "violin",
+        "chamber"
+      ]
+    },
+    {
+      "name": "EDM/Trance",
+      "scale": "NATURAL_MINOR",
+      "bpm": 132,
+      "defaultInstrument": "juno-pad",
+      "humanize": {
+        "minVelocity": 95,
+        "maxVelocity": 127,
+        "spread": 0.1,
+        "microTiming": 0.05,
+        "humanVariance": 0.1,
+        "duration": 1.2
+      },
+      "keywords": [
+        "trance",
+        "techno",
+        "buildup",
+        "drop",
+        "festival"
+      ]
+    },
+    {
+      "name": "Afrobeats",
+      "scale": "MIXOLYDIAN",
+      "bpm": 108,
+      "defaultInstrument": "epiano",
+      "humanize": {
+        "minVelocity": 85,
+        "maxVelocity": 115,
+        "spread": 1,
+        "microTiming": 0.5,
+        "humanVariance": 0.4,
+        "duration": 1.1
+      },
+      "keywords": [
+        "afrobeats",
+        "afropop",
+        "lagos",
+        "highlife",
+        "afro"
+      ]
+    },
+    {
+      "name": "Shoegaze",
+      "scale": "LYDIAN",
+      "bpm": 112,
+      "defaultInstrument": "pad-strings",
+      "humanize": {
+        "minVelocity": 65,
+        "maxVelocity": 95,
+        "spread": 0.8,
+        "microTiming": 0.4,
+        "humanVariance": 0.3,
+        "duration": 2.5
+      },
+      "keywords": [
+        "shoegaze",
+        "fuzz",
+        "wall of sound",
+        "dream pop",
+        "gazer"
+      ]
+    }
+  ],
+  "moods": [
+    {
+      "name": "Uplifting",
+      "dot": "#F6D98B",
+      "desc": "Bright, major, forward-moving",
+      "iconPath": "M4 18 C 8 18 8 11 12 11 C 16 11 16 5 20 5",
+      "shift": null,
+      "degreeBias": [
+        "DOMINANT",
+        "SUBDOMINANT",
+        "SUBMEDIANT"
+      ],
+      "keywords": [
+        "happy",
+        "joy",
+        "bright",
+        "hope",
+        "celebrat",
+        "win",
+        "sun",
+        "morning",
+        "triumph"
+      ]
+    },
+    {
+      "name": "Melancholy",
+      "dot": "#9CC0EC",
+      "desc": "Minor-leaning, unresolved longing",
+      "iconPath": "M3 9 Q 8 9 9 14 T 15 17 Q 19 18 21 15",
+      "shift": "NATURAL_MINOR",
+      "degreeBias": [
+        "SUBMEDIANT",
+        "SUBTONIC",
+        "SUPERTONIC"
+      ],
+      "keywords": [
+        "sad",
+        "rain",
+        "lonely",
+        "grief",
+        "loss",
+        "blue",
+        "tear",
+        "goodbye"
+      ]
+    },
+    {
+      "name": "Dreamy",
+      "dot": "#C9A9E0",
+      "desc": "Suspended, floating, reverb-soaked",
+      "iconPath": "M4 15 a4 4 0 1 1 8 0 a4 4 0 1 1 8 0",
+      "shift": null,
+      "degreeBias": [
+        "MEDIANT",
+        "SUBDOMINANT",
+        "SUPERTONIC"
+      ],
+      "keywords": [
+        "dream",
+        "float",
+        "cloud",
+        "soft",
+        "sleep",
+        "hazy",
+        "ethereal",
+        "stars"
+      ]
+    },
+    {
+      "name": "Tense",
+      "dot": "#F2735F",
+      "desc": "Chromatic pulls, unresolved tension",
+      "iconPath": "M3 12 L7 6 L11 16 L15 6 L19 16 L21 12",
+      "shift": "HARMONIC_MINOR",
+      "degreeBias": [
+        "DOMINANT",
+        "LEADING-TONE",
+        "SUPERTONIC"
+      ],
+      "keywords": [
+        "fear",
+        "anxious",
+        "dark",
+        "storm",
+        "fight",
+        "chase",
+        "danger",
+        "thriller"
+      ]
+    },
+    {
+      "name": "Warm",
+      "dot": "#F2C9A0",
+      "desc": "Rich, consonant, close voicings",
+      "iconPath": "M12 4 a6.5 6.5 0 1 0 6.5 6.5",
+      "shift": null,
+      "degreeBias": [
+        "SUBDOMINANT",
+        "MEDIANT",
+        "SUBMEDIANT"
+      ],
+      "keywords": [
+        "cozy",
+        "home",
+        "fire",
+        "love",
+        "autumn",
+        "familiar",
+        "fireplace"
+      ]
+    },
+    {
+      "name": "Nostalgic",
+      "dot": "#B8CC9E",
+      "desc": "Bittersweet, borrowed chords",
+      "iconPath": "M3 12 C 7 6 9 18 13 12 C 17 6 19 18 21 12",
+      "shift": "NATURAL_MINOR",
+      "degreeBias": [
+        "SUBMEDIANT",
+        "MEDIANT",
+        "DOMINANT"
+      ],
+      "keywords": [
+        "memory",
+        "childhood",
+        "old",
+        "faded",
+        "remember",
+        "summer",
+        "photo",
+        "yearbook"
+      ]
+    },
+    {
+      "name": "Energetic",
+      "dot": "#FF8C42",
+      "desc": "High velocity, driving rhythm",
+      "iconPath": "M13 2 L4 14 h7 l-2 8 11-12 h-7 z",
+      "shift": null,
+      "degreeBias": [
+        "DOMINANT",
+        "SUBDOMINANT",
+        "SUPERTONIC"
+      ],
+      "keywords": [
+        "energetic",
+        "pumped",
+        "hype",
+        "fast",
+        "running",
+        "workout",
+        "power",
+        "fire"
+      ]
+    },
+    {
+      "name": "Dark",
+      "dot": "#7B61FF",
+      "desc": "Deep minor, ominous resonance",
+      "iconPath": "M12 3 a9 9 0 1 0 9 9 a9 9 0 0 1-9-9 z",
+      "shift": "HARMONIC_MINOR",
+      "degreeBias": [
+        "SUBMEDIANT",
+        "SUBTONIC",
+        "SUPERTONIC"
+      ],
+      "keywords": [
+        "dark",
+        "creepy",
+        "night",
+        "evil",
+        "shadow",
+        "gothic",
+        "gloomy"
+      ]
+    },
+    {
+      "name": "Peaceful",
+      "dot": "#7CD9B6",
+      "desc": "Serene, gentle acoustic space",
+      "iconPath": "M12 2 a10 10 0 1 0 10 10 A10 10 0 0 0 12 2 z M12 6 a6 6 0 1 1-6 6 a6 6 0 0 1 6-6 z",
+      "shift": null,
+      "degreeBias": [
+        "TONIC",
+        "SUBDOMINANT",
+        "MEDIANT"
+      ],
+      "keywords": [
+        "peaceful",
+        "calm",
+        "quiet",
+        "zen",
+        "relax",
+        "nature",
+        "gentle",
+        "still"
+      ]
+    },
+    {
+      "name": "Groovy",
+      "dot": "#E8609A",
+      "desc": "Syncopated, rhythmic bounce",
+      "iconPath": "M4 12 c4-4 8 4 12-4 s8 4 4 8",
+      "shift": "MIXOLYDIAN",
+      "degreeBias": [
+        "SUBDOMINANT",
+        "DOMINANT",
+        "SUBTONIC"
+      ],
+      "keywords": [
+        "groovy",
+        "funky",
+        "danceable",
+        "rhythm",
+        "swing",
+        "bounce",
+        "jam"
+      ]
+    },
+    {
+      "name": "Epic",
+      "dot": "#E5C158",
+      "desc": "Sweeping dynamics, triumphant power",
+      "iconPath": "M12 2 l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 z",
+      "shift": "MAJOR",
+      "degreeBias": [
+        "TONIC",
+        "DOMINANT",
+        "SUBMEDIANT"
+      ],
+      "keywords": [
+        "epic",
+        "heroic",
+        "grand",
+        "triumphant",
+        "majestic",
+        "legendary",
+        "glory"
+      ]
+    }
+  ],
+  "instruments": [
+    {
+      "name": "Piano",
+      "instrument": "rhodes",
+      "color": "#9CC0EC"
+    },
+    {
+      "name": "Rhodes",
+      "instrument": "epiano",
+      "color": "#F2A79B"
+    },
+    {
+      "name": "Nylon Guitar",
+      "instrument": "guitar",
+      "color": "#F6D98B"
+    },
+    {
+      "name": "Warm Pad",
+      "instrument": "pad-strings",
+      "color": "#C9A9E0"
+    },
+    {
+      "name": "Synth Bell",
+      "instrument": "bell",
+      "color": "#B8CC9E"
+    },
+    {
+      "name": "Drawbar Organ",
+      "instrument": "organ",
+      "color": "#E8609A"
+    },
+    {
+      "name": "Analog Synth",
+      "instrument": "juno-pad",
+      "color": "#7B61FF"
+    },
+    {
+      "name": "Synth Stab",
+      "instrument": "stab",
+      "color": "#FF8C42"
+    }
+  ],
+  "playStyles": [
+    {
+      "name": "Block chords",
+      "color": "#F2A79B",
+      "patch": {
+        "arpMode": "off",
+        "spread": 0.3
+      }
+    },
+    {
+      "name": "Arpeggio",
+      "color": "#9CC0EC",
+      "patch": {
+        "arpMode": "up",
+        "arpRate": "1/8",
+        "arpRange": 1
+      }
+    },
+    {
+      "name": "Strum",
+      "color": "#F6D98B",
+      "patch": {
+        "arpMode": "up",
+        "arpRate": "1/32",
+        "arpRange": 1
+      }
+    },
+    {
+      "name": "Broken (swing)",
+      "color": "#C9A9E0",
+      "patch": {
+        "arpMode": "up",
+        "arpRate": "1/8T",
+        "arpRange": 1
+      }
+    },
+    {
+      "name": "Half-time",
+      "color": "#B8CC9E",
+      "patch": {
+        "arpMode": "off",
+        "spread": 0.1,
+        "durationMultiplier": 1.8
+      }
+    },
+    {
+      "name": "Descending Arp",
+      "color": "#7B61FF",
+      "patch": {
+        "arpMode": "down",
+        "arpRate": "1/8",
+        "arpRange": 1
+      }
+    },
+    {
+      "name": "Off-beat / Ska",
+      "color": "#FF8C42",
+      "patch": {
+        "arpMode": "off",
+        "spread": 0.1,
+        "microTiming": 0.8
+      }
+    },
+    {
+      "name": "Fast Triplet",
+      "color": "#7CD9B6",
+      "patch": {
+        "arpMode": "up",
+        "arpRate": "1/16T",
+        "arpRange": 1
+      }
+    }
+  ],
+  "musicBrainzSampleInstruments": [
+    {
+      "name": "natural brass instruments",
+      "type": "Wind instrument",
+      "description": "Natural brass instruments only play notes in the instrument's harmonic series."
+    },
+    {
+      "name": "bowed string instruments",
+      "type": "String instrument"
+    },
+    {
+      "name": "valved brass instruments",
+      "type": "Wind instrument",
+      "description": "Valved brass instruments use a set of valves which introduce additional tubing into the instrument."
+    },
+    {
+      "name": "keyed brass instruments",
+      "type": "Wind instrument",
+      "description": "These have holes along the body and sound production is similarly to woodwinds."
+    },
+    {
+      "name": "slide brass instruments",
+      "type": "Wind instrument",
+      "description": "Slide brass instruments use a slide to change the length of tubing."
+    },
+    {
+      "name": "struck string instruments",
+      "type": "String instrument"
+    },
+    {
+      "name": "plucked string instruments",
+      "type": "String instrument"
+    },
+    {
+      "name": "other instruments",
+      "type": "Other instrument",
+      "description": "Other instruments. If you can't find an instrument, please <a href=\"/doc/How_to_Add_Instruments\">request it</a>."
+    },
+    {
+      "name": "electronic instruments",
+      "type": "Electronic instrument"
+    },
+    {
+      "name": "wind instruments",
+      "type": "Wind instrument"
+    },
+    {
+      "name": "double reed",
+      "type": "Wind instrument"
+    },
+    {
+      "name": "EWI",
+      "type": "Electronic instrument",
+      "description": "EWI (an acronym for electric wind instrument) is the name of Akai's wind controller."
+    },
+    {
+      "name": "wind synthesizer",
+      "type": "Electronic instrument",
+      "description": "Wind synthesizer or wind controller, it is connected to a MIDI controller and is played like a wind instrument."
+    },
+    {
+      "name": "tubulum",
+      "type": "Percussion instrument",
+      "description": "Invented (or at least made popular) by Blue Man Group, it is made of alternating length PVC pipes and hit with sticks or flaps. It is popular with street musicians."
+    },
+    {
+      "name": "free reed",
+      "type": "Wind instrument"
+    },
+    {
+      "name": "strings",
+      "type": "String instrument"
+    },
+    {
+      "name": "percussion",
+      "type": "Percussion instrument",
+      "description": "Very wide grouping, played by hitting directly aka <a href=\"/instrument/06266b6a-2fb8-4c71-9894-186edbac5dff\">idiophone</a>s and <a href=\"/instrument/3bccb7eb-cbca-42cd-b0ac-a5e959df7221\">membranophone</a>s (from drums to xylophones). Use the closest approximate instrument possible for credits, use percussion with a credit if no better can be found and <a href=\"/doc/How_to_Add_Instruments\">create an instrument ticket</a> if necessary."
+    },
+    {
+      "name": "string quintet",
+      "type": "Ensemble",
+      "description": "Chamber ensemble of five players (two violins, one viola & one cello, then either a second viola, a second cello or a double bass)."
+    },
+    {
+      "name": "reeds",
+      "type": "Wind instrument"
+    },
+    {
+      "name": "celesta",
+      "type": "Percussion instrument",
+      "description": "Similar to how a piano works, here keys operate hammers that strike metal plates, creating a soft bell sound."
+    },
+    {
+      "name": "berda",
+      "type": "String instrument",
+      "description": "Bass member of the Serbo-Croatian tamburica orchestra, it is contrabass like. It has four thick metal strings."
+    },
+    {
+      "name": "tape",
+      "type": "Other instrument"
+    },
+    {
+      "name": "trumpet family",
+      "type": "Family",
+      "description": "Family of the brass instrument trumpet."
+    },
+    {
+      "name": "single reed",
+      "type": "Wind instrument"
+    },
+    {
+      "name": "woodwind",
+      "type": "Wind instrument"
+    },
+    {
+      "name": "bowed string instruments",
+      "type": "String instrument"
+    },
+    {
+      "name": "valved brass instruments",
+      "type": "Wind instrument",
+      "description": "Valved brass instruments use a set of valves which introduce additional tubing into the instrument."
+    },
+    {
+      "name": "natural brass instruments",
+      "type": "Wind instrument",
+      "description": "Natural brass instruments only play notes in the instrument's harmonic series."
+    },
+    {
+      "name": "slide brass instruments",
+      "type": "Wind instrument",
+      "description": "Slide brass instruments use a slide to change the length of tubing."
+    },
+    {
+      "name": "struck string instruments",
+      "type": "String instrument"
+    }
+  ]
+}

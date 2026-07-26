@@ -5,6 +5,11 @@ export interface RequestedChordTag {
   quality: string;
 }
 
+export interface InstrumentConfigPayload {
+  presetId: string;
+  customConfig?: Record<string, unknown>;
+}
+
 // The normalized shape an LLM classifier (or the keyword-heuristic fallback) is allowed to
 // produce. Every field is restricted to Chroma Chords' existing controlled vocabulary — the
 // classifier picks tags, never raw/free-text chord symbols. `chords`, when present, is still
@@ -18,10 +23,13 @@ export interface NormalizedPrompt {
   scaleType?: string;
   length?: number;
   chords?: RequestedChordTag[];
+  rhythmStyle?: string;
+  instrumentConfig?: InstrumentConfigPayload;
   _rateLimit?: { limit?: number; remaining?: number };
 }
 
 const MOOD_NAMES = MOODS.map(m => m.name);
+const BASELINE_INSTRUMENT_IDS = ['rhodes', 'epiano', 'guitar', 'pad-strings', 'bell', 'organ', 'juno-pad', 'stab'];
 
 function levenshtein(a: string, b: string): number {
   const rows = a.length + 1;
@@ -88,6 +96,18 @@ function normalizeChords(raw: unknown): RequestedChordTag[] | undefined {
   return result.slice(0, MAX_PROGRESSION_LENGTH);
 }
 
+function normalizeInstrumentConfig(raw: unknown): InstrumentConfigPayload | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const obj = raw as Record<string, unknown>;
+  const presetId = fuzzyMatch(obj.presetId, BASELINE_INSTRUMENT_IDS) ??
+    (typeof obj.presetId === 'string' && obj.presetId.trim() ? obj.presetId.trim() : undefined);
+  if (!presetId) return undefined;
+  const customConfig = obj.customConfig && typeof obj.customConfig === 'object' && !Array.isArray(obj.customConfig)
+    ? (obj.customConfig as Record<string, unknown>)
+    : undefined;
+  return { presetId, customConfig };
+}
+
 // Validates/fuzzy-matches an arbitrary raw object (typically parsed from an LLM response,
 // but works just as well on the keyword-heuristic's output) against the controlled
 // vocabulary, filling in `fallback` for any field that doesn't survive the match.
@@ -105,7 +125,12 @@ export function normalize(raw: unknown, fallback: NormalizeFallback): Normalized
     length = Math.max(MIN_PROGRESSION_LENGTH, Math.min(MAX_PROGRESSION_LENGTH, Math.round(obj.length)));
   }
 
+  const rhythmStyle = typeof obj.rhythmStyle === 'string' && obj.rhythmStyle.trim()
+    ? obj.rhythmStyle.trim()
+    : undefined;
+  const instrumentConfig = normalizeInstrumentConfig(obj.instrumentConfig);
+
   const _rateLimit = obj._rateLimit && typeof obj._rateLimit === 'object' ? (obj._rateLimit as { limit?: number; remaining?: number }) : undefined;
 
-  return { genre, mood, key, scaleType, length, chords, _rateLimit };
+  return { genre, mood, key, scaleType, length, chords, rhythmStyle, instrumentConfig, _rateLimit };
 }

@@ -17,7 +17,7 @@ const MASCOT_SLOTS = [
   { side: 'right', top: '68%' },
 ] as const;
 
-const CLASSIFY_DEBOUNCE_MS = 500;
+const CLASSIFY_DEBOUNCE_MS = 800;
 
 const GENRE_ICON_PALETTE = ['#F2A79B', '#9CC0EC', '#F6D98B'];
 // index % 3 -> corner radius on the genre pill's icon swatch: rounded square, squarer, near-circle.
@@ -826,7 +826,8 @@ export class SeedScreen extends LitElement {
   private scheduleClassify() {
     if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
     const text = this.freeText.trim();
-    if (text.length <= 2) {
+    const lower = text.toLowerCase();
+    if (text.length <= 2 || ['m', 'mo', 'moc', 't', 'te', 'tes'].includes(lower)) {
       this.isClassifying = false;
       return;
     }

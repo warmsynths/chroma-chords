@@ -125,50 +125,347 @@ function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
 // The instrument picker's five user-facing options (design: "Instrument" chip) — each maps to
 // one of the voices above. Colors match the dots used in the picker's option pills.
 export const USER_INSTRUMENTS: { name: string; instrument: InstrumentId; color: string }[] = [
-  { name: 'Piano', instrument: 'rhodes', color: '#9CC0EC' },
-  { name: 'Rhodes', instrument: 'epiano', color: '#F2A79B' },
-  { name: 'Nylon Guitar', instrument: 'guitar', color: '#F6D98B' },
-  { name: 'Warm Pad', instrument: 'pad-strings', color: '#C9A9E0' },
-  { name: 'Synth Bell', instrument: 'bell', color: '#B8CC9E' },
+  {
+    "name": "Piano",
+    "instrument": "rhodes",
+    "color": "#9CC0EC"
+  },
+  {
+    "name": "Rhodes",
+    "instrument": "epiano",
+    "color": "#F2A79B"
+  },
+  {
+    "name": "Nylon Guitar",
+    "instrument": "guitar",
+    "color": "#F6D98B"
+  },
+  {
+    "name": "Warm Pad",
+    "instrument": "pad-strings",
+    "color": "#C9A9E0"
+  },
+  {
+    "name": "Synth Bell",
+    "instrument": "bell",
+    "color": "#B8CC9E"
+  },
+  {
+    "name": "Drawbar Organ",
+    "instrument": "organ",
+    "color": "#E8609A"
+  },
+  {
+    "name": "Analog Synth",
+    "instrument": "juno-pad",
+    "color": "#7B61FF"
+  },
+  {
+    "name": "Synth Stab",
+    "instrument": "stab",
+    "color": "#FF8C42"
+  }
 ];
 
 // The play-style picker's five options (design: "Play style" chip) — each is a humanState
 // override applied on top of the genre's normal humanize profile. Colors match USER_INSTRUMENTS'
 // pattern (arbitrary per-option accent, not tied to genre/mood).
 export const USER_PLAY_STYLES: { name: string; color: string; patch: Record<string, unknown> }[] = [
-  { name: 'Block chords', color: '#F2A79B', patch: { arpMode: 'off', spread: 0.3 } },
-  { name: 'Arpeggio', color: '#9CC0EC', patch: { arpMode: 'up', arpRate: '1/8', arpRange: 1 } },
-  { name: 'Strum', color: '#F6D98B', patch: { arpMode: 'up', arpRate: '1/32', arpRange: 1 } },
-  { name: 'Broken (swing)', color: '#C9A9E0', patch: { arpMode: 'up', arpRate: '1/8T', arpRange: 1 } },
-  { name: 'Half-time', color: '#B8CC9E', patch: { arpMode: 'off', spread: 0.1, durationMultiplier: 1.8 } },
+  {
+    "name": "Block chords",
+    "color": "#F2A79B",
+    "patch": {
+      "arpMode": "off",
+      "spread": 0.3
+    }
+  },
+  {
+    "name": "Arpeggio",
+    "color": "#9CC0EC",
+    "patch": {
+      "arpMode": "up",
+      "arpRate": "1/8",
+      "arpRange": 1
+    }
+  },
+  {
+    "name": "Strum",
+    "color": "#F6D98B",
+    "patch": {
+      "arpMode": "up",
+      "arpRate": "1/32",
+      "arpRange": 1
+    }
+  },
+  {
+    "name": "Broken (swing)",
+    "color": "#C9A9E0",
+    "patch": {
+      "arpMode": "up",
+      "arpRate": "1/8T",
+      "arpRange": 1
+    }
+  },
+  {
+    "name": "Half-time",
+    "color": "#B8CC9E",
+    "patch": {
+      "arpMode": "off",
+      "spread": 0.1,
+      "durationMultiplier": 1.8
+    }
+  },
+  {
+    "name": "Descending Arp",
+    "color": "#7B61FF",
+    "patch": {
+      "arpMode": "down",
+      "arpRate": "1/8",
+      "arpRange": 1
+    }
+  },
+  {
+    "name": "Off-beat / Ska",
+    "color": "#FF8C42",
+    "patch": {
+      "arpMode": "off",
+      "spread": 0.1,
+      "microTiming": 0.8
+    }
+  },
+  {
+    "name": "Fast Triplet",
+    "color": "#7CD9B6",
+    "patch": {
+      "arpMode": "up",
+      "arpRate": "1/16T",
+      "arpRange": 1
+    }
+  }
 ];
 
 const GENRE_INSTRUMENT: Record<string, InstrumentId> = {
-  'Pop': 'rhodes',
-  'Rock': 'rhodes',
-  'Indie/Folk': 'rhodes',
-  'Lo-fi/Chill': 'rhodes',
-  'Jazz-ish': 'rhodes',
-  'R&B/Soul': 'rhodes',
-  'Gospel': 'organ',
-  'Cinematic': 'pad-strings',
-  'Synthwave': 'juno-pad',
-  'House/Dance': 'stab',
+  "Pop": "rhodes",
+  "Rock": "rhodes",
+  "Indie/Folk": "rhodes",
+  "Lo-fi/Chill": "rhodes",
+  "Jazz-ish": "rhodes",
+  "R&B/Soul": "rhodes",
+  "Gospel": "organ",
+  "Cinematic": "pad-strings",
+  "Synthwave": "juno-pad",
+  "House/Dance": "stab",
+  "Blues": "rhodes",
+  "Funk/Disco": "epiano",
+  "Country/Bluegrass": "guitar",
+  "Reggae/Dub": "organ",
+  "Metal": "stab",
+  "Punk": "stab",
+  "Ambient/Drone": "pad-strings",
+  "Trap/Hip-Hop": "epiano",
+  "Bossa Nova/Latin": "guitar",
+  "Classical/Orchestral": "pad-strings",
+  "EDM/Trance": "juno-pad",
+  "Afrobeats": "epiano",
+  "Shoegaze": "pad-strings"
 };
 
 // Per-genre humanize profile: velocity range, timing looseness, note duration, and
 // (for Lo-fi/Jazz) a gentle arpeggiation instead of a flat hit.
 const GENRE_HUMANIZE: Record<string, any> = {
-  'Pop': { minVelocity: 90, maxVelocity: 110, spread: 0.5, microTiming: 0.3, humanVariance: 0.3, duration: 1.0 },
-  'Rock': { minVelocity: 105, maxVelocity: 127, spread: 0.2, microTiming: 0.1, humanVariance: 0.15, duration: 0.9 },
-  'Indie/Folk': { minVelocity: 80, maxVelocity: 105, spread: 1, microTiming: 0.5, humanVariance: 0.4, duration: 1.1 },
-  'Lo-fi/Chill': { minVelocity: 55, maxVelocity: 85, spread: 2.5, microTiming: 1.2, humanVariance: 0.8, duration: 1.4, arpMode: 'up', arpRate: '1/8', arpRange: 1 },
-  'Jazz-ish': { minVelocity: 70, maxVelocity: 100, spread: 1.8, microTiming: 1, humanVariance: 0.6, duration: 1.2, arpMode: 'up', arpRate: '1/8T', arpRange: 1 },
-  'R&B/Soul': { minVelocity: 75, maxVelocity: 105, spread: 1.2, microTiming: 0.6, humanVariance: 0.5, duration: 1.3 },
-  'Gospel': { minVelocity: 95, maxVelocity: 120, spread: 0.4, microTiming: 0.2, humanVariance: 0.2, duration: 1.5 },
-  'Cinematic': { minVelocity: 60, maxVelocity: 90, spread: 0, microTiming: 0, humanVariance: 0.1, duration: 2.2 },
-  'Synthwave': { minVelocity: 70, maxVelocity: 95, spread: 0, microTiming: 0, humanVariance: 0.1, duration: 1.8 },
-  'House/Dance': { minVelocity: 100, maxVelocity: 127, spread: 0, microTiming: 0.1, humanVariance: 0.15, duration: 0.5 },
+  "Pop": {
+    "minVelocity": 90,
+    "maxVelocity": 110,
+    "spread": 0.5,
+    "microTiming": 0.3,
+    "humanVariance": 0.3,
+    "duration": 1
+  },
+  "Rock": {
+    "minVelocity": 105,
+    "maxVelocity": 127,
+    "spread": 0.2,
+    "microTiming": 0.1,
+    "humanVariance": 0.15,
+    "duration": 0.9
+  },
+  "Indie/Folk": {
+    "minVelocity": 80,
+    "maxVelocity": 105,
+    "spread": 1,
+    "microTiming": 0.5,
+    "humanVariance": 0.4,
+    "duration": 1.1
+  },
+  "Lo-fi/Chill": {
+    "minVelocity": 55,
+    "maxVelocity": 85,
+    "spread": 2.5,
+    "microTiming": 1.2,
+    "humanVariance": 0.8,
+    "duration": 1.4,
+    "arpMode": "up",
+    "arpRate": "1/8",
+    "arpRange": 1
+  },
+  "Jazz-ish": {
+    "minVelocity": 70,
+    "maxVelocity": 100,
+    "spread": 1.8,
+    "microTiming": 1,
+    "humanVariance": 0.6,
+    "duration": 1.2,
+    "arpMode": "up",
+    "arpRate": "1/8T",
+    "arpRange": 1
+  },
+  "R&B/Soul": {
+    "minVelocity": 75,
+    "maxVelocity": 105,
+    "spread": 1.2,
+    "microTiming": 0.6,
+    "humanVariance": 0.5,
+    "duration": 1.3
+  },
+  "Gospel": {
+    "minVelocity": 95,
+    "maxVelocity": 120,
+    "spread": 0.4,
+    "microTiming": 0.2,
+    "humanVariance": 0.2,
+    "duration": 1.5
+  },
+  "Cinematic": {
+    "minVelocity": 60,
+    "maxVelocity": 90,
+    "spread": 0,
+    "microTiming": 0,
+    "humanVariance": 0.1,
+    "duration": 2.2
+  },
+  "Synthwave": {
+    "minVelocity": 70,
+    "maxVelocity": 95,
+    "spread": 0,
+    "microTiming": 0,
+    "humanVariance": 0.1,
+    "duration": 1.8
+  },
+  "House/Dance": {
+    "minVelocity": 100,
+    "maxVelocity": 127,
+    "spread": 0,
+    "microTiming": 0.1,
+    "humanVariance": 0.15,
+    "duration": 0.5
+  },
+  "Blues": {
+    "minVelocity": 80,
+    "maxVelocity": 110,
+    "spread": 1.4,
+    "microTiming": 0.7,
+    "humanVariance": 0.5,
+    "duration": 1.2
+  },
+  "Funk/Disco": {
+    "minVelocity": 95,
+    "maxVelocity": 125,
+    "spread": 0.3,
+    "microTiming": 0.2,
+    "humanVariance": 0.2,
+    "duration": 0.8
+  },
+  "Country/Bluegrass": {
+    "minVelocity": 85,
+    "maxVelocity": 115,
+    "spread": 1,
+    "microTiming": 0.4,
+    "humanVariance": 0.3,
+    "duration": 1
+  },
+  "Reggae/Dub": {
+    "minVelocity": 70,
+    "maxVelocity": 100,
+    "spread": 2,
+    "microTiming": 1,
+    "humanVariance": 0.6,
+    "duration": 1.3
+  },
+  "Metal": {
+    "minVelocity": 110,
+    "maxVelocity": 127,
+    "spread": 0.1,
+    "microTiming": 0.05,
+    "humanVariance": 0.1,
+    "duration": 0.8
+  },
+  "Punk": {
+    "minVelocity": 115,
+    "maxVelocity": 127,
+    "spread": 0.1,
+    "microTiming": 0.1,
+    "humanVariance": 0.1,
+    "duration": 0.7
+  },
+  "Ambient/Drone": {
+    "minVelocity": 45,
+    "maxVelocity": 75,
+    "spread": 0,
+    "microTiming": 0,
+    "humanVariance": 0.05,
+    "duration": 3
+  },
+  "Trap/Hip-Hop": {
+    "minVelocity": 90,
+    "maxVelocity": 120,
+    "spread": 0.2,
+    "microTiming": 0.2,
+    "humanVariance": 0.2,
+    "duration": 1
+  },
+  "Bossa Nova/Latin": {
+    "minVelocity": 75,
+    "maxVelocity": 105,
+    "spread": 1.5,
+    "microTiming": 0.8,
+    "humanVariance": 0.5,
+    "duration": 1.1,
+    "arpMode": "up",
+    "arpRate": "1/8T",
+    "arpRange": 1
+  },
+  "Classical/Orchestral": {
+    "minVelocity": 50,
+    "maxVelocity": 115,
+    "spread": 0.5,
+    "microTiming": 0.3,
+    "humanVariance": 0.3,
+    "duration": 2
+  },
+  "EDM/Trance": {
+    "minVelocity": 95,
+    "maxVelocity": 127,
+    "spread": 0.1,
+    "microTiming": 0.05,
+    "humanVariance": 0.1,
+    "duration": 1.2
+  },
+  "Afrobeats": {
+    "minVelocity": 85,
+    "maxVelocity": 115,
+    "spread": 1,
+    "microTiming": 0.5,
+    "humanVariance": 0.4,
+    "duration": 1.1
+  },
+  "Shoegaze": {
+    "minVelocity": 65,
+    "maxVelocity": 95,
+    "spread": 0.8,
+    "microTiming": 0.4,
+    "humanVariance": 0.3,
+    "duration": 2.5
+  }
 };
 
 // Maps each internal auto-selected instrument voice to the closest of the 5 user-facing
@@ -296,18 +593,82 @@ function orderNotesForArp(notes: string[], arpMode: string): string[] {
 }
 
 /**
- * Plays a chord of notes simultaneously using the sampled Rhodes electric piano.
+ * Maps an LLM instrument preset ID (e.g. "rhodes", "epiano", "juno-pad") or display name
+ * to the closest matching user-facing instrument name in USER_INSTRUMENTS.
+ */
+const PRESET_ID_TO_USER_NAME: Record<string, string> = {
+  'rhodes': 'Piano',
+  'epiano': 'Rhodes',
+  'guitar': 'Nylon Guitar',
+  'pad-strings': 'Warm Pad',
+  'juno-pad': 'Analog Synth',
+  'bell': 'Synth Bell',
+  'organ': 'Drawbar Organ',
+  'stab': 'Synth Stab',
+};
+
+export function presetIdToUserInstrumentName(presetId?: string): string | undefined {
+  if (!presetId) return undefined;
+  const lower = presetId.toLowerCase().trim();
+  if (PRESET_ID_TO_USER_NAME[lower]) return PRESET_ID_TO_USER_NAME[lower];
+  const matched = USER_INSTRUMENTS.find(i => i.name.toLowerCase() === lower || i.instrument.toLowerCase() === lower);
+  return matched?.name;
+}
+
+/**
+ * Maps an LLM rhythm style string (e.g. "slow_arpeggio", "syncopated_16ths", "trip_hop_groove")
+ * to the closest matching play style name in USER_PLAY_STYLES.
+ */
+export function matchRhythmStyleToPlayStyleName(rhythmStyle?: string): string | undefined {
+  if (!rhythmStyle) return undefined;
+  const style = rhythmStyle.toLowerCase().trim();
+  if (style.includes('strum')) return 'Strum';
+  if (style.includes('descend')) return 'Descending Arp';
+  if (style.includes('half')) return 'Half-time';
+  if (style.includes('swing') || style.includes('broken')) return 'Broken (swing)';
+  if (style.includes('offbeat') || style.includes('ska') || style.includes('syncopat') || style.includes('groove')) return 'Off-beat / Ska';
+  if (style.includes('triplet') || style.includes('fast')) return 'Fast Triplet';
+  if (style.includes('arp') || style.includes('cascade')) return 'Arpeggio';
+  if (style.includes('block') || style.includes('pad') || style.includes('sustained')) return 'Block chords';
+
+  const matched = USER_PLAY_STYLES.find(p => p.name.toLowerCase() === style);
+  return matched?.name ?? 'Block chords';
+}
+
+/**
+ * Plays a chord of notes simultaneously using the sampled Rhodes electric piano or synth voice.
  * Starts Tone.js audio context on user gesture if not already running.
  * When humanState.arpMode is set (not 'off'), plays notes in an arpeggio pattern.
+ * Safely applies customConfig to the Tone.js instrument if provided.
  * 
  * @param noteNames Array of note names with octaves, e.g. ["C4", "E4", "G4"].
  * @param duration Duration in seconds.
  * @param humanState Optional HumanState including bpm, arpMode, arpRate, arpRange.
+ * @param instrument Selected InstrumentId.
+ * @param customConfig Optional valid Tone.js parameter overrides.
  */
-export function playChord(noteNames: string[], duration = 0.7, humanState?: any, instrument: InstrumentId = 'rhodes'): void {
+export function playChord(
+  noteNames: string[],
+  duration = 0.7,
+  humanState?: any,
+  instrument: InstrumentId = 'rhodes',
+  customConfig?: Record<string, unknown>
+): void {
   try {
     Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
       const voice = getVoice(instrument);
+
+      // Safely apply custom Tone.js configuration if provided
+      if (customConfig && typeof customConfig === 'object' && Object.keys(customConfig).length > 0) {
+        try {
+          if (typeof (voice as any).set === 'function') {
+            (voice as any).set(customConfig);
+          }
+        } catch (e) {
+          console.warn("Failed to apply customConfig to Tone.js instrument:", e);
+        }
+      }
+
       const count = noteNames.length;
       const densityScaling = count <= 1 ? 1 : Math.max(0.4, 1 / Math.sqrt(count));
       const now = Tone.now();
@@ -389,7 +750,7 @@ export function playChord(noteNames: string[], duration = 0.7, humanState?: any,
 export function playChordForGenre(
   noteNames: string[],
   genre: string,
-  opts?: { bpm?: number; duration?: number; instrument?: string; playStyle?: string }
+  opts?: { bpm?: number; duration?: number; instrument?: string; playStyle?: string; customConfig?: Record<string, unknown> }
 ): void {
   // User overrides (from the Instrument/Play style pickers) win over the genre's defaults —
   // when unset, playback falls back to the existing per-genre auto-selection untouched.
@@ -404,7 +765,7 @@ export function playChordForGenre(
   const baseDuration = opts?.duration ?? profile.duration ?? 0.9;
   const duration = stylePatch.durationMultiplier ? baseDuration * stylePatch.durationMultiplier : baseDuration;
 
-  playChord(noteNames, duration, humanState, instrument);
+  playChord(noteNames, duration, humanState, instrument, opts?.customConfig);
 }
 
 /**
