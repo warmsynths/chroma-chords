@@ -36,10 +36,8 @@ export class SwapSheet extends LitElement {
   @property({ type: String }) moodColor = '#9B7CA8';
   @property({ type: Number }) position = 0;
   @property({ type: Number }) total = 4;
-  // 'swap' (default): the full sheet — theory toggle, alternate-chord list, and voicing tucked
-  // behind a collapsible (only when theory mode is on). 'voicing': opened directly from a
-  // chord's dedicated voicing icon — skips straight to the quality/extension/keyboard editor,
-  // no swap list, no theory gate.
+  // 'swap' (default): alternate-chord list sheet. 'voicing': opened directly from a
+  // chord's dedicated voicing icon — shows the quality/extension/keyboard editor.
   @property({ type: String }) mode: 'swap' | 'voicing' = 'swap';
   // Drives the slide-in/out transition. The parent mounts this component slightly before
   // flipping this true (and unmounts it slightly after flipping it false) so the CSS
@@ -51,7 +49,6 @@ export class SwapSheet extends LitElement {
   // out the very selection that just caused it.
   @property({ type: Number }) resetKey: number | null = null;
 
-  @state() private voicingOpen = false;
   @state() private quality = 'Major';
   @state() private extension = 'None';
   // Grabber drag-to-dismiss: tracks live finger position while dragging (1:1, no
@@ -155,44 +152,7 @@ export class SwapSheet extends LitElement {
       border: none;
       flex-shrink: 0;
     }
-    .theory-toggle-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 18px;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-    .theory-track {
-      width: 38px;
-      height: 22px;
-      border-radius: 100px;
-      background: var(--cv-ink-16);
-      position: relative;
-      transition: background 150ms var(--cv-ease);
-      flex-shrink: 0;
-    }
-    .theory-track.on {
-      background: var(--cv-plum);
-    }
-    .theory-knob {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: var(--cv-cream);
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      transition: left 150ms var(--cv-ease);
-    }
-    .theory-knob.on {
-      left: 19px;
-    }
-    .theory-label {
-      font-size: 13.5px;
-      font-weight: 700;
-      color: var(--cv-ink-muted);
-    }
+
     .current-row {
       display: flex;
       align-items: center;
@@ -274,26 +234,7 @@ export class SwapSheet extends LitElement {
       padding-top: 14px;
       flex-shrink: 0;
     }
-    .voicing-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-    }
-    .voicing-chevron {
-      font-size: 11px;
-      color: var(--cv-label);
-      transition: transform 0.2s ease;
-      display: inline-block;
-    }
-    .voicing-chevron.open {
-      transform: rotate(90deg);
-    }
-    .voicing-label {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--cv-ink-muted);
-    }
+
     .bento {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -430,14 +371,6 @@ export class SwapSheet extends LitElement {
     }
   };
 
-  private toggleVoicing() {
-    this.voicingOpen = !this.voicingOpen;
-  }
-
-  private toggleTheory() {
-    this.emit('theory-toggle');
-  }
-
   private setQuality(label: string) {
     this.quality = label;
     this.previewVoicing();
@@ -466,7 +399,6 @@ export class SwapSheet extends LitElement {
 
   willUpdate(changed: Map<string, unknown>) {
     if (changed.has('resetKey')) {
-      this.voicingOpen = false;
       this.quality = 'Major';
       this.extension = 'None';
     }
@@ -476,8 +408,7 @@ export class SwapSheet extends LitElement {
     const c = this.chord;
     const root = rootOfChordName(c.name);
     const preferFlat = root.includes('b');
-    const voicingExpanded = this.mode === 'voicing' || this.voicingOpen;
-    const voicingNotes = voicingExpanded ? buildVoicingNotes(root, this.quality, this.extension, preferFlat) : c.notes;
+    const voicingNotes = this.mode === 'voicing' ? buildVoicingNotes(root, this.quality, this.extension, preferFlat) : c.notes;
     const currentRole = roleForTension(c.tension);
 
     const dragStyle = this.dragging || this.snapping
@@ -502,13 +433,6 @@ export class SwapSheet extends LitElement {
         </div>
 
         <div class="sheet-body">
-        ${this.mode === 'swap' ? html`
-          <div class="theory-toggle-row" @click=${this.toggleTheory}>
-            <div class="theory-track ${this.showTheory ? 'on' : ''}"><div class="theory-knob ${this.showTheory ? 'on' : ''}"></div></div>
-            <div class="theory-label">Show music theory</div>
-          </div>
-        ` : ''}
-
         <div class="current-row">
           <div class="alt-shape" style="width:${Math.round(currentRole.size * 0.5)}px;height:${Math.round(currentRole.size * 0.5)}px;border-radius:${Math.round(currentRole.radius * 0.5)}px;background:${currentRole.color};"></div>
           <div>
@@ -540,43 +464,35 @@ export class SwapSheet extends LitElement {
           </div>
         ` : ''}
 
-        ${this.mode === 'voicing' || this.showTheory ? html`
+        ${this.mode === 'voicing' ? html`
           <div class="voicing-section">
-            ${this.mode === 'swap' ? html`
-              <div class="voicing-toggle" @click=${this.toggleVoicing}>
-                <div class="voicing-chevron ${this.voicingOpen ? 'open' : ''}">›</div>
-                <div class="voicing-label">Adjust voicing</div>
+            <div>
+              <div class="bento">
+                ${QUALITIES.map(q => html`
+                  <div class="bento-card" style=${q.label === this.quality ? `background:${this.moodColor}` : ''} @click=${() => this.setQuality(q.label)}>
+                    <div class="bento-label">${q.label}</div>
+                    <div class="bento-sub">${q.sub}</div>
+                  </div>
+                `)}
               </div>
-            ` : ''}
-            ${voicingExpanded ? html`
-              <div>
-                <div class="bento">
-                  ${QUALITIES.map(q => html`
-                    <div class="bento-card" style=${q.label === this.quality ? `background:${this.moodColor}` : ''} @click=${() => this.setQuality(q.label)}>
-                      <div class="bento-label">${q.label}</div>
-                      <div class="bento-sub">${q.sub}</div>
-                    </div>
-                  `)}
-                </div>
-                <div class="bento ext">
-                  ${EXTS.map((e, i) => html`
-                    <div class="bento-card ${i === 0 ? 'span' : ''}" style=${e.label === this.extension ? `background:${this.moodColor}` : ''} @click=${() => this.setExtension(e.label)}>
-                      <div class="bento-label">${e.label}</div>
-                      <div class="bento-sub">${e.sub}</div>
-                    </div>
-                  `)}
-                </div>
-                <div class="kb-caption">A visual guide — the notes to play, left to right.</div>
-                <div class="keyboard">
-                  ${WHITE_NOTES.map(n => html`
-                    <div class="white-key ${voicingNotes.includes(n) ? 'active' : ''}" style=${voicingNotes.includes(n) ? `background:${this.moodColor}` : ''}>${n}</div>
-                  `)}
-                  ${BLACK_NOTES.map(b => html`
-                    <div class="black-key" style="left:${b.left};${(voicingNotes.includes(b.note) || voicingNotes.includes(b.flat)) ? `background:${this.moodColor}` : ''}"></div>
-                  `)}
-                </div>
+              <div class="bento ext">
+                ${EXTS.map((e, i) => html`
+                  <div class="bento-card ${i === 0 ? 'span' : ''}" style=${e.label === this.extension ? `background:${this.moodColor}` : ''} @click=${() => this.setExtension(e.label)}>
+                    <div class="bento-label">${e.label}</div>
+                    <div class="bento-sub">${e.sub}</div>
+                  </div>
+                `)}
               </div>
-            ` : ''}
+              <div class="kb-caption">A visual guide — the notes to play, left to right.</div>
+              <div class="keyboard">
+                ${WHITE_NOTES.map(n => html`
+                  <div class="white-key ${voicingNotes.includes(n) ? 'active' : ''}" style=${voicingNotes.includes(n) ? `background:${this.moodColor}` : ''}>${n}</div>
+                `)}
+                ${BLACK_NOTES.map(b => html`
+                  <div class="black-key" style="left:${b.left};${(voicingNotes.includes(b.note) || voicingNotes.includes(b.flat)) ? `background:${this.moodColor}` : ''}"></div>
+                `)}
+              </div>
+            </div>
           </div>
         ` : ''}
         </div>
