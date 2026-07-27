@@ -38,9 +38,7 @@ export class ProjectStorageManager {
 
   constructor() {
     this.userEmail = getLocalStorageItem('chroma-chords-auth') || getLocalStorageItem('chroma-chords-user') || getLocalStorageItem('chord-voyager-auth');
-    if (this.userEmail) {
-      this.authenticated = true;
-    }
+    // Authentication status is now deferred until initSilentAuth() validates the hash
   }
 
   public getUserEmail(): string | null {
@@ -156,7 +154,18 @@ export class ProjectStorageManager {
                     headers: { Authorization: `Bearer ${res.access_token}` },
                   }).catch(() => null);
                   const info = await userRes?.json().catch(() => null);
-                  const email = info?.email || 'google-user@chromachords.app';
+                  if (!info?.email) {
+                    resolve(null);
+                    return;
+                  }
+                  
+                  const hash = await this.hashEmail(info.email);
+                  if (!AUTHORIZED_HASHES.includes(hash)) {
+                    resolve(null);
+                    return;
+                  }
+
+                  const email = info.email;
                   setLocalStorageItem('chroma-chords-auth', email);
                   this.userEmail = email;
                   this.authenticated = true;
