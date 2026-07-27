@@ -46,6 +46,7 @@ const MAX_TEXT_LENGTH = 300;
 const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
 const OPENROUTER_ATTEMPT_TIMEOUT_MS = 5500; // Allow 5.5s per model attempt so requests don't abort prematurely
 const ANTHROPIC_TIMEOUT_MS = 10000;
+const GOOGLE_TIMEOUT_MS = 10000;
 const CACHE_TTL_MS = 10 * 60 * 1000; // Cache discovered free models for 10 minutes
 
 let cachedModels: { models: string[]; timestamp: number } | null = null;
@@ -225,8 +226,12 @@ function parseClassifierJson(rawContent: string): unknown {
   const candidate = extractJsonObject(fenced ? fenced[1] : cleaned);
   try {
     return JSON.parse(candidate);
-  } catch {
-    return JSON.parse(repairLooseJson(candidate));
+  } catch (e1: any) {
+    try {
+      return JSON.parse(repairLooseJson(candidate));
+    } catch (e2: any) {
+      throw new Error(`${e2.message} (raw partial: ${JSON.stringify(rawContent).slice(0, 150)}...)`);
+    }
   }
 }
 
@@ -438,9 +443,14 @@ async function classifyOpenCode(text: string, rawModel: string, apiKey: string):
 
 async function classifyGoogle(text: string, rawModel: string, apiKey: string): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OPENROUTER_ATTEMPT_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), GOOGLE_TIMEOUT_MS);
   const cleanKey = apiKey.trim().replace(/^["']|["']$/g, '');
-  const model = rawModel || 'gemini-1.5-flash';
+  let model = rawModel || 'gemini-3.1-flash-lite';
+  if (model === 'gemini-1.5-flash' || model === 'gemini-2.0-flash' || model === 'gemini-2.5-flash' || model === 'gemini-3.5-flash') {
+    model = 'gemini-3.1-flash-lite';
+  } else if (model === 'gemini-1.5-pro') {
+    model = 'gemini-3.1-flash-lite';
+  }
 
   if (!cleanKey) {
     throw new Error('GOOGLE_API_KEY secret is missing. Upload your key to Cloudflare using: wrangler secret put GOOGLE_API_KEY');
@@ -465,6 +475,7 @@ async function classifyGoogle(text: string, rawModel: string, apiKey: string): P
         generationConfig: {
           temperature: 0.1,
           maxOutputTokens: 750,
+          responseMimeType: "application/json",
         },
       }),
       signal: controller.signal,
@@ -490,7 +501,14 @@ async function classifyGoogle(text: string, rawModel: string, apiKey: string): P
       throw new Error(`Google AI Studio error: ${detail}`);
     }
 
-    const content = jsonBody.candidates?.[0]?.content?.parts?.[0]?.text;
+    const candidate = jsonBody.candidates?.[0];
+    const finishReason = candidate?.finishReason;
+    const content = candidate?.content?.parts?.[0]?.text;
+    
+    if (finishReason && finishReason !== 'STOP') {
+      throw new Error(`Google AI aborted (finishReason: ${finishReason}). Output: ${content}`);
+    }
+    
     if (!content) {
       throw new Error(`Empty response content from Google AI Studio`);
     }

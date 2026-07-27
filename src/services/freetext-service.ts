@@ -20,9 +20,9 @@ export const OPENCODE_MODELS: LLMModelOption[] = [
 ];
 
 export const GOOGLE_MODELS: LLMModelOption[] = [
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', provider: 'google', vendor: 'Google' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'google', vendor: 'Google' },
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'google', vendor: 'Google' },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash-Lite', provider: 'google', vendor: 'Google' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', provider: 'google', vendor: 'Google' },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', provider: 'google', vendor: 'Google' },
 ];
 
 const STORAGE_KEY_PROVIDER = 'chroma-chords-llm-provider';
@@ -42,7 +42,11 @@ export function setLLMProvider(provider: LLMProvider): void {
 
 export function getLLMModel(): string {
   const saved = localStorage.getItem(STORAGE_KEY_MODEL);
-  if (saved) return saved;
+  if (saved) {
+    if (saved === 'gemini-1.5-flash' || saved === 'gemini-2.0-flash' || saved === 'gemini-2.5-flash' || saved === 'gemini-3.5-flash') return 'gemini-3.1-flash-lite';
+    if (saved === 'gemini-1.5-pro') return 'gemini-3.1-flash-lite';
+    return saved;
+  }
   return GOOGLE_MODELS[0].id;
 }
 
