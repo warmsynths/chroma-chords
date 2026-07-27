@@ -1,17 +1,53 @@
 import { GENRES, MOODS } from './chord-engine';
 import { normalize, NormalizedPrompt } from './freetext-schema';
 
-export type LLMProvider = 'openrouter' | 'anthropic';
+export type LLMProvider = 'opencodeai' | 'openrouter' | 'anthropic' | 'google';
+
+export interface LLMModelOption {
+  id: string;
+  name: string;
+  provider: LLMProvider;
+  vendor: string;
+}
+
+export const OPENCODE_MODELS: LLMModelOption[] = [
+  { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash Free', provider: 'opencodeai', vendor: 'DeepSeek' },
+  { id: 'mimo-v2.5-free', name: 'MiMo V2.5 Free', provider: 'opencodeai', vendor: 'Xiaomi' },
+  { id: 'laguna-s-2.1-free', name: 'Laguna S 2.1 Free', provider: 'opencodeai', vendor: 'Stealth' },
+  { id: 'ling-3.0-flash-free', name: 'Ling-3.0-flash Free', provider: 'opencodeai', vendor: 'Stealth' },
+  { id: 'nemotron-3-ultra-free', name: 'Nemotron 3 Ultra Free', provider: 'opencodeai', vendor: 'NVIDIA' },
+  { id: 'north-mini-code-free', name: 'North Mini Code Free', provider: 'opencodeai', vendor: 'Stealth' },
+];
+
+export const GOOGLE_MODELS: LLMModelOption[] = [
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', provider: 'google', vendor: 'Google' },
+  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', provider: 'google', vendor: 'Google' },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', provider: 'google', vendor: 'Google' },
+];
 
 const STORAGE_KEY_PROVIDER = 'chroma-chords-llm-provider';
+const STORAGE_KEY_MODEL = 'chroma-chords-llm-model';
 
 export function getLLMProvider(): LLMProvider {
   const saved = localStorage.getItem(STORAGE_KEY_PROVIDER);
-  return saved === 'anthropic' ? 'anthropic' : 'openrouter';
+  if (saved === 'opencodeai' || saved === 'anthropic' || saved === 'openrouter' || saved === 'google') {
+    return saved;
+  }
+  return 'google';
 }
 
 export function setLLMProvider(provider: LLMProvider): void {
   localStorage.setItem(STORAGE_KEY_PROVIDER, provider);
+}
+
+export function getLLMModel(): string {
+  const saved = localStorage.getItem(STORAGE_KEY_MODEL);
+  if (saved) return saved;
+  return GOOGLE_MODELS[0].id;
+}
+
+export function setLLMModel(modelId: string): void {
+  localStorage.setItem(STORAGE_KEY_MODEL, modelId);
 }
 
 // Last-resort filler for normalize()'s per-field substitution — only used when the LLM's
@@ -397,7 +433,7 @@ async function llmClassify(text: string, authToken?: string | null): Promise<unk
     const res = await fetch(CLASSIFIER_ENDPOINT, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ text, provider: getLLMProvider() }),
+      body: JSON.stringify({ text, provider: getLLMProvider(), model: getLLMModel() }),
       signal: controller.signal,
     });
     const data = await res.json().catch(() => null);

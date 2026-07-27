@@ -9,7 +9,10 @@
 import { GENRES, MOODS, ROOT_KEYS, SCALE_TYPES, CHORD_QUALITIES } from '../src/services/chord-engine';
 
 export interface Env {
+  OPENCODE_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
+  OPENROUTER_KEY?: string;
+  GOOGLE_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   ALLOWED_ORIGIN?: string;
   ALLOWED_EMAILS?: string;
@@ -139,8 +142,8 @@ function corsHeaders(request: Request, env: Env): HeadersInit {
 
   return {
     'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Title, HTTP-Referer, x-api-key',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -339,6 +342,165 @@ async function classifyOpenRouter(text: string, apiKey: string): Promise<unknown
   throw new Error(`All OpenRouter free models failed. Last status: ${lastError instanceof Error ? lastError.message : 'Unavailable'}`);
 }
 
+async function classifyOpenCode(text: string, rawModel: string, apiKey: string): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENROUTER_ATTEMPT_TIMEOUT_MS);
+  const cleanKey = apiKey.trim().replace(/^["']|["']$/g, '');
+  const baseModel = rawModel || 'deepseek-v4-flash-free';
+
+  if (!cleanKey) {
+    throw new Error('OPENCODE_API_KEY secret is missing. Upload your key to Cloudflare using: wrangler secret put OPENCODE_API_KEY');
+  }
+
+  let sanitizedModel = baseModel;
+  if (sanitizedModel.includes('/')) {
+    sanitizedModel = sanitizedModel.split('/')[1];
+  }
+  sanitizedModel = sanitizedModel.replace(':free', '-free');
+
+  const modelCandidates = Array.from(new Set([
+    sanitizedModel,
+    sanitizedModel.replace(/-free$/, ''),
+  ]));
+
+  const endpoints = [
+    'https://opencode.ai/zen/v1/chat/completions',
+    'https://opencode.ai/zen/go/v1/chat/completions',
+  ];
+
+  let lastErrorMsg = '';
+
+  try {
+    for (const endpoint of endpoints) {
+      for (const targetModel of modelCandidates) {
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${cleanKey}`,
+              'x-api-key': cleanKey,
+              'HTTP-Referer': 'https://warmsynths.github.io/chroma-chords',
+              'X-Title': 'Chroma Chords',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: targetModel,
+              temperature: 0.1,
+              max_tokens: 750,
+              messages: [
+                { role: 'system', content: systemPrompt() },
+                { role: 'user', content: text },
+              ],
+            }),
+            signal: controller.signal,
+          });
+
+          const responseText = await res.text();
+          let jsonBody: any = null;
+          try {
+            jsonBody = JSON.parse(responseText);
+          } catch {
+            lastErrorMsg = `OpenCode AI (${endpoint} with model "${targetModel}"): HTTP ${res.status} - ${responseText.slice(0, 80).trim()}`;
+            continue;
+          }
+
+          if (!res.ok) {
+            let detail = `HTTP ${res.status}`;
+            if (jsonBody && typeof jsonBody === 'object') {
+              if ('error' in jsonBody) {
+                detail = typeof jsonBody.error === 'string' ? jsonBody.error : JSON.stringify(jsonBody.error);
+              } else if ('message' in jsonBody) {
+                detail = String(jsonBody.message);
+              }
+            }
+            lastErrorMsg = `OpenCode AI (${endpoint} with model "${targetModel}"): ${detail}`;
+            continue;
+          }
+
+          const content = jsonBody.choices?.[0]?.message?.content;
+          if (!content) {
+            lastErrorMsg = `Empty response content from OpenCode AI (${endpoint})`;
+            continue;
+          }
+
+          return parseClassifierJson(content);
+        } catch (err) {
+          lastErrorMsg = err instanceof Error ? err.message : String(err);
+        }
+      }
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  throw new Error(lastErrorMsg || 'OpenCode AI request failed. Please check your OPENCODE_API_KEY.');
+}
+
+async function classifyGoogle(text: string, rawModel: string, apiKey: string): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENROUTER_ATTEMPT_TIMEOUT_MS);
+  const cleanKey = apiKey.trim().replace(/^["']|["']$/g, '');
+  const model = rawModel || 'gemini-1.5-flash';
+
+  if (!cleanKey) {
+    throw new Error('GOOGLE_API_KEY secret is missing. Upload your key to Cloudflare using: wrangler secret put GOOGLE_API_KEY');
+  }
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: systemPrompt() }],
+        },
+        contents: [{
+          role: 'user',
+          parts: [{ text }],
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 750,
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    const responseText = await res.text();
+    let jsonBody: any = null;
+    try {
+      jsonBody = JSON.parse(responseText);
+    } catch {
+      throw new Error(`Google AI Studio HTTP ${res.status} - ${responseText.slice(0, 80).trim()}`);
+    }
+
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      if (jsonBody && typeof jsonBody === 'object') {
+        if (jsonBody.error && typeof jsonBody.error.message === 'string') {
+          detail = jsonBody.error.message;
+        } else if (jsonBody.error) {
+          detail = JSON.stringify(jsonBody.error);
+        }
+      }
+      throw new Error(`Google AI Studio error: ${detail}`);
+    }
+
+    const content = jsonBody.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!content) {
+      throw new Error(`Empty response content from Google AI Studio`);
+    }
+
+    return parseClassifierJson(content);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -346,14 +508,15 @@ export default {
     }
 
     if (request.method === 'GET') {
-      if (!env.OPENROUTER_API_KEY) {
-        return jsonResponse({ error: 'OPENROUTER_API_KEY secret is not configured' }, 500, request, env);
+      const apiKey = env.OPENCODE_API_KEY || env.OPENROUTER_API_KEY || env.OPENROUTER_KEY;
+      if (!apiKey) {
+        return jsonResponse({ error: 'API key secret is not configured' }, 500, request, env);
       }
       try {
         const testRes = await fetch('https://openrouter.ai/api/v1/auth/key', {
           method: 'GET',
           headers: {
-            'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+            'Authorization': `Bearer ${apiKey}`,
             'HTTP-Referer': 'https://warmsynths.github.io/chroma-chords',
           },
         });
@@ -380,7 +543,7 @@ export default {
       return jsonResponse({ error: 'Method not allowed' }, 405, request, env);
     }
 
-    let body: { text?: unknown; provider?: unknown };
+    let body: { text?: unknown; provider?: unknown; model?: unknown };
     try {
       body = await request.json();
     } catch {
@@ -392,10 +555,23 @@ export default {
       return jsonResponse({ error: 'Missing "text"' }, 400, request, env);
     }
 
-    const provider = typeof body.provider === 'string' ? body.provider.toLowerCase() : 'openrouter';
+    const provider = typeof body.provider === 'string' ? body.provider.toLowerCase() : 'google';
+    const model = typeof body.model === 'string' ? body.model : '';
 
     try {
-      if (provider === 'anthropic' || provider === 'claude') {
+      if (provider === 'google') {
+        if (!env.GOOGLE_API_KEY) {
+          return jsonResponse({ error: 'GOOGLE_API_KEY secret is not set on Cloudflare Worker. Please upload your key using: wrangler secret put GOOGLE_API_KEY' }, 500, request, env);
+        }
+        const result = await classifyGoogle(text, model, env.GOOGLE_API_KEY);
+        return jsonResponse(result, 200, request, env);
+      } else if (provider === 'opencodeai' || provider === 'opencode') {
+        if (!env.OPENCODE_API_KEY) {
+          return jsonResponse({ error: 'OPENCODE_API_KEY secret is not set on Cloudflare Worker. Please upload your key using: wrangler secret put OPENCODE_API_KEY' }, 500, request, env);
+        }
+        const result = await classifyOpenCode(text, model, env.OPENCODE_API_KEY);
+        return jsonResponse(result, 200, request, env);
+      } else if (provider === 'anthropic' || provider === 'claude') {
         if (!env.ANTHROPIC_API_KEY) {
           return jsonResponse({ error: 'ANTHROPIC_API_KEY secret is not configured on Cloudflare Worker' }, 500, request, env);
         }
@@ -428,10 +604,11 @@ export default {
         const result = await classifyAnthropic(text, env.ANTHROPIC_API_KEY);
         return jsonResponse(result, 200, request, env);
       } else {
-        if (!env.OPENROUTER_API_KEY) {
+        if (!env.OPENROUTER_API_KEY && !env.OPENCODE_API_KEY) {
           return jsonResponse({ error: 'OPENROUTER_API_KEY secret is not configured on Cloudflare Worker' }, 500, request, env);
         }
-        const result = await classifyOpenRouter(text, env.OPENROUTER_API_KEY);
+        const apiKey = env.OPENROUTER_API_KEY || env.OPENCODE_API_KEY!;
+        const result = await classifyOpenRouter(text, apiKey);
         return jsonResponse(result, 200, request, env);
       }
     } catch (err: any) {

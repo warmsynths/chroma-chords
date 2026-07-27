@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, GENRES, getMoodColor } from '../services/chord-engine';
-import { heuristicClassify, classifyFreeText, getLLMProvider, setLLMProvider, LLMProvider, fetchOpenRouterKeyInfo } from '../services/freetext-service';
+import { heuristicClassify, classifyFreeText, getLLMProvider, setLLMProvider, getLLMModel, setLLMModel, LLMProvider, OPENCODE_MODELS, GOOGLE_MODELS, fetchOpenRouterKeyInfo } from '../services/freetext-service';
 import { NormalizedPrompt } from '../services/freetext-schema';
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
@@ -93,6 +93,7 @@ export class SeedScreen extends LitElement {
   @property({ type: Boolean }) isAuthenticated = false;
   @property({ type: Boolean }) isAdmin = false;
   @state() private currentProvider: LLMProvider = getLLMProvider();
+  @state() private currentModel: string = getLLMModel();
   @state() private showAdminModal = false;
   @state() private isClassifying = false;
   @state() private loadingMsgIdx = 0;
@@ -139,6 +140,18 @@ export class SeedScreen extends LitElement {
   private changeProvider(provider: LLMProvider) {
     this.currentProvider = provider;
     setLLMProvider(provider);
+    if (provider === 'google') {
+      this.currentModel = GOOGLE_MODELS[0].id;
+      setLLMModel(this.currentModel);
+    } else if (provider === 'opencodeai') {
+      this.currentModel = OPENCODE_MODELS[0].id;
+      setLLMModel(this.currentModel);
+    }
+  }
+
+  private changeModel(modelId: string) {
+    this.currentModel = modelId;
+    setLLMModel(modelId);
   }
 
   // Jelly Aquarium 2D Physics Engine
@@ -971,6 +984,56 @@ export class SeedScreen extends LitElement {
       margin-top: 3px;
       line-height: 1.35;
     }
+    .model-sub-list {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--cv-ink-14);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .model-sub-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--cv-ink-55);
+      margin-bottom: 2px;
+    }
+    .model-sub-opt {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--cv-ink-14);
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--cv-ink);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .model-sub-opt:hover {
+      border-color: var(--cv-ink-30);
+      background: #ffffff;
+    }
+    .model-sub-opt.selected {
+      background: var(--cv-ink);
+      color: #ffffff;
+      border-color: var(--cv-ink);
+    }
+    .model-vendor-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.08);
+      color: inherit;
+    }
+    .model-sub-opt.selected .model-vendor-badge {
+      background: rgba(255, 255, 255, 0.2);
+    }
     .admin-close {
       width: 100%;
       background: var(--cv-ink);
@@ -1264,11 +1327,15 @@ export class SeedScreen extends LitElement {
               />
               ${this.isAdmin ? html`
                 <button class="vibe-admin-btn" @click=${() => { this.showAdminModal = true; }} title="AI Model Configuration">
-                  ⚡ ${this.currentProvider === 'anthropic'
-                    ? 'Claude'
-                    : this.remainingRequests !== null
-                      ? `OpenRouter (${this.remainingRequests} left)`
-                      : 'OpenRouter'}
+                  ⚡ ${this.currentProvider === 'google'
+                    ? `Google AI (${GOOGLE_MODELS.find(m => m.id === this.currentModel)?.name || 'Gemini'})`
+                    : this.currentProvider === 'opencodeai'
+                      ? `OpenCode AI (${OPENCODE_MODELS.find(m => m.id === this.currentModel)?.name || 'DeepSeek V4'})`
+                      : this.currentProvider === 'anthropic'
+                        ? 'Claude'
+                        : this.remainingRequests !== null
+                          ? `OpenRouter (${this.remainingRequests} left)`
+                          : 'OpenRouter'}
                 </button>
               ` : ''}
             </div>
@@ -1380,8 +1447,38 @@ export class SeedScreen extends LitElement {
                 </div>
               ` : ''}
               <div class="admin-options">
+                <button class="admin-opt ${this.currentProvider === 'google' ? 'active' : ''}" @click=${() => this.changeProvider('google')}>
+                  <div class="opt-name">🎯 Google AI Studio (Free)</div>
+                  <div class="opt-detail">Gemini Flash models directly via free tier (No deposit required)</div>
+                  ${this.currentProvider === 'google' ? html`
+                    <div class="model-sub-list" @click=${(e: Event) => e.stopPropagation()}>
+                      <div class="model-sub-title">Select Model:</div>
+                      ${GOOGLE_MODELS.map(m => html`
+                        <div class="model-sub-opt ${this.currentModel === m.id ? 'selected' : ''}" @click=${() => this.changeModel(m.id)}>
+                          <span>${m.name}</span>
+                          <span class="model-vendor-badge" style="background: rgba(66, 133, 244, 0.15); color: #4285F4; border-color: rgba(66, 133, 244, 0.3);">${m.vendor}</span>
+                        </div>
+                      `)}
+                    </div>
+                  ` : ''}
+                </button>
+                <button class="admin-opt ${this.currentProvider === 'opencodeai' ? 'active' : ''}" @click=${() => this.changeProvider('opencodeai')}>
+                  <div class="opt-name">⚡ OpenCode AI</div>
+                  <div class="opt-detail">Fast, free models hosted on OpenCode AI</div>
+                  ${this.currentProvider === 'opencodeai' ? html`
+                    <div class="model-sub-list" @click=${(e: Event) => e.stopPropagation()}>
+                      <div class="model-sub-title">Select Model:</div>
+                      ${OPENCODE_MODELS.map(m => html`
+                        <div class="model-sub-opt ${this.currentModel === m.id ? 'selected' : ''}" @click=${() => this.changeModel(m.id)}>
+                          <span>${m.name}</span>
+                          <span class="model-vendor-badge">${m.vendor}</span>
+                        </div>
+                      `)}
+                    </div>
+                  ` : ''}
+                </button>
                 <button class="admin-opt ${this.currentProvider === 'openrouter' ? 'active' : ''}" @click=${() => this.changeProvider('openrouter')}>
-                  <div class="opt-name">⚡ OpenRouter (Free Tier LLMs)</div>
+                  <div class="opt-name">🌐 OpenRouter (Free Tier LLMs)</div>
                   <div class="opt-detail">Google Gemma 4, GPT-OSS, Ling 3.0 (Automatic multi-model fallback)</div>
                 </button>
                 <button class="admin-opt ${this.currentProvider === 'anthropic' ? 'active' : ''}" @click=${() => this.changeProvider('anthropic')}>
