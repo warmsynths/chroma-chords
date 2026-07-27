@@ -79,8 +79,8 @@ export class ProjectStorageManager {
     this.hashEmail(savedAuth).then(hash => {
       if (!AUTHORIZED_HASHES.includes(hash)) return;
       this.authenticated = true;
+      this.userEmail = savedAuth;
       this.notifyAuthState();
-      this.setupGoogleAuth();
     });
   }
 
@@ -117,18 +117,31 @@ export class ProjectStorageManager {
           }
         },
       });
-
-      try {
-        this.tokenClient.requestAccessToken({ prompt: 'none' });
-      } catch (e) {
-        console.error('Failed to request Drive access silently', e);
-      }
     }, 200);
   }
 
-  public requestLogin(): Promise<string | null> {
-    return new Promise(resolve => {
-      if (typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
+  public async requestLogin(): Promise<string | null> {
+    if (typeof window === 'undefined') return null;
+
+    if (!(window as any).google?.accounts?.oauth2) {
+      await new Promise<void>(resolve => {
+        const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+        if (existing) {
+          existing.addEventListener('load', () => resolve(), { once: true });
+          setTimeout(resolve, 3000);
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => resolve();
+        document.head.appendChild(script);
+      });
+    }
+
+    if ((window as any).google?.accounts?.oauth2) {
+      return new Promise<string | null>(resolve => {
         try {
           if (!this.tokenClient) {
             this.tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
@@ -157,27 +170,14 @@ export class ProjectStorageManager {
             });
           }
           this.tokenClient.requestAccessToken();
-          return;
         } catch (e) {
           console.warn('Google Identity Services request failed:', e);
-        }
-      }
-
-      if (typeof window !== 'undefined') {
-        const email = prompt('Sign in with Google Account email:', 'warmsynthsiloveyou@gmail.com');
-        if (email) {
-          setLocalStorageItem('chroma-chords-auth', email);
-          this.userEmail = email;
-          this.authenticated = true;
-          this.notifyAuthState();
-          resolve(email);
-        } else {
           resolve(null);
         }
-      } else {
-        resolve(null);
-      }
-    });
+      });
+    }
+
+    return null;
   }
 
   public logout(): void {
@@ -195,12 +195,10 @@ export class ProjectStorageManager {
 
   public saveProject(project: ProjectData): void {
     ProjectService.saveProject(project);
-    this.syncProjectsToCloud();
   }
 
   public deleteProject(id: string): void {
     ProjectService.deleteProject(id);
-    this.syncProjectsToCloud();
   }
 
   public async syncProjectsFromCloud(): Promise<void> {

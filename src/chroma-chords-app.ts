@@ -106,8 +106,6 @@ export class ChromaChordsApp extends LitElement {
       this.requestUpdate();
     });
 
-    projectStorage.initSilentAuth();
-
     try {
       this.chordData = await loadChordData();
     } catch (err) {
