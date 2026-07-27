@@ -288,11 +288,11 @@ export class ChromaChordsApp extends LitElement {
     if (!p) return;
     this.currentProjectId = p.id;
     this.progression = {
-      genre: p.genre,
-      mood: p.mood,
-      key: p.key,
-      scaleType: p.scaleType,
-      bpm: p.bpm,
+      genre: p.genre || 'Unknown',
+      mood: p.mood || 'Neutral',
+      key: p.key || 'C',
+      scaleType: p.scaleType || 'MAJOR',
+      bpm: p.bpm || 120,
       chords: p.chords as unknown as ChordBlock[],
     };
     this.order = Array.from({ length: this.progression.chords.length }, (_, i) => i);

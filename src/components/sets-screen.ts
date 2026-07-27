@@ -206,14 +206,20 @@ export class SetsScreen extends LitElement {
           ` : html`
             <div class="grid">
               ${this.projects.map(p => {
-                const date = new Date(p.lastModified).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                const moodColor = getMoodColor(p.mood);
+                const safeScaleType = p.scaleType || 'MAJOR';
+                const safeKey = p.key || 'C';
+                const safeBpm = p.bpm || 120;
+                const safeName = p.name || 'Untitled Set';
+                const safeGenre = p.genre || 'Unknown';
+                const safeMood = p.mood || 'Neutral';
+                const date = p.lastModified ? new Date(p.lastModified).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown Date';
+                const moodColor = getMoodColor(safeMood);
                 
                 return html`
                   <div class="card" @click=${() => this.onLoadProject(p.id)}>
                     <div class="color-accent" style="background: ${moodColor}"></div>
-                    <div class="card-title" title=${p.name}>${p.name}</div>
-                    <div class="card-meta">${p.genre} · ${p.mood}</div>
+                    <div class="card-title" title=${safeName}>${safeName}</div>
+                    <div class="card-meta">${safeGenre} · ${safeMood}</div>
                     
                     <button class="delete-btn" title="Delete set" @click=${(e: Event) => this.onDeleteProject(e, p.id)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -222,8 +228,8 @@ export class SetsScreen extends LitElement {
                     </button>
                     
                     <div class="card-details">
-                      <div class="detail-pill">${displayKeyName(p.key, p.scaleType)} ${p.scaleType.replace('_', ' ')}</div>
-                      <div class="detail-pill">${p.bpm} BPM</div>
+                      <div class="detail-pill">${displayKeyName(safeKey, safeScaleType)} ${safeScaleType.replace('_', ' ')}</div>
+                      <div class="detail-pill">${safeBpm} BPM</div>
                       <div class="detail-pill">${date}</div>
                     </div>
                   </div>
