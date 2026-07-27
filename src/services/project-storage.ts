@@ -39,6 +39,8 @@ export class ProjectStorageManager {
   constructor() {
     this.userEmail = getLocalStorageItem('chroma-chords-auth') || getLocalStorageItem('chroma-chords-user') || getLocalStorageItem('chord-voyager-auth');
     // Authentication status is now deferred until initSilentAuth() validates the hash
+    this.initSilentAuth();
+    this.setupGoogleAuth();
   }
 
   public getUserEmail(): string | null {
