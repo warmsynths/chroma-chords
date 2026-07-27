@@ -8,6 +8,7 @@ const PLAY_STYLE_PRIMARY = ['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
 import './mascot-parade';
+import './save-set-modal';
 
 const MASCOT_ALIGN = ['flex-start', 'center', 'flex-end'] as const;
 
@@ -29,12 +30,14 @@ export class SongScreen extends LitElement {
   @property({ type: Number }) totalSteps = 0;
   @property({ type: String }) instrument: string | null = null;
   @property({ type: String }) playStyle: string | null = null;
+  @property({ type: Boolean }) isAuthenticated = false;
 
   @state() private expandedInstrument = false;
   @state() private expandedPlayStyle = false;
   @state() private expandedAllInstruments = false;
   @state() private expandedAllPlayStyles = false;
   @state() private snapProgress = false;
+  @state() private saveModalVisible = false;
 
   // Rolled fresh every time this screen mounts (see rollMascot) — a small decorative critter,
   // shown roughly half the time, in one of a few horizontal positions below the section list
@@ -241,6 +244,38 @@ export class SongScreen extends LitElement {
       gap: 14px;
       flex-wrap: wrap;
     }
+    .your-sets-btn {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--cv-surface-2);
+      padding: 8px 16px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--cv-ink);
+      cursor: pointer;
+      border: 1.5px solid var(--cv-ink-14);
+      z-index: 10;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .your-sets-btn:hover {
+      background: var(--cv-ink-08);
+    }
+    .your-sets-btn:active {
+      transform: scale(0.96);
+    }
+    @media (max-width: 600px) {
+      .your-sets-btn {
+        top: 16px;
+        right: 16px;
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+    }
     .play-btn {
       width: 52px;
       height: 52px;
@@ -255,6 +290,23 @@ export class SongScreen extends LitElement {
     }
     .play-btn:hover {
       transform: scale(1.06);
+    }
+    .save-btn {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--cv-surface);
+      border: 2px solid var(--cv-ink-12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-sizing: border-box;
+      transition: transform 0.3s ease, background 0.2s ease;
+    }
+    .save-btn:hover {
+      background: var(--cv-surface-2);
     }
     .progress-track {
       flex: 1;
@@ -379,6 +431,16 @@ export class SongScreen extends LitElement {
           <svg width="22" height="22" viewBox="0 0 30 30"><circle cx="11" cy="11" r="9" fill="#F2A79B" /><circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" /></svg>
           <div class="wordmark-text">Chroma Chords</div>
         </div>
+
+        ${this.isAuthenticated ? html`
+          <div class="your-sets-btn" @click=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            Your sets
+          </div>
+        ` : ''}
+
         <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 
         <div class="content">
@@ -432,6 +494,13 @@ export class SongScreen extends LitElement {
                   style="width:${progressPct}%;background:${moodColor};--progress-duration:${AUTOPLAY_INTERVAL_MS}ms"
                 ></div>
               </div>
+              ${this.isAuthenticated ? html`
+                <div class="save-btn" title="Save set" @click=${() => { this.saveModalVisible = true; }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                  </svg>
+                </div>
+              ` : ''}
               <div class="control-chip" @click=${() => { this.expandedInstrument = !this.expandedInstrument; this.expandedPlayStyle = false; }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                 ${effectiveInstrument} <span class="control-chevron">${this.expandedInstrument ? '⌃' : '⌄'}</span>
@@ -478,6 +547,16 @@ export class SongScreen extends LitElement {
             </div>
           ` : ''}
         </div>
+        
+        <save-set-modal
+          .visible=${this.saveModalVisible}
+          .defaultName=${firstGenre && currentPlayingSec ? `${firstGenre} · ${currentPlayingSec.progression.mood}` : 'My Set'}
+          @close=${() => { this.saveModalVisible = false; }}
+          @save=${(e: CustomEvent<string>) => {
+            this.dispatchEvent(new CustomEvent('save-set', { detail: e.detail, bubbles: true, composed: true }));
+            this.saveModalVisible = false;
+          }}
+        ></save-set-modal>
       </div>
     `;
   }

@@ -13,9 +13,10 @@ import { NormalizedPrompt } from './services/freetext-schema';
 import './components/seed-screen';
 import './components/loop-screen';
 import './components/song-screen';
+import './components/sets-screen';
 import { SongSection } from './components/song-screen';
 
-type Screen = 'seed' | 'loop' | 'song';
+type Screen = 'seed' | 'loop' | 'song' | 'sets';
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
@@ -193,7 +194,6 @@ export class ChromaChordsApp extends LitElement {
     this.activeSectionIdx = 0;
     this.pendingChordSuggestion = null;
     this.activeSearchPrompt = null;
-    this.saveProject();
   }
 
   private onLengthChange(e: CustomEvent<number>) {
@@ -214,7 +214,6 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.setProgression(progression, this.order);
 
     this.syncActiveSection();
-    this.saveProject();
 
     if (this.playing) {
       playbackEngine.startAutoplay();
@@ -266,7 +265,6 @@ export class ChromaChordsApp extends LitElement {
     
     playbackEngine.setOrder(this.order, this.activeIndex);
     this.syncActiveSection();
-    this.saveProject();
   }
 
   private onBack() {
@@ -276,6 +274,47 @@ export class ChromaChordsApp extends LitElement {
     this.sheetOpen = false;
     this.keyOverride = null;
     this.scaleOverride = null;
+  }
+
+  private onViewSets() {
+    playbackEngine.stopAutoplay();
+    this.playing = false;
+    this.screen = 'sets';
+  }
+
+  private onLoadProject(e: CustomEvent<string>) {
+    const id = e.detail;
+    const p = projectStorage.getProjects().find(proj => proj.id === id);
+    if (!p) return;
+    this.currentProjectId = p.id;
+    this.progression = {
+      genre: p.genre,
+      mood: p.mood,
+      key: p.key,
+      scaleType: p.scaleType,
+      bpm: p.bpm,
+      chords: p.chords as unknown as ChordBlock[],
+    };
+    this.order = Array.from({ length: this.progression.chords.length }, (_, i) => i);
+    this.length = this.progression.chords.length;
+    this.showTheory = p.showTheory ?? this.showTheory;
+    
+    playbackEngine.setProgression(this.progression, this.order);
+    this.screen = 'loop';
+    this.sections = SongArranger.createInitialSong(this.progression, this.order);
+    this.activeSectionIdx = 0;
+  }
+
+  private onDeleteProject(e: CustomEvent<string>) {
+    projectStorage.deleteProject(e.detail);
+    if (this.currentProjectId === e.detail) {
+      this.currentProjectId = null;
+    }
+    this.requestUpdate();
+  }
+
+  private onSaveSet(e: CustomEvent<string>) {
+    this.saveProject(e.detail);
   }
 
   private onTheoryToggle() {
@@ -341,7 +380,6 @@ export class ChromaChordsApp extends LitElement {
     this.sheetOpen = false;
     this.swapIndex = null;
     this.syncActiveSection();
-    this.saveProject();
     playbackEngine.playChordNotes(e.detail.chord.notes, 0.8);
   }
 
@@ -356,7 +394,6 @@ export class ChromaChordsApp extends LitElement {
     this.progression = { ...this.progression, chords };
     playbackEngine.setProgression(this.progression, this.order);
     this.syncActiveSection();
-    this.saveProject();
   }
 
   private onBackToProgression() {
@@ -407,13 +444,17 @@ export class ChromaChordsApp extends LitElement {
     }
   }
 
-  private saveProject() {
+  private saveProject(customName?: string) {
     if (!this.progression) return;
     const id = this.currentProjectId || Math.random().toString(36).slice(2, 11);
     this.currentProjectId = id;
+    
+    const existing = projectStorage.getProjects().find(p => p.id === id);
+    const name = customName || (existing ? existing.name : `${this.progression.genre} · ${this.progression.mood}`);
+
     const project: ProjectData = {
       id,
-      name: `${this.progression.genre} · ${this.progression.mood}`,
+      name,
       lastModified: Date.now(),
       genre: this.progression.genre,
       mood: this.progression.mood,
@@ -424,11 +465,23 @@ export class ChromaChordsApp extends LitElement {
       showTheory: this.showTheory,
     };
     projectStorage.saveProject(project);
+    if (customName) {
+      projectStorage.syncProjectsToCloud();
+    }
   }
 
   render() {
     let screenContent;
-    if (this.screen === 'seed' || !this.progression) {
+    if (this.screen === 'sets') {
+      screenContent = html`
+        <sets-screen
+          .projects=${projectStorage.getProjects()}
+          @back=${this.onBack}
+          @load-project=${this.onLoadProject}
+          @delete-project=${this.onDeleteProject}
+        ></sets-screen>
+      `;
+    } else if (this.screen === 'seed' || !this.progression) {
       screenContent = html`
         <seed-screen
           .genre=${this.genre}
@@ -443,6 +496,7 @@ export class ChromaChordsApp extends LitElement {
           @generate=${this.onGenerate}
           @request-login=${this.onLoginRequest}
           @request-logout=${this.onLogoutRequest}
+          @view-sets=${this.onViewSets}
         ></seed-screen>
       `;
     } else if (this.screen === 'song') {
@@ -457,12 +511,15 @@ export class ChromaChordsApp extends LitElement {
           .totalSteps=${this.totalSongSteps}
           .instrument=${this.instrument}
           .playStyle=${this.playStyle}
+          .isAuthenticated=${this.isAuthenticated}
           @select-section=${this.onSelectSection}
           @add-section=${this.onAddSection}
           @back-to-progression=${this.onBackToProgression}
           @toggle-play-song=${this.onTogglePlaySong}
           @set-instrument=${this.onSetInstrument}
           @set-play-style=${this.onSetPlayStyle}
+          @save-set=${this.onSaveSet}
+          @view-sets=${this.onViewSets}
         ></song-screen>
       `;
     } else {
@@ -478,6 +535,7 @@ export class ChromaChordsApp extends LitElement {
           .showTheory=${this.showTheory}
           .instrument=${this.instrument}
           .playStyle=${this.playStyle}
+          .isAuthenticated=${this.isAuthenticated}
           .sheetOpen=${this.sheetOpen}
           .sheetMode=${this.sheetMode}
           .swapChord=${swapChord}
@@ -503,6 +561,8 @@ export class ChromaChordsApp extends LitElement {
           @reorder=${this.onReorder}
           @set-length=${this.onSetLength}
           @view-song=${this.onViewSong}
+          @save-set=${this.onSaveSet}
+          @view-sets=${this.onViewSets}
         ></loop-screen>
       `;
     }

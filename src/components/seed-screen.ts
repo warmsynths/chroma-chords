@@ -1134,6 +1134,38 @@ export class SeedScreen extends LitElement {
       border-color: #e53935;
       color: #e53935;
     }
+    .your-sets-btn {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--cv-surface-2);
+      padding: 8px 16px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--cv-ink);
+      cursor: pointer;
+      border: 1.5px solid var(--cv-ink-14);
+      z-index: 10;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .your-sets-btn:hover {
+      background: var(--cv-ink-08);
+    }
+    .your-sets-btn:active {
+      transform: scale(0.96);
+    }
+    @media (max-width: 600px) {
+      .your-sets-btn {
+        top: 16px;
+        right: 16px;
+        padding: 6px 12px;
+        font-size: 12px;
+      }
+    }
   `;
 
   private selectGenre(name: string) {
@@ -1289,6 +1321,16 @@ export class SeedScreen extends LitElement {
             <mascot-character .kind=${this.mascot.kind} .scale=${0.75}></mascot-character>
           </div>
         ` : ''}
+        
+        ${this.isAuthenticated ? html`
+          <div class="your-sets-btn" @click=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            Your sets
+          </div>
+        ` : ''}
+        
         <div class="wordmark" @click=${() => this.onWordmarkClick()}>
           <svg width="22" height="22" viewBox="0 0 30 30">
             <circle cx="11" cy="11" r="9" fill="#F2A79B" />

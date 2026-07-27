@@ -12,6 +12,7 @@ import './mascot-character';
 import './mascot-parade';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, genreDefaultInstrumentName, genreDefaultPlayStyleName } from '../services/audio-service';
 import { downloadWav, downloadMidi } from '../services/export-service';
+import './save-set-modal';
 
 // Side-gutter slots for the desktop-only background mascot — only shows once there's real
 // gutter space beside the centered .content column (see the min-width:900px media query below).
@@ -93,6 +94,7 @@ export class LoopScreen extends LitElement {
   @property({ type: String }) instrument: string | null = null;
   @property({ type: String }) playStyle: string | null = null;
   @property({ type: Boolean }) sheetOpen = false;
+  @property({ type: Boolean }) isAuthenticated = false;
   @property({ type: String }) sheetMode: 'swap' | 'voicing' = 'swap';
   @property({ type: Object }) swapChord: ChordBlock | null = null;
   @property({ type: Number }) swapIndex: number | null = null;
@@ -104,6 +106,7 @@ export class LoopScreen extends LitElement {
   @state() private expandedMenuMood = false;
   @state() private expandedAllInstruments = false;
   @state() private expandedAllPlayStyles = false;
+  @state() private saveModalVisible = false;
   @state() private shareMounted = false;
   @state() private shareVisible = false;
   @state() private sheetMounted = false;
@@ -532,15 +535,53 @@ export class LoopScreen extends LitElement {
       transform: scale(0.98);
     }
     .back-to-seed-row {
+      margin-top: 24px;
       text-align: center;
-      margin-top: 16px;
     }
     .back-to-seed-link {
       display: inline-block;
       font-size: 13.5px;
       font-weight: 700;
-      color: var(--cv-label);
+      color: var(--cv-ink-muted);
       cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 4px;
+      transition: color 0.15s ease;
+    }
+    .back-to-seed-link:hover {
+      color: var(--cv-ink);
+    }
+    .your-sets-btn {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--cv-surface-2);
+      padding: 8px 16px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--cv-ink);
+      cursor: pointer;
+      border: 1.5px solid var(--cv-ink-14);
+      z-index: 10;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .your-sets-btn:hover {
+      background: var(--cv-ink-08);
+    }
+    .your-sets-btn:active {
+      transform: scale(0.96);
+    }
+    @media (max-width: 600px) {
+      .your-sets-btn {
+        top: 16px;
+        right: 16px;
+        padding: 6px 12px;
+        font-size: 12px;
+      }
     }
     .control-row {
       display: flex;
@@ -1153,6 +1194,16 @@ export class LoopScreen extends LitElement {
             <mascot-character .kind=${this.mascot.kind} .scale=${0.75}></mascot-character>
           </div>
         ` : ''}
+
+        ${this.isAuthenticated ? html`
+          <div class="your-sets-btn" @click=${() => this.emit('view-sets')}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            Your sets
+          </div>
+        ` : ''}
+
         <div class="top-bar">
           <div class="icon-btn" @click=${() => this.emit('back')}>‹</div>
           <div class="wordmark" @click=${() => this.onWordmarkClick()}>
@@ -1305,6 +1356,13 @@ export class LoopScreen extends LitElement {
                 <circle cx="16" cy="16" r="1.7" fill="#2E271F" />
               </svg>
             </div>
+            ${this.isAuthenticated ? html`
+              <div class="dice-btn" title="Save set" @click=${() => { this.saveModalVisible = true; }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
+            ` : ''}
             <div class="control-icon-btn" aria-label="Instrument: ${effectiveInstrument}" @click=${() => { this.expandedInstrument = !this.expandedInstrument; this.expandedPlayStyle = false; }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
             </div>
@@ -1384,6 +1442,16 @@ export class LoopScreen extends LitElement {
             @export-midi=${() => this.handleExportMidi()}
           ></share-modal>
         ` : ''}
+
+        <save-set-modal
+          .visible=${this.saveModalVisible}
+          .defaultName=${`${p.genre} · ${p.mood}`}
+          @close=${() => { this.saveModalVisible = false; }}
+          @save=${(e: CustomEvent<string>) => {
+            this.emit('save-set', e.detail);
+            this.saveModalVisible = false;
+          }}
+        ></save-set-modal>
 
         ${this.toast ? html`<div class="toast">${this.toast.startsWith('Sent to') || this.toast.startsWith('Saved') || this.toast.startsWith('Rendering') || this.toast.startsWith('Failed') ? this.toast : `Sent to ${this.toast}`}</div>` : ''}
       </div>
