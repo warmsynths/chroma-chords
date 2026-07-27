@@ -1,5 +1,6 @@
 import { ProjectData, ProjectService } from './project-service';
 import { GoogleDriveService } from './google-drive-service';
+import { setGoogleToken } from './freetext-service';
 
 export const AUTHORIZED_HASHES = [
   'cc801a4c62860be6a11bbae1c7ff2a4156e4332e0cc9ed03fcb41ffe20c712e2',
@@ -150,7 +151,6 @@ export class ProjectStorageManager {
               callback: async (res: any) => {
                 if (res?.access_token) {
                   this.driveService.setAccessToken(res.access_token);
-                  const { setGoogleToken } = await import('./freetext-service');
                   setGoogleToken(res.access_token);
                   const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                     headers: { Authorization: `Bearer ${res.access_token}` },
