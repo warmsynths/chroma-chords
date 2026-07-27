@@ -1234,11 +1234,14 @@ const DEVICE_BASE_URL: Record<ShareDevice, string> = {
 
 const DEVICE_LOCAL_PORT: Record<ShareDevice, number> = { m8: 43303, circuit: 43302 };
 
-export function buildDeviceShareUrl(progression: Progression, device: ShareDevice): string {
+export function buildDeviceShareUrl(progression: Progression, device: ShareDevice, order?: number[]): string {
   let base = DEVICE_BASE_URL[device];
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     base = `http://localhost:${DEVICE_LOCAL_PORT[device]}/`;
   }
-  const chordParam = progression.chords.map(c => encodeURIComponent(c.name)).join('+');
+  const chords = (order && order.length > 0)
+    ? order.map(i => progression.chords[i]).filter((c): c is ChordBlock => Boolean(c))
+    : progression.chords;
+  const chordParam = chords.map(c => encodeURIComponent(c.name)).join('+');
   return `${base}?p=${chordParam}`;
 }

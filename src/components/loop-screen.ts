@@ -955,7 +955,7 @@ export class LoopScreen extends LitElement {
 
   private exportDevice(device: ShareDevice, name: string) {
     this.closeShare();
-    const url = buildDeviceShareUrl(this.progression, device);
+    const url = buildDeviceShareUrl(this.progression, device, this.order);
     window.open(url, '_blank');
     if (this.toastTimer) clearTimeout(this.toastTimer);
     this.toast = `Sent to ${name}`;

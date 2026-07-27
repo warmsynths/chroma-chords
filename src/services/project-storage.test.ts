@@ -71,4 +71,27 @@ describe('ProjectStorageManager Deep Module', () => {
     expect((globalThis as any).google.accounts.oauth2.initTokenClient).toHaveBeenCalled();
     expect(requestAccessTokenMock).toHaveBeenCalledWith({ prompt: 'none' });
   });
+
+  it('skips requestAccessToken prompt: none during silent auth on mobile devices', async () => {
+    localStorage.setItem('chroma-chords-auth', 'warmsynthsiloveyou@gmail.com');
+    const requestAccessTokenMock = vi.fn();
+    (globalThis as any).google = {
+      accounts: {
+        oauth2: {
+          initTokenClient: vi.fn().mockReturnValue({
+            requestAccessToken: requestAccessTokenMock,
+          }),
+        },
+      },
+    };
+
+    vi.spyOn(manager, 'isMobileDevice').mockReturnValue(true);
+
+    manager.initSilentAuth();
+
+    await new Promise(r => setTimeout(r, 250));
+
+    expect((globalThis as any).google.accounts.oauth2.initTokenClient).toHaveBeenCalled();
+    expect(requestAccessTokenMock).not.toHaveBeenCalled();
+  });
 });

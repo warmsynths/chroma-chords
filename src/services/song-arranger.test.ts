@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SongArranger, SECTION_TEMPLATES } from './song-arranger';
-import { Progression } from './chord-engine';
+import { Progression, buildDeviceShareUrl } from './chord-engine';
 
 describe('SongArranger Deep Module', () => {
   const sampleProgression: Progression = {
@@ -42,4 +42,19 @@ describe('SongArranger Deep Module', () => {
     const synced = SongArranger.syncActiveSection(initial, 0, sampleProgression, updatedOrder);
     expect(synced[0].order).toEqual(updatedOrder);
   });
+
+  it('generates device share URLs using selected section chord order', () => {
+    const initial = SongArranger.createInitialSong(sampleProgression);
+    const { sections } = SongArranger.addSection(initial, sampleProgression);
+
+    const verseSection = sections[0]; // order: [0, 1, 2, 3] -> C, F, G, Am
+    const chorusSection = sections[1]; // order: [2, 3, 0, 1] -> G, Am, C, F
+
+    const verseUrl = buildDeviceShareUrl(verseSection.progression, 'm8', verseSection.order);
+    const chorusUrl = buildDeviceShareUrl(chorusSection.progression, 'm8', chorusSection.order);
+
+    expect(verseUrl).toContain('?p=C+F+G+Am');
+    expect(chorusUrl).toContain('?p=G+Am+C+F');
+  });
 });
+
