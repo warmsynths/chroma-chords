@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ProjectData } from '../services/project-service';
-import { getMoodColor, displayKeyName } from '../services/chord-engine';
+import { getMoodColor, displayKeyName, roleForTension } from '../services/chord-engine';
 
 @customElement('sets-screen')
 export class SetsScreen extends LitElement {
@@ -152,7 +152,19 @@ export class SetsScreen extends LitElement {
       font-size: 13px;
       font-weight: 600;
       color: var(--cv-ink-muted);
+      margin-bottom: 12px;
+    }
+    .section-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      flex-shrink: 0;
       margin-bottom: 16px;
+    }
+    .section-chip {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
     }
     .card-details {
       display: flex;
@@ -272,6 +284,13 @@ export class SetsScreen extends LitElement {
                     <div class="color-accent" style="background: ${moodColor}"></div>
                     <div class="card-title" title=${safeName}>${safeName}</div>
                     <div class="card-meta">${safeGenre} · ${safeMood}</div>
+                    
+                    <div class="section-chips">
+                      ${(p.chords || []).map(c => {
+                        const role = roleForTension(c.tension);
+                        return html`<div class="section-chip" style="background:${role.color};border-radius:${Math.round(role.radius * 0.35)}px;" title=${c.name}></div>`;
+                      })}
+                    </div>
                     
                     <button class="delete-btn" title="Delete set" @click=${(e: Event) => this.onDeleteProject(e, p.id)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
