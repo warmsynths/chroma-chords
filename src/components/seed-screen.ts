@@ -187,7 +187,8 @@ export class SeedScreen extends LitElement {
   private initJellyBodies() {
     const rect = this.getBoundingClientRect();
     const width = rect.width > 0 ? rect.width : (typeof window !== 'undefined' ? window.innerWidth : 800);
-    const height = rect.height > 0 ? rect.height : (typeof window !== 'undefined' ? window.innerHeight : 600);
+    let height = rect.height > 0 ? rect.height : (typeof window !== 'undefined' ? window.innerHeight : 600);
+    const spawnHeight = Math.min(height, 400);
 
     // Serene, soft, round jelly shapes
     const SHAPES = [
@@ -195,10 +196,7 @@ export class SeedScreen extends LitElement {
       { key: 'blob2', r: 14 },
       { key: 'blob3', r: 17 },
       { key: 'circle', r: 16 },
-      { key: 'ring', r: 22 },
-      { key: 'doubleRing', r: 18 },
       { key: 'pill', r: 16 },
-      { key: 'crescent', r: 16 },
       { key: 'arch', r: 15 },
       { key: 'squircle', r: 16 }
     ];
@@ -211,7 +209,7 @@ export class SeedScreen extends LitElement {
       const s = SHAPES[i % SHAPES.length];
       const margin = s.r + 30;
       const x = margin + Math.random() * Math.max(100, width - margin * 2);
-      const y = margin + Math.random() * Math.max(100, height - margin * 2);
+      const y = margin + Math.random() * Math.max(50, spawnHeight - margin * 2);
 
       // Ultra-slow, serene aquarium float speeds (0.08 - 0.25 px/frame)
       const speed = 0.08 + Math.random() * 0.18;
@@ -256,7 +254,15 @@ export class SeedScreen extends LitElement {
     const now = performance.now();
     const rect = this.getBoundingClientRect();
     const width = rect.width > 0 ? rect.width : (typeof window !== 'undefined' ? window.innerWidth : 800);
-    const height = rect.height > 0 ? rect.height : (typeof window !== 'undefined' ? window.innerHeight : 600);
+    let height = rect.height > 0 ? rect.height : (typeof window !== 'undefined' ? window.innerHeight : 600);
+
+    const divider = this.shadowRoot?.querySelector('.divider-row');
+    if (divider) {
+      const dividerRect = divider.getBoundingClientRect();
+      if (dividerRect.top > rect.top) {
+        height = dividerRect.top - rect.top;
+      }
+    }
 
     const bodies = this.jellyBodies;
     const numBodies = bodies.length;
