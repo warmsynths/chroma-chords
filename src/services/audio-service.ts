@@ -752,13 +752,14 @@ export function playChordForGenre(
   genre: string,
   opts?: { bpm?: number; duration?: number; instrument?: string; playStyle?: string; customConfig?: Record<string, unknown> }
 ): void {
+  const safeGenre = (genre === 'Unknown' || !genre) ? 'Pop' : genre;
   // User overrides (from the Instrument/Play style pickers) win over the genre's defaults —
   // when unset, playback falls back to the existing per-genre auto-selection untouched.
   const userInstrument = opts?.instrument ? USER_INSTRUMENTS.find(i => i.name === opts.instrument) : undefined;
   const userPlayStyle = opts?.playStyle ? USER_PLAY_STYLES.find(p => p.name === opts.playStyle) : undefined;
 
-  const instrument = userInstrument?.instrument ?? GENRE_INSTRUMENT[genre] ?? 'rhodes';
-  const profile = GENRE_HUMANIZE[genre] || {};
+  const instrument = userInstrument?.instrument ?? GENRE_INSTRUMENT[safeGenre] ?? 'rhodes';
+  const profile = GENRE_HUMANIZE[safeGenre] || {};
   const stylePatch = (userPlayStyle?.patch ?? {}) as { durationMultiplier?: number; [k: string]: unknown };
   const humanState = { ...profile, ...stylePatch, bpm: opts?.bpm ?? profile.bpm ?? 90 };
 

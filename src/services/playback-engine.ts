@@ -1,5 +1,5 @@
 import { playChordForGenre } from './audio-service';
-import { Progression, AUTOPLAY_INTERVAL_MS } from './chord-engine';
+import { Progression, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
 import type { SongSection } from '../components/song-screen';
 
 export type PlaybackTickCallback = (
@@ -178,7 +178,10 @@ export class PlaybackEngine {
       const chordIndex = this.activeIndex;
       const chord = sec.progression.chords[chordIndex];
       if (chord) {
-        const pitchedNotes = chord.notes.map(n => `${n}4`);
+        const notes = (chord.notes && chord.notes.length > 0) 
+          ? chord.notes 
+          : notesForSymbol(chord.name, preferFlatSpelling(sec.progression.key, sec.progression.scaleType));
+        const pitchedNotes = notes.map(n => `${n}4`);
         playChordForGenre(pitchedNotes, sec.progression.genre, {
           bpm: sec.progression.bpm,
           duration: 1.2,
@@ -191,7 +194,14 @@ export class PlaybackEngine {
       const chordIndex = this.order[this.activeIndex] ?? 0;
       const chord = this.progression.chords[chordIndex];
       if (chord) {
-        this.playChordNotes(chord.notes, 1.2);
+        let notes = Array.isArray(chord.notes) ? chord.notes : [];
+        if (notes.length === 0 || !notes.every(n => typeof n === 'string' && n.trim().length > 0)) {
+          const safeName = chord.name || 'CMAJ';
+          const key = this.progression.key || 'C';
+          const scaleType = this.progression.scaleType || 'MAJOR';
+          notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
+        }
+        this.playChordNotes(notes, 1.2);
       }
     }
   }
@@ -199,15 +209,31 @@ export class PlaybackEngine {
   public playChordAtIndex(index: number, duration = 0.8): void {
     if (!this.progression || !this.progression.chords[index]) return;
     const chord = this.progression.chords[index];
-    this.playChordNotes(chord.notes, duration);
+    
+    let notes = Array.isArray(chord.notes) ? chord.notes : [];
+    if (notes.length === 0 || !notes.every(n => typeof n === 'string' && n.trim().length > 0)) {
+      const safeName = chord.name || 'CMAJ';
+      const key = this.progression.key || 'C';
+      const scaleType = this.progression.scaleType || 'MAJOR';
+      notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
+    }
+    
+    this.playChordNotes(notes, duration);
   }
 
   public playChordNotes(notes: string[], duration?: number): void {
     if (!this.progression) return;
-    const pitchedNotes = notes.map(n => `${n}4`);
-    playChordForGenre(pitchedNotes, this.progression.genre, {
-      bpm: this.progression.bpm,
-      duration,
+    
+    const validNotes = Array.isArray(notes) ? notes.filter(n => typeof n === 'string' && n.trim().length > 0) : [];
+    if (validNotes.length === 0) return;
+
+    // Strip existing octaves (if any) and re-apply 4th octave to prevent "D44"
+    const cleanNotes = validNotes.map(n => n.replace(/\d+$/, ''));
+    const pitchedNotes = cleanNotes.map(n => `${n}4`);
+
+    playChordForGenre(pitchedNotes, this.progression.genre || 'Unknown', {
+      bpm: this.progression.bpm || 120,
+      duration: duration || 0.8,
       instrument: this.instrument ?? undefined,
       playStyle: this.playStyle ?? undefined,
     });
