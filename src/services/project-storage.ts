@@ -34,6 +34,8 @@ export class ProjectStorageManager {
   private userEmail: string | null = null;
   private authenticated = false;
   private isDriveSyncing = false;
+  private syncTimeout: any = null;
+  private syncQueued = false;
   private authStateCallbacks = new Set<AuthStateCallback>();
 
   constructor() {
@@ -208,8 +210,9 @@ export class ProjectStorageManager {
     ProjectService.saveProject(project);
   }
 
-  public deleteProject(id: string): void {
+  public async deleteProject(id: string): Promise<void> {
     ProjectService.deleteProject(id);
+    this.scheduleCloudSync();
   }
 
   public async syncProjectsFromCloud(): Promise<void> {
@@ -230,6 +233,20 @@ export class ProjectStorageManager {
     }
   }
 
+  public scheduleCloudSync(): void {
+    if (this.syncTimeout) {
+      clearTimeout(this.syncTimeout);
+    }
+    this.syncTimeout = setTimeout(() => {
+      this.syncTimeout = null;
+      if (this.isDriveSyncing) {
+        this.syncQueued = true;
+      } else {
+        this.syncProjectsToCloud();
+      }
+    }, 2000);
+  }
+
   public async syncProjectsToCloud(): Promise<void> {
     if (!this.authenticated || !this.driveService.hasAccessToken() || this.isDriveSyncing) return;
     this.isDriveSyncing = true;
@@ -242,6 +259,10 @@ export class ProjectStorageManager {
       console.error('Failed to sync to cloud', e);
     } finally {
       this.isDriveSyncing = false;
+      if (this.syncQueued) {
+        this.syncQueued = false;
+        this.scheduleCloudSync();
+      }
     }
   }
 }

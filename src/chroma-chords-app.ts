@@ -313,6 +313,12 @@ export class ChromaChordsApp extends LitElement {
     this.requestUpdate();
   }
 
+  private async onSyncProjects() {
+    await projectStorage.syncProjectsFromCloud();
+    await projectStorage.syncProjectsToCloud();
+    this.requestUpdate();
+  }
+
   private onSaveSet(e: CustomEvent<string>) {
     this.saveProject(e.detail);
   }
@@ -466,7 +472,7 @@ export class ChromaChordsApp extends LitElement {
     };
     projectStorage.saveProject(project);
     if (customName) {
-      projectStorage.syncProjectsToCloud();
+      projectStorage.scheduleCloudSync();
     }
   }
 
@@ -479,6 +485,7 @@ export class ChromaChordsApp extends LitElement {
           @back=${this.onBack}
           @load-project=${this.onLoadProject}
           @delete-project=${this.onDeleteProject}
+          @sync-projects=${this.onSyncProjects}
         ></sets-screen>
       `;
     } else if (this.screen === 'seed' || !this.progression) {

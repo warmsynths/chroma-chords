@@ -1,5 +1,5 @@
 import { LitElement, html, css } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 import { ProjectData } from '../services/project-service';
 import { getMoodColor, displayKeyName } from '../services/chord-engine';
 
@@ -51,8 +51,36 @@ export class SetsScreen extends LitElement {
     .back-btn:hover {
       background: var(--cv-ink-08);
     }
-    .back-btn:active {
+    .back-btn:active, .sync-btn:active {
       transform: scale(0.96);
+    }
+    .sync-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--cv-surface-2);
+      padding: 8px 16px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--cv-label);
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+    }
+    .sync-btn:hover:not([disabled]) {
+      background: var(--cv-ink-08);
+    }
+    .sync-btn[disabled] {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .spin {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
     }
     .content {
       width: 100%;
@@ -169,12 +197,26 @@ export class SetsScreen extends LitElement {
     }
   `;
 
+  @state()
+  private isSyncing = false;
+
   private onBack() {
     this.dispatchEvent(new CustomEvent('back'));
   }
 
   private onLoadProject(id: string) {
     this.dispatchEvent(new CustomEvent('load-project', { detail: id }));
+  }
+
+  private onSync() {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+    this.dispatchEvent(new CustomEvent('sync-projects'));
+    // reset after a couple seconds to avoid perpetual spin if it fails, or we could wait for prop changes.
+    // Since app.ts awaits the cloud syncs, it might take a second.
+    setTimeout(() => {
+      this.isSyncing = false;
+    }, 2000);
   }
 
   private onDeleteProject(e: Event, id: string) {
@@ -191,6 +233,16 @@ export class SetsScreen extends LitElement {
               <path d="M19 12H5M12 19l-7-7 7-7" />
             </svg>
             Back
+          </button>
+          
+          <button class="sync-btn" @click=${this.onSync} ?disabled=${this.isSyncing} title="Sync with Cloud">
+            <svg class=${this.isSyncing ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 2v6h-6"></path>
+              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+              <path d="M3 22v-6h6"></path>
+              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+            </svg>
+            ${this.isSyncing ? 'Syncing...' : 'Sync'}
           </button>
         </div>
         
