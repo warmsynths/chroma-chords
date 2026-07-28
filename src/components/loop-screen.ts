@@ -243,9 +243,15 @@ export class LoopScreen extends LitElement {
     .top-bar {
       width: 100%;
       max-width: 640px;
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
       align-items: center;
-      justify-content: space-between;
+    }
+    .top-bar > *:first-child {
+      justify-self: start;
+    }
+    .top-bar > *:last-child {
+      justify-self: end;
     }
     .icon-btn {
       width: 36px;
@@ -332,11 +338,12 @@ export class LoopScreen extends LitElement {
     }
     .chip-row {
       position: relative;
-      display: flex;
-      gap: 14px;
+      display: grid;
+      grid-template-columns: repeat(4, auto);
       justify-content: center;
+      justify-items: center;
       align-items: center;
-      flex-wrap: wrap;
+      gap: 30px 14px; /* row-gap column-gap */
       z-index: 2;
     }
     .chord-chip {
@@ -351,6 +358,9 @@ export class LoopScreen extends LitElement {
       user-select: none;
       box-shadow: 0 14px 28px -14px rgba(46, 39, 31, 0.2);
       transition: transform 150ms var(--cv-ease), box-shadow 150ms var(--cv-ease);
+      width: var(--chip-size, 80px);
+      height: var(--chip-size, 80px);
+      border-radius: var(--chip-radius, 24px);
     }
     .chord-chip.active {
       transform: scale(1.06);
@@ -360,6 +370,7 @@ export class LoopScreen extends LitElement {
       font-weight: 800;
       color: var(--cv-ink);
       line-height: 1;
+      font-size: var(--chip-font, 24px);
     }
     .chord-role {
       font-size: 10.5px;
@@ -552,9 +563,6 @@ export class LoopScreen extends LitElement {
       color: var(--cv-ink);
     }
     .your-sets-btn {
-      position: absolute;
-      top: 24px;
-      right: 24px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -575,12 +583,18 @@ export class LoopScreen extends LitElement {
     .your-sets-btn:active {
       transform: scale(0.96);
     }
+    .your-sets-text {
+      display: inline;
+    }
     @media (max-width: 600px) {
       .your-sets-btn {
-        top: 16px;
-        right: 16px;
         padding: 6px 12px;
         font-size: 12px;
+      }
+    }
+    @media (max-width: 380px) {
+      .your-sets-text {
+        display: none;
       }
     }
     .control-row {
@@ -912,23 +926,24 @@ export class LoopScreen extends LitElement {
       .mascot-slot.right { right: 36px; }
     }
 
-    /* flex-wrap greedily fits as many chips as their (tension-varying) widths allow per row,
-       which on a narrow phone can wrap unevenly (e.g. 3 then 1). A strict 2-column grid forces
-       an even 2-per-row layout without touching each chip's own size — grid tracks just divide
-       the row width; the chip keeps its own inline width/height and centers within its cell. */
+    /* CSS grid natively forces a strict 4-column layout that evenly drops to the next row
+       without centering uneven rows (e.g. 6 items = 4 on row 1, 2 on row 2 left-aligned). */
     @media (max-width: 600px) {
       .chip-row {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        justify-items: center;
-        align-items: center;
-        row-gap: 30px;
-        column-gap: 18px;
+        grid-template-columns: repeat(2, auto);
+        gap: 30px 18px;
       }
-      /* Extra breathing room for the swap-badge (which pokes 6px past the chip's own edge) and
-         the "now" marker above the active chip — both can crowd a neighboring chip otherwise. */
       .chord-chip {
-        margin: 8px;
+        /* Increase chip size to fill the wider 2-col layout better */
+        --chip-size-mobile: calc(var(--chip-size) * 1.15);
+        --chip-radius-mobile: calc(var(--chip-radius) * 1.15);
+        width: var(--chip-size-mobile);
+        height: var(--chip-size-mobile);
+        border-radius: var(--chip-radius-mobile);
+        margin: 8px; /* breathing room for active state pop */
+      }
+      .chord-name {
+        font-size: calc(var(--chip-font) * 1.15);
       }
     }
   `;
@@ -1195,22 +1210,23 @@ export class LoopScreen extends LitElement {
           </div>
         ` : ''}
 
-        ${this.isAuthenticated ? html`
-          <div class="your-sets-btn" @click=${() => this.emit('view-sets')}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-            Your sets
-          </div>
-        ` : ''}
-
         <div class="top-bar">
           <div class="icon-btn" @click=${() => this.emit('back')}>‹</div>
           <div class="wordmark" @click=${() => this.onWordmarkClick()}>
             <svg width="18" height="18" viewBox="0 0 30 30"><circle cx="11" cy="11" r="9" fill="#F2A79B" /><circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" /></svg>
             <div class="wordmark-text">Chroma Chords</div>
           </div>
-          <div class="icon-btn" @click=${() => this.toggleMenu()}>…</div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            ${this.isAuthenticated ? html`
+              <div class="your-sets-btn" @click=${() => this.emit('view-sets')}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                </svg>
+                <span class="your-sets-text">Your sets</span>
+              </div>
+            ` : ''}
+            <div class="icon-btn" @click=${() => this.toggleMenu()}>…</div>
+          </div>
         </div>
         <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 
@@ -1280,12 +1296,12 @@ export class LoopScreen extends LitElement {
                 return html`
                   <div
                     class="chord-chip ${isActive ? 'active' : ''}"
-                    style="width:${role.size}px;height:${role.size}px;border-radius:${role.radius}px;background:${role.color};${this.dragStyleFor(pos)}"
+                    style="--chip-size:${role.size}px;--chip-radius:${role.radius}px;background:${role.color};${this.dragStyleFor(pos)}"
                     @pointerdown=${(e: PointerEvent) => this.pressStart(pos, () => this.emit('chord-preview', chordIndex), e)}
                   >
                     ${this.showTheory ? html`<div class="roman-badge">${c.roman}</div>` : ''}
                     ${isActive ? html`<div class="now-marker"><div class="now-dot"></div><div class="now-text">now</div></div>` : ''}
-                    <div class="chord-name" style="font-size:${role.fontSize}px;">${c.name}</div>
+                    <div class="chord-name" style="--chip-font:${role.fontSize}px;">${c.name}</div>
                     <div class="chord-role">${c.functionLabel}</div>
                     <div
                       class="swap-badge"

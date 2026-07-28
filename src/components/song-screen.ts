@@ -270,8 +270,8 @@ export class SongScreen extends LitElement {
     }
     @media (max-width: 600px) {
       .your-sets-btn {
-        top: 16px;
-        right: 16px;
+        top: 24px;
+        right: 64px;
         padding: 6px 12px;
         font-size: 12px;
       }
