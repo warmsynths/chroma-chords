@@ -321,7 +321,7 @@ async function classifyAnthropic(text: string, apiKey: string): Promise<unknown>
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 750,
+        max_tokens: 2048,
         system: systemPrompt(),
         messages: [{ role: 'user', content: text }],
       }),
@@ -358,7 +358,7 @@ async function tryOpenRouterModel(text: string, model: string, apiKey: string): 
       body: JSON.stringify({
         model,
         temperature: 0.1,
-        max_tokens: 750,
+        max_tokens: 2048,
         messages: [
           { role: 'system', content: systemPrompt() },
           { role: 'user', content: text },
@@ -463,7 +463,7 @@ async function classifyOpenCode(text: string, rawModel: string, apiKey: string):
             body: JSON.stringify({
               model: targetModel,
               temperature: 0.1,
-              max_tokens: 750,
+              max_tokens: 2048,
               messages: [
                 { role: 'system', content: systemPrompt() },
                 { role: 'user', content: text },
@@ -546,7 +546,7 @@ async function classifyGoogle(text: string, rawModel: string, apiKey: string): P
         }],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 750,
+          maxOutputTokens: 2048,
           responseMimeType: "application/json",
         },
       }),
