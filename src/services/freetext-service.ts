@@ -69,23 +69,17 @@ const CLASSIFIER_ENDPOINT =
 const LLM_TIMEOUT_MS = 12000;
 
 export interface KeyRateLimitInfo {
-  limit?: number;
-  remaining?: number;
-  isFreeTier?: boolean;
+  google?: { limit: number; remaining: number; cooldownSeconds: number };
+  openrouter?: { limit: number; remaining: number };
+  totalRemaining?: number;
 }
 
-export async function fetchOpenRouterKeyInfo(): Promise<KeyRateLimitInfo | null> {
+export async function fetchGlobalRateLimit(): Promise<KeyRateLimitInfo | null> {
   try {
     const res = await fetch(CLASSIFIER_ENDPOINT);
     if (res.ok) {
       const json = await res.json();
-      if (json && typeof json.remaining === 'number') {
-        return {
-          remaining: json.remaining,
-          limit: json.limit,
-          isFreeTier: json.isFreeTier,
-        };
-      }
+      return json;
     }
   } catch {
     // ignore

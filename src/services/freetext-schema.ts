@@ -25,7 +25,7 @@ export interface NormalizedPrompt {
   chords?: RequestedChordTag[];
   rhythmStyle?: string;
   instrumentConfig?: InstrumentConfigPayload;
-  _rateLimit?: { limit?: number; remaining?: number };
+  _rateLimit?: { limit?: number; remaining?: number; cooldownSeconds?: number; provider?: string };
 }
 
 const MOOD_NAMES = MOODS.map(m => m.name);
@@ -130,7 +130,7 @@ export function normalize(raw: unknown, fallback: NormalizeFallback): Normalized
     : undefined;
   const instrumentConfig = normalizeInstrumentConfig(obj.instrumentConfig);
 
-  const _rateLimit = obj._rateLimit && typeof obj._rateLimit === 'object' ? (obj._rateLimit as { limit?: number; remaining?: number }) : undefined;
+  const _rateLimit = obj._rateLimit && typeof obj._rateLimit === 'object' ? (obj._rateLimit as { limit?: number; remaining?: number; cooldownSeconds?: number; provider?: string }) : undefined;
 
   return { genre, mood, key, scaleType, length, chords, rhythmStyle, instrumentConfig, _rateLimit };
 }

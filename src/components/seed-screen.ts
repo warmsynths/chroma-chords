@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, GENRES, getMoodColor } from '../services/chord-engine';
-import { heuristicClassify, classifyFreeText, getLLMProvider, setLLMProvider, getLLMModel, setLLMModel, LLMProvider, OPENCODE_MODELS, GOOGLE_MODELS, fetchOpenRouterKeyInfo } from '../services/freetext-service';
+import { heuristicClassify, classifyFreeText, getLLMProvider, setLLMProvider, getLLMModel, setLLMModel, LLMProvider, OPENCODE_MODELS, GOOGLE_MODELS, fetchGlobalRateLimit } from '../services/freetext-service';
 import { NormalizedPrompt } from '../services/freetext-schema';
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
@@ -97,9 +97,14 @@ export class SeedScreen extends LitElement {
   @state() private showAdminModal = false;
   @state() private isClassifying = false;
   @state() private loadingMsgIdx = 0;
-  @state() private remainingRequests: number | null = null;
+  @state() private googleRemaining = 15;
+  @state() private googleLimit = 15;
+  @state() private googleCooldownSec = 4;
+  @state() private orRemaining = 50;
+  @state() private orLimit = 50;
 
   private loadingTimer: ReturnType<typeof setInterval> | null = null;
+  private cooldownTimer: ReturnType<typeof setInterval> | null = null;
 
   private startLoadingTimer() {
     this.stopLoadingTimer();
@@ -405,14 +410,38 @@ export class SeedScreen extends LitElement {
   private classifyDebounce: ReturnType<typeof setTimeout> | null = null;
   private classifyToken = 0;
 
+  get currentLimit() {
+    return this.currentProvider === 'openrouter' ? this.orLimit : this.googleLimit;
+  }
+
+  get currentRemaining() {
+    return this.currentProvider === 'openrouter' ? this.orRemaining : this.googleRemaining;
+  }
+
   private loadKeyInfo() {
-    if (this.isAdmin) {
-      fetchOpenRouterKeyInfo().then(info => {
-        if (info && typeof info.remaining === 'number') {
-          this.remainingRequests = info.remaining;
+    fetchGlobalRateLimit().then(info => {
+      if (info) {
+        if (info.google) {
+          this.googleLimit = info.google.limit;
+          this.googleRemaining = info.google.remaining;
+          this.googleCooldownSec = info.google.cooldownSeconds;
         }
-      });
-    }
+        if (info.openrouter) {
+          this.orLimit = info.openrouter.limit;
+          this.orRemaining = info.openrouter.remaining;
+        }
+        this.startCooldownTimer();
+      }
+    });
+  }
+
+  private startCooldownTimer() {
+    if (this.cooldownTimer) clearInterval(this.cooldownTimer);
+    this.cooldownTimer = setInterval(() => {
+      if (this.googleRemaining < this.googleLimit) {
+        this.googleRemaining += 1;
+      }
+    }, this.googleCooldownSec * 1000);
   }
 
   connectedCallback() {
@@ -443,6 +472,7 @@ export class SeedScreen extends LitElement {
     if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
     if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
+    if (this.cooldownTimer) clearInterval(this.cooldownTimer);
     this.stopLoadingTimer();
   }
 
@@ -530,10 +560,24 @@ export class SeedScreen extends LitElement {
       align-items: center;
       gap: 10px;
       background: var(--cv-cream);
-      border: 1.5px solid var(--cv-ink-12);
+      background-clip: padding-box;
+      border: 1.5px solid transparent;
       border-radius: 100px;
       padding: 8px 10px 8px 20px;
       box-shadow: 0 14px 30px -20px rgba(46, 39, 31, 0.5);
+    }
+    @property --fill-pct {
+      syntax: '<percentage>';
+      inherits: false;
+      initial-value: 0%;
+    }
+    .cooldown-ring {
+      position: absolute;
+      inset: -1.5px;
+      border-radius: 102px;
+      background: conic-gradient(#C6564B var(--fill-pct), var(--cv-ink-12) var(--fill-pct));
+      z-index: 0;
+      transition: --fill-pct 1s ease-out;
     }
     .vibe-admin-btn {
       flex-shrink: 0;
@@ -1234,7 +1278,14 @@ export class SeedScreen extends LitElement {
         const result = await classifyFreeText(text);
         if (token !== this.classifyToken) return; // text changed while the call was in flight
         if (result?._rateLimit?.remaining !== undefined) {
-          this.remainingRequests = result._rateLimit.remaining;
+          if (result._rateLimit.provider === 'google') {
+            this.googleRemaining = result._rateLimit.remaining;
+            if (result._rateLimit.limit) this.googleLimit = result._rateLimit.limit;
+            if (result._rateLimit.cooldownSeconds) this.googleCooldownSec = result._rateLimit.cooldownSeconds;
+          } else {
+            this.orRemaining = result._rateLimit.remaining;
+            if (result._rateLimit.limit) this.orLimit = result._rateLimit.limit;
+          }
         }
         this.llmSuggestion = result;
         this.llmResolved = true;
@@ -1358,6 +1409,7 @@ export class SeedScreen extends LitElement {
                 <mascot-character .kind=${this.peekMascot.kind} .scale=${0.4}></mascot-character>
               </div>
             ` : ''}
+            <div class="cooldown-ring" style="--fill-pct: ${this.currentLimit > 0 ? Math.max(0, (this.currentLimit - this.currentRemaining) / this.currentLimit * 100) : 0}%;"></div>
             <div class="vibe-input-wrap">
               ${this.isClassifying ? html`
                 <div class="vibe-input-icon" title="Classifying vibe...">
@@ -1376,14 +1428,10 @@ export class SeedScreen extends LitElement {
               ${this.isAdmin ? html`
                 <button class="vibe-admin-btn" @click=${() => { this.showAdminModal = true; }} title="AI Model Configuration">
                   ⚡ ${this.currentProvider === 'google'
-                    ? `Google AI (${GOOGLE_MODELS.find(m => m.id === this.currentModel)?.name || 'Gemini'})`
-                    : this.currentProvider === 'opencodeai'
-                      ? `OpenCode AI (${OPENCODE_MODELS.find(m => m.id === this.currentModel)?.name || 'DeepSeek V4'})`
-                      : this.currentProvider === 'anthropic'
+                    ? `Google AI (${this.googleRemaining} left)`
+                    : this.currentProvider === 'anthropic'
                         ? 'Claude'
-                        : this.remainingRequests !== null
-                          ? `OpenRouter (${this.remainingRequests} left)`
-                          : 'OpenRouter'}
+                        : `OpenRouter (${this.orRemaining} left)`}
                 </button>
               ` : ''}
             </div>
@@ -1489,11 +1537,12 @@ export class SeedScreen extends LitElement {
             <div class="admin-modal" @click=${(e: Event) => e.stopPropagation()}>
               <div class="admin-title">AI Provider Config</div>
               <div class="admin-desc">Select which backend model service classifies free-text prompts into chord progressions:</div>
-              ${this.remainingRequests !== null ? html`
-                <div class="admin-desc" style="color: var(--cv-ink); font-weight: 700; margin-top: 4px;">
-                  📊 Daily OpenRouter Quota: ${this.remainingRequests} remaining requests left today.
-                </div>
-              ` : ''}
+              <div class="admin-desc" style="color: var(--cv-ink); font-weight: 700; margin-top: 4px;">
+                📊 Daily OpenRouter Quota: ${this.orRemaining} / ${this.orLimit} remaining
+              </div>
+              <div class="admin-desc" style="color: var(--cv-ink); font-weight: 700; margin-top: 4px;">
+                📊 Google AI Quota: ${this.googleRemaining} / ${this.googleLimit} (per min)
+              </div>
               <div class="admin-options">
                 <button class="admin-opt ${this.currentProvider === 'google' ? 'active' : ''}" @click=${() => this.changeProvider('google')}>
                   <div class="opt-name">🎯 Google AI Studio (Free)</div>
@@ -1505,21 +1554,6 @@ export class SeedScreen extends LitElement {
                         <div class="model-sub-opt ${this.currentModel === m.id ? 'selected' : ''}" @click=${() => this.changeModel(m.id)}>
                           <span>${m.name}</span>
                           <span class="model-vendor-badge" style="background: rgba(66, 133, 244, 0.15); color: #4285F4; border-color: rgba(66, 133, 244, 0.3);">${m.vendor}</span>
-                        </div>
-                      `)}
-                    </div>
-                  ` : ''}
-                </button>
-                <button class="admin-opt ${this.currentProvider === 'opencodeai' ? 'active' : ''}" @click=${() => this.changeProvider('opencodeai')}>
-                  <div class="opt-name">⚡ OpenCode AI</div>
-                  <div class="opt-detail">Fast, free models hosted on OpenCode AI</div>
-                  ${this.currentProvider === 'opencodeai' ? html`
-                    <div class="model-sub-list" @click=${(e: Event) => e.stopPropagation()}>
-                      <div class="model-sub-title">Select Model:</div>
-                      ${OPENCODE_MODELS.map(m => html`
-                        <div class="model-sub-opt ${this.currentModel === m.id ? 'selected' : ''}" @click=${() => this.changeModel(m.id)}>
-                          <span>${m.name}</span>
-                          <span class="model-vendor-badge">${m.vendor}</span>
                         </div>
                       `)}
                     </div>

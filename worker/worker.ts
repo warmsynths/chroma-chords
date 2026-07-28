@@ -16,6 +16,7 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   ALLOWED_ORIGIN?: string;
   ALLOWED_EMAILS?: string;
+  RATE_LIMIT_KV?: any;
 }
 
 async function verifyGoogleAccount(token: string): Promise<{ email?: string; verified: boolean }> {
@@ -32,6 +33,76 @@ async function verifyGoogleAccount(token: string): Promise<{ email?: string; ver
   } catch {
     return { verified: false };
   }
+}
+
+async function isAdminRequest(request: Request, env: Env): Promise<boolean> {
+  const authHeader = request.headers.get('Authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+  if (!token) return false;
+
+  const userAccount = await verifyGoogleAccount(token);
+  if (!userAccount.verified || !userAccount.email) return false;
+
+  const allowedEmails = (env.ALLOWED_EMAILS || '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  return allowedEmails.includes(userAccount.email);
+}
+
+const GOOGLE_RPM = 15;
+const GOOGLE_RPD = 1500;
+
+interface GoogleRateLimit {
+  allowed: boolean;
+  rpmLimit: number;
+  rpmRemaining: number;
+  rpmCooldownSeconds: number;
+  rpdLimit: number;
+  rpdRemaining: number;
+}
+
+async function checkGoogleRateLimit(env: Env, consume = true): Promise<GoogleRateLimit> {
+  const defaultRes = { allowed: true, rpmLimit: GOOGLE_RPM, rpmRemaining: GOOGLE_RPM, rpmCooldownSeconds: 4, rpdLimit: GOOGLE_RPD, rpdRemaining: GOOGLE_RPD };
+  if (!env.RATE_LIMIT_KV) return defaultRes;
+
+  const now = Date.now();
+  const dayString = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const key = `google_bucket_${dayString}`;
+  
+  const raw = await env.RATE_LIMIT_KV.get(key, 'json').catch(() => null) as { rpmTokens: number, rpmLastUpdated: number, rpdTokens: number } | null;
+  
+  let rpmTokens = GOOGLE_RPM;
+  let rpmLastUpdated = now;
+  let rpdTokens = GOOGLE_RPD;
+
+  if (raw && typeof raw.rpmTokens === 'number' && typeof raw.rpmLastUpdated === 'number' && typeof raw.rpdTokens === 'number') {
+    const elapsed = now - raw.rpmLastUpdated;
+    // 15 requests per minute = 1 request every 4 seconds (4000ms)
+    const regenerated = Math.floor(elapsed / 4000);
+    
+    rpmTokens = Math.min(GOOGLE_RPM, raw.rpmTokens + regenerated);
+    if (regenerated > 0) {
+      rpmLastUpdated = raw.rpmLastUpdated + (regenerated * 4000);
+    } else {
+      rpmLastUpdated = raw.rpmLastUpdated;
+    }
+    rpdTokens = raw.rpdTokens;
+  }
+
+  if (!consume) {
+    return { allowed: true, rpmLimit: GOOGLE_RPM, rpmRemaining: rpmTokens, rpmCooldownSeconds: 4, rpdLimit: GOOGLE_RPD, rpdRemaining: rpdTokens };
+  }
+
+  if (rpmTokens > 0 && rpdTokens > 0) {
+    rpmTokens -= 1;
+    rpdTokens -= 1;
+    await env.RATE_LIMIT_KV.put(key, JSON.stringify({ rpmTokens, rpmLastUpdated, rpdTokens }));
+    return { allowed: true, rpmLimit: GOOGLE_RPM, rpmRemaining: rpmTokens, rpmCooldownSeconds: 4, rpdLimit: GOOGLE_RPD, rpdRemaining: rpdTokens };
+  }
+
+  return { allowed: false, rpmLimit: GOOGLE_RPM, rpmRemaining: rpmTokens, rpmCooldownSeconds: 4, rpdLimit: GOOGLE_RPD, rpdRemaining: rpdTokens };
 }
 
 interface OpenRouterModel {
@@ -316,9 +387,10 @@ async function tryOpenRouterModel(text: string, model: string, apiKey: string): 
 
     const parsed = parseClassifierJson(content);
     if (parsed && typeof parsed === 'object') {
-      const rateLimit: Record<string, number> = {
+      const rateLimit: Record<string, any> = {
         limit: limitHeader ? parseInt(limitHeader, 10) : 50,
         remaining: remainingHeader ? parseInt(remainingHeader, 10) : 0,
+        provider: 'openrouter',
       };
       (parsed as any)._rateLimit = rateLimit;
     }
@@ -526,35 +598,40 @@ export default {
     }
 
     if (request.method === 'GET') {
-      const apiKey = env.OPENCODE_API_KEY || env.OPENROUTER_API_KEY || env.OPENROUTER_KEY;
-      if (!apiKey) {
-        return jsonResponse({ error: 'API key secret is not configured' }, 500, request, env);
-      }
-      try {
-        const testRes = await fetch('https://openrouter.ai/api/v1/auth/key', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'HTTP-Referer': 'https://warmsynths.github.io/chroma-chords',
-          },
-        });
+      const googleRl = await checkGoogleRateLimit(env, false);
+      let orLimit = 50, orRemaining = 50;
 
-        if (!testRes.ok) {
-          if (testRes.status === 429) {
-            return jsonResponse({ remaining: 0, limit: 50, isFreeTier: true }, 200, request, env);
-          }
+      const apiKey = env.OPENROUTER_API_KEY || env.OPENCODE_API_KEY;
+      if (apiKey) {
+        try {
+          const testRes = await fetch('https://openrouter.ai/api/v1/auth/key', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'HTTP-Referer': 'https://warmsynths.github.io/chroma-chords',
+            },
+          });
+          const remHeader = testRes.headers.get('x-ratelimit-remaining');
+          const limHeader = testRes.headers.get('x-ratelimit-limit');
+          if (remHeader) orRemaining = parseInt(remHeader, 10);
+          if (limHeader) orLimit = parseInt(limHeader, 10);
+        } catch {
+          // ignore
         }
-
-        const remHeader = testRes.headers.get('x-ratelimit-remaining');
-        const limHeader = testRes.headers.get('x-ratelimit-limit');
-
-        const remaining = remHeader ? parseInt(remHeader, 10) : 50;
-        const limit = limHeader ? parseInt(limHeader, 10) : 50;
-
-        return jsonResponse({ remaining, limit, isFreeTier: true }, 200, request, env);
-      } catch {
-        return jsonResponse({ remaining: 0, limit: 50, isFreeTier: true }, 200, request, env);
       }
+
+      return jsonResponse({
+        google: {
+          limit: googleRl.rpmLimit,
+          remaining: googleRl.rpmRemaining,
+          cooldownSeconds: googleRl.rpmCooldownSeconds
+        },
+        openrouter: {
+          limit: orLimit,
+          remaining: orRemaining,
+        },
+        totalRemaining: googleRl.rpdRemaining + orRemaining
+      }, 200, request, env);
     }
 
     if (request.method !== 'POST') {
@@ -577,11 +654,28 @@ export default {
     const model = typeof body.model === 'string' ? body.model : '';
 
     try {
+      const isAdmin = await isAdminRequest(request, env);
+
       if (provider === 'google') {
+        if (!isAdmin) {
+          const rl = await checkGoogleRateLimit(env, true);
+          if (!rl.allowed) {
+            return jsonResponse({
+              error: 'Google rate limit reached. Please try again in a few seconds.',
+              _rateLimit: { limit: rl.rpmLimit, remaining: rl.rpmRemaining, cooldownSeconds: rl.rpmCooldownSeconds, provider: 'google' }
+            }, 429, request, env);
+          }
+        }
+
         if (!env.GOOGLE_API_KEY) {
           return jsonResponse({ error: 'GOOGLE_API_KEY secret is not set on Cloudflare Worker. Please upload your key using: wrangler secret put GOOGLE_API_KEY' }, 500, request, env);
         }
         const result = await classifyGoogle(text, model, env.GOOGLE_API_KEY);
+        
+        if (!isAdmin && typeof result === 'object' && result !== null) {
+          const rl = await checkGoogleRateLimit(env, false);
+          (result as any)._rateLimit = { limit: rl.rpmLimit, remaining: rl.rpmRemaining, cooldownSeconds: rl.rpmCooldownSeconds, provider: 'google' };
+        }
         return jsonResponse(result, 200, request, env);
       } else if (provider === 'opencodeai' || provider === 'opencode') {
         if (!env.OPENCODE_API_KEY) {
@@ -594,29 +688,8 @@ export default {
           return jsonResponse({ error: 'ANTHROPIC_API_KEY secret is not configured on Cloudflare Worker' }, 500, request, env);
         }
 
-        const authHeader = request.headers.get('Authorization');
-        const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
-
-        if (!token) {
-          return jsonResponse({ error: 'Google Sign-In authentication token is required to use Claude' }, 401, request, env);
-        }
-
-        const userAccount = await verifyGoogleAccount(token);
-        if (!userAccount.verified || !userAccount.email) {
-          return jsonResponse({ error: 'Invalid or expired Google token' }, 401, request, env);
-        }
-
-        if (!env.ALLOWED_EMAILS) {
-          return jsonResponse({ error: 'ALLOWED_EMAILS secret is not configured on Cloudflare Worker' }, 500, request, env);
-        }
-
-        const allowedEmails = env.ALLOWED_EMAILS
-          .split(',')
-          .map(e => e.trim().toLowerCase())
-          .filter(Boolean);
-
-        if (!allowedEmails.includes(userAccount.email)) {
-          return jsonResponse({ error: `Account (${userAccount.email}) is not authorized to use Claude` }, 403, request, env);
+        if (!isAdmin) {
+          return jsonResponse({ error: 'Account is not authorized to use Claude' }, 403, request, env);
         }
 
         const result = await classifyAnthropic(text, env.ANTHROPIC_API_KEY);
