@@ -440,6 +440,11 @@ export class SeedScreen extends LitElement {
     this.cooldownTimer = setInterval(() => {
       if (this.googleRemaining < this.googleLimit) {
         this.googleRemaining += 1;
+      } else {
+        if (this.cooldownTimer) {
+          clearInterval(this.cooldownTimer);
+          this.cooldownTimer = null;
+        }
       }
     }, this.googleCooldownSec * 1000);
   }
@@ -573,11 +578,12 @@ export class SeedScreen extends LitElement {
     }
     .cooldown-ring {
       position: absolute;
-      inset: -1.5px;
-      border-radius: 102px;
+      inset: -2.5px;
+      border-radius: 103px;
       background: conic-gradient(#C6564B var(--fill-pct), var(--cv-ink-12) var(--fill-pct));
       z-index: 0;
-      transition: --fill-pct 1s ease-out;
+      transition: --fill-pct 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.4s ease;
+      filter: drop-shadow(0 0 6px rgba(198, 86, 75, 0.35));
     }
     .vibe-admin-btn {
       flex-shrink: 0;
@@ -1272,13 +1278,14 @@ export class SeedScreen extends LitElement {
     }
 
     const token = ++this.classifyToken;
+
     this.classifyDebounce = setTimeout(async () => {
       this.isClassifying = true;
       try {
         const result = await classifyFreeText(text);
         if (token !== this.classifyToken) return; // text changed while the call was in flight
         if (result?._rateLimit?.remaining !== undefined) {
-          if (result._rateLimit.provider === 'google') {
+          if (result._rateLimit.provider === 'google' || this.currentProvider === 'google') {
             this.googleRemaining = result._rateLimit.remaining;
             if (result._rateLimit.limit) this.googleLimit = result._rateLimit.limit;
             if (result._rateLimit.cooldownSeconds) this.googleCooldownSec = result._rateLimit.cooldownSeconds;
@@ -1286,7 +1293,15 @@ export class SeedScreen extends LitElement {
             this.orRemaining = result._rateLimit.remaining;
             if (result._rateLimit.limit) this.orLimit = result._rateLimit.limit;
           }
+        } else {
+          if (this.currentProvider === 'google') {
+            this.googleRemaining = Math.max(0, this.googleRemaining - 1);
+          } else if (this.currentProvider === 'openrouter') {
+            this.orRemaining = Math.max(0, this.orRemaining - 1);
+          }
         }
+        this.startCooldownTimer();
+
         this.llmSuggestion = result;
         this.llmResolved = true;
         this.classifyError = result ? null : CLASSIFY_ERROR_MESSAGES[Math.floor(Math.random() * CLASSIFY_ERROR_MESSAGES.length)];

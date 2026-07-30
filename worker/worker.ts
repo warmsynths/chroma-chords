@@ -64,7 +64,7 @@ interface GoogleRateLimit {
 }
 
 async function checkGoogleRateLimit(env: Env, consume = true): Promise<GoogleRateLimit> {
-  const defaultRes = { allowed: true, rpmLimit: GOOGLE_RPM, rpmRemaining: GOOGLE_RPM, rpmCooldownSeconds: 4, rpdLimit: GOOGLE_RPD, rpdRemaining: GOOGLE_RPD };
+  const defaultRes = { allowed: true, rpmLimit: GOOGLE_RPM, rpmRemaining: consume ? GOOGLE_RPM - 1 : GOOGLE_RPM, rpmCooldownSeconds: 4, rpdLimit: GOOGLE_RPD, rpdRemaining: consume ? GOOGLE_RPD - 1 : GOOGLE_RPD };
   if (!env.RATE_LIMIT_KV) return defaultRes;
 
   const now = Date.now();
@@ -98,6 +98,7 @@ async function checkGoogleRateLimit(env: Env, consume = true): Promise<GoogleRat
   if (rpmTokens > 0 && rpdTokens > 0) {
     rpmTokens -= 1;
     rpdTokens -= 1;
+    rpmLastUpdated = now;
     await env.RATE_LIMIT_KV.put(key, JSON.stringify({ rpmTokens, rpmLastUpdated, rpdTokens }));
     return { allowed: true, rpmLimit: GOOGLE_RPM, rpmRemaining: rpmTokens, rpmCooldownSeconds: 4, rpdLimit: GOOGLE_RPD, rpdRemaining: rpdTokens };
   }
@@ -657,14 +658,12 @@ export default {
       const isAdmin = await isAdminRequest(request, env);
 
       if (provider === 'google') {
-        if (!isAdmin) {
-          const rl = await checkGoogleRateLimit(env, true);
-          if (!rl.allowed) {
-            return jsonResponse({
-              error: 'Google rate limit reached. Please try again in a few seconds.',
-              _rateLimit: { limit: rl.rpmLimit, remaining: rl.rpmRemaining, cooldownSeconds: rl.rpmCooldownSeconds, provider: 'google' }
-            }, 429, request, env);
-          }
+        const rl = await checkGoogleRateLimit(env, !isAdmin);
+        if (!isAdmin && !rl.allowed) {
+          return jsonResponse({
+            error: 'Google rate limit reached. Please try again in a few seconds.',
+            _rateLimit: { limit: rl.rpmLimit, remaining: rl.rpmRemaining, cooldownSeconds: rl.rpmCooldownSeconds, provider: 'google' }
+          }, 429, request, env);
         }
 
         if (!env.GOOGLE_API_KEY) {
@@ -672,8 +671,7 @@ export default {
         }
         const result = await classifyGoogle(text, model, env.GOOGLE_API_KEY);
         
-        if (!isAdmin && typeof result === 'object' && result !== null) {
-          const rl = await checkGoogleRateLimit(env, false);
+        if (typeof result === 'object' && result !== null) {
           (result as any)._rateLimit = { limit: rl.rpmLimit, remaining: rl.rpmRemaining, cooldownSeconds: rl.rpmCooldownSeconds, provider: 'google' };
         }
         return jsonResponse(result, 200, request, env);
