@@ -485,14 +485,14 @@ export class SeedScreen extends LitElement {
     :host {
       display: block;
       position: relative;
-      min-height: 100dvh;
+      min-height: 100%;
       background: var(--cv-cream);
       font-family: var(--cv-font);
     }
     .frame {
       position: relative;
       width: 100%;
-      min-height: 100dvh;
+      min-height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;

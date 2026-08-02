@@ -54,12 +54,46 @@ export class ChromaChordsApp extends LitElement {
 
   static styles = css`
     :host {
+      --cv-ease: cubic-bezier(0.23, 1, 0.32, 1);
+      --cv-font: 'Plus Jakarta Sans', sans-serif;
+      --cv-cream: #FBF3E6;
+      --cv-surface: #F6EADB;
+      --cv-surface-2: #F1E4CC;
+      --cv-canvas: #EDE3D3;
+      --cv-ink: #2E271F;
+      --cv-ink-muted: #6B5F50;
+      --cv-label: #8A6B3F;
+      --cv-ink-04: rgba(46, 39, 31, 0.04);
+      --cv-ink-08: rgba(46, 39, 31, 0.08);
+      --cv-ink-10: rgba(46, 39, 31, 0.10);
+      --cv-ink-12: rgba(46, 39, 31, 0.12);
+      --cv-ink-14: rgba(46, 39, 31, 0.14);
+      --cv-ink-16: rgba(46, 39, 31, 0.16);
+      --cv-ink-20: rgba(46, 39, 31, 0.20);
+      --cv-ink-25: rgba(46, 39, 31, 0.25);
+      --cv-ink-35: rgba(46, 39, 31, 0.35);
+      --cv-ink-45: rgba(46, 39, 31, 0.45);
+      --cv-ink-55: rgba(46, 39, 31, 0.55);
+      --cv-red: #F2A79B;
+      --cv-red-deep: #F2735F;
+      --cv-red-deep-hover: #E85F49;
+      --cv-blue: #9CC0EC;
+      --cv-yellow: #F6D98B;
+      --cv-purple: #C9A9E0;
+      --cv-green: #B8CC9E;
+      --cv-peach: #F2C9A0;
+      --cv-plum: #9B7CA8;
+      --cv-plum-hover: #84698F;
+
       display: block;
-      min-height: 100dvh;
+      min-height: 100%;
+      background: var(--cv-canvas);
+      font-family: var(--cv-font);
+      color: var(--cv-ink);
     }
     .screen-view {
       display: block;
-      min-height: 100dvh;
+      min-height: 100%;
       opacity: 1;
       transform: scale(1);
       transition: opacity 200ms var(--cv-ease), transform 240ms var(--cv-ease);

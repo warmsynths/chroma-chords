@@ -559,9 +559,11 @@ export function notesForSymbol(symbol: string, preferFlat: boolean): string[] {
 }
 
 export async function loadChordData(): Promise<RawChordData> {
-  let res = await fetch('./chroma_chords_data.json');
+  const dataUrl = new URL('./chroma_chords_data.json', import.meta.url).href;
+  const backupUrl = new URL('./chord_voyager_data.json', import.meta.url).href;
+  let res = await fetch(dataUrl);
   if (!res.ok) {
-    res = await fetch('./chord_voyager_data.json');
+    res = await fetch(backupUrl);
   }
   if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
   const data = (await res.json()) as RawChordData;
