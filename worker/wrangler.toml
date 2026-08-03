@@ -1,0 +1,15 @@
+name = "chroma-chords-classifier"
+main = "worker.ts"
+compatibility_date = "2024-11-01"
+
+# Set the real secret with:
+#   wrangler secret put OPENROUTER_API_KEY
+# (do not put it in this file or in vars below)
+
+[vars]
+ALLOWED_ORIGIN = "https://warmsynths.github.io"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT_KV"
+id = "b64e128fb68e42d3a16913552d43cb9a"
+preview_id = "b64e128fb68e42d3a16913552d43cb9a"

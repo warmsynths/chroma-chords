@@ -12,7 +12,7 @@ html, body {
 }
 
 body {
-  font-family: var(--cv-font-body);
+  font-family: var(--cv-font);
   color: var(--cv-ink);
 }
 
@@ -28,4 +28,11 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--cv-ink-20);
   border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

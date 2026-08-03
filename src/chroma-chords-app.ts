@@ -1,122 +1,233 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { ProjectService, ProjectData } from './services/project-service';
-import { GoogleDriveService } from './services/google-drive-service';
-import { playChordForGenre } from './services/audio-service';
+import { ProjectData, ProjectChord } from './services/project-service';
+import { projectStorage } from './services/project-storage';
+import { playbackEngine } from './services/playback-engine';
+import { PromptClassifier } from './services/prompt-classifier';
+import { SongArranger, SECTION_TEMPLATES } from './services/song-arranger';
 import {
-  loadChordData, generateProgression, generateAlternatives, applyVoicingToChord,
-  RawChordData, Progression, ChordBlock, Alternative,
+  loadChordData, generateProgression, RawChordData, Progression, ChordBlock, Alternative, generateAlternatives, applyVoicingToChord,
 } from './services/chord-engine';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
+import { NormalizedPrompt } from './services/freetext-schema';
 import './components/seed-screen';
 import './components/loop-screen';
 import './components/song-screen';
+import './components/sets-screen';
 import { SongSection } from './components/song-screen';
 
-type Screen = 'seed' | 'loop' | 'song';
-
-const SECTION_NAMES = ['Verse', 'Chorus', 'Bridge', 'Pre-chorus', 'Outro'];
+type Screen = 'seed' | 'loop' | 'song' | 'sets';
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
   @state() private screen: Screen = 'seed';
   @state() private genre = 'Pop';
-  @state() private mood = 'Uplifting';
+  @state() private mood = 'Dreamy';
   @state() private progression: Progression | null = null;
   @state() private activeIndex = 0;
+  @state() private progressStep = 0;
   @state() private order: number[] = [0, 1, 2, 3];
   @state() private keyOverride: string | null = null;
   @state() private scaleOverride: string | null = null;
-  @state() private playing = true;
+  @state() private playing = false;
   @state() private showTheory = false;
+  @state() private instrument: string | null = null;
+  @state() private playStyle: string | null = null;
   @state() private sheetOpen = false;
+  @state() private sheetMode: 'swap' | 'voicing' = 'swap';
   @state() private swapIndex: number | null = null;
   @state() private alternatives: Alternative[] = [];
   @state() private length = 4;
   @state() private sections: SongSection[] = [];
   @state() private activeSectionIdx = 0;
+  @state() private activePlayingSectionIdx = 0;
+  @state() private totalSongSteps = 0;
+  @state() private pendingChordSuggestion: NormalizedPrompt | null = null;
+  @state() private userEmail: string | null = null;
+  @state() private isAuthenticated = false;
 
   private currentProjectId: string | null = null;
-  private autoplayTimer: ReturnType<typeof setInterval> | null = null;
-
-  private readonly AUTHORIZED_HASHES = [
-    'cc801a4c62860be6a11bbae1c7ff2a4156e4332e0cc9ed03fcb41ffe20c712e2',
-    '99c0bce064de4add7fc8e2433b627113e7d1ef63b97ad627b37194c9bace3dac',
-  ];
-
-  private driveService = new GoogleDriveService();
-  private tokenClient: any = null;
-  private isAuthenticated = false;
-  private isDriveSyncing = false;
+  private activeSearchPrompt: string | null = null;
+  private unsubscribeAuth: (() => void) | null = null;
+  private unsubscribeTick: (() => void) | null = null;
 
   static styles = css`
     :host {
+      --cv-ease: cubic-bezier(0.23, 1, 0.32, 1);
+      --cv-font: 'Plus Jakarta Sans', sans-serif;
+      --cv-cream: #FBF3E6;
+      --cv-surface: #F6EADB;
+      --cv-surface-2: #F1E4CC;
+      --cv-canvas: #EDE3D3;
+      --cv-ink: #2E271F;
+      --cv-ink-muted: #6B5F50;
+      --cv-label: #8A6B3F;
+      --cv-ink-04: rgba(46, 39, 31, 0.04);
+      --cv-ink-08: rgba(46, 39, 31, 0.08);
+      --cv-ink-10: rgba(46, 39, 31, 0.10);
+      --cv-ink-12: rgba(46, 39, 31, 0.12);
+      --cv-ink-14: rgba(46, 39, 31, 0.14);
+      --cv-ink-16: rgba(46, 39, 31, 0.16);
+      --cv-ink-20: rgba(46, 39, 31, 0.20);
+      --cv-ink-25: rgba(46, 39, 31, 0.25);
+      --cv-ink-35: rgba(46, 39, 31, 0.35);
+      --cv-ink-45: rgba(46, 39, 31, 0.45);
+      --cv-ink-55: rgba(46, 39, 31, 0.55);
+      --cv-red: #F2A79B;
+      --cv-red-deep: #F2735F;
+      --cv-red-deep-hover: #E85F49;
+      --cv-blue: #9CC0EC;
+      --cv-yellow: #F6D98B;
+      --cv-purple: #C9A9E0;
+      --cv-green: #B8CC9E;
+      --cv-peach: #F2C9A0;
+      --cv-plum: #9B7CA8;
+      --cv-plum-hover: #84698F;
+
       display: block;
-      min-height: 100dvh;
+      min-height: 100%;
+      background: var(--cv-canvas);
+      font-family: var(--cv-font);
+      color: var(--cv-ink);
+    }
+    .screen-view {
+      display: block;
+      min-height: 100%;
+      opacity: 1;
+      transform: scale(1);
+      transition: opacity 200ms var(--cv-ease), transform 240ms var(--cv-ease);
+    }
+    @starting-style {
+      .screen-view {
+        opacity: 0;
+        transform: scale(0.985);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .screen-view {
+        transition: opacity 150ms ease;
+        transform: none !important;
+      }
     }
   `;
 
   async firstUpdated() {
     this.showTheory = (localStorage.getItem('chroma-chords-show-theory') || localStorage.getItem('chord-voyager-show-theory')) === 'true';
+    const savedInstrument = localStorage.getItem('chroma-chords-instrument');
+    if (savedInstrument && USER_INSTRUMENTS.some(i => i.name === savedInstrument)) this.instrument = savedInstrument;
+    const savedPlayStyle = localStorage.getItem('chroma-chords-play-style');
+    if (savedPlayStyle && USER_PLAY_STYLES.some(p => p.name === savedPlayStyle)) this.playStyle = savedPlayStyle;
+
+    playbackEngine.setInstrument(this.instrument);
+    playbackEngine.setPlayStyle(this.playStyle);
+
+    this.unsubscribeAuth = projectStorage.subscribeAuthState((email, authenticated) => {
+      this.userEmail = email;
+      this.isAuthenticated = authenticated;
+      this.requestUpdate();
+    });
+
+    this.unsubscribeTick = playbackEngine.subscribeTick((activeIdx, step, secIdx, totalSteps, isSongMode) => {
+      this.activeIndex = activeIdx;
+      this.progressStep = step;
+      if (typeof secIdx === 'number') {
+        this.activePlayingSectionIdx = secIdx;
+      }
+      if (typeof totalSteps === 'number') {
+        this.totalSongSteps = totalSteps;
+      }
+      this.playing = playbackEngine.isPlaying();
+      this.requestUpdate();
+    });
 
     try {
       this.chordData = await loadChordData();
     } catch (err) {
       console.error('Failed to load chord data:', err);
     }
-
-    // Not currently surfaced in the UI (no login/sync affordance), so don't trigger it on load.
-    // this.initSilentAuth();
   }
+
+  get isAdmin(): boolean {
+    return projectStorage.isAdmin;
+  }
+
+  private onLoginRequest = async () => {
+    await projectStorage.requestLogin();
+  };
+
+  private onLogoutRequest = () => {
+    projectStorage.logout();
+  };
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this.stopAutoplay();
-  }
-
-  private startAutoplay() {
-    this.stopAutoplay();
-    this.autoplayTimer = setInterval(() => {
-      if (!this.progression || !this.playing) return;
-      this.activeIndex = (this.activeIndex + 1) % this.order.length;
-      this.playActiveChord();
-    }, 1700);
-  }
-
-  private stopAutoplay() {
-    if (this.autoplayTimer) {
-      clearInterval(this.autoplayTimer);
-      this.autoplayTimer = null;
-    }
-  }
-
-  private playActiveChord() {
-    if (!this.progression) return;
-    const chordIndex = this.order[this.activeIndex] ?? 0;
-    const chord = this.progression.chords[chordIndex];
-    playChordForGenre(chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm });
+    playbackEngine.stopAutoplay();
+    if (this.unsubscribeAuth) this.unsubscribeAuth();
+    if (this.unsubscribeTick) this.unsubscribeTick();
   }
 
   private onGenreChange(e: CustomEvent<string>) {
     this.genre = e.detail;
+    this.pendingChordSuggestion = null;
+    this.activeSearchPrompt = null;
   }
 
   private onMoodChange(e: CustomEvent<string>) {
     this.mood = e.detail;
+    this.pendingChordSuggestion = null;
+    this.activeSearchPrompt = null;
   }
 
-  private onGenerate() {
+  private onFreetextSuggestionApplied(e: CustomEvent<NormalizedPrompt & { promptText?: string }>) {
+    const suggestion = e.detail;
+    this.pendingChordSuggestion = suggestion.chords?.length && suggestion.key && suggestion.scaleType ? suggestion : null;
+    if (e.detail.promptText) {
+      this.activeSearchPrompt = e.detail.promptText;
+    }
+  }
+
+  private async onGenerate(e?: CustomEvent<{ promptText?: string }>) {
     this.keyOverride = null;
     this.scaleOverride = null;
-    const progression = generateProgression(this.chordData, this.genre, this.mood, { length: this.length });
+
+    const searchTerm = e?.detail?.promptText || this.activeSearchPrompt || undefined;
+    const result = await PromptClassifier.resolvePrompt(
+      this.chordData,
+      this.genre,
+      this.mood,
+      this.length,
+      searchTerm,
+      this.pendingChordSuggestion
+    );
+
+    if (result.instrument) {
+      this.instrument = result.instrument;
+      localStorage.setItem('chroma-chords-instrument', result.instrument);
+      playbackEngine.setInstrument(result.instrument);
+    }
+    if (result.playStyle) {
+      this.playStyle = result.playStyle;
+      localStorage.setItem('chroma-chords-play-style', result.playStyle);
+      playbackEngine.setPlayStyle(result.playStyle);
+    }
+
+    const progression = result.progression;
     this.progression = progression;
-    this.order = Array.from({ length: this.length }, (_, i) => i);
+    this.order = Array.from({ length: progression.chords.length }, (_, i) => i);
+    this.length = progression.chords.length;
     this.activeIndex = 0;
+    this.progressStep = 0;
     this.playing = false;
+
+    playbackEngine.setProgression(progression, this.order);
+    playbackEngine.reset();
+
     this.screen = 'loop';
-    this.sections = [{ name: SECTION_NAMES[0], progression, order: this.order.slice() }];
+    this.sections = SongArranger.createInitialSong(progression, this.order);
     this.activeSectionIdx = 0;
-    this.saveProject();
+    this.pendingChordSuggestion = null;
+    this.activeSearchPrompt = null;
   }
 
   private onLengthChange(e: CustomEvent<number>) {
@@ -132,22 +243,21 @@ export class ChromaChordsApp extends LitElement {
     this.progression = progression;
     this.order = Array.from({ length: this.length }, (_, i) => i);
     this.activeIndex = 0;
+    this.progressStep = 0;
+    
+    playbackEngine.setProgression(progression, this.order);
+
     this.syncActiveSection();
-    this.saveProject();
+
     if (this.playing) {
-      this.startAutoplay();
-      this.playActiveChord();
+      playbackEngine.startAutoplay();
+      playbackEngine.playActiveChord();
     }
   }
 
-  // Keeps the section the user is currently editing in the Loop screen up to date with
-  // whatever they just changed (key/scale/genre/mood, a chord swap, a reorder), so revisiting
-  // the Song screen or switching sections doesn't show stale chords.
   private syncActiveSection() {
-    if (!this.progression || !this.sections[this.activeSectionIdx]) return;
-    const sections = [...this.sections];
-    sections[this.activeSectionIdx] = { ...sections[this.activeSectionIdx], progression: this.progression, order: this.order.slice() };
-    this.sections = sections;
+    if (!this.progression) return;
+    this.sections = SongArranger.syncActiveSection(this.sections, this.activeSectionIdx, this.progression, this.order);
   }
 
   private onSetKey(e: CustomEvent<string>) {
@@ -175,31 +285,76 @@ export class ChromaChordsApp extends LitElement {
     this.regenerate();
   }
 
-  // Dice reroll: a new progression in the current genre/mood/key/scale, not just a reorder.
   private onReroll() {
     if (!this.progression) return;
     this.regenerate();
   }
 
-  // Drag-to-reorder: keep the currently active chord "active" by absolute identity, not by
-  // screen position, so playback doesn't jump to a different chord just because the one that
-  // was playing got dragged to a new slot.
   private onReorder(e: CustomEvent<number[]>) {
     if (!this.progression) return;
     const activeChordIndex = this.order[this.activeIndex];
     this.order = e.detail;
     const newPos = this.order.indexOf(activeChordIndex);
     this.activeIndex = newPos >= 0 ? newPos : 0;
+    
+    playbackEngine.setOrder(this.order, this.activeIndex);
     this.syncActiveSection();
-    this.saveProject();
   }
 
   private onBack() {
-    this.stopAutoplay();
+    playbackEngine.stopAutoplay();
+    this.playing = false;
     this.screen = 'seed';
     this.sheetOpen = false;
     this.keyOverride = null;
     this.scaleOverride = null;
+  }
+
+  private onViewSets() {
+    playbackEngine.stopAutoplay();
+    this.playing = false;
+    this.screen = 'sets';
+  }
+
+  private onLoadProject(e: CustomEvent<string>) {
+    const id = e.detail;
+    const p = projectStorage.getProjects().find(proj => proj.id === id);
+    if (!p) return;
+    this.currentProjectId = p.id;
+    this.progression = {
+      genre: p.genre || 'Unknown',
+      mood: p.mood || 'Neutral',
+      key: p.key || 'C',
+      scaleType: p.scaleType || 'MAJOR',
+      bpm: p.bpm || 120,
+      chords: p.chords as unknown as ChordBlock[],
+    };
+    this.order = Array.from({ length: this.progression.chords.length }, (_, i) => i);
+    this.length = this.progression.chords.length;
+    this.showTheory = p.showTheory ?? this.showTheory;
+    
+    playbackEngine.setProgression(this.progression, this.order);
+    this.screen = 'loop';
+    this.sections = SongArranger.createInitialSong(this.progression, this.order);
+    this.activeSectionIdx = 0;
+  }
+
+  private onDeleteProject(e: CustomEvent<string>) {
+    projectStorage.deleteProject(e.detail);
+    if (this.currentProjectId === e.detail) {
+      this.currentProjectId = null;
+    }
+    this.requestUpdate();
+  }
+
+  private async onSyncProjects() {
+    await projectStorage.syncProjectsFromCloud();
+    await projectStorage.syncProjectsToCloud();
+    this.requestUpdate();
+  }
+
+  private onSaveSet(e: CustomEvent<string>) {
+    this.saveProject(e.detail);
   }
 
   private onTheoryToggle() {
@@ -207,29 +362,48 @@ export class ChromaChordsApp extends LitElement {
     localStorage.setItem('chroma-chords-show-theory', String(this.showTheory));
   }
 
-  // Play/Stop, not play/pause: stopping always returns to the first chord and halts the
-  // loop entirely, rather than leaving a stale autoplay interval running in the background
-  // (which was the source of the "resumes and immediately skips ahead" glitch — the old
-  // interval kept ticking on its original schedule the whole time it was "paused").
+  private onSetInstrument(e: CustomEvent<string>) {
+    this.instrument = e.detail;
+    localStorage.setItem('chroma-chords-instrument', e.detail);
+    playbackEngine.setInstrument(e.detail);
+  }
+
+  private onSetPlayStyle(e: CustomEvent<string>) {
+    this.playStyle = e.detail;
+    localStorage.setItem('chroma-chords-play-style', e.detail);
+    playbackEngine.setPlayStyle(e.detail);
+  }
+
   private onTogglePlay() {
-    if (this.playing) {
-      this.playing = false;
-      this.activeIndex = 0;
-      this.stopAutoplay();
-    } else {
-      this.playing = true;
-      this.activeIndex = 0;
-      this.startAutoplay();
-      this.playActiveChord();
-    }
+    this.playing = playbackEngine.togglePlay();
+  }
+
+  private onTogglePlaySong() {
+    playbackEngine.setSong(this.sections);
+    this.playing = playbackEngine.togglePlay();
   }
 
   private onChordTap(e: CustomEvent<number>) {
     if (!this.progression) return;
     this.swapIndex = e.detail;
+    this.sheetMode = 'swap';
     this.alternatives = generateAlternatives(this.chordData, this.progression, e.detail);
     this.sheetOpen = true;
-    playChordForGenre(this.progression.chords[e.detail].notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
+    playbackEngine.playChordAtIndex(e.detail, 0.8);
+  }
+
+  private onChordVoicingTap(e: CustomEvent<number>) {
+    if (!this.progression) return;
+    this.swapIndex = e.detail;
+    this.sheetMode = 'voicing';
+    this.alternatives = [];
+    this.sheetOpen = true;
+    playbackEngine.playChordAtIndex(e.detail, 0.8);
+  }
+
+  private onChordPreview(e: CustomEvent<number>) {
+    if (!this.progression) return;
+    playbackEngine.playChordAtIndex(e.detail, 0.8);
   }
 
   private onSheetClose() {
@@ -242,34 +416,41 @@ export class ChromaChordsApp extends LitElement {
     const chords = [...this.progression.chords];
     chords[this.swapIndex] = e.detail.chord;
     this.progression = { ...this.progression, chords };
+    playbackEngine.setProgression(this.progression, this.order);
     this.sheetOpen = false;
     this.swapIndex = null;
     this.syncActiveSection();
-    this.saveProject();
-    playChordForGenre(e.detail.chord.notes.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.8 });
+    playbackEngine.playChordNotes(e.detail.chord.notes, 0.8);
   }
 
   private onVoicingPreview(e: CustomEvent<string[]>) {
-    if (!this.progression) return;
-    playChordForGenre(e.detail.map(n => `${n}4`), this.progression.genre, { bpm: this.progression.bpm, duration: 0.6 });
+    playbackEngine.playChordNotes(e.detail, 0.6);
   }
 
-  // Applying a quality/extension in the swap sheet used to only preview the sound — the
-  // progression itself was never touched, so the chord reverted the moment the sheet closed
-  // or the loop moved to the next chord. Persist it into the real chord here instead.
   private onVoicingChange(e: CustomEvent<{ quality: string; extension: string }>) {
     if (!this.progression || this.swapIndex === null) return;
     const chords = [...this.progression.chords];
     chords[this.swapIndex] = applyVoicingToChord(chords[this.swapIndex], e.detail.quality, e.detail.extension);
     this.progression = { ...this.progression, chords };
+    playbackEngine.setProgression(this.progression, this.order);
     this.syncActiveSection();
-    this.saveProject();
+  }
+
+  private onBackToProgression() {
+    playbackEngine.stopAutoplay();
+    this.playing = false;
+    this.screen = 'loop';
+    if (this.progression) {
+      playbackEngine.setProgression(this.progression, this.order);
+    }
   }
 
   private onViewSong() {
-    this.stopAutoplay();
+    playbackEngine.stopAutoplay();
+    this.playing = false;
     this.sheetOpen = false;
     this.screen = 'song';
+    playbackEngine.setSong(this.sections);
   }
 
   private onSelectSection(e: CustomEvent<number>) {
@@ -279,199 +460,155 @@ export class ChromaChordsApp extends LitElement {
     this.progression = section.progression;
     this.order = section.order.slice();
     this.activeIndex = 0;
+    this.progressStep = 0;
     this.length = section.progression.chords.length;
     this.keyOverride = section.progression.key;
     this.scaleOverride = section.progression.scaleType;
     this.sheetOpen = false;
     this.screen = 'loop';
+
+    playbackEngine.setProgression(this.progression, this.order);
     if (this.playing) {
-      this.startAutoplay();
-      this.playActiveChord();
+      playbackEngine.startAutoplay();
+      playbackEngine.playActiveChord();
     }
   }
 
   private onAddSection() {
-    if (!this.progression || this.sections.length >= SECTION_NAMES.length) return;
-    const progression = generateProgression(this.chordData, this.genre, this.mood, {
-      key: this.progression.key,
-      scaleType: this.progression.scaleType,
-      length: this.length,
-    });
-    const order = Array.from({ length: this.length }, (_, i) => i);
-    const section: SongSection = { name: SECTION_NAMES[this.sections.length], progression, order };
-    this.sections = [...this.sections, section];
-    this.activeSectionIdx = this.sections.length - 1;
+    if (!this.progression) return;
+    const res = SongArranger.addSection(this.sections, this.progression);
+    this.sections = res.sections;
+    this.activeSectionIdx = res.activeIndex;
+    if (this.screen === 'song') {
+      playbackEngine.setSong(this.sections);
+    }
   }
 
-  private saveProject() {
+  private saveProject(customName?: string) {
     if (!this.progression) return;
     const id = this.currentProjectId || Math.random().toString(36).slice(2, 11);
     this.currentProjectId = id;
+    
+    const existing = projectStorage.getProjects().find(p => p.id === id);
+    const name = customName || (existing ? existing.name : `${this.progression.genre} · ${this.progression.mood}`);
+
     const project: ProjectData = {
       id,
-      name: `${this.progression.genre} · ${this.progression.mood}`,
+      name,
       lastModified: Date.now(),
       genre: this.progression.genre,
       mood: this.progression.mood,
       key: this.progression.key,
       scaleType: this.progression.scaleType,
       bpm: this.progression.bpm,
-      chords: this.progression.chords as ChordBlock[],
+      chords: this.progression.chords as unknown as ProjectChord[],
       showTheory: this.showTheory,
     };
-    ProjectService.saveProject(project);
-    this.syncProjectsToCloud();
-  }
-
-  private initSilentAuth() {
-    const savedAuth = localStorage.getItem('chroma-chords-auth') || localStorage.getItem('chord-voyager-auth');
-    if (!savedAuth) return;
-
-    this.hashEmail(savedAuth).then(hash => {
-      if (!this.AUTHORIZED_HASHES.includes(hash)) return;
-      this.isAuthenticated = true;
-      this.setupGoogleAuth();
-    });
-  }
-
-  private setupGoogleAuth() {
-    const checkGoogle = setInterval(() => {
-      if (!(window as any).google) return;
-      clearInterval(checkGoogle);
-
-      this.tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: '184710057667-s8j8uvuthct60tpppbhp7iiphp0s8qpq.apps.googleusercontent.com',
-        scope: 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email',
-        callback: async (tokenResponse: any) => {
-          if (!tokenResponse || !tokenResponse.access_token) return;
-          try {
-            const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-              headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-            });
-            if (!userInfoRes.ok) return;
-            const userInfo = await userInfoRes.json();
-            if (!userInfo?.email) return;
-            const hash = await this.hashEmail(userInfo.email);
-            if (!this.AUTHORIZED_HASHES.includes(hash)) return;
-
-            this.isAuthenticated = true;
-            localStorage.setItem('chroma-chords-auth', userInfo.email);
-            this.driveService.setAccessToken(tokenResponse.access_token);
-            await this.syncProjectsFromCloud();
-            await this.syncProjectsToCloud();
-          } catch (e) {
-            console.error('Silent Drive auth failed', e);
-          }
-        },
-      });
-
-      try {
-        this.tokenClient.requestAccessToken({ prompt: '' });
-      } catch (e) {
-        console.error('Failed to request Drive access silently', e);
-      }
-    }, 200);
-  }
-
-  private async syncProjectsFromCloud() {
-    if (this.isDriveSyncing || !this.driveService.hasAccessToken()) return;
-    this.isDriveSyncing = true;
-    try {
-      const cloudProjects = await this.driveService.loadProjects();
-      if (cloudProjects) {
-        cloudProjects.forEach(p => (p.syncedToCloud = true));
-        const localProjects = ProjectService.getProjects();
-        const merged = ProjectService.mergeProjects(localProjects, cloudProjects);
-        ProjectService.setProjects(merged);
-      }
-    } catch (e) {
-      console.error('Failed to sync from cloud', e);
-    } finally {
-      this.isDriveSyncing = false;
+    projectStorage.saveProject(project);
+    if (customName) {
+      projectStorage.scheduleCloudSync();
     }
-  }
-
-  private async syncProjectsToCloud() {
-    if (!this.isAuthenticated || !this.driveService.hasAccessToken() || this.isDriveSyncing) return;
-    this.isDriveSyncing = true;
-    try {
-      const projects = ProjectService.getProjects();
-      await this.driveService.saveProjects(projects);
-      projects.forEach(p => (p.syncedToCloud = true));
-      ProjectService.setProjects(projects);
-    } catch (e) {
-      console.error('Failed to sync to cloud', e);
-    } finally {
-      this.isDriveSyncing = false;
-    }
-  }
-
-  private async hashEmail(email: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(email);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
   render() {
-    if (this.screen === 'seed' || !this.progression) {
-      return html`
+    let screenContent;
+    if (this.screen === 'sets') {
+      screenContent = html`
+        <sets-screen
+          .projects=${projectStorage.getProjects()}
+          @back=${this.onBack}
+          @load-project=${this.onLoadProject}
+          @delete-project=${this.onDeleteProject}
+          @sync-projects=${this.onSyncProjects}
+        ></sets-screen>
+      `;
+    } else if (this.screen === 'seed' || !this.progression) {
+      screenContent = html`
         <seed-screen
           .genre=${this.genre}
           .mood=${this.mood}
           .length=${this.length}
+          .isAuthenticated=${this.isAuthenticated}
+          .isAdmin=${this.isAdmin}
           @genre-change=${this.onGenreChange}
           @mood-change=${this.onMoodChange}
           @length-change=${this.onLengthChange}
+          @freetext-suggestion-applied=${this.onFreetextSuggestionApplied}
           @generate=${this.onGenerate}
+          @request-login=${this.onLoginRequest}
+          @request-logout=${this.onLogoutRequest}
+          @view-sets=${this.onViewSets}
         ></seed-screen>
       `;
-    }
-
-    if (this.screen === 'song') {
-      return html`
+    } else if (this.screen === 'song') {
+      screenContent = html`
         <song-screen
           .sections=${this.sections}
           .activeSectionIdx=${this.activeSectionIdx}
-          .canAddSection=${this.sections.length < SECTION_NAMES.length}
+          .activePlayingSectionIdx=${this.activePlayingSectionIdx}
+          .canAddSection=${this.sections.length < SECTION_TEMPLATES.length}
+          .playing=${this.playing}
+          .progressStep=${this.progressStep}
+          .totalSteps=${this.totalSongSteps}
+          .instrument=${this.instrument}
+          .playStyle=${this.playStyle}
+          .isAuthenticated=${this.isAuthenticated}
           @select-section=${this.onSelectSection}
           @add-section=${this.onAddSection}
+          @back-to-progression=${this.onBackToProgression}
+          @toggle-play-song=${this.onTogglePlaySong}
+          @set-instrument=${this.onSetInstrument}
+          @set-play-style=${this.onSetPlayStyle}
+          @save-set=${this.onSaveSet}
+          @view-sets=${this.onViewSets}
         ></song-screen>
+      `;
+    } else {
+      const swapChord = this.swapIndex !== null ? this.progression.chords[this.swapIndex] : null;
+
+      screenContent = html`
+        <loop-screen
+          .progression=${this.progression}
+          .activeIndex=${this.activeIndex}
+          .progressStep=${this.progressStep}
+          .order=${this.order}
+          .playing=${this.playing}
+          .showTheory=${this.showTheory}
+          .instrument=${this.instrument}
+          .playStyle=${this.playStyle}
+          .isAuthenticated=${this.isAuthenticated}
+          .sheetOpen=${this.sheetOpen}
+          .sheetMode=${this.sheetMode}
+          .swapChord=${swapChord}
+          .swapIndex=${this.swapIndex}
+          .alternatives=${this.alternatives}
+          @back=${this.onBack}
+          @theory-toggle=${this.onTheoryToggle}
+          @set-instrument=${this.onSetInstrument}
+          @set-play-style=${this.onSetPlayStyle}
+          @toggle-play=${this.onTogglePlay}
+          @chord-tap=${this.onChordTap}
+          @chord-voicing-tap=${this.onChordVoicingTap}
+          @chord-preview=${this.onChordPreview}
+          @close=${this.onSheetClose}
+          @select-alternative=${this.onSelectAlternative}
+          @voicing-preview=${this.onVoicingPreview}
+          @voicing-change=${this.onVoicingChange}
+          @set-key=${this.onSetKey}
+          @set-scale=${this.onSetScale}
+          @set-genre=${this.onSetGenre}
+          @set-mood=${this.onSetMood}
+          @reroll=${this.onReroll}
+          @reorder=${this.onReorder}
+          @set-length=${this.onSetLength}
+          @view-song=${this.onViewSong}
+          @save-set=${this.onSaveSet}
+          @view-sets=${this.onViewSets}
+        ></loop-screen>
       `;
     }
 
-    const swapChord = this.swapIndex !== null ? this.progression.chords[this.swapIndex] : null;
-
-    return html`
-      <loop-screen
-        .progression=${this.progression}
-        .activeIndex=${this.activeIndex}
-        .order=${this.order}
-        .playing=${this.playing}
-        .showTheory=${this.showTheory}
-        .sheetOpen=${this.sheetOpen}
-        .swapChord=${swapChord}
-        .swapIndex=${this.swapIndex}
-        .alternatives=${this.alternatives}
-        @back=${this.onBack}
-        @theory-toggle=${this.onTheoryToggle}
-        @toggle-play=${this.onTogglePlay}
-        @chord-tap=${this.onChordTap}
-        @close=${this.onSheetClose}
-        @select-alternative=${this.onSelectAlternative}
-        @voicing-preview=${this.onVoicingPreview}
-        @voicing-change=${this.onVoicingChange}
-        @set-key=${this.onSetKey}
-        @set-scale=${this.onSetScale}
-        @set-genre=${this.onSetGenre}
-        @set-mood=${this.onSetMood}
-        @reroll=${this.onReroll}
-        @reorder=${this.onReorder}
-        @set-length=${this.onSetLength}
-        @view-song=${this.onViewSong}
-      ></loop-screen>
-    `;
+    return html`<div class="screen-view">${screenContent}</div>`;
   }
 }
 

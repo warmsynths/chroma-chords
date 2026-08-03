@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <clipPath id="rounded-bg">
+      <rect x="0" y="0" width="512" height="512" rx="112" ry="112" />
+    </clipPath>
+  </defs>
+  
+  <!-- Warm cream background -->
+  <rect width="512" height="512" rx="112" fill="#FAF5EA"/>
+  
+  <!-- Overlapping translucent circles -->
+  <g clip-path="url(#rounded-bg)">
+    <!-- Coral / Warm Salmon Red circle -->
+    <circle cx="212" cy="212" r="136" fill="#EE7D71" opacity="0.82" />
+    <!-- Soft Periwinkle Blue circle -->
+    <circle cx="300" cy="300" r="136" fill="#84ABEB" opacity="0.82" />
+  </g>
+</svg>

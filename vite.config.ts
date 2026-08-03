@@ -5,7 +5,18 @@ export default defineConfig({
   base: './',
   build: {
     target: 'es2022',
-    outDir: 'docs'
+    outDir: 'docs',
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'app.js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+        manualChunks: {
+          vendor: ['lit', 'tone', 'meyda']
+        }
+      }
+    }
   },
   server: {
     port: 43301,

@@ -3,7 +3,6 @@ export interface ProjectChord {
   tag: string;
   roman: string;
   color: string;
-  grain: number;
   functionLabel: string;
   notes: string[];
   scaleLabel: string;
@@ -41,7 +40,21 @@ export class ProjectService {
         }
       }
       if (data) {
-        return JSON.parse(data) as ProjectData[];
+        const projects = JSON.parse(data) as ProjectData[];
+        let needsSave = false;
+        
+        projects.forEach(p => {
+          if (p.genre === 'Unknown' || !p.genre) {
+            p.genre = 'Pop';
+            needsSave = true;
+          }
+        });
+        
+        if (needsSave) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+        }
+        
+        return projects;
       }
     } catch (e) {
       console.error('Failed to load projects from localStorage:', e);

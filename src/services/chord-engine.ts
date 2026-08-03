@@ -24,7 +24,6 @@ export interface ChordBlock {
   tag: string;
   roman: string;
   color: string;
-  grain: number;
   functionLabel: string;
   notes: string[];
   scaleLabel: string;
@@ -41,6 +40,7 @@ export interface Progression {
   scaleType: string;
   bpm: number;
   chords: ChordBlock[];
+  searchTerm?: string;
 }
 
 export interface Alternative {
@@ -75,6 +75,8 @@ const QUALITY_INTERVALS: Record<string, number[]> = {
   dim7: [0, 3, 6, 9],
   sus4: [0, 5, 7],
 };
+
+export const CHORD_QUALITIES = Object.keys(QUALITY_INTERVALS);
 
 const DEGREE_TAG: Record<string, string> = {
   TONIC: 'home',
@@ -119,6 +121,8 @@ const ROMAN_BY_SCALE: Record<string, Record<string, string>> = {
   LYDIAN: { TONIC: 'I', SUPERTONIC: 'II', MEDIANT: 'iii', SUBDOMINANT: 'iv°', DOMINANT: 'V', SUBMEDIANT: 'vi', 'LEADING-TONE': 'vii' },
 };
 
+export const SCALE_TYPES = Object.keys(ROMAN_BY_SCALE);
+
 const SCALE_LABEL: Record<string, string> = {
   MAJOR: 'Ionian',
   NATURAL_MINOR: 'Aeolian',
@@ -129,79 +133,214 @@ const SCALE_LABEL: Record<string, string> = {
   LYDIAN: 'Lydian',
 };
 
+// Canonical genre list/order — also drives the seed-screen pill grid, so this is the one
+// place that order should be edited.
+export const GENRES = [
+  "Pop",
+  "Lo-fi/Chill",
+  "R&B/Soul",
+  "Indie/Folk",
+  "Synthwave",
+  "Jazz-ish",
+  "Gospel",
+  "Cinematic",
+  "Rock",
+  "House/Dance",
+  "Blues",
+  "Funk/Disco",
+  "Country/Bluegrass",
+  "Reggae/Dub",
+  "Metal",
+  "Punk",
+  "Ambient/Drone",
+  "Trap/Hip-Hop",
+  "Bossa Nova/Latin",
+  "Classical/Orchestral",
+  "EDM/Trance",
+  "Afrobeats",
+  "Shoegaze"
+];
+
 const GENRE_SCALE: Record<string, string> = {
-  'Pop': 'MAJOR',
-  'Rock': 'MAJOR',
-  'Gospel': 'MAJOR',
-  'Indie/Folk': 'MAJOR',
-  'Lo-fi/Chill': 'DORIAN',
-  'Jazz-ish': 'DORIAN',
-  'R&B/Soul': 'MIXOLYDIAN',
-  'House/Dance': 'MIXOLYDIAN',
-  'Synthwave': 'LYDIAN',
-  'Cinematic': 'LYDIAN',
+  "Pop": "MAJOR",
+  "Rock": "MAJOR",
+  "Gospel": "MAJOR",
+  "Indie/Folk": "MAJOR",
+  "Lo-fi/Chill": "DORIAN",
+  "Jazz-ish": "DORIAN",
+  "R&B/Soul": "MIXOLYDIAN",
+  "House/Dance": "MIXOLYDIAN",
+  "Synthwave": "LYDIAN",
+  "Cinematic": "LYDIAN",
+  "Blues": "MIXOLYDIAN",
+  "Funk/Disco": "MIXOLYDIAN",
+  "Country/Bluegrass": "MAJOR",
+  "Reggae/Dub": "DORIAN",
+  "Metal": "HARMONIC_MINOR",
+  "Punk": "MAJOR",
+  "Ambient/Drone": "LYDIAN",
+  "Trap/Hip-Hop": "NATURAL_MINOR",
+  "Bossa Nova/Latin": "DORIAN",
+  "Classical/Orchestral": "MAJOR",
+  "EDM/Trance": "NATURAL_MINOR",
+  "Afrobeats": "MIXOLYDIAN",
+  "Shoegaze": "LYDIAN"
 };
 
 const MOOD_SHIFT: Record<string, string | null> = {
-  Uplifting: null,
-  Melancholy: 'NATURAL_MINOR',
-  Dreamy: null,
-  Tense: 'HARMONIC_MINOR',
-  Warm: null,
-  Nostalgic: 'NATURAL_MINOR',
+  "Uplifting": null,
+  "Melancholy": "NATURAL_MINOR",
+  "Dreamy": null,
+  "Tense": "HARMONIC_MINOR",
+  "Warm": null,
+  "Nostalgic": "NATURAL_MINOR",
+  "Energetic": null,
+  "Dark": "HARMONIC_MINOR",
+  "Peaceful": null,
+  "Groovy": "MIXOLYDIAN",
+  "Epic": "MAJOR"
 };
 
 const MOOD_DEGREE_BIAS: Record<string, string[]> = {
-  Uplifting: ['DOMINANT', 'SUBDOMINANT', 'SUBMEDIANT'],
-  Melancholy: ['SUBMEDIANT', 'SUBTONIC', 'SUPERTONIC'],
-  Dreamy: ['MEDIANT', 'SUBDOMINANT', 'SUPERTONIC'],
-  Tense: ['DOMINANT', 'LEADING-TONE', 'SUPERTONIC'],
-  Warm: ['SUBDOMINANT', 'MEDIANT', 'SUBMEDIANT'],
-  Nostalgic: ['SUBMEDIANT', 'MEDIANT', 'DOMINANT'],
+  "Uplifting": [
+    "DOMINANT",
+    "SUBDOMINANT",
+    "SUBMEDIANT"
+  ],
+  "Melancholy": [
+    "SUBMEDIANT",
+    "SUBTONIC",
+    "SUPERTONIC"
+  ],
+  "Dreamy": [
+    "MEDIANT",
+    "SUBDOMINANT",
+    "SUPERTONIC"
+  ],
+  "Tense": [
+    "DOMINANT",
+    "LEADING-TONE",
+    "SUPERTONIC"
+  ],
+  "Warm": [
+    "SUBDOMINANT",
+    "MEDIANT",
+    "SUBMEDIANT"
+  ],
+  "Nostalgic": [
+    "SUBMEDIANT",
+    "MEDIANT",
+    "DOMINANT"
+  ],
+  "Energetic": [
+    "DOMINANT",
+    "SUBDOMINANT",
+    "SUPERTONIC"
+  ],
+  "Dark": [
+    "SUBMEDIANT",
+    "SUBTONIC",
+    "SUPERTONIC"
+  ],
+  "Peaceful": [
+    "TONIC",
+    "SUBDOMINANT",
+    "MEDIANT"
+  ],
+  "Groovy": [
+    "SUBDOMINANT",
+    "DOMINANT",
+    "SUBTONIC"
+  ],
+  "Epic": [
+    "TONIC",
+    "DOMINANT",
+    "SUBMEDIANT"
+  ]
 };
 
 export interface MoodDef {
   name: string;
   dot: string;
   desc: string;
-  pathD: string;
+  // Small line-art glyph (24x24 viewBox) shown inside each mood pill's tinted badge.
+  iconPath: string;
 }
 
-// Shared mood data: dot/accent color (also used to tint the ink-blob background and wordmark),
-// a short caption, and an abstract line-art "doodle" path drawn on the desktop Seed screen.
+// Shared mood data: dot/accent color (tints the pill badge, background blobs, and the
+// mood-colored action elements — CTA, play button, dice, selected chips) plus a short
+// caption and a small line-icon shown in the mood pill's badge.
 export const MOODS: MoodDef[] = [
   {
-    name: 'Uplifting', dot: 'oklch(0.55 0.12 165)', desc: 'Bright, major, forward-moving',
-    pathD: 'M55 240 C35 215 34 185 55 165 C40 145 48 118 72 112 C64 92 82 70 104 76 C112 55 138 46 152 64 C168 48 192 56 190 78 C212 74 228 96 214 116 C232 124 234 150 214 160 C222 182 206 204 184 198 C182 218 158 228 144 210 C126 226 102 220 98 200 C76 206 58 194 58 172 C48 172 44 254 55 240',
+    "name": "Uplifting",
+    "dot": "#F6D98B",
+    "desc": "Bright, major, forward-moving",
+    "iconPath": "M4 18 C 8 18 8 11 12 11 C 16 11 16 5 20 5"
   },
   {
-    name: 'Melancholy', dot: 'oklch(0.42 0.09 245)', desc: 'Minor-leaning, unresolved longing',
-    pathD: 'M40 76 C64 60 82 82 74 106 C68 126 88 140 104 128 C96 150 114 168 134 156 C128 178 148 194 166 180 C160 202 180 216 198 202 C196 220 214 232 230 220 C230 236 244 244 258 250',
+    "name": "Melancholy",
+    "dot": "#9CC0EC",
+    "desc": "Minor-leaning, unresolved longing",
+    "iconPath": "M3 9 Q 8 9 9 14 T 15 17 Q 19 18 21 15"
   },
   {
-    name: 'Dreamy', dot: 'oklch(0.60 0.08 205)', desc: 'Suspended, floating, reverb-soaked',
-    pathD: 'M48 176 C36 148 60 128 84 138 C66 108 94 84 122 96 C126 66 164 60 172 88 C202 78 222 104 202 126 C226 138 220 168 194 168 C204 190 184 214 158 206 C158 226 128 232 116 210 C90 220 70 202 78 180 C58 192 42 196 48 176 C58 158 66 162 78 168',
+    "name": "Dreamy",
+    "dot": "#C9A9E0",
+    "desc": "Suspended, floating, reverb-soaked",
+    "iconPath": "M4 15 a4 4 0 1 1 8 0 a4 4 0 1 1 8 0"
   },
   {
-    name: 'Tense', dot: 'oklch(0.45 0.20 35)', desc: 'Chromatic pulls, unresolved tension',
-    pathD: 'M46 232 L88 176 L64 148 L112 122 L84 96 L136 78 L108 52 L166 42 L142 22 L200 26 L184 8 L226 34 L206 58 L238 84 L212 100 L228 128',
+    "name": "Tense",
+    "dot": "#F2735F",
+    "desc": "Chromatic pulls, unresolved tension",
+    "iconPath": "M3 12 L7 6 L11 16 L15 6 L19 16 L21 12"
   },
   {
-    name: 'Warm', dot: 'oklch(0.55 0.15 55)', desc: 'Rich, consonant, close voicings',
-    pathD: 'M138 148 C168 150 190 130 182 104 C176 78 142 74 128 98 C116 118 132 138 154 134 C176 130 186 104 166 92 C148 82 122 94 116 118 C110 142 128 164 152 168 C132 178 112 170 106 150 C100 128 116 106 138 96 C160 86 186 92 198 112',
+    "name": "Warm",
+    "dot": "#F2C9A0",
+    "desc": "Rich, consonant, close voicings",
+    "iconPath": "M12 4 a6.5 6.5 0 1 0 6.5 6.5"
   },
   {
-    name: 'Nostalgic', dot: 'oklch(0.50 0.11 20)', desc: 'Bittersweet, borrowed chords',
-    pathD: 'M36 210 C60 192 78 216 104 200 C130 184 112 156 96 164 C82 170 86 186 100 184 C118 182 122 158 146 148 C170 138 194 150 202 174 C208 192 196 208 178 204 C186 224 168 238 148 228 C128 218 128 198 146 190',
+    "name": "Nostalgic",
+    "dot": "#B8CC9E",
+    "desc": "Bittersweet, borrowed chords",
+    "iconPath": "M3 12 C 7 6 9 18 13 12 C 17 6 19 18 21 12"
   },
+  {
+    "name": "Energetic",
+    "dot": "#FF8C42",
+    "desc": "High velocity, driving rhythm",
+    "iconPath": "M13 2 L4 14 h7 l-2 8 11-12 h-7 z"
+  },
+  {
+    "name": "Dark",
+    "dot": "#7B61FF",
+    "desc": "Deep minor, ominous resonance",
+    "iconPath": "M12 3 a9 9 0 1 0 9 9 a9 9 0 0 1-9-9 z"
+  },
+  {
+    "name": "Peaceful",
+    "dot": "#7CD9B6",
+    "desc": "Serene, gentle acoustic space",
+    "iconPath": "M12 2 a10 10 0 1 0 10 10 A10 10 0 0 0 12 2 z M12 6 a6 6 0 1 1-6 6 a6 6 0 0 1 6-6 z"
+  },
+  {
+    "name": "Groovy",
+    "dot": "#E8609A",
+    "desc": "Syncopated, rhythmic bounce",
+    "iconPath": "M4 12 c4-4 8 4 12-4 s8 4 4 8"
+  },
+  {
+    "name": "Epic",
+    "dot": "#E5C158",
+    "desc": "Sweeping dynamics, triumphant power",
+    "iconPath": "M12 2 l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 z"
+  }
 ];
 
 export function getMoodColor(mood: string): string {
   return (MOODS.find(m => m.name === mood) || MOODS[0]).dot;
-}
-
-export function getMoodPath(mood: string): string {
-  return (MOODS.find(m => m.name === mood) || MOODS[0]).pathD;
 }
 
 interface ProgressionTemplate {
@@ -277,6 +416,11 @@ function pickOne<T>(items: T[]): T | undefined {
 const DEFAULT_PROGRESSION_LENGTH = 4;
 export const MIN_PROGRESSION_LENGTH = 1;
 export const MAX_PROGRESSION_LENGTH = 8;
+
+// How long each chord holds during autoplay — shared between the app's setInterval and the
+// loop screen's progress-bar CSS transition so the fill's animation duration always matches
+// real playback timing instead of drifting out of two hardcoded copies of the same number.
+export const AUTOPLAY_INTERVAL_MS = 1700;
 
 const DEFAULT_MARKOV_TRANSITIONS: Record<string, Record<string, number>> = {
   TONIC: { SUBDOMINANT: 0.35, SUBMEDIANT: 0.25, SUPERTONIC: 0.15, DOMINANT: 0.15, MEDIANT: 0.05, SUBTONIC: 0.05 },
@@ -415,9 +559,11 @@ export function notesForSymbol(symbol: string, preferFlat: boolean): string[] {
 }
 
 export async function loadChordData(): Promise<RawChordData> {
-  let res = await fetch('./chroma_chords_data.json');
+  const dataUrl = new URL('./chroma_chords_data.json', import.meta.url).href;
+  const backupUrl = new URL('./chord_voyager_data.json', import.meta.url).href;
+  let res = await fetch(dataUrl);
   if (!res.ok) {
-    res = await fetch('./chord_voyager_data.json');
+    res = await fetch(backupUrl);
   }
   if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
   const data = (await res.json()) as RawChordData;
@@ -504,16 +650,39 @@ function injectModes(data: RawChordData) {
   }
 }
 
-function colorForTension(tension: number): string {
-  const t = Math.max(0, Math.min(1, tension));
-  const lightness = (0.42 - t * 0.05).toFixed(2);
-  const chroma = (0.11 + t * 0.07).toFixed(2);
-  const hue = Math.round(Math.max(40, 187 - t * 140));
-  return `oklch(${lightness} ${chroma} ${hue})`;
+// Flat-vector chord-role dictionary: a chord's harmonic tension (0 = stable/resolved,
+// 1 = maximally tense) maps directly to how it looks — cool pastel blue and round/small
+// when stable, warm pastel coral and large/sharp-cornered when tense. Same mapping used
+// for the chord's fill color, its shape/size everywhere it's drawn (loop stage, swap
+// options, song chip previews), and its name's font size.
+const TENSION_COLOR_FROM = [0x9c, 0xc0, 0xec]; // --cv-blue
+const TENSION_COLOR_TO = [0xf2, 0x73, 0x5f]; // --cv-red-deep
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
 }
 
-function grainForTension(tension: number): number {
-  return Math.max(0.06, Math.min(0.2, 0.08 + tension * 0.12));
+function colorForTension(tension: number): string {
+  const t = Math.max(0, Math.min(1, tension));
+  const rgb = TENSION_COLOR_FROM.map((c, i) => Math.round(lerp(c, TENSION_COLOR_TO[i], t)));
+  return '#' + rgb.map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+export interface ChordRole {
+  size: number;
+  radius: number;
+  fontSize: number;
+  color: string;
+}
+
+export function roleForTension(tension: number): ChordRole {
+  const t = Math.max(0, Math.min(1, tension));
+  return {
+    size: Math.round(lerp(84, 128, t)),
+    radius: Math.round(lerp(40, 12, t)),
+    fontSize: Math.round(lerp(21, 30, t)),
+    color: colorForTension(t),
+  };
 }
 
 function describeChord(functionLabel: string, scaleLabel: string, name: string): string {
@@ -540,7 +709,6 @@ function buildChordBlock(scaleKey: string, degree: string, scale: ScaleProfile, 
     tag: DEGREE_TAG[degree] || 'move',
     roman: romanTable[degree] || '?',
     color: colorForTension(tension),
-    grain: grainForTension(tension),
     functionLabel: DEGREE_FUNCTION[degree] || degree,
     notes: notesForSymbol(name, preferFlat),
     scaleLabel: `${scale.root} ${SCALE_LABEL[scale.type] || scale.type}`,
@@ -563,6 +731,39 @@ export interface ProgressionOverrides {
   key?: string;
   scaleType?: string;
   length?: number;
+}
+
+const GENRE_BPM: Record<string, number> = {
+  "Pop": 116,
+  "Lo-fi/Chill": 80,
+  "R&B/Soul": 90,
+  "Indie/Folk": 105,
+  "Synthwave": 118,
+  "Jazz-ish": 95,
+  "Gospel": 85,
+  "Cinematic": 75,
+  "Rock": 124,
+  "House/Dance": 126,
+  "Blues": 88,
+  "Funk/Disco": 114,
+  "Country/Bluegrass": 110,
+  "Reggae/Dub": 78,
+  "Metal": 140,
+  "Punk": 155,
+  "Ambient/Drone": 65,
+  "Trap/Hip-Hop": 135,
+  "Bossa Nova/Latin": 120,
+  "Classical/Orchestral": 72,
+  "EDM/Trance": 132,
+  "Afrobeats": 108,
+  "Shoegaze": 112
+};
+
+export function bpmForGenreMood(genre: string, mood: string): number {
+  let bpm = GENRE_BPM[genre] || 92;
+  if (mood === 'Tense') bpm += 6;
+  if (mood === 'Dreamy' || mood === 'Melancholy') bpm -= 6;
+  return bpm;
 }
 
 export function generateProgression(data: RawChordData, genre: string, mood: string, overrides?: ProgressionOverrides): Progression {
@@ -596,15 +797,57 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
 
   const chords = chosenDegrees.map(degree => buildChordBlock(scaleKey, degree, scale, preferFlat));
 
-  const bpmBase: Record<string, number> = {
-    Pop: 100, Rock: 118, Gospel: 84, 'Indie/Folk': 92, 'Lo-fi/Chill': 76,
-    'Jazz-ish': 96, 'R&B/Soul': 88, 'House/Dance': 124, Synthwave: 108, Cinematic: 72,
-  };
-  let bpm = bpmBase[genre] || 92;
-  if (mood === 'Tense') bpm += 6;
-  if (mood === 'Dreamy' || mood === 'Melancholy') bpm -= 6;
+  return { genre, mood, key: root, scaleType, bpm: bpmForGenreMood(genre, mood), chords };
+}
 
-  return { genre, mood, key: root, scaleType, bpm, chords };
+export interface RequestedChord {
+  root: string;
+  quality: string;
+}
+
+// Turns a real chord list (e.g. from the freetext LLM classifier) into an actual Progression,
+// built from this app's existing per-key chord data rather than anything the caller invented.
+// Each requested chord is matched to whichever scale degree owns that root's pitch class in the
+// given key — so the resulting ChordBlocks carry real roman numerals, tension, and
+// next_chord_options, identical to a manually-generated progression. A root that doesn't belong
+// to the given key becomes a synthesized "borrowed" chord (the same mechanism the "Darker" swap
+// suggestion already uses) rather than being dropped, so the shape of the requested progression
+// is preserved even when it isn't fully diatonic in that key.
+export function alignChordsToScale(
+  data: RawChordData,
+  key: string,
+  scaleType: string,
+  chords: RequestedChord[],
+  genre: string,
+  mood: string
+): Progression | null {
+  const scaleKey = `${key}_${scaleType}`;
+  const scale = data.scales[scaleKey];
+  if (!scale || !chords.length) return null;
+
+  const preferFlat = preferFlatSpelling(key, scaleType);
+  const keyPc = PITCH_CLASS[key] ?? 0;
+
+  const pitchClassToDegree: Record<number, string> = {};
+  Object.entries(scale.degrees).forEach(([degree, degProfile]) => {
+    const { root: degRoot } = parseChordSymbol(degProfile.chord_name);
+    const pc = PITCH_CLASS[degRoot] ?? 0;
+    if (!(pc in pitchClassToDegree)) pitchClassToDegree[pc] = degree;
+  });
+
+  const blocks = chords.slice(0, MAX_PROGRESSION_LENGTH).map(({ root, quality }) => {
+    const pc = PITCH_CLASS[root] ?? keyPc;
+    const degree = pitchClassToDegree[pc];
+    if (degree) return buildChordBlock(scaleKey, degree, scale, preferFlat);
+
+    const semitones = ((pc - keyPc) + 12) % 12;
+    const safeQuality = (QUALITY_INTERVALS[quality] ? quality : 'maj') as keyof typeof QUALITY_INTERVALS;
+    return synthBorrowedBlock(key, semitones, safeQuality, 'Borrowed', '?', 'drift', preferFlat);
+  });
+
+  if (blocks.length < MIN_PROGRESSION_LENGTH) return null;
+
+  return { genre, mood, key, scaleType, bpm: bpmForGenreMood(genre, mood), chords: blocks };
 }
 
 function pickDegreeWithMarkov(
@@ -630,14 +873,14 @@ const CHORD_SUFFIX: Record<string, string> = {
 // The source data only has NATURAL_MINOR scales for a handful of keys (no flat-major keys),
 // so borrowing a real parallel-mode chord isn't always possible. Synthesize a plausible
 // borrowed chord directly by transposition instead of leaving "Darker" with no option.
-function synthBorrowedBlock(root: string, semitones: number, quality: keyof typeof QUALITY_INTERVALS, functionLabel: string, roman: string, tag: string, preferFlat: boolean): ChordBlock {
+export function synthBorrowedBlock(root: string, semitones: number, quality: keyof typeof QUALITY_INTERVALS, functionLabel: string, roman: string, tag: string, preferFlat: boolean): ChordBlock {
   const rootPc = (PITCH_CLASS[root] ?? 0) + semitones;
   const chordRoot = noteName(rootPc, preferFlat);
   const name = `${chordRoot}${CHORD_SUFFIX[quality]}`;
   const notes = QUALITY_INTERVALS[quality].map(iv => noteName(rootPc + iv, preferFlat));
   const tension = 0.3;
   return {
-    name, tag, roman, color: colorForTension(tension), grain: grainForTension(tension),
+    name, tag, roman, color: colorForTension(tension),
     functionLabel, notes, scaleLabel: 'Borrowed',
     desc: `${name} borrows its color from outside the current key.`,
     degree: 'BORROWED', scaleKey: '', tension,
@@ -690,7 +933,7 @@ export interface ChordStaff {
 
 const LETTER_ORDER = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const STAFF_WIDTH = 116;
-const STAFF_LINE_GAP = 7.5;
+const STAFF_LINE_GAP = 10;
 const BOTTOM_LINE_STEP = LETTER_ORDER.indexOf('E') + 4 * 7;
 const TOP_LINE_STEP = BOTTOM_LINE_STEP + 4 * 2;
 const STAFF_TOP_Y = 20;
@@ -735,6 +978,15 @@ export function getKeySignature(key: string, scaleType: string): string[] {
 export function preferFlatSpelling(key: string, scaleType: string): boolean {
   const parentName = parentMajorKeyFor(key, scaleType);
   return FLAT_TONICS.has(parentName) || parentName.includes('b');
+}
+
+// The key/scaleType pair is stored under its ROOT_KEYS canonical spelling (e.g. "F#") purely as
+// a lookup key into data.scales — but a mode's actual notated spelling can differ (F# Lydian's
+// notes are spelled from Db major's flats, so its tonic reads "Gb" on every chord chip). Use
+// this wherever the key is displayed to the user, so the label matches what the chords actually
+// show instead of the raw dictionary key.
+export function displayKeyName(key: string, scaleType: string): string {
+  return noteName(PITCH_CLASS[key] ?? 0, preferFlatSpelling(key, scaleType));
 }
 
 // Standard treble-clef vertical placement (in the same letter+octave "step" units as
@@ -796,6 +1048,81 @@ export function buildChordStaff(notes: string[], key: string, scaleType: string)
   }));
 
   return { width: STAFF_WIDTH, height, lines, ledgers, notes: noteDots, keySignature };
+}
+
+export interface ProgressionStaffChord {
+  cx: number;
+  name: string;
+  roman: string;
+  notes: { x: number; y: number }[];
+  ledgers: { x: number; y: number }[];
+  labelY: number;
+}
+
+export interface ProgressionStaff {
+  width: number;
+  height: number;
+  lines: number[];
+  keySignature: { x: number; y: number; sign: 'sharp' | 'flat' }[];
+  chords: ProgressionStaffChord[];
+}
+
+const PSTAFF_MARGIN = 10;
+const PSTAFF_CHORD_GAP = 46;
+const PSTAFF_CLEF_WIDTH = 26;
+const PSTAFF_LABEL_HEIGHT = 14;
+
+// Same layout math as buildChordStaff, generalized to lay multiple chords out along one
+// continuous staff (clef + key signature drawn once) instead of one compact box per chord —
+// this is what the full progression's "show music theory" view renders, vs. the single-chord
+// mini staff buildChordStaff still serves elsewhere.
+export function buildProgressionStaff(chords: ChordBlock[], key: string, scaleType: string): ProgressionStaff {
+  const sigLetters = getKeySignature(key, scaleType);
+  const sigGlyphSpacing = 8;
+  const sigWidth = sigLetters.length ? sigLetters.length * sigGlyphSpacing + 6 : 0;
+  const sigSteps = sigLetters.map(l => KEY_SIG_STEP[l]);
+
+  const perChordSteps = chords.map(c => diatonicSteps(c.notes));
+  const allSteps = perChordSteps.flat();
+
+  const rawMinY = Math.min(STAFF_TOP_Y, ...allSteps.map(stepToY), ...sigSteps.map(stepToY));
+  const rawMaxY = Math.max(STAFF_BOTTOM_Y, ...allSteps.map(stepToY), ...sigSteps.map(stepToY));
+  // Reserve PSTAFF_LABEL_HEIGHT of headroom above the highest note of ANY chord, not just the
+  // staff itself — a chord voiced higher than the others (e.g. a bass note that lands near the
+  // top of its octave) would otherwise land right where a fixed label position sits, and its
+  // notehead would paint directly over the chord name text.
+  const offsetY = PSTAFF_MARGIN + PSTAFF_LABEL_HEIGHT - rawMinY;
+  const height = rawMaxY - rawMinY + 12 + PSTAFF_MARGIN + PSTAFF_LABEL_HEIGHT;
+
+  const lines = [0, 1, 2, 3, 4].map(i => STAFF_TOP_Y + i * STAFF_LINE_GAP + offsetY);
+
+  const chordStartX = PSTAFF_MARGIN + PSTAFF_CLEF_WIDTH + sigWidth;
+
+  const keySignature = sigLetters.map((l, i) => ({
+    x: PSTAFF_MARGIN + PSTAFF_CLEF_WIDTH + i * sigGlyphSpacing,
+    y: stepToY(KEY_SIG_STEP[l]) + offsetY,
+    sign: (l.includes('#') ? 'sharp' : 'flat') as 'sharp' | 'flat',
+  }));
+
+  const staffChords: ProgressionStaffChord[] = chords.map((chord, i) => {
+    const cx = chordStartX + i * PSTAFF_CHORD_GAP + PSTAFF_CHORD_GAP / 2;
+    const steps = perChordSteps[i];
+    const notes = steps.map(step => ({ x: cx, y: stepToY(step) + offsetY }));
+    const ledgers: { x: number; y: number }[] = [];
+    steps.forEach(step => {
+      const isLinePosition = (step - BOTTOM_LINE_STEP) % 2 === 0;
+      if (isLinePosition && (step < BOTTOM_LINE_STEP || step > TOP_LINE_STEP)) {
+        ledgers.push({ x: cx - 9, y: stepToY(step) + offsetY });
+      }
+    });
+    const topNoteY = Math.min(...notes.map(n => n.y));
+    const labelY = topNoteY - 10;
+    return { cx, name: chord.name, roman: chord.roman, notes, ledgers, labelY };
+  });
+
+  const width = chordStartX + chords.length * PSTAFF_CHORD_GAP + PSTAFF_MARGIN;
+
+  return { width, height, lines, keySignature, chords: staffChords };
 }
 
 export function applyVoicingToChord(chord: ChordBlock, quality: string, extension: string): ChordBlock {
@@ -909,11 +1236,14 @@ const DEVICE_BASE_URL: Record<ShareDevice, string> = {
 
 const DEVICE_LOCAL_PORT: Record<ShareDevice, number> = { m8: 43303, circuit: 43302 };
 
-export function buildDeviceShareUrl(progression: Progression, device: ShareDevice): string {
+export function buildDeviceShareUrl(progression: Progression, device: ShareDevice, order?: number[]): string {
   let base = DEVICE_BASE_URL[device];
   if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
     base = `http://localhost:${DEVICE_LOCAL_PORT[device]}/`;
   }
-  const chordParam = progression.chords.map(c => encodeURIComponent(c.name)).join('+');
+  const chords = (order && order.length > 0)
+    ? order.map(i => progression.chords[i]).filter((c): c is ChordBlock => Boolean(c))
+    : progression.chords;
+  const chordParam = chords.map(c => encodeURIComponent(c.name)).join('+');
   return `${base}?p=${chordParam}`;
 }
