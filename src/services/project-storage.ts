@@ -206,6 +206,11 @@ export class ProjectStorageManager {
     return ProjectService.getProjects();
   }
 
+  public isProjectSaved(id: string | null): boolean {
+    if (!id) return false;
+    return ProjectService.getProjects().some(p => p.id === id);
+  }
+
   public saveProject(project: ProjectData): void {
     ProjectService.saveProject(project);
   }

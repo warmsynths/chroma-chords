@@ -95,6 +95,7 @@ export class LoopScreen extends LitElement {
   @property({ type: String }) playStyle: string | null = null;
   @property({ type: Boolean }) sheetOpen = false;
   @property({ type: Boolean }) isAuthenticated = false;
+  @property({ type: Boolean }) isBookmarked = false;
   @property({ type: String }) sheetMode: 'swap' | 'voicing' = 'swap';
   @property({ type: Object }) swapChord: ChordBlock | null = null;
   @property({ type: Number }) swapIndex: number | null = null;
@@ -102,6 +103,7 @@ export class LoopScreen extends LitElement {
 
   @state() private menuMounted = false;
   @state() private menuVisible = false;
+  @state() private flashedIndex: number | null = null;
   @state() private expandedMenuGenre = false;
   @state() private expandedMenuMood = false;
   @state() private expandedAllInstruments = false;
@@ -305,10 +307,16 @@ export class LoopScreen extends LitElement {
       z-index: 1;
       background: var(--cv-surface);
       border: 1.5px solid var(--cv-ink-08);
+      border-radius: 28px;
       padding: 34px 22px;
       overflow: hidden;
       min-height: 180px;
       box-shadow: 0 30px 60px -30px rgba(46, 39, 31, 0.22);
+      transition: border-radius 240ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    :focus-visible {
+      outline: 2.5px solid var(--cv-ink);
+      outline-offset: 2px;
     }
     /* Peeks up from behind the panel's top edge — z-index 0 vs. the panel's 1 means the
        panel's own (opaque) background paints over the lower portion, so only a small sliver
@@ -366,6 +374,11 @@ export class LoopScreen extends LitElement {
       transform: scale(1.06);
       box-shadow: 0 18px 34px -14px rgba(46, 39, 31, 0.32);
     }
+    .chord-chip.flashed {
+      transform: scale(1.08);
+      filter: brightness(1.18);
+      box-shadow: 0 0 0 4px var(--cv-cream), 0 0 0 8px var(--cv-plum, #9B7CA8), 0 20px 36px -12px rgba(46, 39, 31, 0.4);
+    }
     .chord-name {
       font-weight: 800;
       color: var(--cv-ink);
@@ -420,8 +433,21 @@ export class LoopScreen extends LitElement {
     }
     .swap-badge {
       position: absolute;
-      top: -6px;
-      right: -6px;
+      top: -12px;
+      right: -12px;
+      width: 44px;
+      height: 44px;
+      background: transparent;
+      border: none;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 4;
+      touch-action: manipulation;
+    }
+    .swap-badge-inner {
       width: 26px;
       height: 26px;
       border-radius: 50%;
@@ -431,17 +457,28 @@ export class LoopScreen extends LitElement {
       align-items: center;
       justify-content: center;
       box-shadow: 0 2px 6px rgba(46, 39, 31, 0.15);
-      cursor: pointer;
       transition: transform 150ms var(--cv-ease);
-      touch-action: manipulation;
     }
-    .swap-badge:hover {
-      transform: scale(1.12);
+    .swap-badge:hover .swap-badge-inner {
+      transform: scale(1.15);
     }
     .voicing-badge {
       position: absolute;
-      bottom: -6px;
-      left: -6px;
+      bottom: -12px;
+      left: -12px;
+      width: 44px;
+      height: 44px;
+      background: transparent;
+      border: none;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 4;
+      touch-action: manipulation;
+    }
+    .voicing-badge-inner {
       width: 24px;
       height: 24px;
       border-radius: 50%;
@@ -451,12 +488,10 @@ export class LoopScreen extends LitElement {
       align-items: center;
       justify-content: center;
       box-shadow: 0 2px 6px rgba(46, 39, 31, 0.15);
-      cursor: pointer;
       transition: transform 150ms var(--cv-ease);
-      touch-action: manipulation;
     }
-    .voicing-badge:hover {
-      transform: scale(1.12);
+    .voicing-badge:hover .voicing-badge-inner {
+      transform: scale(1.15);
     }
     .transport {
       display: flex;
@@ -1113,6 +1148,16 @@ export class LoopScreen extends LitElement {
     }
   };
 
+  private previewChordTile(chordIndex: number) {
+    this.flashedIndex = chordIndex;
+    setTimeout(() => {
+      if (this.flashedIndex === chordIndex) {
+        this.flashedIndex = null;
+      }
+    }, 320);
+    this.emit('chord-preview', chordIndex);
+  }
+
   private dragStyleFor(pos: number): string {
     const d = this.drag;
     if (d && d.pos === pos) {
@@ -1146,7 +1191,7 @@ export class LoopScreen extends LitElement {
           ${Array.from({ length: MAX_PROGRESSION_LENGTH }, (_, i) => html`<div class="length-segment ${i < len ? 'filled' : ''}"></div>`)}
         </div>
         <div class="length-btn ${len >= MAX_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => len < MAX_PROGRESSION_LENGTH && this.emit('set-length', len + 1)}>+</div>
-        <div class="length-label-text">${len}</div>
+        <div class="length-label-text">${len} ${len === 1 ? 'bar' : 'bars'}</div>
       </div>
     `;
   }
@@ -1170,7 +1215,7 @@ export class LoopScreen extends LitElement {
       ? 0
       : this.snapProgress
         ? (this.progressStep / staffLength) * 100
-        : ((this.progressStep + 1) / staffLength) * 100;
+        : Math.min(100, ((this.progressStep + 1) / staffLength) * 100);
     const panelAnim = PANEL_ANIM[p.mood] || PANEL_ANIM.Dreamy;
     // Staff mirrors the same left-to-right order the chip row shows (post drag-reorder), not
     // the progression's original array order, so the two views always read the same sequence.
@@ -1277,7 +1322,7 @@ export class LoopScreen extends LitElement {
 
         <div class="content">
           ${this.renderHeaderTitle(p, moodColor)}
-          <div class="subcopy">${p.genre} · ${p.chords.length} ${p.chords.length === 1 ? 'chord' : 'chords'} · tap a chord to preview it — use the icons to swap it or view its voicing.</div>
+          <div class="subcopy">Tap a chord to hear it.</div>
 
           <div class="panel-shell">
             ${this.panelPeekMascot.show ? html`
@@ -1285,7 +1330,7 @@ export class LoopScreen extends LitElement {
                 <mascot-character .kind=${this.panelPeekMascot.kind} .scale=${0.45}></mascot-character>
               </div>
             ` : ''}
-            <div class="panel" style="animation:${panelAnim.anim} ${panelAnim.dur}s ${panelAnim.ease} infinite;">
+            <div class="panel">
               <svg class="panel-blob a" width="140" height="140" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B" /></svg>
               <svg class="panel-blob b" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC" /></svg>
               <div class="chip-row">
@@ -1293,31 +1338,38 @@ export class LoopScreen extends LitElement {
                 const c = p.chords[chordIndex];
                 const role = roleForTension(c.tension);
                 const isActive = pos === this.activeIndex;
+                const isFlashed = this.flashedIndex === chordIndex;
                 return html`
                   <div
-                    class="chord-chip ${isActive ? 'active' : ''}"
+                    class="chord-chip ${isActive ? 'active' : ''} ${isFlashed ? 'flashed' : ''}"
                     style="--chip-size:${role.size}px;--chip-radius:${role.radius}px;background:${role.color};${this.dragStyleFor(pos)}"
-                    @pointerdown=${(e: PointerEvent) => this.pressStart(pos, () => this.emit('chord-preview', chordIndex), e)}
+                    @click=${() => this.previewChordTile(chordIndex)}
+                    @pointerdown=${(e: PointerEvent) => this.pressStart(pos, () => this.previewChordTile(chordIndex), e)}
                   >
                     ${this.showTheory ? html`<div class="roman-badge">${c.roman}</div>` : ''}
                     ${isActive ? html`<div class="now-marker"><div class="now-dot"></div><div class="now-text">now</div></div>` : ''}
                     <div class="chord-name" style="--chip-font:${role.fontSize}px;">${c.name}</div>
                     <div class="chord-role">${c.functionLabel}</div>
-                    <div
+                    <button
                       class="swap-badge"
+                      aria-label="Swap chord ${c.name}"
                       @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
                       @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit('chord-tap', chordIndex); }}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4" /><path d="M20 16H7M11 12l-4 4 4 4" /></svg>
-                    </div>
-                    <div
+                      <div class="swap-badge-inner">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4" /><path d="M20 16H7M11 12l-4 4 4 4" /></svg>
+                      </div>
+                    </button>
+                    <button
                       class="voicing-badge"
-                      aria-label="View voicing"
+                      aria-label="View voicing for ${c.name}"
                       @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
                       @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit('chord-voicing-tap', chordIndex); }}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.2 10-6.2 10 6.2 10 6.2-3.6 6.2-10 6.2-10-6.2-10-6.2z" /><circle cx="12" cy="12" r="2.6" /></svg>
-                    </div>
+                      <div class="voicing-badge-inner">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.2 10-6.2 10 6.2 10 6.2-3.6 6.2-10 6.2-10-6.2-10-6.2z" /><circle cx="12" cy="12" r="2.6" /></svg>
+                      </div>
+                    </button>
                   </div>
                 `;
               })}
@@ -1373,8 +1425,8 @@ export class LoopScreen extends LitElement {
               </svg>
             </div>
             ${this.isAuthenticated ? html`
-              <div class="dice-btn" title="Save set" @click=${() => { this.saveModalVisible = true; }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <div class="dice-btn" title="${this.isBookmarked ? 'Saved in sets' : 'Save set'}" @click=${() => { this.saveModalVisible = true; }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="${this.isBookmarked ? '#2E271F' : 'none'}" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                 </svg>
               </div>

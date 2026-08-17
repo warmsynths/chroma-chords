@@ -31,6 +31,7 @@ export class SongScreen extends LitElement {
   @property({ type: String }) instrument: string | null = null;
   @property({ type: String }) playStyle: string | null = null;
   @property({ type: Boolean }) isAuthenticated = false;
+  @property({ type: Boolean }) isBookmarked = false;
 
   @state() private expandedInstrument = false;
   @state() private expandedPlayStyle = false;
@@ -495,8 +496,8 @@ export class SongScreen extends LitElement {
                 ></div>
               </div>
               ${this.isAuthenticated ? html`
-                <div class="save-btn" title="Save set" @click=${() => { this.saveModalVisible = true; }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <div class="save-btn" title="${this.isBookmarked ? 'Saved in sets' : 'Save set'}" @click=${() => { this.saveModalVisible = true; }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="${this.isBookmarked ? '#2E271F' : 'none'}" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                   </svg>
                 </div>

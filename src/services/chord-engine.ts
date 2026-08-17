@@ -559,11 +559,24 @@ export function notesForSymbol(symbol: string, preferFlat: boolean): string[] {
 }
 
 export async function loadChordData(): Promise<RawChordData> {
-  const dataUrl = new URL('./chroma_chords_data.json', import.meta.url).href;
-  const backupUrl = new URL('./chord_voyager_data.json', import.meta.url).href;
-  let res = await fetch(dataUrl);
-  if (!res.ok) {
-    res = await fetch(backupUrl);
+  const base = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL) ? (import.meta as any).env.BASE_URL : '/';
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  const primaryUrl = `${cleanBase}chroma_chords_data.json`;
+  const fallbackUrl = `${cleanBase}chord_voyager_data.json`;
+
+  let res = await fetch(primaryUrl).catch(() => null);
+  if (!res || !res.ok) {
+    res = await fetch(fallbackUrl).catch(() => null);
+  }
+  if (!res || !res.ok) {
+    res = await fetch('/chroma_chords_data.json').catch(() => null);
+  }
+  if (!res || !res.ok) {
+    res = await fetch('/chord_voyager_data.json').catch(() => null);
+  }
+  if (!res || !res.ok) {
+    const dataUrl = new URL('./chroma_chords_data.json', import.meta.url).href;
+    res = await fetch(dataUrl);
   }
   if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
   const data = (await res.json()) as RawChordData;

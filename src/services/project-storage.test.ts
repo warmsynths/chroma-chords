@@ -50,4 +50,66 @@ describe('ProjectStorageManager Deep Module', () => {
     expect(AUTHORIZED_HASHES).toContain(hash);
   });
 
+  it('tracks per-set persistence state and supports undo deletion', () => {
+    const setA: ProjectData = {
+      id: 'set-a',
+      name: 'Summer Groove',
+      lastModified: Date.now(),
+      genre: 'Pop',
+      mood: 'Warm',
+      key: 'C',
+      scaleType: 'MAJOR',
+      bpm: 120,
+      chords: [],
+    };
+    const setB: ProjectData = {
+      id: 'set-b',
+      name: 'Night Drive',
+      lastModified: Date.now(),
+      genre: 'Lo-fi/Chill',
+      mood: 'Melancholy',
+      key: 'Am',
+      scaleType: 'MINOR',
+      bpm: 85,
+      chords: [],
+    };
+
+    expect(manager.isProjectSaved('set-a')).toBe(false);
+    manager.saveProject(setA);
+    manager.saveProject(setB);
+
+    expect(manager.isProjectSaved('set-a')).toBe(true);
+    expect(manager.isProjectSaved('set-b')).toBe(true);
+    expect(manager.isProjectSaved('set-c')).toBe(false);
+    expect(manager.getProjects()).toHaveLength(2);
+
+    // Undo simulation (delete project by ID)
+    manager.deleteProject('set-b');
+    expect(manager.isProjectSaved('set-b')).toBe(false);
+    expect(manager.getProjects()).toHaveLength(1);
+    expect(manager.getProjects()[0].id).toBe('set-a');
+  });
+
+  it('updates project name on inline rename mutations', () => {
+    const set: ProjectData = {
+      id: 'set-rename',
+      name: 'Old Title',
+      lastModified: Date.now(),
+      genre: 'Pop',
+      mood: 'Dreamy',
+      key: 'C',
+      scaleType: 'MAJOR',
+      bpm: 120,
+      chords: [],
+    };
+    manager.saveProject(set);
+    expect(manager.getProjects()[0].name).toBe('Old Title');
+
+    const loaded = manager.getProjects()[0];
+    loaded.name = 'New Vibey Title';
+    manager.saveProject(loaded);
+
+    expect(manager.getProjects()[0].name).toBe('New Vibey Title');
+    expect(manager.getProjects()).toHaveLength(1);
+  });
 });

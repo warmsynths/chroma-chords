@@ -91,5 +91,15 @@ describe('PlaybackEngine Deep Module', () => {
     vi.advanceTimersByTime(2000); // Step 2 (moves to section 1, index 0)
     expect(tickSpy).toHaveBeenCalledWith(expect.any(Number), 2, 1, 4, true);
   });
+
+  it('auditions individual chords directly without requiring continuous autoplay', () => {
+    engine.setProgression(sampleProgression);
+    expect(engine.isPlaying()).toBe(false);
+
+    // Can audition specific chord index or specific chord notes directly
+    engine.playChordAtIndex(0, 0.8);
+    engine.playChordNotes(['C4', 'E4', 'G4'], 0.8);
+    expect(engine.isPlaying()).toBe(false);
+  });
 });
 

@@ -46,11 +46,14 @@ export class ChromaChordsApp extends LitElement {
   @state() private pendingChordSuggestion: NormalizedPrompt | null = null;
   @state() private userEmail: string | null = null;
   @state() private isAuthenticated = false;
+  @state() private toastMessage: string | null = null;
+  @state() private toastUndoId: string | null = null;
 
   private currentProjectId: string | null = null;
   private activeSearchPrompt: string | null = null;
   private unsubscribeAuth: (() => void) | null = null;
   private unsubscribeTick: (() => void) | null = null;
+  private toastDismissTimeout: ReturnType<typeof setTimeout> | null = null;
 
   static styles = css`
     :host {
@@ -98,6 +101,51 @@ export class ChromaChordsApp extends LitElement {
       transform: scale(1);
       transition: opacity 200ms var(--cv-ease), transform 240ms var(--cv-ease);
     }
+    .save-toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(0);
+      background: var(--cv-ink);
+      color: var(--cv-cream);
+      padding: 10px 18px 10px 20px;
+      border-radius: 100px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 13.5px;
+      font-weight: 700;
+      box-shadow: 0 16px 36px -10px rgba(46, 39, 31, 0.45);
+      z-index: 99;
+      animation: cv-toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes cv-toast-in {
+      from { opacity: 0; transform: translateX(-50%) translateY(14px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    .toast-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toast-btn {
+      background: rgba(253, 246, 235, 0.16);
+      color: var(--cv-cream);
+      border: none;
+      padding: 4px 10px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s ease;
+    }
+    .toast-btn:hover {
+      background: rgba(253, 246, 235, 0.28);
+    }
+    .toast-btn.undo {
+      color: #F2A79B;
+    }
     @starting-style {
       .screen-view {
         opacity: 0;
@@ -109,10 +157,14 @@ export class ChromaChordsApp extends LitElement {
         transition: opacity 150ms ease;
         transform: none !important;
       }
+      .save-toast {
+        animation: none;
+      }
     }
   `;
 
-  async firstUpdated() {
+  connectedCallback() {
+    super.connectedCallback();
     this.showTheory = (localStorage.getItem('chroma-chords-show-theory') || localStorage.getItem('chord-voyager-show-theory')) === 'true';
     const savedInstrument = localStorage.getItem('chroma-chords-instrument');
     if (savedInstrument && USER_INSTRUMENTS.some(i => i.name === savedInstrument)) this.instrument = savedInstrument;
@@ -125,7 +177,6 @@ export class ChromaChordsApp extends LitElement {
     this.unsubscribeAuth = projectStorage.subscribeAuthState((email, authenticated) => {
       this.userEmail = email;
       this.isAuthenticated = authenticated;
-      this.requestUpdate();
     });
 
     this.unsubscribeTick = playbackEngine.subscribeTick((activeIdx, step, secIdx, totalSteps, isSongMode) => {
@@ -138,18 +189,79 @@ export class ChromaChordsApp extends LitElement {
         this.totalSongSteps = totalSteps;
       }
       this.playing = playbackEngine.isPlaying();
-      this.requestUpdate();
     });
 
-    try {
-      this.chordData = await loadChordData();
-    } catch (err) {
+    window.addEventListener('hashchange', this.onHashChange);
+    window.addEventListener('keydown', this.onGlobalKeyDown);
+    this.syncRouteFromHash();
+
+    loadChordData().then(data => {
+      this.chordData = data;
+    }).catch(err => {
       console.error('Failed to load chord data:', err);
-    }
+    });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    playbackEngine.stopAutoplay();
+    window.removeEventListener('hashchange', this.onHashChange);
+    window.removeEventListener('keydown', this.onGlobalKeyDown);
+    if (this.unsubscribeAuth) this.unsubscribeAuth();
+    if (this.unsubscribeTick) this.unsubscribeTick();
+    if (this.toastDismissTimeout) clearTimeout(this.toastDismissTimeout);
   }
 
   get isAdmin(): boolean {
     return projectStorage.isAdmin;
+  }
+
+  private onHashChange = () => {
+    this.syncRouteFromHash();
+  };
+
+  private onGlobalKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      if (this.sheetOpen) {
+        this.sheetOpen = false;
+        this.swapIndex = null;
+        this.requestUpdate();
+      }
+    }
+  };
+
+  private syncRouteFromHash() {
+    const hash = window.location.hash.replace(/^#/, '').toLowerCase();
+    if (hash === 'sets' || hash === '11a') {
+      if (this.screen !== 'sets') {
+        this.previousScreenBeforeSets = this.screen;
+      }
+      this.screen = 'sets';
+      this.sheetOpen = false;
+    } else if (hash === 'song' || hash === '5a') {
+      if (this.progression) {
+        this.screen = 'song';
+        playbackEngine.setSong(this.sections);
+      } else {
+        this.screen = 'seed';
+      }
+    } else if (hash === 'loop' || hash === '3a' || hash === '8a') {
+      if (this.progression) {
+        this.screen = 'loop';
+      } else {
+        this.screen = 'seed';
+      }
+    } else if (hash === 'seed' || hash === '2a' || !hash) {
+      this.screen = 'seed';
+    }
+  }
+
+  private setScreen(nextScreen: Screen) {
+    this.screen = nextScreen;
+    const targetHash = `#${nextScreen}`;
+    if (window.location.hash !== targetHash) {
+      history.pushState(null, '', targetHash);
+    }
   }
 
   private onLoginRequest = async () => {
@@ -159,13 +271,6 @@ export class ChromaChordsApp extends LitElement {
   private onLogoutRequest = () => {
     projectStorage.logout();
   };
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    playbackEngine.stopAutoplay();
-    if (this.unsubscribeAuth) this.unsubscribeAuth();
-    if (this.unsubscribeTick) this.unsubscribeTick();
-  }
 
   private onGenreChange(e: CustomEvent<string>) {
     this.genre = e.detail;
@@ -223,7 +328,7 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.setProgression(progression, this.order);
     playbackEngine.reset();
 
-    this.screen = 'loop';
+    this.setScreen('loop');
     this.sections = SongArranger.createInitialSong(progression, this.order);
     this.activeSectionIdx = 0;
     this.pendingChordSuggestion = null;
@@ -304,16 +409,29 @@ export class ChromaChordsApp extends LitElement {
   private onBack() {
     playbackEngine.stopAutoplay();
     this.playing = false;
-    this.screen = 'seed';
+    this.setScreen('seed');
     this.sheetOpen = false;
     this.keyOverride = null;
     this.scaleOverride = null;
   }
 
+  private previousScreenBeforeSets: Screen = 'seed';
+
   private onViewSets() {
     playbackEngine.stopAutoplay();
     this.playing = false;
-    this.screen = 'sets';
+    this.previousScreenBeforeSets = this.screen === 'sets' ? 'seed' : this.screen;
+    this.setScreen('sets');
+  }
+
+  private onBackFromSets() {
+    playbackEngine.stopAutoplay();
+    this.playing = false;
+    if (this.progression) {
+      this.setScreen(this.previousScreenBeforeSets === 'song' ? 'song' : 'loop');
+    } else {
+      this.setScreen('seed');
+    }
   }
 
   private onLoadProject(e: CustomEvent<string>) {
@@ -334,7 +452,7 @@ export class ChromaChordsApp extends LitElement {
     this.showTheory = p.showTheory ?? this.showTheory;
     
     playbackEngine.setProgression(this.progression, this.order);
-    this.screen = 'loop';
+    this.setScreen('loop');
     this.sections = SongArranger.createInitialSong(this.progression, this.order);
     this.activeSectionIdx = 0;
   }
@@ -345,6 +463,15 @@ export class ChromaChordsApp extends LitElement {
       this.currentProjectId = null;
     }
     this.requestUpdate();
+  }
+
+  private onRenameProject(e: CustomEvent<{ id: string; name: string }>) {
+    const p = projectStorage.getProjects().find(proj => proj.id === e.detail.id);
+    if (p) {
+      p.name = e.detail.name;
+      projectStorage.saveProject(p);
+      this.requestUpdate();
+    }
   }
 
   private async onSyncProjects() {
@@ -403,6 +530,10 @@ export class ChromaChordsApp extends LitElement {
 
   private onChordPreview(e: CustomEvent<number>) {
     if (!this.progression) return;
+    if (this.playing) {
+      playbackEngine.stopAutoplay();
+      this.playing = false;
+    }
     playbackEngine.playChordAtIndex(e.detail, 0.8);
   }
 
@@ -439,7 +570,7 @@ export class ChromaChordsApp extends LitElement {
   private onBackToProgression() {
     playbackEngine.stopAutoplay();
     this.playing = false;
-    this.screen = 'loop';
+    this.setScreen('loop');
     if (this.progression) {
       playbackEngine.setProgression(this.progression, this.order);
     }
@@ -449,7 +580,7 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.stopAutoplay();
     this.playing = false;
     this.sheetOpen = false;
-    this.screen = 'song';
+    this.setScreen('song');
     playbackEngine.setSong(this.sections);
   }
 
@@ -465,7 +596,7 @@ export class ChromaChordsApp extends LitElement {
     this.keyOverride = section.progression.key;
     this.scaleOverride = section.progression.scaleType;
     this.sheetOpen = false;
-    this.screen = 'loop';
+    this.setScreen('loop');
 
     playbackEngine.setProgression(this.progression, this.order);
     if (this.playing) {
@@ -482,6 +613,34 @@ export class ChromaChordsApp extends LitElement {
     if (this.screen === 'song') {
       playbackEngine.setSong(this.sections);
     }
+  }
+
+  private showToast(msg: string, undoId?: string) {
+    if (this.toastDismissTimeout) clearTimeout(this.toastDismissTimeout);
+    this.toastMessage = msg;
+    this.toastUndoId = undoId || null;
+    this.toastDismissTimeout = setTimeout(() => {
+      this.toastMessage = null;
+      this.toastUndoId = null;
+    }, 4500);
+  }
+
+  private onToastUndo() {
+    if (this.toastUndoId) {
+      projectStorage.deleteProject(this.toastUndoId);
+      if (this.currentProjectId === this.toastUndoId) {
+        this.currentProjectId = null;
+      }
+      this.toastMessage = null;
+      this.toastUndoId = null;
+      this.requestUpdate();
+    }
+  }
+
+  private onToastView() {
+    this.toastMessage = null;
+    this.toastUndoId = null;
+    this.onViewSets();
   }
 
   private saveProject(customName?: string) {
@@ -508,17 +667,22 @@ export class ChromaChordsApp extends LitElement {
     if (customName) {
       projectStorage.scheduleCloudSync();
     }
+    this.showToast(`Saved "${name}"`, id);
+    this.requestUpdate();
   }
 
   render() {
     let screenContent;
+    const isBookmarked = Boolean(this.currentProjectId && projectStorage.isProjectSaved(this.currentProjectId));
+
     if (this.screen === 'sets') {
       screenContent = html`
         <sets-screen
           .projects=${projectStorage.getProjects()}
-          @back=${this.onBack}
+          @back=${this.onBackFromSets}
           @load-project=${this.onLoadProject}
           @delete-project=${this.onDeleteProject}
+          @rename-project=${this.onRenameProject}
           @sync-projects=${this.onSyncProjects}
         ></sets-screen>
       `;
@@ -553,6 +717,7 @@ export class ChromaChordsApp extends LitElement {
           .instrument=${this.instrument}
           .playStyle=${this.playStyle}
           .isAuthenticated=${this.isAuthenticated}
+          .isBookmarked=${isBookmarked}
           @select-section=${this.onSelectSection}
           @add-section=${this.onAddSection}
           @back-to-progression=${this.onBackToProgression}
@@ -577,6 +742,7 @@ export class ChromaChordsApp extends LitElement {
           .instrument=${this.instrument}
           .playStyle=${this.playStyle}
           .isAuthenticated=${this.isAuthenticated}
+          .isBookmarked=${isBookmarked}
           .sheetOpen=${this.sheetOpen}
           .sheetMode=${this.sheetMode}
           .swapChord=${swapChord}
@@ -608,7 +774,22 @@ export class ChromaChordsApp extends LitElement {
       `;
     }
 
-    return html`<div class="screen-view">${screenContent}</div>`;
+    return html`
+      <div class="screen-view">
+        ${screenContent}
+        ${this.toastMessage ? html`
+          <div class="save-toast">
+            <span>${this.toastMessage}</span>
+            <div class="toast-actions">
+              <button class="toast-btn" @click=${this.onToastView}>View</button>
+              ${this.toastUndoId ? html`
+                <button class="toast-btn undo" @click=${this.onToastUndo}>Undo</button>
+              ` : ''}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
   }
 }
 

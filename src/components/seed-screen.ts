@@ -19,6 +19,10 @@ const MASCOT_SLOTS = [
 
 const CLASSIFY_DEBOUNCE_MS = 800;
 
+export const CAPACITY_MAX = 4;
+export const RECHARGE_INTERVAL_MS = 45000;
+export const STORAGE_CAPACITY_KEY = 'chroma_chords_capacity_v2';
+
 const GENRE_ICON_PALETTE = ['#F2A79B', '#9CC0EC', '#F6D98B'];
 // index % 3 -> corner radius on the genre pill's icon swatch: rounded square, squarer, near-circle.
 const GENRE_ICON_RADIUS = [6, 3, 12];
@@ -102,6 +106,87 @@ export class SeedScreen extends LitElement {
   @state() private googleCooldownSec = 4;
   @state() private orRemaining = 50;
   @state() private orLimit = 50;
+
+  @state() private capacityCharges = CAPACITY_MAX;
+  @state() private rechargeNextSec = 45;
+  @state() private showCapacityNote = false;
+  private lastCapacityTime = Date.now();
+  private capacityTimer: ReturnType<typeof setInterval> | null = null;
+
+  private initCapacity() {
+    try {
+      const raw = localStorage.getItem(STORAGE_CAPACITY_KEY);
+      const now = Date.now();
+      if (raw) {
+        const data = JSON.parse(raw);
+        const charges = typeof data.charges === 'number' ? data.charges : CAPACITY_MAX;
+        const lastTime = typeof data.lastTime === 'number' ? data.lastTime : now;
+        if (charges < CAPACITY_MAX) {
+          const elapsed = Math.max(0, now - lastTime);
+          const restored = Math.floor(elapsed / RECHARGE_INTERVAL_MS);
+          this.capacityCharges = Math.min(CAPACITY_MAX, charges + restored);
+          const remainder = elapsed % RECHARGE_INTERVAL_MS;
+          this.rechargeNextSec = Math.max(1, Math.ceil((RECHARGE_INTERVAL_MS - remainder) / 1000));
+          this.lastCapacityTime = now - remainder;
+        } else {
+          this.capacityCharges = CAPACITY_MAX;
+          this.rechargeNextSec = 45;
+          this.lastCapacityTime = now;
+        }
+      } else {
+        this.capacityCharges = CAPACITY_MAX;
+        this.rechargeNextSec = 45;
+        this.lastCapacityTime = now;
+      }
+    } catch {
+      this.capacityCharges = CAPACITY_MAX;
+      this.rechargeNextSec = 45;
+    }
+    this.saveCapacity();
+    this.startCapacityRechargeTimer();
+  }
+
+  private saveCapacity() {
+    try {
+      localStorage.setItem(STORAGE_CAPACITY_KEY, JSON.stringify({
+        charges: this.capacityCharges,
+        lastTime: this.lastCapacityTime,
+      }));
+    } catch {}
+  }
+
+  private startCapacityRechargeTimer() {
+    if (this.capacityTimer) clearInterval(this.capacityTimer);
+    this.capacityTimer = setInterval(() => {
+      if (this.capacityCharges < CAPACITY_MAX) {
+        const now = Date.now();
+        const elapsed = Math.max(0, now - this.lastCapacityTime);
+        if (elapsed >= RECHARGE_INTERVAL_MS) {
+          const restored = Math.floor(elapsed / RECHARGE_INTERVAL_MS);
+          this.capacityCharges = Math.min(CAPACITY_MAX, this.capacityCharges + restored);
+          this.lastCapacityTime = now - (elapsed % RECHARGE_INTERVAL_MS);
+          this.saveCapacity();
+        }
+        const remainder = (now - this.lastCapacityTime) % RECHARGE_INTERVAL_MS;
+        this.rechargeNextSec = Math.max(1, Math.ceil((RECHARGE_INTERVAL_MS - remainder) / 1000));
+      } else {
+        this.rechargeNextSec = 45;
+      }
+    }, 1000);
+  }
+
+  private spendCapacityCharge(): boolean {
+    if (this.capacityCharges <= 0) {
+      this.showCapacityNote = true;
+      return false;
+    }
+    if (this.capacityCharges === CAPACITY_MAX) {
+      this.lastCapacityTime = Date.now();
+    }
+    this.capacityCharges -= 1;
+    this.saveCapacity();
+    return true;
+  }
 
   private loadingTimer: ReturnType<typeof setInterval> | null = null;
   private cooldownTimer: ReturnType<typeof setInterval> | null = null;
@@ -206,8 +291,8 @@ export class SeedScreen extends LitElement {
       { key: 'squircle', r: 16 }
     ];
 
-    // Reduced count (10 shapes) for open negative space & serene atmosphere
-    const count = 10;
+    // Pruned count (3 shapes) within strict motion budget for serene atmospheric drift
+    const count = 3;
     const bodies = [];
 
     for (let i = 0; i < count; i++) {
@@ -454,6 +539,7 @@ export class SeedScreen extends LitElement {
     this.placeholderTimer = setInterval(() => {
       this.placeholderIdx = (this.placeholderIdx + 1) % VIBE_EXAMPLES.length;
     }, 2800);
+    this.initCapacity();
     this.loadKeyInfo();
     this.initJellyBodies();
   }
@@ -478,6 +564,7 @@ export class SeedScreen extends LitElement {
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
     if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
     if (this.cooldownTimer) clearInterval(this.cooldownTimer);
+    if (this.capacityTimer) clearInterval(this.capacityTimer);
     this.stopLoadingTimer();
   }
 
@@ -571,19 +658,29 @@ export class SeedScreen extends LitElement {
       padding: 8px 10px 8px 20px;
       box-shadow: 0 14px 30px -20px rgba(46, 39, 31, 0.5);
     }
-    @property --fill-pct {
-      syntax: '<percentage>';
-      inherits: false;
-      initial-value: 0%;
+    .capacity-ring-shell {
+      position: relative;
+      border-radius: 104px;
+      padding: 4px;
+      cursor: pointer;
+      transition: background 320ms ease;
     }
-    .cooldown-ring {
-      position: absolute;
-      inset: -2.5px;
-      border-radius: 103px;
-      background: conic-gradient(#C6564B var(--fill-pct), var(--cv-ink-12) var(--fill-pct));
-      z-index: 0;
-      transition: --fill-pct 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.4s ease;
-      filter: drop-shadow(0 0 6px rgba(198, 86, 75, 0.35));
+    .capacity-ring-shell.pulsing {
+      animation: cvfv-ring-pulse 2s ease-in-out infinite;
+    }
+    @keyframes cvfv-ring-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(242, 167, 155, 0.55); }
+      50% { box-shadow: 0 0 0 6px rgba(242, 167, 155, 0); }
+    }
+    .capacity-note {
+      text-align: center;
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--cv-label);
+      cursor: pointer;
+      user-select: none;
+      transition: opacity 0.2s ease;
     }
     .vibe-admin-btn {
       flex-shrink: 0;
@@ -620,6 +717,31 @@ export class SeedScreen extends LitElement {
       color: var(--cv-label);
       animation: cv-spin 1s linear infinite;
     }
+    .vibe-submit-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      cursor: pointer;
+      color: var(--cv-ink);
+      box-shadow: 0 4px 12px -4px rgba(46, 39, 31, 0.25);
+      transition: transform 160ms var(--cv-ease), opacity 200ms ease, background 200ms ease;
+    }
+    .vibe-submit-btn:hover {
+      transform: scale(1.06);
+    }
+    .vibe-submit-btn:active {
+      transform: scale(0.95);
+    }
+    .vibe-submit-btn.disabled {
+      opacity: 0.45;
+      cursor: default;
+      pointer-events: none;
+    }
     /* Peeks up from behind the pill's top edge — z-index 0 vs. the pill's 1 means the pill's
        own (opaque) background paints over the lower portion, so only the top sliver shows,
        like the character is looking out over the rim of a little window. */
@@ -644,9 +766,13 @@ export class SeedScreen extends LitElement {
       min-width: 0;
     }
     .vibe-input::placeholder {
-      color: rgba(46, 39, 31, 0.34);
+      color: rgba(46, 39, 31, 0.55);
       opacity: 1;
       transition: color 0.3s ease;
+    }
+    :focus-visible {
+      outline: 2.5px solid var(--cv-ink);
+      outline-offset: 2px;
     }
     .suggestion-wrap {
       text-align: center;
@@ -1232,9 +1358,14 @@ export class SeedScreen extends LitElement {
     this.dispatchEvent(new CustomEvent('mood-change', { detail: name, bubbles: true, composed: true }));
   }
 
-  private generate() {
+  private generate = () => {
+    if (this.capacityCharges <= 0) {
+      this.showCapacityNote = true;
+      return;
+    }
+    this.spendCapacityCharge();
     this.dispatchEvent(new CustomEvent('generate', { detail: { promptText: this.freeText.trim() }, bubbles: true, composed: true }));
-  }
+  };
 
   private setLength(n: number) {
     this.dispatchEvent(new CustomEvent('length-change', { detail: n, bubbles: true, composed: true }));
@@ -1378,6 +1509,17 @@ export class SeedScreen extends LitElement {
       best = this.llmResolved ? this.llmSuggestion : heuristicClassify(freeTextTrimmed);
     }
 
+    // 4 discrete capacity arc segments
+    const tokens = this.capacityCharges;
+    const GAP = 8, SEG = 360 / CAPACITY_MAX;
+    const stops: string[] = [];
+    for (let i = 0; i < CAPACITY_MAX; i++) {
+      const from = i * SEG;
+      stops.push(`${i < tokens ? '#F2A79B' : 'rgba(46,39,31,0.13)'} ${from}deg ${from + SEG - GAP}deg`);
+      stops.push(`transparent ${from + SEG - GAP}deg ${from + SEG}deg`);
+    }
+    const capacityRingBackground = `conic-gradient(from -90deg, ${stops.join(', ')})`;
+
     return html`
       <div class="frame" @mousemove=${this.onFrameMouseMove} @mouseleave=${this.onFrameMouseLeave}>
         <div class="aquarium-layer">
@@ -1424,32 +1566,61 @@ export class SeedScreen extends LitElement {
                 <mascot-character .kind=${this.peekMascot.kind} .scale=${0.4}></mascot-character>
               </div>
             ` : ''}
-            <div class="cooldown-ring" style="--fill-pct: ${this.currentLimit > 0 ? Math.max(0, (this.currentLimit - this.currentRemaining) / this.currentLimit * 100) : 0}%;"></div>
-            <div class="vibe-input-wrap">
-              ${this.isClassifying ? html`
-                <div class="vibe-input-icon" title="Classifying vibe...">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+            <div
+              class="capacity-ring-shell ${this.capacityCharges === 0 ? 'pulsing' : ''}"
+              style="background: ${capacityRingBackground};"
+              @click=${() => { this.showCapacityNote = !this.showCapacityNote; }}
+            >
+              <div class="vibe-input-wrap">
+                ${this.isClassifying ? html`
+                  <div class="vibe-input-icon" title="Classifying vibe...">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                    </svg>
+                  </div>
+                ` : ''}
+                <input
+                  type="text"
+                  class="vibe-input"
+                  .value=${this.freeText}
+                  @input=${(e: Event) => this.onFreeTextChange(e)}
+                  @keydown=${(e: KeyboardEvent) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      this.generate();
+                    }
+                  }}
+                  placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
+                />
+                ${this.isAdmin ? html`
+                  <button class="vibe-admin-btn" @click=${(e: Event) => { e.stopPropagation(); this.showAdminModal = true; }} title="AI Model Configuration">
+                    ⚡ ${this.currentProvider === 'google'
+                      ? `Google AI (${this.googleRemaining} left)`
+                      : this.currentProvider === 'anthropic'
+                          ? 'Claude'
+                          : `OpenRouter (${this.orRemaining} left)`}
+                  </button>
+                ` : ''}
+                <button
+                  class="vibe-submit-btn ${!this.freeText.trim() || this.capacityCharges <= 0 ? 'disabled' : ''}"
+                  style="background: ${moodColor}; opacity: ${this.capacityCharges > 0 ? '1' : '0.4'};"
+                  @click=${(e: Event) => { e.stopPropagation(); this.generate(); }}
+                  aria-label="Hear this vibe as chords"
+                  title="Generate progression from vibe"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
                   </svg>
-                </div>
-              ` : ''}
-              <input
-                type="text"
-                class="vibe-input"
-                .value=${this.freeText}
-                @input=${(e: Event) => this.onFreeTextChange(e)}
-                placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
-              />
-              ${this.isAdmin ? html`
-                <button class="vibe-admin-btn" @click=${() => { this.showAdminModal = true; }} title="AI Model Configuration">
-                  ⚡ ${this.currentProvider === 'google'
-                    ? `Google AI (${this.googleRemaining} left)`
-                    : this.currentProvider === 'anthropic'
-                        ? 'Claude'
-                        : `OpenRouter (${this.orRemaining} left)`}
                 </button>
-              ` : ''}
+              </div>
             </div>
+            ${this.showCapacityNote ? html`
+              <div class="capacity-note" @click=${() => { this.showCapacityNote = false; }}>
+                ${this.capacityCharges > 0
+                  ? `${this.capacityCharges} of ${CAPACITY_MAX} generates left`
+                  : `Cooling down — one more in ${this.rechargeNextSec}s`}
+              </div>
+            ` : ''}
           </div>
           ${this.isClassifying ? html`
             <div class="suggestion-wrap">
@@ -1524,7 +1695,11 @@ export class SeedScreen extends LitElement {
             <div class="length-label-text">${this.length} ${this.length === 1 ? 'chord' : 'chords'}</div>
           </div>
 
-          <button class="cta" style="background:${moodColor}" @click=${this.generate}>
+          <button
+            class="cta ${this.capacityCharges <= 0 ? 'disabled' : ''}"
+            style="background:${moodColor}; opacity: ${this.capacityCharges > 0 ? '1' : '0.4'};"
+            @click=${this.generate}
+          >
             ${best ? "Let's go to your progression" : 'Generate loop'} <span>→</span>
           </button>
           <div class="caption">Nothing here is permanent — swap any chord after.</div>

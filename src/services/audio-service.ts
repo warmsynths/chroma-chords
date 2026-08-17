@@ -1,124 +1,141 @@
 import * as Tone from 'tone';
 
-// Limiter/compressor to prevent clipping when multiple notes play simultaneously.
-// Tuned to act transparently — fast attack/release catches peaks without audible pumping.
-const limiter = new Tone.Compressor({
-  threshold: -6,   // Start compressing when summed signal nears 0 dBFS
-  ratio: 20,       // High ratio makes it behave like a limiter
-  attack: 0.002,   // 2ms attack — fast enough to catch transient peaks
-  release: 0.1,    // 100ms release — quick recovery without pumping artifacts
-  knee: 3,         // Slight soft knee for transparent sound
-}).toDestination();
+let limiter: Tone.Compressor | null = null;
+let sampler: Tone.Sampler | null = null;
+let organ: Tone.PolySynth | null = null;
+let cinematicReverb: Tone.Reverb | null = null;
+let padStrings: Tone.PolySynth | null = null;
+let junoChorus: Tone.Chorus | null = null;
+let junoPad: Tone.PolySynth | null = null;
+let stab: Tone.PolySynth | null = null;
+let epiano: Tone.PolySynth | null = null;
+let guitar: Tone.PolySynth | null = null;
+let bell: Tone.PolySynth | null = null;
 
-// High-quality sampled 1977 Rhodes Mark I Stage 73 electric piano
-// Sourced from J. Learman open-source CC0 samples hosted via GitHub Pages
-const sampler = new Tone.Sampler({
-  urls: {
-    "F1": "A_029__F1_5.m4a",
-    "B1": "A_035__B1_5.m4a",
-    "E2": "A_040__E2_5.m4a",
-    "A2": "A_045__A2_5.m4a",
-    "D3": "A_050__D3_5.m4a",
-    "G3": "A_055__G3_5.m4a",
-    "B3": "A_059__B3_5.m4a",
-    "D4": "A_062__D4_5.m4a",
-    "F4": "A_065__F4_5.m4a",
-    "B4": "A_071__B4_5.m4a",
-    "E5": "A_076__E5_5.m4a",
-    "A5": "A_081__A5_5.m4a",
-    "D6": "A_086__D6_5.m4a",
-    "G6": "A_091__G6_5.m4a"
-  },
-  baseUrl: "https://danigb.github.io/samples/jlearman/rhodes-mki/jRhodes3d-mono/",
-  volume: -12, // Adjusted for clear presence with headroom before limiter
-  onload: () => {
-    console.log("Rhodes piano sampler loaded successfully!");
-  },
-  onerror: (err) => {
-    console.warn("Failed to load Rhodes piano sampler:", err);
+function getLimiter(): Tone.Compressor {
+  if (!limiter) {
+    limiter = new Tone.Compressor({
+      threshold: -6,
+      ratio: 20,
+      attack: 0.002,
+      release: 0.1,
+      knee: 3,
+    }).toDestination();
   }
-}).connect(limiter);
+  return limiter;
+}
 
-// Additional voices for genres that shouldn't just be the Rhodes — all synthesized via
-// Tone.js primitives (no extra samples/network requests) so they're available instantly.
-
-// Gospel: drawbar-organ approximation — a few detuned square partials, fast percussive attack.
-const organ = new Tone.PolySynth(Tone.Synth, {
-  oscillator: { type: 'fatsquare', count: 3, spread: 20 },
-  envelope: { attack: 0.015, decay: 0.1, sustain: 0.9, release: 0.35 },
-  volume: -16,
-}).connect(limiter);
-
-// Cinematic: soft sustained strings/pad, long attack/release through reverb.
-const cinematicReverb = new Tone.Reverb({ decay: 4.5, wet: 0.35 }).connect(limiter);
-const padStrings = new Tone.PolySynth(Tone.Synth, {
-  oscillator: { type: 'sine' },
-  envelope: { attack: 0.9, decay: 0.4, sustain: 0.8, release: 2.8 },
-  volume: -15,
-}).connect(cinematicReverb);
-
-// Synthwave: Juno-60 style pad — detuned unison sawtooths through a slow chorus.
-const junoChorus = new Tone.Chorus({ frequency: 0.8, delayTime: 3.5, depth: 0.7, wet: 0.5 }).start().connect(limiter);
-const junoPad = new Tone.PolySynth(Tone.Synth, {
-  oscillator: { type: 'fatsawtooth', count: 3, spread: 25 },
-  envelope: { attack: 0.35, decay: 0.4, sustain: 0.85, release: 1.6 },
-  volume: -16,
-}).connect(junoChorus);
-
-// House/Dance: short percussive filter-swept stab.
-const stab = new Tone.PolySynth(Tone.MonoSynth, {
-  oscillator: { type: 'square' },
-  envelope: { attack: 0.004, decay: 0.14, sustain: 0.12, release: 0.15 },
-  filterEnvelope: { attack: 0.004, decay: 0.15, sustain: 0.1, release: 0.2, baseFrequency: 300, octaves: 4 },
-  volume: -14,
-}).connect(limiter);
-
-// User-selectable "Rhodes" instrument option: a synthesized FM electric piano — brighter and
-// more bell-like than the sampled Rhodes above (labeled "Piano"), so the two options in the
-// instrument picker are audibly distinct rather than both pointing at the same sampler.
-const epiano = new Tone.PolySynth(Tone.FMSynth, {
-  harmonicity: 2,
-  modulationIndex: 3.5,
-  envelope: { attack: 0.008, decay: 0.6, sustain: 0.25, release: 1.2 },
-  modulationEnvelope: { attack: 0.008, decay: 0.4, sustain: 0.1, release: 0.6 },
-  volume: -14,
-}).connect(limiter);
-
-// User-selectable "Nylon Guitar" instrument option. Tone.PluckSynth (true Karplus-Strong
-// string synthesis) would be the closest match, but it extends Instrument rather than
-// Monophonic and has no triggerAttackRelease — incompatible with both PolySynth and this
-// file's existing triggerAttackRelease-based playback path. A triangle oscillator with a fast
-// pluck-like envelope approximates the character instead; worth revisiting with a proper
-// Karplus-Strong voice pool later.
-const guitar = new Tone.PolySynth(Tone.Synth, {
-  oscillator: { type: 'triangle' },
-  envelope: { attack: 0.004, decay: 0.5, sustain: 0.05, release: 0.6 },
-  volume: -13,
-}).connect(limiter);
-
-// User-selectable "Synth Bell" instrument option — high harmonicity/modulation FM bell, fast
-// decay, minimal sustain.
-const bell = new Tone.PolySynth(Tone.FMSynth, {
-  harmonicity: 5.5,
-  modulationIndex: 12,
-  envelope: { attack: 0.002, decay: 1.1, sustain: 0.05, release: 0.8 },
-  modulationEnvelope: { attack: 0.002, decay: 0.5, sustain: 0, release: 0.4 },
-  volume: -16,
-}).connect(limiter);
+function getSampler(): Tone.Sampler {
+  if (!sampler) {
+    sampler = new Tone.Sampler({
+      urls: {
+        "F1": "A_029__F1_5.m4a",
+        "B1": "A_035__B1_5.m4a",
+        "E2": "A_040__E2_5.m4a",
+        "A2": "A_045__A2_5.m4a",
+        "D3": "A_050__D3_5.m4a",
+        "G3": "A_055__G3_5.m4a",
+        "B3": "A_059__B3_5.m4a",
+        "D4": "A_062__D4_5.m4a",
+        "F4": "A_065__F4_5.m4a",
+        "B4": "A_071__B4_5.m4a",
+        "E5": "A_076__E5_5.m4a",
+        "A5": "A_081__A5_5.m4a",
+        "D6": "A_086__D6_5.m4a",
+        "G6": "A_091__G6_5.m4a"
+      },
+      baseUrl: "https://danigb.github.io/samples/jlearman/rhodes-mki/jRhodes3d-mono/",
+      volume: -12,
+      onload: () => {
+        console.log("Rhodes piano sampler loaded successfully!");
+      },
+      onerror: (err) => {
+        console.warn("Failed to load Rhodes piano sampler:", err);
+      }
+    }).connect(getLimiter());
+  }
+  return sampler;
+}
 
 export type InstrumentId = 'rhodes' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab' | 'epiano' | 'guitar' | 'bell';
 
 function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
+  const l = getLimiter();
   switch (instrument) {
-    case 'organ': return organ;
-    case 'pad-strings': return padStrings;
-    case 'juno-pad': return junoPad;
-    case 'stab': return stab;
-    case 'epiano': return epiano;
-    case 'guitar': return guitar;
-    case 'bell': return bell;
+    case 'organ':
+      if (!organ) {
+        organ = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'fatsquare', count: 3, spread: 20 },
+          envelope: { attack: 0.015, decay: 0.1, sustain: 0.9, release: 0.35 },
+          volume: -16,
+        }).connect(l);
+      }
+      return organ;
+    case 'pad-strings':
+      if (!padStrings) {
+        cinematicReverb = new Tone.Reverb({ decay: 4.5, wet: 0.35 }).connect(l);
+        padStrings = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.9, decay: 0.4, sustain: 0.8, release: 2.8 },
+          volume: -15,
+        }).connect(cinematicReverb);
+      }
+      return padStrings;
+    case 'juno-pad':
+      if (!junoPad) {
+        junoChorus = new Tone.Chorus({ frequency: 0.8, delayTime: 3.5, depth: 0.7, wet: 0.5 }).connect(l);
+        try { junoChorus.start(); } catch {}
+        junoPad = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'fatsawtooth', count: 3, spread: 25 },
+          envelope: { attack: 0.35, decay: 0.4, sustain: 0.85, release: 1.6 },
+          volume: -16,
+        }).connect(junoChorus);
+      }
+      return junoPad;
+    case 'stab':
+      if (!stab) {
+        stab = new Tone.PolySynth(Tone.MonoSynth, {
+          oscillator: { type: 'square' },
+          envelope: { attack: 0.004, decay: 0.14, sustain: 0.12, release: 0.15 },
+          filterEnvelope: { attack: 0.004, decay: 0.15, sustain: 0.1, release: 0.2, baseFrequency: 300, octaves: 4 },
+          volume: -14,
+        }).connect(l);
+      }
+      return stab;
+    case 'epiano':
+      if (!epiano) {
+        epiano = new Tone.PolySynth(Tone.FMSynth, {
+          harmonicity: 2,
+          modulationIndex: 3.5,
+          envelope: { attack: 0.008, decay: 0.6, sustain: 0.25, release: 1.2 },
+          modulationEnvelope: { attack: 0.008, decay: 0.4, sustain: 0.1, release: 0.6 },
+          volume: -14,
+        }).connect(l);
+      }
+      return epiano;
+    case 'guitar':
+      if (!guitar) {
+        guitar = new Tone.PolySynth(Tone.Synth, {
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.004, decay: 0.5, sustain: 0.05, release: 0.6 },
+          volume: -13,
+        }).connect(l);
+      }
+      return guitar;
+    case 'bell':
+      if (!bell) {
+        bell = new Tone.PolySynth(Tone.FMSynth, {
+          harmonicity: 5.5,
+          modulationIndex: 12,
+          envelope: { attack: 0.002, decay: 1.1, sustain: 0.05, release: 0.8 },
+          modulationEnvelope: { attack: 0.002, decay: 0.5, sustain: 0, release: 0.4 },
+          volume: -16,
+        }).connect(l);
+      }
+      return bell;
     case 'rhodes':
-    default: return sampler;
+    default:
+      return getSampler();
   }
 }
 
@@ -532,7 +549,7 @@ function waitForSamplesReady(): Promise<void> {
 export function playNote(noteName: string, duration = 0.35): void {
   try {
     Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
-      sampler.triggerAttackRelease(noteName, duration);
+      getSampler().triggerAttackRelease(noteName, duration);
     }).catch((e) => {
       console.warn("Audio playback gesture failed:", e);
     });
