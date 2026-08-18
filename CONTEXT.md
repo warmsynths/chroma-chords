@@ -16,7 +16,7 @@ A structural section of a song (e.g. Verse, Chorus, Bridge) derived from a base 
 ## Architectural Seams & Modules
 
 ### Project Storage (`ProjectStorageManager`)
-A deep module hiding local storage persistence, Google Drive API interactions, SHA-256 email hashing, and cloud synchronization merge algorithms behind a unified interface (`ProjectStorage`).
+A deep module hiding local storage persistence, Supabase authentication, Cloudflare Worker cloud synchronization, and tombstone merge algorithms behind a unified interface (`ProjectStorage`).
 
 ### Playback Engine (`PlaybackEngine`)
 A deep module encapsulating Web Audio scheduling, active chord step advancement, autoplay interval timers, and pitch note mapping behind a simple control interface (`play()`, `stop()`, `seek()`).
