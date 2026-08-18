@@ -95,6 +95,7 @@ export class SeedScreen extends LitElement {
   @state() private peekSide: 'left' | 'right' = pickSlot(['left', 'right'] as const);
 
   @property({ type: Boolean }) isAuthenticated = false;
+  @property({ type: String }) userEmail: string | null = null;
   @property({ type: Boolean }) isAdmin = false;
   @state() private currentProvider: LLMProvider = getLLMProvider();
   @state() private currentModel: string = getLLMModel();
@@ -1715,6 +1716,7 @@ export class SeedScreen extends LitElement {
             <a class="footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
             <span class="footer-divider">·</span>
             ${this.isAuthenticated ? html`
+              <span class="footer-user-email">${this.userEmail ? this.userEmail.split('@')[0] : 'Signed in'}</span>
               <button class="footer-login-btn" @click=${this.onLogoutClick}>Sign out</button>
             ` : html`
               <button class="footer-login-btn" @click=${this.onLoginClick}>Sign in</button>

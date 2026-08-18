@@ -8,6 +8,8 @@ import './mascot-character';
 @customElement('sets-screen')
 export class SetsScreen extends LitElement {
   @property({ type: Array }) projects: ProjectData[] = [];
+  @property({ type: Boolean }) isAuthenticated = false;
+  @property({ type: String }) userEmail: string | null = null;
 
   @state() private isSyncing = false;
   @state() private renamingId: string | null = null;
@@ -41,6 +43,11 @@ export class SetsScreen extends LitElement {
       justify-content: space-between;
       margin-bottom: 24px;
     }
+    .top-bar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
     .back-btn {
       display: inline-flex;
       align-items: center;
@@ -60,8 +67,56 @@ export class SetsScreen extends LitElement {
     .back-btn:hover {
       background: var(--cv-ink-08);
     }
-    .back-btn:active, .sync-btn:active {
+    .back-btn:active, .sync-btn:active, .auth-btn:active {
       transform: scale(0.96);
+    }
+    .auth-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--cv-surface-2);
+      padding: 8px 16px;
+      min-height: 38px;
+      border-radius: 100px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--cv-ink);
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .auth-btn:hover {
+      background: var(--cv-ink-08);
+    }
+    .user-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(46, 39, 31, 0.06);
+      padding: 6px 12px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--cv-ink);
+      max-width: 170px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sign-out-btn {
+      background: none;
+      border: none;
+      color: var(--cv-ink-muted);
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: underline;
+      font-family: inherit;
+      padding: 4px 6px;
+    }
+    .sign-out-btn:hover {
+      color: #F2735F;
     }
     .sync-btn {
       display: inline-flex;
@@ -400,15 +455,31 @@ export class SetsScreen extends LitElement {
             Back
           </button>
           
-          <button class="sync-btn" @click=${this.onSync} ?disabled=${this.isSyncing} title="Sync with Cloud">
-            <svg class=${this.isSyncing ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 2v6h-6"></path>
-              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
-              <path d="M3 22v-6h6"></path>
-              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
-            </svg>
-            ${this.isSyncing ? 'Syncing...' : 'Sync'}
-          </button>
+          <div class="top-bar-actions">
+            ${this.isAuthenticated ? html`
+              <span class="user-badge" title=${this.userEmail || 'Account'}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                ${this.userEmail ? this.userEmail.split('@')[0] : 'Signed in'}
+              </span>
+              <button class="sign-out-btn" @click=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}>Sign out</button>
+            ` : html`
+              <button class="auth-btn" @click=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}>
+                Sign in to sync
+              </button>
+            `}
+            <button class="sync-btn" @click=${this.onSync} ?disabled=${this.isSyncing} title="Sync with Cloud">
+              <svg class=${this.isSyncing ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 2v6h-6"></path>
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                <path d="M3 22v-6h6"></path>
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+              </svg>
+              ${this.isSyncing ? 'Syncing...' : 'Sync'}
+            </button>
+          </div>
         </div>
         
         <div class="content">

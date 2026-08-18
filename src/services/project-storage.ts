@@ -1,13 +1,21 @@
 import { ProjectData, ProjectService } from './project-service';
-import { GoogleDriveService } from './google-drive-service';
-import { setGoogleToken } from './freetext-service';
-
-export const AUTHORIZED_HASHES = [
-  'cc801a4c62860be6a11bbae1c7ff2a4156e4332e0cc9ed03fcb41ffe20c712e2',
-  '99c0bce064de4add7fc8e2433b627113e7d1ef63b97ad627b37194c9bace3dac',
-];
+import { authService, AuthState } from './auth-service';
+import { syncEngine, ClientSet, Tombstone } from './sync-engine';
 
 export type AuthStateCallback = (userEmail: string | null, isAuthenticated: boolean) => void;
+export type ProjectsChangeCallback = (projects: ProjectData[]) => void;
+
+const DELETED_PROJECTS_KEY = 'chroma_chords_deleted_projects';
+const LAST_SYNC_KEY = 'chroma_chords_last_sync_time';
+const DEFAULT_WORKER_URL = 'https://chroma-chords-api.warmsynths.workers.dev';
+
+function getWorkerUrl(): string {
+  try {
+    return (import.meta as any).env?.VITE_WORKER_URL || DEFAULT_WORKER_URL;
+  } catch {
+    return DEFAULT_WORKER_URL;
+  }
+}
 
 function getLocalStorageItem(key: string): string | null {
   if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
@@ -29,20 +37,33 @@ function removeLocalStorageItem(key: string): void {
 }
 
 export class ProjectStorageManager {
-  private driveService = new GoogleDriveService();
-  private tokenClient: any = null;
   private userEmail: string | null = null;
   private authenticated = false;
-  private isDriveSyncing = false;
-  private syncTimeout: any = null;
+  private isCloudSyncing = false;
+  private syncTimeout: ReturnType<typeof setTimeout> | null = null;
   private syncQueued = false;
   private authStateCallbacks = new Set<AuthStateCallback>();
+  private projectsChangeCallbacks = new Set<ProjectsChangeCallback>();
+  private unsubscribeAuth: (() => void) | null = null;
 
   constructor() {
-    this.userEmail = getLocalStorageItem('chroma-chords-auth') || getLocalStorageItem('chroma-chords-user') || getLocalStorageItem('chord-voyager-auth');
-    // Authentication status is now deferred until initSilentAuth() validates the hash
-    this.initSilentAuth();
-    this.setupGoogleAuth();
+    this.setupAuthSubscription();
+  }
+
+  private setupAuthSubscription() {
+    this.unsubscribeAuth = authService.subscribe((state: AuthState) => {
+      const wasAuthenticated = this.authenticated;
+      this.userEmail = state.user?.email || null;
+      this.authenticated = state.isAuthenticated;
+      this.notifyAuthState();
+
+      // Trigger automatic initial cloud sync and migration upon logging in
+      if (!wasAuthenticated && this.authenticated) {
+        this.syncWithCloud().catch((err) => {
+          console.warn('Auto cloud sync on sign-in encountered an error:', err);
+        });
+      }
+    });
   }
 
   public getUserEmail(): string | null {
@@ -64,139 +85,33 @@ export class ProjectStorageManager {
   }
 
   private notifyAuthState() {
-    this.authStateCallbacks.forEach(cb => cb(this.userEmail, this.authenticated));
-  }
-
-  public async hashEmail(email: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(email);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  public initSilentAuth(): void {
-    const savedAuth = getLocalStorageItem('chroma-chords-auth') || getLocalStorageItem('chord-voyager-auth');
-    if (!savedAuth) return;
-
-    this.hashEmail(savedAuth).then(hash => {
-      if (!AUTHORIZED_HASHES.includes(hash)) return;
-      this.authenticated = true;
-      this.userEmail = savedAuth;
-      this.notifyAuthState();
+    this.authStateCallbacks.forEach((cb) => {
+      try {
+        cb(this.userEmail, this.authenticated);
+      } catch (e) {
+        console.error('Error in AuthState callback:', e);
+      }
     });
   }
 
-  public setupGoogleAuth(): void {
-    if (typeof window === 'undefined') return;
-    const checkGoogle = setInterval(() => {
-      if (!(window as any).google) return;
-      clearInterval(checkGoogle);
-
-      this.tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
-        client_id: '184710057667-s8j8uvuthct60tpppbhp7iiphp0s8qpq.apps.googleusercontent.com',
-        scope: 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email',
-        callback: async (tokenResponse: any) => {
-          if (!tokenResponse || tokenResponse.error || !tokenResponse.access_token) return;
-          try {
-            const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-              headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-            });
-            if (!userInfoRes.ok) return;
-            const userInfo = await userInfoRes.json();
-            if (!userInfo?.email) return;
-            const hash = await this.hashEmail(userInfo.email);
-            if (!AUTHORIZED_HASHES.includes(hash)) return;
-
-            this.authenticated = true;
-            this.userEmail = userInfo.email;
-            setLocalStorageItem('chroma-chords-auth', userInfo.email);
-            this.driveService.setAccessToken(tokenResponse.access_token);
-            this.notifyAuthState();
-            await this.syncProjectsFromCloud();
-            await this.syncProjectsToCloud();
-          } catch (e) {
-            console.error('Silent Drive auth failed', e);
-          }
-        },
-      });
-    }, 200);
+  public subscribeProjects(cb: ProjectsChangeCallback): () => void {
+    this.projectsChangeCallbacks.add(cb);
+    cb(this.getProjects());
+    return () => this.projectsChangeCallbacks.delete(cb);
   }
 
-  public async requestLogin(): Promise<string | null> {
-    if (typeof window === 'undefined') return null;
-
-    if (!(window as any).google?.accounts?.oauth2) {
-      await new Promise<void>(resolve => {
-        const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-        if (existing) {
-          existing.addEventListener('load', () => resolve(), { once: true });
-          setTimeout(resolve, 3000);
-          return;
-        }
-        const script = document.createElement('script');
-        script.src = 'https://accounts.google.com/gsi/client';
-        script.async = true;
-        script.onload = () => resolve();
-        script.onerror = () => resolve();
-        document.head.appendChild(script);
-      });
-    }
-
-    if ((window as any).google?.accounts?.oauth2) {
-      return new Promise<string | null>(resolve => {
-        try {
-          if (!this.tokenClient) {
-            this.tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
-              client_id: '184710057667-s8j8uvuthct60tpppbhp7iiphp0s8qpq.apps.googleusercontent.com',
-              scope: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive.appdata',
-              callback: async (res: any) => {
-                if (res?.access_token) {
-                  this.driveService.setAccessToken(res.access_token);
-                  setGoogleToken(res.access_token);
-                  const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                    headers: { Authorization: `Bearer ${res.access_token}` },
-                  }).catch(() => null);
-                  const info = await userRes?.json().catch(() => null);
-                  if (!info?.email) {
-                    resolve(null);
-                    return;
-                  }
-                  
-                  const hash = await this.hashEmail(info.email);
-                  if (!AUTHORIZED_HASHES.includes(hash)) {
-                    resolve(null);
-                    return;
-                  }
-
-                  const email = info.email;
-                  setLocalStorageItem('chroma-chords-auth', email);
-                  this.userEmail = email;
-                  this.authenticated = true;
-                  this.notifyAuthState();
-                  await this.syncProjectsFromCloud();
-                  resolve(email);
-                  return;
-                }
-                resolve(null);
-              },
-            });
-          }
-          this.tokenClient.requestAccessToken();
-        } catch (e) {
-          console.warn('Google Identity Services request failed:', e);
-          resolve(null);
-        }
-      });
-    }
-
-    return null;
+  private notifyProjectsChanged() {
+    const projects = this.getProjects();
+    this.projectsChangeCallbacks.forEach((cb) => {
+      try {
+        cb(projects);
+      } catch (e) {
+        console.error('Error in ProjectsChange callback:', e);
+      }
+    });
   }
 
   public logout(): void {
-    removeLocalStorageItem('chroma-chords-auth');
-    removeLocalStorageItem('chroma-chords-user');
-    removeLocalStorageItem('chord-voyager-auth');
     this.userEmail = null;
     this.authenticated = false;
     this.notifyAuthState();
@@ -208,34 +123,60 @@ export class ProjectStorageManager {
 
   public isProjectSaved(id: string | null): boolean {
     if (!id) return false;
-    return ProjectService.getProjects().some(p => p.id === id);
+    return ProjectService.getProjects().some((p) => p.id === id);
   }
 
   public saveProject(project: ProjectData): void {
     ProjectService.saveProject(project);
-  }
-
-  public async deleteProject(id: string): Promise<void> {
-    ProjectService.deleteProject(id);
+    this.removeTombstone(project.id);
+    this.notifyProjectsChanged();
     this.scheduleCloudSync();
   }
 
-  public async syncProjectsFromCloud(): Promise<void> {
-    if (this.isDriveSyncing || !this.driveService.hasAccessToken()) return;
-    this.isDriveSyncing = true;
+  public deleteProject(id: string): void {
+    ProjectService.deleteProject(id);
+    this.addTombstone(id);
+    this.notifyProjectsChanged();
+    this.scheduleCloudSync();
+  }
+
+  public getTombstones(): Tombstone[] {
+    const raw = getLocalStorageItem(DELETED_PROJECTS_KEY);
+    if (!raw) return [];
     try {
-      const cloudProjects = await this.driveService.loadProjects();
-      if (cloudProjects) {
-        cloudProjects.forEach(p => (p.syncedToCloud = true));
-        const localProjects = ProjectService.getProjects();
-        const merged = ProjectService.mergeProjects(localProjects, cloudProjects);
-        ProjectService.setProjects(merged);
-      }
-    } catch (e) {
-      console.error('Failed to sync from cloud', e);
-    } finally {
-      this.isDriveSyncing = false;
+      return JSON.parse(raw) as Tombstone[];
+    } catch {
+      return [];
     }
+  }
+
+  private setTombstones(tombstones: Tombstone[]): void {
+    setLocalStorageItem(DELETED_PROJECTS_KEY, JSON.stringify(tombstones));
+  }
+
+  public addTombstone(id: string): void {
+    const tombstones = this.getTombstones();
+    const existingIdx = tombstones.findIndex((t) => t.id === id);
+    const nowIso = new Date().toISOString();
+    if (existingIdx >= 0) {
+      tombstones[existingIdx].deletedAt = nowIso;
+    } else {
+      tombstones.push({ id, deletedAt: nowIso });
+    }
+    this.setTombstones(tombstones);
+  }
+
+  public removeTombstone(id: string): void {
+    const tombstones = this.getTombstones().filter((t) => t.id !== id);
+    this.setTombstones(tombstones);
+  }
+
+  public getLastSyncTime(): string | null {
+    return getLocalStorageItem(LAST_SYNC_KEY);
+  }
+
+  public setLastSyncTime(isoTime: string): void {
+    setLocalStorageItem(LAST_SYNC_KEY, isoTime);
   }
 
   public scheduleCloudSync(): void {
@@ -244,31 +185,122 @@ export class ProjectStorageManager {
     }
     this.syncTimeout = setTimeout(() => {
       this.syncTimeout = null;
-      if (this.isDriveSyncing) {
+      if (this.isCloudSyncing) {
         this.syncQueued = true;
       } else {
-        this.syncProjectsToCloud();
+        this.syncWithCloud().catch((err) => {
+          console.warn('Scheduled cloud sync failed:', err);
+        });
       }
     }, 2000);
   }
 
-  public async syncProjectsToCloud(): Promise<void> {
-    if (!this.authenticated || !this.driveService.hasAccessToken() || this.isDriveSyncing) return;
-    this.isDriveSyncing = true;
+  public async syncWithCloud(workerUrlOverride?: string): Promise<void> {
+    if (this.isCloudSyncing) {
+      this.syncQueued = true;
+      return;
+    }
+
+    const token = await authService.getAccessToken();
+    if (!this.isAuthenticated() || !token) {
+      return;
+    }
+
+    const workerUrl = workerUrlOverride || getWorkerUrl();
+    if (!workerUrl) return;
+
+    this.isCloudSyncing = true;
     try {
-      const projects = ProjectService.getProjects();
-      await this.driveService.saveProjects(projects);
-      projects.forEach(p => (p.syncedToCloud = true));
-      ProjectService.setProjects(projects);
-    } catch (e) {
-      console.error('Failed to sync to cloud', e);
+      const localProjects = ProjectService.getProjects();
+      const tombstones = this.getTombstones();
+      const lastSyncTime = this.getLastSyncTime();
+
+      const clientSets: ClientSet[] = localProjects.map((p) => ({
+        ...p,
+        deletedAt: null,
+      }));
+
+      const res = await syncEngine.sync(workerUrl, token, {
+        sets: clientSets,
+        lastSyncTime,
+        tombstones,
+      });
+
+      // Merge server sets with local sets
+      const mergedMap = new Map<string, ProjectData>();
+      localProjects.forEach((p) => {
+        mergedMap.set(p.id, { ...p, syncedToCloud: true });
+      });
+
+      // Handle soft-deleted sets and incoming active sets from server
+      const remoteTombstones = res.tombstones || [];
+      const remoteDeletedIds = new Set<string>(
+        remoteTombstones.map((t) => t.id)
+      );
+
+      (res.sets || []).forEach((s) => {
+        if (s.deletedAt) {
+          remoteDeletedIds.add(s.id);
+        } else {
+          const existing = mergedMap.get(s.id);
+          const serverModified = s.lastModified || (s.updatedAt ? new Date(s.updatedAt).getTime() : 0);
+          const localModified = existing?.lastModified || 0;
+
+          if (!existing || serverModified >= localModified) {
+            mergedMap.set(s.id, {
+              id: s.id,
+              name: s.name,
+              lastModified: serverModified,
+              genre: s.genre,
+              mood: s.mood,
+              key: s.key,
+              scaleType: s.scaleType,
+              bpm: s.bpm,
+              showTheory: s.showTheory,
+              chords: s.chords,
+              syncedToCloud: true,
+            });
+          }
+        }
+      });
+
+      // Remove any remote deleted sets
+      remoteDeletedIds.forEach((id) => {
+        mergedMap.delete(id);
+      });
+
+      const mergedList = Array.from(mergedMap.values());
+      ProjectService.setProjects(mergedList);
+
+      // Clear tombstones that were successfully synced
+      const currentTombstones = this.getTombstones();
+      const syncedTombstoneIds = new Set(tombstones.map((t) => t.id));
+      const remainingTombstones = currentTombstones.filter(
+        (t) => !syncedTombstoneIds.has(t.id)
+      );
+      this.setTombstones(remainingTombstones);
+
+      if (res.lastSyncTime || res.syncedAt) {
+        this.setLastSyncTime(res.lastSyncTime || res.syncedAt!);
+      }
+
+      this.notifyProjectsChanged();
     } finally {
-      this.isDriveSyncing = false;
+      this.isCloudSyncing = false;
       if (this.syncQueued) {
         this.syncQueued = false;
         this.scheduleCloudSync();
       }
     }
+  }
+
+  // Legacy compatibility helpers
+  public async syncProjectsFromCloud(): Promise<void> {
+    return this.syncWithCloud();
+  }
+
+  public async syncProjectsToCloud(): Promise<void> {
+    return this.syncWithCloud();
   }
 }
 

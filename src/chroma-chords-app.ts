@@ -10,10 +10,12 @@ import {
 } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
 import { NormalizedPrompt } from './services/freetext-schema';
+import { authService } from './services/auth-service';
 import './components/seed-screen';
 import './components/loop-screen';
 import './components/song-screen';
 import './components/sets-screen';
+import './components/auth-modal';
 import { SongSection } from './components/song-screen';
 
 type Screen = 'seed' | 'loop' | 'song' | 'sets';
@@ -46,12 +48,14 @@ export class ChromaChordsApp extends LitElement {
   @state() private pendingChordSuggestion: NormalizedPrompt | null = null;
   @state() private userEmail: string | null = null;
   @state() private isAuthenticated = false;
+  @state() private authModalOpen = false;
   @state() private toastMessage: string | null = null;
   @state() private toastUndoId: string | null = null;
 
   private currentProjectId: string | null = null;
   private activeSearchPrompt: string | null = null;
   private unsubscribeAuth: (() => void) | null = null;
+  private unsubscribeProjects: (() => void) | null = null;
   private unsubscribeTick: (() => void) | null = null;
   private toastDismissTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -174,9 +178,13 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.setInstrument(this.instrument);
     playbackEngine.setPlayStyle(this.playStyle);
 
-    this.unsubscribeAuth = projectStorage.subscribeAuthState((email, authenticated) => {
-      this.userEmail = email;
-      this.isAuthenticated = authenticated;
+    this.unsubscribeAuth = authService.subscribe((state) => {
+      this.userEmail = state.user?.email || null;
+      this.isAuthenticated = state.isAuthenticated;
+    });
+
+    this.unsubscribeProjects = projectStorage.subscribeProjects(() => {
+      this.requestUpdate();
     });
 
     this.unsubscribeTick = playbackEngine.subscribeTick((activeIdx, step, secIdx, totalSteps, isSongMode) => {
@@ -208,6 +216,7 @@ export class ChromaChordsApp extends LitElement {
     window.removeEventListener('hashchange', this.onHashChange);
     window.removeEventListener('keydown', this.onGlobalKeyDown);
     if (this.unsubscribeAuth) this.unsubscribeAuth();
+    if (this.unsubscribeProjects) this.unsubscribeProjects();
     if (this.unsubscribeTick) this.unsubscribeTick();
     if (this.toastDismissTimeout) clearTimeout(this.toastDismissTimeout);
   }
@@ -264,11 +273,12 @@ export class ChromaChordsApp extends LitElement {
     }
   }
 
-  private onLoginRequest = async () => {
-    await projectStorage.requestLogin();
+  private onLoginRequest = () => {
+    this.authModalOpen = true;
   };
 
-  private onLogoutRequest = () => {
+  private onLogoutRequest = async () => {
+    await authService.signOut();
     projectStorage.logout();
   };
 
@@ -475,8 +485,7 @@ export class ChromaChordsApp extends LitElement {
   }
 
   private async onSyncProjects() {
-    await projectStorage.syncProjectsFromCloud();
-    await projectStorage.syncProjectsToCloud();
+    await projectStorage.syncWithCloud();
     this.requestUpdate();
   }
 
@@ -679,11 +688,15 @@ export class ChromaChordsApp extends LitElement {
       screenContent = html`
         <sets-screen
           .projects=${projectStorage.getProjects()}
+          .isAuthenticated=${this.isAuthenticated}
+          .userEmail=${this.userEmail}
           @back=${this.onBackFromSets}
           @load-project=${this.onLoadProject}
           @delete-project=${this.onDeleteProject}
           @rename-project=${this.onRenameProject}
           @sync-projects=${this.onSyncProjects}
+          @request-login=${this.onLoginRequest}
+          @request-logout=${this.onLogoutRequest}
         ></sets-screen>
       `;
     } else if (this.screen === 'seed' || !this.progression) {
@@ -693,6 +706,7 @@ export class ChromaChordsApp extends LitElement {
           .mood=${this.mood}
           .length=${this.length}
           .isAuthenticated=${this.isAuthenticated}
+          .userEmail=${this.userEmail}
           .isAdmin=${this.isAdmin}
           @genre-change=${this.onGenreChange}
           @mood-change=${this.onMoodChange}
@@ -788,6 +802,10 @@ export class ChromaChordsApp extends LitElement {
             </div>
           </div>
         ` : ''}
+        <auth-modal
+          .open=${this.authModalOpen}
+          @close-modal=${() => { this.authModalOpen = false; }}
+        ></auth-modal>
       </div>
     `;
   }
