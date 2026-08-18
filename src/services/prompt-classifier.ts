@@ -1,5 +1,5 @@
 import { RawChordData, Progression, alignChordsToScale, generateProgression } from './chord-engine';
-import { classifyFreeText, getGoogleToken, setGoogleToken } from './freetext-service';
+import { classifyFreeText } from './freetext-service';
 import { NormalizedPrompt } from './freetext-schema';
 import { presetIdToUserInstrumentName, matchRhythmStyleToPlayStyleName } from './audio-service';
 
@@ -11,14 +11,6 @@ export interface PromptResolutionResult {
 }
 
 export class PromptClassifier {
-  public static setGoogleToken(token: string) {
-    setGoogleToken(token);
-  }
-
-  public static getGoogleToken(): string | null {
-    return getGoogleToken();
-  }
-
   public static async resolvePrompt(
     chordData: RawChordData,
     genre: string,

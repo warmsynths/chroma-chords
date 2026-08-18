@@ -408,25 +408,11 @@ export function heuristicClassify(text: string): NormalizedPrompt | null {
   return { genre, mood };
 }
 
-let activeGoogleToken: string | null = null;
-
-export function setGoogleToken(token: string | null): void {
-  activeGoogleToken = token;
-}
-
-export function getGoogleToken(): string | null {
-  return activeGoogleToken;
-}
-
-async function llmClassify(text: string, authToken?: string | null): Promise<unknown> {
+async function llmClassify(text: string): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
-  const token = authToken ?? activeGoogleToken;
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
 
     const res = await fetch(CLASSIFIER_ENDPOINT, {
       method: 'POST',
@@ -455,7 +441,7 @@ async function llmClassify(text: string, authToken?: string | null): Promise<unk
 // Worker proxy, sending the selected provider: OpenRouter or Anthropic Claude), and falls back to
 // the local keyword heuristic on any network failure, timeout, or invalid response.
 // Supports 'mock:' or 'test:' prefix for testing full plumbing locally with 0 LLM API calls.
-export async function classifyFreeText(text: string, authToken?: string | null): Promise<NormalizedPrompt | null> {
+export async function classifyFreeText(text: string): Promise<NormalizedPrompt | null> {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
   if (lower.startsWith('mock') || lower.startsWith('test')) {
@@ -579,7 +565,7 @@ export async function classifyFreeText(text: string, authToken?: string | null):
 
   const fallback = heuristicClassify(text);
   try {
-    const raw = await llmClassify(text, authToken);
+    const raw = await llmClassify(text);
     return normalize(raw, fallback ?? NEUTRAL_FALLBACK);
   } catch (e: any) {
     console.warn('LLM classification failed, falling back to keyword heuristic:', e);

@@ -4,10 +4,10 @@
 
 **Blocked by:** 04 — Sync Status Badges and Manual Refresh
 
-**Status:** ready-for-agent
+**Status:** closed
 
-- [ ] Remove `src/services/google-drive-service.ts` from the project.
-- [ ] Remove Google Identity Services (`accounts.google.com/gsi/client`) dynamic script injection and token client setup from `project-storage.ts` and HTML templates.
-- [ ] Remove `AUTHORIZED_HASHES` whitelist logic and SHA-256 client hashing routines.
-- [ ] Decouple `freetext-service.ts` and `prompt-classifier.ts` from `setGoogleToken` and Google OAuth storage tokens.
-- [ ] Ensure all existing tests pass (`npm run test`) and production bundle builds cleanly (`npm run build`).
+- [x] Remove `src/services/google-drive-service.ts` from the project.
+- [x] Remove Google Identity Services (`accounts.google.com/gsi/client`) dynamic script injection and token client setup from `project-storage.ts` and HTML templates.
+- [x] Remove `AUTHORIZED_HASHES` whitelist logic and SHA-256 client hashing routines.
+- [x] Decouple `freetext-service.ts` and `prompt-classifier.ts` from `setGoogleToken` and Google OAuth storage tokens.
+- [x] Ensure all existing tests pass (`npm run test`) and production bundle builds cleanly (`npm run build`).
