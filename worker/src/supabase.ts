@@ -186,6 +186,19 @@ export class SupabaseClient {
         const errorText = await res.text();
         console.warn(`Failed to apply tombstone for set ${t.id}: ${res.status} ${errorText}`);
       }
+
+      // Reconcile and delete child chords for soft-deleted set
+      const deleteChordsUrl = `${this.url}/rest/v1/set_chords?user_id=eq.${encodeURIComponent(
+        this.userId
+      )}&set_id=eq.${encodeURIComponent(t.id)}`;
+
+      await this.fetchWithRetry(deleteChordsUrl, {
+        method: 'DELETE',
+        headers: {
+          ...this.headers,
+          Prefer: 'return=minimal',
+        },
+      });
     }
   }
 

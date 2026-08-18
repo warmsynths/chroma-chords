@@ -189,4 +189,190 @@ describe('ProjectStorageManager', () => {
     expect(merged[0].name).toBe('Cloud Newer Name');
     expect(merged[0].lastModified).toBe(2000);
   });
+
+  it('queues a debounced 2-second cloud sync when saving or deleting', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(authService, 'getAccessToken').mockResolvedValue('valid-access-token');
+    vi.spyOn(manager, 'isAuthenticated').mockReturnValue(true);
+    const syncSpy = vi.spyOn(syncEngine, 'sync').mockResolvedValue({
+      sets: [],
+      lastSyncTime: '2026-08-18T11:00:00Z',
+      tombstones: [],
+    });
+
+    const sample: ProjectData = {
+      id: 'proj-debounce',
+      name: 'Debounce Test',
+      lastModified: Date.now(),
+      genre: 'Lo-Fi',
+      mood: 'Chill',
+      key: 'D',
+      scaleType: 'DORIAN',
+      bpm: 80,
+      chords: [],
+    };
+
+    manager.saveProject(sample);
+    // Not executed immediately
+    expect(syncSpy).not.toHaveBeenCalled();
+
+    // Advance 1.5s - still debouncing
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(syncSpy).not.toHaveBeenCalled();
+
+    // Advance past 2s
+    await vi.advanceTimersByTimeAsync(600);
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it('transmits tombstones on sync and purges synced tombstones from local buffer', async () => {
+    vi.spyOn(authService, 'getAccessToken').mockResolvedValue('valid-access-token');
+    vi.spyOn(manager, 'isAuthenticated').mockReturnValue(true);
+
+    const sample: ProjectData = {
+      id: 'proj-to-delete',
+      name: 'Delete Me',
+      lastModified: Date.now(),
+      genre: 'Pop',
+      mood: 'Bright',
+      key: 'G',
+      scaleType: 'MAJOR',
+      bpm: 120,
+      chords: [],
+    };
+
+    manager.saveProject(sample);
+    manager.deleteProject('proj-to-delete');
+
+    expect(manager.getTombstones()).toHaveLength(1);
+    expect(manager.getTombstones()[0].id).toBe('proj-to-delete');
+
+    const syncSpy = vi.spyOn(syncEngine, 'sync').mockResolvedValue({
+      sets: [],
+      lastSyncTime: '2026-08-18T11:00:00Z',
+      tombstones: [],
+    });
+
+    await manager.syncWithCloud('https://api.example.com');
+
+    expect(syncSpy).toHaveBeenCalledWith(
+      'https://api.example.com',
+      'valid-access-token',
+      expect.objectContaining({
+        tombstones: expect.arrayContaining([
+          expect.objectContaining({ id: 'proj-to-delete' }),
+        ]),
+      })
+    );
+
+    // Synced tombstones should be cleared from local storage buffer
+    expect(manager.getTombstones()).toHaveLength(0);
+  });
+
+  it('soft-deletes local sets matching incoming remote tombstones and deletedAt flags', async () => {
+    const local1: ProjectData = {
+      id: 'local-kept',
+      name: 'Keep Me',
+      lastModified: 1000,
+      genre: 'Ambient',
+      mood: 'Calm',
+      key: 'C',
+      scaleType: 'MAJOR',
+      bpm: 60,
+      chords: [],
+    };
+    const local2: ProjectData = {
+      id: 'local-deleted-remote',
+      name: 'Remote Deleted',
+      lastModified: 1000,
+      genre: 'Rock',
+      mood: 'Heavy',
+      key: 'E',
+      scaleType: 'MINOR',
+      bpm: 130,
+      chords: [],
+    };
+    const local3: ProjectData = {
+      id: 'local-soft-deleted',
+      name: 'Soft Deleted in Sets',
+      lastModified: 1000,
+      genre: 'Jazz',
+      mood: 'Smooth',
+      key: 'Bb',
+      scaleType: 'DORIAN',
+      bpm: 100,
+      chords: [],
+    };
+
+    manager.saveProject(local1);
+    manager.saveProject(local2);
+    manager.saveProject(local3);
+
+    expect(manager.getProjects()).toHaveLength(3);
+
+    vi.spyOn(authService, 'getAccessToken').mockResolvedValue('valid-access-token');
+    vi.spyOn(manager, 'isAuthenticated').mockReturnValue(true);
+
+    vi.spyOn(syncEngine, 'sync').mockResolvedValue({
+      sets: [
+        {
+          id: 'local-soft-deleted',
+          name: 'Soft Deleted in Sets',
+          genre: 'Jazz',
+          mood: 'Smooth',
+          key: 'Bb',
+          scaleType: 'DORIAN',
+          bpm: 100,
+          chords: [],
+          deletedAt: '2026-08-18T10:00:00Z',
+        } as any,
+      ],
+      tombstones: [
+        {
+          id: 'local-deleted-remote',
+          deletedAt: '2026-08-18T10:00:00Z',
+        },
+      ],
+      lastSyncTime: '2026-08-18T10:00:00Z',
+    });
+
+    await manager.syncWithCloud('https://api.example.com');
+
+    const remaining = manager.getProjects();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe('local-kept');
+  });
+
+  it('retains local projects and tombstones in buffer when offline sync fails', async () => {
+    vi.spyOn(authService, 'getAccessToken').mockResolvedValue('valid-access-token');
+    vi.spyOn(manager, 'isAuthenticated').mockReturnValue(true);
+
+    const project: ProjectData = {
+      id: 'offline-proj',
+      name: 'Offline Song',
+      lastModified: Date.now(),
+      genre: 'Pop',
+      mood: 'Happy',
+      key: 'G',
+      scaleType: 'MAJOR',
+      bpm: 120,
+      chords: [],
+    };
+
+    manager.saveProject(project);
+    manager.addTombstone('offline-deleted-id');
+
+    // Simulate network error
+    vi.spyOn(syncEngine, 'sync').mockRejectedValue(new Error('Network error'));
+
+    await expect(manager.syncWithCloud('https://api.example.com')).rejects.toThrow('Network error');
+
+    // Data must remain intact in local storage
+    expect(manager.getProjects()).toHaveLength(1);
+    expect(manager.getProjects()[0].id).toBe('offline-proj');
+    expect(manager.getTombstones()).toHaveLength(1);
+    expect(manager.getTombstones()[0].id).toBe('offline-deleted-id');
+  });
 });

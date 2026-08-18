@@ -45,9 +45,11 @@ export class ProjectStorageManager {
   private authStateCallbacks = new Set<AuthStateCallback>();
   private projectsChangeCallbacks = new Set<ProjectsChangeCallback>();
   private unsubscribeAuth: (() => void) | null = null;
+  private onlineHandler: (() => void) | null = null;
 
   constructor() {
     this.setupAuthSubscription();
+    this.setupOnlineListener();
   }
 
   private setupAuthSubscription() {
@@ -64,6 +66,32 @@ export class ProjectStorageManager {
         });
       }
     });
+  }
+
+  private setupOnlineListener() {
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      this.onlineHandler = () => {
+        if (this.isAuthenticated()) {
+          this.scheduleCloudSync();
+        }
+      };
+      window.addEventListener('online', this.onlineHandler);
+    }
+  }
+
+  public destroy(): void {
+    if (this.unsubscribeAuth) {
+      this.unsubscribeAuth();
+      this.unsubscribeAuth = null;
+    }
+    if (this.onlineHandler && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener('online', this.onlineHandler);
+      this.onlineHandler = null;
+    }
+    if (this.syncTimeout) {
+      clearTimeout(this.syncTimeout);
+      this.syncTimeout = null;
+    }
   }
 
   public getUserEmail(): string | null {

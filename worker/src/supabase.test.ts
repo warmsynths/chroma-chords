@@ -207,7 +207,7 @@ describe('worker/src/supabase', () => {
       expect(delta.tombstones).toHaveLength(0);
     });
 
-    it('applies tombstones using PATCH on sets table', async () => {
+    it('applies tombstones using PATCH on sets table and deletes child chords', async () => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -216,6 +216,7 @@ describe('worker/src/supabase', () => {
 
       await client.applyTombstones([{ id: 'set-deleted', deletedAt: '2026-08-18T09:00:00Z' }]);
 
+      // Verify PATCH on sets table
       expect(fetchMock).toHaveBeenCalledWith(
         'https://supabase.example.co/rest/v1/sets?id=eq.set-deleted&user_id=eq.usr-999',
         expect.objectContaining({
@@ -223,6 +224,71 @@ describe('worker/src/supabase', () => {
           body: expect.stringContaining('"deleted_at":"2026-08-18T09:00:00Z"'),
         })
       );
+
+      // Verify DELETE on set_chords table
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://supabase.example.co/rest/v1/set_chords?user_id=eq.usr-999&set_id=eq.set-deleted',
+        expect.objectContaining({
+          method: 'DELETE',
+        })
+      );
+    });
+
+    it('extracts tombstones and soft-deleted sets during delta query', async () => {
+      const mockSetRows = [
+        {
+          id: 'set-live',
+          user_id: 'usr-999',
+          name: 'Live Set',
+          genre: 'Funk',
+          mood: 'Upbeat',
+          key: 'A',
+          scale_type: 'DORIAN',
+          bpm: 120,
+          show_theory: true,
+          deleted_at: null,
+          updated_at: '2026-08-18T09:00:00Z',
+        },
+        {
+          id: 'set-tombstone',
+          user_id: 'usr-999',
+          name: 'Deleted Set',
+          genre: 'Rock',
+          mood: 'Moody',
+          key: 'G',
+          scale_type: 'MINOR',
+          bpm: 100,
+          show_theory: false,
+          deleted_at: '2026-08-18T09:30:00Z',
+          updated_at: '2026-08-18T09:30:00Z',
+        },
+      ];
+
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/rest/v1/sets')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => mockSetRows,
+          });
+        }
+        if (url.includes('/rest/v1/set_chords')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => [],
+          });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: async () => [] });
+      }) as any;
+
+      const delta = await client.getDeltaSets('2026-08-18T08:00:00Z');
+
+      expect(delta.sets).toHaveLength(2);
+      expect(delta.tombstones).toHaveLength(1);
+      expect(delta.tombstones[0].id).toBe('set-tombstone');
+      expect(delta.tombstones[0].deletedAt).toBe('2026-08-18T09:30:00Z');
+      expect(delta.sets.find((s) => s.id === 'set-tombstone')?.deletedAt).toBe('2026-08-18T09:30:00Z');
     });
   });
 });

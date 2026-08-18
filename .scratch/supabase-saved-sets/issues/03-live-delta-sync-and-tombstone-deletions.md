@@ -4,12 +4,12 @@
 
 **Blocked by:** 02 — Initial Cloud Sync and Auto-Migration
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] Saving a new or modified progression queues a debounced (2-second) background sync request to the Worker.
-- [ ] Renaming a set in the Sets library view updates the local title immediately and persists the update to Supabase.
-- [ ] Deleting a set creates a local tombstone record (`deleted_at` timestamp) in addition to removing the set from active views.
-- [ ] The sync payload transmits tombstone records to `POST /api/sync`, setting `deleted_at` on the remote `sets` row and removing child `set_chords`.
-- [ ] Incoming delta syncs from other devices soft-delete matching local sets whose remote `deleted_at` is set.
-- [ ] Offline edits and deletions are held in local storage buffers and flushed to the server upon the next successful connection.
-- [ ] Automated tests verify tombstone creation, delta payload formatting, and deletion propagation.
+- [x] Saving a new or modified progression queues a debounced (2-second) background sync request to the Worker.
+- [x] Renaming a set in the Sets library view updates the local title immediately and persists the update to Supabase.
+- [x] Deleting a set creates a local tombstone record (`deleted_at` timestamp) in addition to removing the set from active views.
+- [x] The sync payload transmits tombstone records to `POST /api/sync`, setting `deleted_at` on the remote `sets` row and removing child `set_chords`.
+- [x] Incoming delta syncs from other devices soft-delete matching local sets whose remote `deleted_at` is set.
+- [x] Offline edits and deletions are held in local storage buffers and flushed to the server upon the next successful connection.
+- [x] Automated tests verify tombstone creation, delta payload formatting, and deletion propagation.
