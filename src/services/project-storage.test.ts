@@ -345,7 +345,7 @@ describe('ProjectStorageManager', () => {
     expect(remaining[0].id).toBe('local-kept');
   });
 
-  it('retains local projects and tombstones in buffer when offline sync fails', async () => {
+  it('retains local projects and tombstones in buffer and sets offline status when sync fails', async () => {
     vi.spyOn(authService, 'getAccessToken').mockResolvedValue('valid-access-token');
     vi.spyOn(manager, 'isAuthenticated').mockReturnValue(true);
 
@@ -367,7 +367,10 @@ describe('ProjectStorageManager', () => {
     // Simulate network error
     vi.spyOn(syncEngine, 'sync').mockRejectedValue(new Error('Network error'));
 
-    await expect(manager.syncWithCloud('https://api.example.com')).rejects.toThrow('Network error');
+    // syncWithCloud should gracefully catch and transition to offline without crashing
+    await manager.syncWithCloud('https://api.example.com');
+
+    expect(manager.getSyncStatus()).toBe('offline');
 
     // Data must remain intact in local storage
     expect(manager.getProjects()).toHaveLength(1);
@@ -375,4 +378,48 @@ describe('ProjectStorageManager', () => {
     expect(manager.getTombstones()).toHaveLength(1);
     expect(manager.getTombstones()[0].id).toBe('offline-deleted-id');
   });
+
+  it('tracks sync status state machine through sign-in, syncing, synced, and offline', async () => {
+    const statusHistory: string[] = [];
+    const unsubscribe = manager.subscribeSyncStatus((status) => {
+      statusHistory.push(status);
+    });
+
+    expect(manager.getSyncStatus()).toBe('sign-in');
+
+    // Mock authentication
+    vi.spyOn(manager, 'isAuthenticated').mockReturnValue(true);
+    vi.spyOn(authService, 'getAccessToken').mockResolvedValue('token-abc');
+
+    vi.spyOn(syncEngine, 'sync').mockImplementation(async () => {
+      expect(manager.getSyncStatus()).toBe('syncing');
+      return {
+        sets: [],
+        lastSyncTime: '2026-08-18T10:00:00Z',
+      };
+    });
+
+    await manager.syncWithCloud('https://api.example.com');
+    expect(manager.getSyncStatus()).toBe('synced');
+
+    // Simulate failure
+    vi.spyOn(syncEngine, 'sync').mockRejectedValue(new Error('500 Internal Server Error'));
+    await manager.syncWithCloud('https://api.example.com');
+    expect(manager.getSyncStatus()).toBe('offline');
+
+    // Simulate recovery
+    vi.spyOn(syncEngine, 'sync').mockResolvedValue({
+      sets: [],
+      lastSyncTime: '2026-08-18T10:05:00Z',
+    });
+    await manager.syncWithCloud('https://api.example.com');
+    expect(manager.getSyncStatus()).toBe('synced');
+
+    // Log out transitions back to sign-in
+    manager.logout();
+    expect(manager.getSyncStatus()).toBe('sign-in');
+
+    unsubscribe();
+  });
 });
+

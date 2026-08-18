@@ -1,7 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { ProjectData, ProjectChord } from './services/project-service';
-import { projectStorage } from './services/project-storage';
+import { projectStorage, SyncStatus } from './services/project-storage';
 import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
 import { SongArranger, SECTION_TEMPLATES } from './services/song-arranger';
@@ -48,6 +48,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private pendingChordSuggestion: NormalizedPrompt | null = null;
   @state() private userEmail: string | null = null;
   @state() private isAuthenticated = false;
+  @state() private syncStatus: SyncStatus = 'sign-in';
   @state() private authModalOpen = false;
   @state() private toastMessage: string | null = null;
   @state() private toastUndoId: string | null = null;
@@ -56,6 +57,7 @@ export class ChromaChordsApp extends LitElement {
   private activeSearchPrompt: string | null = null;
   private unsubscribeAuth: (() => void) | null = null;
   private unsubscribeProjects: (() => void) | null = null;
+  private unsubscribeSyncStatus: (() => void) | null = null;
   private unsubscribeTick: (() => void) | null = null;
   private toastDismissTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -187,6 +189,11 @@ export class ChromaChordsApp extends LitElement {
       this.requestUpdate();
     });
 
+    this.unsubscribeSyncStatus = projectStorage.subscribeSyncStatus((status) => {
+      this.syncStatus = status;
+      this.requestUpdate();
+    });
+
     this.unsubscribeTick = playbackEngine.subscribeTick((activeIdx, step, secIdx, totalSteps, isSongMode) => {
       this.activeIndex = activeIdx;
       this.progressStep = step;
@@ -217,6 +224,7 @@ export class ChromaChordsApp extends LitElement {
     window.removeEventListener('keydown', this.onGlobalKeyDown);
     if (this.unsubscribeAuth) this.unsubscribeAuth();
     if (this.unsubscribeProjects) this.unsubscribeProjects();
+    if (this.unsubscribeSyncStatus) this.unsubscribeSyncStatus();
     if (this.unsubscribeTick) this.unsubscribeTick();
     if (this.toastDismissTimeout) clearTimeout(this.toastDismissTimeout);
   }
@@ -690,6 +698,7 @@ export class ChromaChordsApp extends LitElement {
           .projects=${projectStorage.getProjects()}
           .isAuthenticated=${this.isAuthenticated}
           .userEmail=${this.userEmail}
+          .syncStatus=${this.syncStatus}
           @back=${this.onBackFromSets}
           @load-project=${this.onLoadProject}
           @delete-project=${this.onDeleteProject}

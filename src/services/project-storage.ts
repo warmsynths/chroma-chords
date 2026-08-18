@@ -4,6 +4,8 @@ import { syncEngine, ClientSet, Tombstone } from './sync-engine';
 
 export type AuthStateCallback = (userEmail: string | null, isAuthenticated: boolean) => void;
 export type ProjectsChangeCallback = (projects: ProjectData[]) => void;
+export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'sign-in';
+export type SyncStatusChangeCallback = (status: SyncStatus) => void;
 
 const DELETED_PROJECTS_KEY = 'chroma_chords_deleted_projects';
 const LAST_SYNC_KEY = 'chroma_chords_last_sync_time';
@@ -42,10 +44,13 @@ export class ProjectStorageManager {
   private isCloudSyncing = false;
   private syncTimeout: ReturnType<typeof setTimeout> | null = null;
   private syncQueued = false;
+  private syncStatus: SyncStatus = 'sign-in';
   private authStateCallbacks = new Set<AuthStateCallback>();
   private projectsChangeCallbacks = new Set<ProjectsChangeCallback>();
+  private syncStatusCallbacks = new Set<SyncStatusChangeCallback>();
   private unsubscribeAuth: (() => void) | null = null;
   private onlineHandler: (() => void) | null = null;
+  private offlineHandler: (() => void) | null = null;
 
   constructor() {
     this.setupAuthSubscription();
@@ -57,7 +62,9 @@ export class ProjectStorageManager {
       const wasAuthenticated = this.authenticated;
       this.userEmail = state.user?.email || null;
       this.authenticated = state.isAuthenticated;
+      this.syncStatus = this.authenticated ? 'synced' : 'sign-in';
       this.notifyAuthState();
+      this.notifySyncStatus();
 
       // Trigger automatic initial cloud sync and migration upon logging in
       if (!wasAuthenticated && this.authenticated) {
@@ -75,7 +82,14 @@ export class ProjectStorageManager {
           this.scheduleCloudSync();
         }
       };
+      this.offlineHandler = () => {
+        if (this.isAuthenticated()) {
+          this.syncStatus = 'offline';
+          this.notifySyncStatus();
+        }
+      };
       window.addEventListener('online', this.onlineHandler);
+      window.addEventListener('offline', this.offlineHandler);
     }
   }
 
@@ -84,9 +98,15 @@ export class ProjectStorageManager {
       this.unsubscribeAuth();
       this.unsubscribeAuth = null;
     }
-    if (this.onlineHandler && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-      window.removeEventListener('online', this.onlineHandler);
-      this.onlineHandler = null;
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      if (this.onlineHandler) {
+        window.removeEventListener('online', this.onlineHandler);
+        this.onlineHandler = null;
+      }
+      if (this.offlineHandler) {
+        window.removeEventListener('offline', this.offlineHandler);
+        this.offlineHandler = null;
+      }
     }
     if (this.syncTimeout) {
       clearTimeout(this.syncTimeout);
@@ -104,6 +124,26 @@ export class ProjectStorageManager {
 
   public get isAdmin(): boolean {
     return Boolean(this.userEmail && this.userEmail.toLowerCase().trim() === 'warmsynthsiloveyou@gmail.com');
+  }
+
+  public getSyncStatus(): SyncStatus {
+    return this.syncStatus;
+  }
+
+  public subscribeSyncStatus(cb: SyncStatusChangeCallback): () => void {
+    this.syncStatusCallbacks.add(cb);
+    cb(this.syncStatus);
+    return () => this.syncStatusCallbacks.delete(cb);
+  }
+
+  private notifySyncStatus() {
+    this.syncStatusCallbacks.forEach((cb) => {
+      try {
+        cb(this.syncStatus);
+      } catch (e) {
+        console.error('Error in SyncStatus callback:', e);
+      }
+    });
   }
 
   public subscribeAuthState(cb: AuthStateCallback): () => void {
@@ -142,7 +182,9 @@ export class ProjectStorageManager {
   public logout(): void {
     this.userEmail = null;
     this.authenticated = false;
+    this.syncStatus = 'sign-in';
     this.notifyAuthState();
+    this.notifySyncStatus();
   }
 
   public getProjects(): ProjectData[] {
@@ -238,6 +280,9 @@ export class ProjectStorageManager {
     if (!workerUrl) return;
 
     this.isCloudSyncing = true;
+    this.syncStatus = 'syncing';
+    this.notifySyncStatus();
+
     try {
       const localProjects = ProjectService.getProjects();
       const tombstones = this.getTombstones();
@@ -312,7 +357,13 @@ export class ProjectStorageManager {
         this.setLastSyncTime(res.lastSyncTime || res.syncedAt!);
       }
 
+      this.syncStatus = 'synced';
+      this.notifySyncStatus();
       this.notifyProjectsChanged();
+    } catch (err) {
+      console.warn('Cloud sync encountered an error, transitioning to offline status:', err);
+      this.syncStatus = 'offline';
+      this.notifySyncStatus();
     } finally {
       this.isCloudSyncing = false;
       if (this.syncQueued) {

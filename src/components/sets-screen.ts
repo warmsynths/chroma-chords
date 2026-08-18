@@ -1,6 +1,7 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ProjectData } from '../services/project-service';
+import { SyncStatus, projectStorage } from '../services/project-storage';
 import { getMoodColor, displayKeyName, roleForTension } from '../services/chord-engine';
 import { rollMascot } from './mascot-character';
 import './mascot-character';
@@ -10,12 +11,31 @@ export class SetsScreen extends LitElement {
   @property({ type: Array }) projects: ProjectData[] = [];
   @property({ type: Boolean }) isAuthenticated = false;
   @property({ type: String }) userEmail: string | null = null;
+  @property({ type: String }) syncStatus: SyncStatus = 'sign-in';
 
   @state() private isSyncing = false;
   @state() private renamingId: string | null = null;
   @state() private draftName = '';
   @state() private confirmDeleteId: string | null = null;
   @state() private emptyMascot = rollMascot(0.9);
+
+  private unsubscribeSyncStatus: (() => void) | null = null;
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.unsubscribeSyncStatus = projectStorage.subscribeSyncStatus((status) => {
+      this.syncStatus = status;
+      this.requestUpdate();
+    });
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this.unsubscribeSyncStatus) {
+      this.unsubscribeSyncStatus();
+      this.unsubscribeSyncStatus = null;
+    }
+  }
 
   static styles = css`
     :host {
@@ -42,11 +62,14 @@ export class SetsScreen extends LitElement {
       align-items: center;
       justify-content: space-between;
       margin-bottom: 24px;
+      gap: 12px;
+      flex-wrap: wrap;
     }
     .top-bar-actions {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
     }
     .back-btn {
       display: inline-flex;
@@ -67,8 +90,76 @@ export class SetsScreen extends LitElement {
     .back-btn:hover {
       background: var(--cv-ink-08);
     }
-    .back-btn:active, .sync-btn:active, .auth-btn:active {
+    .back-btn:active, .sync-btn:active, .auth-btn:active, .status-pill.status-signin:active {
       transform: scale(0.96);
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      border: 1px solid transparent;
+      user-select: none;
+      min-height: 32px;
+      box-sizing: border-box;
+      transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }
+    .status-pill.status-synced {
+      background: #E8F5E9;
+      color: #2E7D32;
+      border-color: #C8E6C9;
+    }
+    .status-pill.status-synced .status-dot {
+      background: #43A047;
+    }
+    .status-pill.status-syncing {
+      background: #E3F2FD;
+      color: #1565C0;
+      border-color: #BBDEFB;
+    }
+    .status-pill.status-syncing .status-dot {
+      background: #1E88E5;
+      animation: pulse-dot 1.2s infinite ease-in-out;
+    }
+    .status-pill.status-offline {
+      background: #FFF3E0;
+      color: #E65100;
+      border-color: #FFE0B2;
+    }
+    .status-pill.status-offline .status-dot {
+      background: #FB8C00;
+    }
+    .status-pill.status-signin {
+      background: var(--cv-surface-2);
+      color: var(--cv-ink);
+      cursor: pointer;
+      border: 1px solid var(--cv-ink-10);
+      font-family: inherit;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .status-pill.status-signin:hover {
+      background: var(--cv-ink-08);
+      transform: translateY(-1px);
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    @keyframes pulse-dot {
+      0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      50% {
+        opacity: 0.35;
+        transform: scale(1.4);
+      }
     }
     .auth-btn {
       display: inline-flex;
@@ -392,13 +483,17 @@ export class SetsScreen extends LitElement {
     this.dispatchEvent(new CustomEvent('load-project', { detail: id }));
   }
 
-  private onSync() {
-    if (this.isSyncing) return;
+  private async onSync() {
+    if (this.isSyncing || this.syncStatus === 'syncing') return;
     this.isSyncing = true;
-    this.dispatchEvent(new CustomEvent('sync-projects'));
-    setTimeout(() => {
+    this.dispatchEvent(new CustomEvent('sync-projects', { bubbles: true, composed: true }));
+    try {
+      await projectStorage.syncWithCloud();
+    } catch (e) {
+      console.warn('Manual sync error:', e);
+    } finally {
       this.isSyncing = false;
-    }, 2000);
+    }
   }
 
   private startRename(e: Event, id: string, name: string) {
@@ -456,7 +551,35 @@ export class SetsScreen extends LitElement {
           </button>
           
           <div class="top-bar-actions">
-            ${this.isAuthenticated ? html`
+            ${!this.isAuthenticated ? html`
+              <button
+                class="status-pill status-signin"
+                @click=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}
+                title="Sign in to sync your saved sets across devices"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>
+                </svg>
+                Sign in to sync
+              </button>
+            ` : html`
+              ${this.syncStatus === 'syncing' || this.isSyncing ? html`
+                <span class="status-pill status-syncing" title="Syncing sets with cloud...">
+                  <span class="status-dot"></span>
+                  Syncing...
+                </span>
+              ` : this.syncStatus === 'offline' ? html`
+                <span class="status-pill status-offline" title="Working offline. Edits are saved locally and will sync when reconnected.">
+                  <span class="status-dot"></span>
+                  Offline
+                </span>
+              ` : html`
+                <span class="status-pill status-synced" title="All saved sets are backed up to the cloud">
+                  <span class="status-dot"></span>
+                  Synced
+                </span>
+              `}
+
               <span class="user-badge" title=${this.userEmail || 'Account'}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -465,20 +588,22 @@ export class SetsScreen extends LitElement {
                 ${this.userEmail ? this.userEmail.split('@')[0] : 'Signed in'}
               </span>
               <button class="sign-out-btn" @click=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}>Sign out</button>
-            ` : html`
-              <button class="auth-btn" @click=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}>
-                Sign in to sync
+
+              <button
+                class="sync-btn"
+                @click=${this.onSync}
+                ?disabled=${this.isSyncing || this.syncStatus === 'syncing'}
+                title="Sync Now"
+              >
+                <svg class=${this.isSyncing || this.syncStatus === 'syncing' ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 2v6h-6"></path>
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                  <path d="M3 22v-6h6"></path>
+                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                </svg>
+                ${this.isSyncing || this.syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
               </button>
             `}
-            <button class="sync-btn" @click=${this.onSync} ?disabled=${this.isSyncing} title="Sync with Cloud">
-              <svg class=${this.isSyncing ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 2v6h-6"></path>
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
-                <path d="M3 22v-6h6"></path>
-                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
-              </svg>
-              ${this.isSyncing ? 'Syncing...' : 'Sync'}
-            </button>
           </div>
         </div>
         
