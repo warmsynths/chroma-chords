@@ -53,6 +53,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private authModalOpen = false;
   @state() private toastMessage: string | null = null;
   @state() private toastUndoId: string | null = null;
+  @state() private isGenerating = false;
 
   private currentProjectId: string | null = null;
   private activeSearchPrompt: string | null = null;
@@ -317,46 +318,56 @@ export class ChromaChordsApp extends LitElement {
   }
 
   private async onGenerate(e?: CustomEvent<{ promptText?: string }>) {
-    this.keyOverride = null;
-    this.scaleOverride = null;
+    if (this.isGenerating) return;
+    this.isGenerating = true;
+    try {
+      this.keyOverride = null;
+      this.scaleOverride = null;
 
-    const searchTerm = e?.detail?.promptText || this.activeSearchPrompt || undefined;
-    const result = await PromptClassifier.resolvePrompt(
-      this.chordData,
-      this.genre,
-      this.mood,
-      this.length,
-      searchTerm,
-      this.pendingChordSuggestion
-    );
+      const searchTerm = e?.detail?.promptText || this.activeSearchPrompt || undefined;
+      const result = await PromptClassifier.resolvePrompt(
+        this.chordData,
+        this.genre,
+        this.mood,
+        this.length,
+        searchTerm,
+        this.pendingChordSuggestion
+      );
 
-    if (result.instrument) {
-      this.instrument = result.instrument;
-      localStorage.setItem('chroma-chords-instrument', result.instrument);
-      playbackEngine.setInstrument(result.instrument);
+      if (result.instrument) {
+        this.instrument = result.instrument;
+        localStorage.setItem('chroma-chords-instrument', result.instrument);
+        playbackEngine.setInstrument(result.instrument);
+      }
+      if (result.playStyle) {
+        this.playStyle = result.playStyle;
+        localStorage.setItem('chroma-chords-play-style', result.playStyle);
+        playbackEngine.setPlayStyle(result.playStyle);
+      }
+
+      const progression = result.progression;
+      this.progression = progression;
+      this.order = Array.from({ length: progression.chords.length }, (_, i) => i);
+      this.length = progression.chords.length;
+      this.activeIndex = 0;
+      this.progressStep = 0;
+      this.playing = false;
+
+      playbackEngine.setProgression(progression, this.order);
+      playbackEngine.reset();
+
+      this.setScreen('loop');
+      this.sections = SongArranger.createInitialSong(progression, this.order);
+      this.activeSectionIdx = 0;
+      this.pendingChordSuggestion = null;
+      this.activeSearchPrompt = null;
+    } catch (err) {
+      console.error('Failed to generate progression:', err);
+      this.toastMessage = 'Failed to generate progression. Please try again.';
+      setTimeout(() => { if (this.toastMessage) this.toastMessage = null; }, 3500);
+    } finally {
+      this.isGenerating = false;
     }
-    if (result.playStyle) {
-      this.playStyle = result.playStyle;
-      localStorage.setItem('chroma-chords-play-style', result.playStyle);
-      playbackEngine.setPlayStyle(result.playStyle);
-    }
-
-    const progression = result.progression;
-    this.progression = progression;
-    this.order = Array.from({ length: progression.chords.length }, (_, i) => i);
-    this.length = progression.chords.length;
-    this.activeIndex = 0;
-    this.progressStep = 0;
-    this.playing = false;
-
-    playbackEngine.setProgression(progression, this.order);
-    playbackEngine.reset();
-
-    this.setScreen('loop');
-    this.sections = SongArranger.createInitialSong(progression, this.order);
-    this.activeSectionIdx = 0;
-    this.pendingChordSuggestion = null;
-    this.activeSearchPrompt = null;
   }
 
   private onLengthChange(e: CustomEvent<number>) {
@@ -734,6 +745,7 @@ export class ChromaChordsApp extends LitElement {
           .isAuthenticated=${this.isAuthenticated}
           .userEmail=${this.userEmail}
           .isAdmin=${this.isAdmin}
+          .isGenerating=${this.isGenerating}
           @genre-change=${this.onGenreChange}
           @mood-change=${this.onMoodChange}
           @length-change=${this.onLengthChange}

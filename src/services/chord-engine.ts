@@ -361,36 +361,55 @@ const PROGRESSION_TEMPLATES: Record<string, ProgressionTemplate[]> = {
     { degrees: ['TONIC', 'SUPERTONIC', 'SUBDOMINANT', 'DOMINANT'] },
     { degrees: ['TONIC', 'MEDIANT', 'SUBMEDIANT', 'SUBDOMINANT'] },
     { degrees: ['TONIC', 'SUBDOMINANT', 'SUBMEDIANT', 'DOMINANT'] },
+    { degrees: ['SUBDOMINANT', 'DOMINANT', 'MEDIANT', 'SUBMEDIANT'] },
+    { degrees: ['SUBDOMINANT', 'TONIC', 'DOMINANT', 'SUBMEDIANT'] },
+    { degrees: ['SUPERTONIC', 'DOMINANT', 'TONIC', 'SUBMEDIANT'] },
+    { degrees: ['SUBMEDIANT', 'DOMINANT', 'SUBDOMINANT', 'DOMINANT'] },
+    { degrees: ['SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'TONIC'] },
   ],
   NATURAL_MINOR: [
     { degrees: ['TONIC', 'SUBMEDIANT', 'MEDIANT', 'SUBTONIC'] },
     { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'MEDIANT'] },
     { degrees: ['TONIC', 'SUBMEDIANT', 'SUBTONIC', 'DOMINANT'] },
     { degrees: ['TONIC', 'SUPERTONIC', 'SUBTONIC', 'SUBMEDIANT'] },
+    { degrees: ['SUBMEDIANT', 'SUBTONIC', 'TONIC', 'DOMINANT'] },
+    { degrees: ['SUBMEDIANT', 'SUBTONIC', 'MEDIANT', 'TONIC'] },
+    { degrees: ['SUBDOMINANT', 'DOMINANT', 'TONIC', 'SUBMEDIANT'] },
+    { degrees: ['SUBTONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'TONIC'] },
   ],
   HARMONIC_MINOR: [
     { degrees: ['TONIC', 'SUBMEDIANT', 'DOMINANT', 'SUBDOMINANT'] },
     { degrees: ['TONIC', 'SUPERTONIC', 'DOMINANT', 'SUBMEDIANT'] },
     { degrees: ['TONIC', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT'] },
     { degrees: ['TONIC', 'SUBMEDIANT', 'SUPERTONIC', 'DOMINANT'] },
+    { degrees: ['SUBMEDIANT', 'DOMINANT', 'TONIC', 'SUBDOMINANT'] },
+    { degrees: ['SUBDOMINANT', 'DOMINANT', 'TONIC', 'SUBMEDIANT'] },
   ],
   DORIAN: [
     { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'SUPERTONIC'] },
     { degrees: ['TONIC', 'SUBTONIC', 'SUBDOMINANT', 'SUPERTONIC'] },
     { degrees: ['TONIC', 'SUPERTONIC', 'SUBDOMINANT', 'SUBTONIC'] },
     { degrees: ['TONIC', 'SUBDOMINANT', 'SUPERTONIC', 'SUBTONIC'] },
+    { degrees: ['SUBDOMINANT', 'TONIC', 'SUBTONIC', 'SUPERTONIC'] },
+    { degrees: ['SUBTONIC', 'SUBDOMINANT', 'TONIC', 'DOMINANT'] },
+    { degrees: ['SUPERTONIC', 'SUBDOMINANT', 'SUBTONIC', 'TONIC'] },
   ],
   MIXOLYDIAN: [
     { degrees: ['TONIC', 'SUBTONIC', 'SUBDOMINANT', 'SUBMEDIANT'] },
     { degrees: ['TONIC', 'SUBDOMINANT', 'SUBTONIC', 'SUPERTONIC'] },
     { degrees: ['TONIC', 'SUBMEDIANT', 'SUBDOMINANT', 'SUBTONIC'] },
     { degrees: ['TONIC', 'SUPERTONIC', 'SUBTONIC', 'SUBDOMINANT'] },
+    { degrees: ['SUBTONIC', 'SUBDOMINANT', 'TONIC', 'DOMINANT'] },
+    { degrees: ['SUBDOMINANT', 'SUBTONIC', 'TONIC', 'SUBMEDIANT'] },
+    { degrees: ['SUBTONIC', 'TONIC', 'SUBDOMINANT', 'SUPERTONIC'] },
   ],
   LYDIAN: [
     { degrees: ['TONIC', 'SUPERTONIC', 'SUBMEDIANT', 'DOMINANT'] },
     { degrees: ['TONIC', 'DOMINANT', 'SUPERTONIC', 'SUBMEDIANT'] },
     { degrees: ['TONIC', 'SUBMEDIANT', 'DOMINANT', 'SUPERTONIC'] },
     { degrees: ['TONIC', 'SUPERTONIC', 'DOMINANT', 'SUBMEDIANT'] },
+    { degrees: ['SUPERTONIC', 'TONIC', 'DOMINANT', 'SUBMEDIANT'] },
+    { degrees: ['SUPERTONIC', 'DOMINANT', 'TONIC', 'SUBMEDIANT'] },
   ],
 };
 
@@ -432,6 +451,77 @@ const DEFAULT_MARKOV_TRANSITIONS: Record<string, Record<string, number>> = {
   'LEADING-TONE': { TONIC: 0.70, SUBMEDIANT: 0.20, MEDIANT: 0.10 },
   SUBTONIC: { TONIC: 0.45, SUBDOMINANT: 0.30, SUBMEDIANT: 0.15, DOMINANT: 0.10 },
 };
+
+export function getStartingDegreeWeight(
+  degree: string,
+  scaleType: string = 'MAJOR',
+  genre: string = 'Pop',
+  mood: string = 'Uplifting'
+): number {
+  const baseWeights: Record<string, number> = {
+    TONIC: 1.0,
+    SUBDOMINANT: 0.45,
+    SUBMEDIANT: 0.4,
+    SUPERTONIC: 0.3,
+    SUBTONIC: 0.3,
+    MEDIANT: 0.15,
+    DOMINANT: 0.15,
+    'LEADING-TONE': 0.02,
+  };
+
+  let weight = baseWeights[degree] ?? 0.1;
+
+  // Scale-specific adjustments
+  if (scaleType.includes('MINOR') || scaleType === 'DORIAN') {
+    if (degree === 'SUBMEDIANT') weight *= 1.4;
+    if (degree === 'SUBTONIC') weight *= 1.3;
+  } else if (scaleType === 'MIXOLYDIAN') {
+    if (degree === 'SUBTONIC') weight *= 1.8;
+    if (degree === 'SUBDOMINANT') weight *= 1.5;
+  } else if (scaleType === 'LYDIAN') {
+    if (degree === 'SUPERTONIC') weight *= 1.8;
+  }
+
+  // Genre adjustments
+  if (genre === 'Lo-fi/Chill' || genre === 'R&B/Soul') {
+    if (degree === 'SUBDOMINANT' || degree === 'SUPERTONIC') weight *= 2.0;
+    if (degree === 'SUBMEDIANT') weight *= 1.5;
+  } else if (genre === 'Jazz-ish' || genre === 'Bossa Nova/Latin') {
+    if (degree === 'SUPERTONIC') weight *= 2.5;
+    if (degree === 'SUBDOMINANT') weight *= 1.8;
+  } else if (genre === 'Pop' || genre === 'Indie/Folk' || genre === 'Shoegaze') {
+    if (degree === 'SUBDOMINANT' || degree === 'SUBMEDIANT') weight *= 1.8;
+  } else if (genre === 'Synthwave' || genre === 'House/Dance' || genre === 'Rock' || genre === 'Punk' || genre === 'Funk/Disco' || genre === 'Reggae/Dub') {
+    if (degree === 'SUBTONIC') weight *= 2.2;
+    if (degree === 'SUBDOMINANT') weight *= 1.8;
+    if (degree === 'SUBMEDIANT') weight *= 1.6;
+  } else if (genre === 'Classical/Orchestral' || genre === 'Gospel') {
+    if (degree === 'TONIC') weight *= 2.5;
+  }
+
+  // Mood adjustments
+  if (mood === 'Uplifting' || mood === 'Epic' || mood === 'Peaceful') {
+    if (degree === 'TONIC') weight *= 2.5;
+  } else if (mood === 'Melancholy' || mood === 'Dark') {
+    if (degree === 'SUBMEDIANT') weight *= 2.2;
+    if (degree === 'SUPERTONIC') weight *= 1.5;
+  } else if (mood === 'Dreamy' || mood === 'Nostalgic' || mood === 'Warm') {
+    if (degree === 'SUBDOMINANT') weight *= 2.0;
+    if (degree === 'SUBMEDIANT') weight *= 1.6;
+    if (degree === 'MEDIANT') weight *= 1.4;
+  } else if (mood === 'Tense') {
+    if (degree === 'SUPERTONIC' || degree === 'SUBDOMINANT') weight *= 1.8;
+  } else if (mood === 'Groovy' || mood === 'Energetic') {
+    if (degree === 'SUBTONIC' || degree === 'SUBDOMINANT') weight *= 1.8;
+  }
+
+  const bias = MOOD_DEGREE_BIAS[mood] || [];
+  if (bias.includes(degree)) {
+    weight *= 1.3;
+  }
+
+  return Math.max(0.01, weight);
+}
 
 export function getMarkovTransitionWeight(
   fromDegree: string,
@@ -477,21 +567,21 @@ function walkMarkovGraph(
   mood: string,
   length: number = DEFAULT_PROGRESSION_LENGTH
 ): string[] {
-  let firstDegree = 'TONIC';
-  if ((scale.type.includes('MINOR') || scale.type === 'DORIAN') && (mood === 'Melancholy' || mood === 'Nostalgic') && Math.random() < 0.4) {
-    firstDegree = degreeOrder.includes('SUBMEDIANT') ? 'SUBMEDIANT' : 'TONIC';
-  }
+  let candidates = degreeOrder.filter(d => scale.degrees[d]);
+  if (!candidates.length) candidates = degreeOrder;
+
+  const firstDegree = pickWeighted(candidates, d => getStartingDegreeWeight(d, scale.type, genre, mood)) || 'TONIC';
   const chosenDegrees: string[] = [firstDegree];
   let currentDegree = firstDegree;
 
   for (let i = 1; i < length; i++) {
     const isLast = i === length - 1;
 
-    let candidates = degreeOrder.filter(d => scale.degrees[d]);
-    if (!candidates.length) candidates = degreeOrder;
+    let stepCandidates = degreeOrder.filter(d => scale.degrees[d]);
+    if (!stepCandidates.length) stepCandidates = degreeOrder;
 
-    const nonDuplicates = candidates.filter(d => d !== currentDegree);
-    const pool = nonDuplicates.length ? nonDuplicates : candidates;
+    const nonDuplicates = stepCandidates.filter(d => d !== currentDegree);
+    const pool = nonDuplicates.length ? nonDuplicates : stepCandidates;
 
     if (isLast) {
       const cadencePick = pickWeighted(pool, d => {
@@ -623,7 +713,7 @@ const MODE_DEGREES: Record<string, string[]> = {
   LYDIAN: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'LEADING-TONE'],
 };
 
-function injectModes(data: RawChordData) {
+export function injectModes(data: RawChordData) {
   const modeConfigs: [string, Record<string, string>][] = [
     ['MIXOLYDIAN', MIXOLYDIAN_PARENT_ROOTS],
     ['DORIAN', DORIAN_PARENT_ROOTS],
@@ -792,7 +882,13 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
     root = 'C';
     scaleKey = `${root}_${scaleType}`;
   }
-  const scale = data.scales[scaleKey];
+  let scale = data.scales[scaleKey];
+  if (!scale) {
+    const fallbackKey = Object.keys(data.scales).find(k => k.endsWith(`_${scaleType}`)) || Object.keys(data.scales)[0];
+    scale = data.scales[fallbackKey];
+    root = scale ? scale.root : 'C';
+    scaleKey = fallbackKey;
+  }
   const preferFlat = preferFlatSpelling(root, scaleType);
 
   const degreeOrder = Object.keys(scale.degrees);

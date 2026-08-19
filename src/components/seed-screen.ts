@@ -98,6 +98,7 @@ export class SeedScreen extends LitElement {
   @property({ type: Boolean }) isAuthenticated = false;
   @property({ type: String }) userEmail: string | null = null;
   @property({ type: Boolean }) isAdmin = false;
+  @property({ type: Boolean }) isGenerating = false;
   @state() private currentProvider: LLMProvider = getLLMProvider();
   @state() private currentModel: string = getLLMModel();
   @state() private showAdminModal = false;
@@ -729,6 +730,60 @@ export class SeedScreen extends LitElement {
       cursor: default;
       pointer-events: none;
     }
+    .vibe-submit-btn.generating {
+      cursor: wait;
+      pointer-events: none;
+    }
+    .vibe-spinner {
+      animation: cv-spin 0.75s linear infinite;
+    }
+    .vibe-input-wrap.generating {
+      border-color: rgba(46, 39, 31, 0.35);
+      box-shadow: 0 0 0 3px rgba(246, 217, 139, 0.35), 0 14px 32px -16px rgba(46, 39, 31, 0.35);
+      animation: cv-input-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes cv-input-pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.008); }
+    }
+    .cta.generating {
+      cursor: wait;
+      pointer-events: none;
+    }
+    .generating-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #5B5145;
+      animation: cv-status-fade 0.25s ease-out;
+    }
+    @keyframes cv-status-fade {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .generating-dot-pulse {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .generating-dot-pulse span {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #8A6B3F;
+      animation: cv-bounce 1.2s infinite ease-in-out both;
+    }
+    .generating-dot-pulse span:nth-child(1) { animation-delay: -0.32s; }
+    .generating-dot-pulse span:nth-child(2) { animation-delay: -0.16s; }
+    .generating-dot-pulse span:nth-child(3) { animation-delay: 0s; }
+    @keyframes cv-bounce {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.35; }
+      40% { transform: scale(1.2); opacity: 1; }
+    }
     /* Peeks up from behind the pill's top edge — z-index 0 vs. the pill's 1 means the pill's
        own (opaque) background paints over the lower portion, so only the top sliver shows,
        like the character is looking out over the rim of a little window. */
@@ -1344,6 +1399,7 @@ export class SeedScreen extends LitElement {
   }
 
   private generate = () => {
+    if (this.isGenerating) return;
     if (this.capacityCharges <= 0) {
       this.showCapacityNote = true;
       return;
@@ -1473,7 +1529,7 @@ export class SeedScreen extends LitElement {
                 <mascot-character .kind=${this.peekMascot.kind} .scale=${0.4}></mascot-character>
               </div>
             ` : ''}
-            <div class="vibe-input-wrap">
+            <div class="vibe-input-wrap ${this.isGenerating ? 'generating' : ''}">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cv-label, #8A6B3F)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
                 <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/>
               </svg>
@@ -1481,16 +1537,17 @@ export class SeedScreen extends LitElement {
                 type="text"
                 class="vibe-input"
                 .value=${this.freeText}
+                ?disabled=${this.isGenerating}
                 @input=${(e: Event) => this.onFreeTextChange(e)}
                 @keydown=${(e: KeyboardEvent) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' && !this.isGenerating) {
                     e.preventDefault();
                     this.generate();
                   }
                 }}
-                placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
+                placeholder=${this.isGenerating ? 'Composing your chords...' : VIBE_EXAMPLES[this.placeholderIdx]}
               />
-              ${this.isAdmin ? html`
+              ${this.isAdmin && !this.isGenerating ? html`
                 <button class="vibe-admin-btn" @click=${(e: Event) => { e.stopPropagation(); this.showAdminModal = true; }} title="AI Model Configuration">
                   ⚡ ${this.currentProvider === 'google'
                     ? `Google AI (${this.googleRemaining} left)`
@@ -1500,17 +1557,33 @@ export class SeedScreen extends LitElement {
                 </button>
               ` : ''}
               <button
-                class="vibe-submit-btn ${!this.freeText.trim() || this.capacityCharges <= 0 ? 'disabled' : ''}"
-                style="background: ${moodColor}; opacity: ${this.capacityCharges > 0 ? '1' : '0.4'};"
+                class="vibe-submit-btn ${!this.freeText.trim() || this.capacityCharges <= 0 || this.isGenerating ? 'disabled' : ''} ${this.isGenerating ? 'generating' : ''}"
+                style="background: ${moodColor}; opacity: ${this.capacityCharges > 0 && !this.isGenerating ? '1' : '0.6'};"
                 @click=${(e: Event) => { e.stopPropagation(); this.generate(); }}
-                aria-label="Hear this vibe as chords"
-                title="Generate progression from vibe"
+                aria-label=${this.isGenerating ? 'Composing chords' : 'Hear this vibe as chords'}
+                title=${this.isGenerating ? 'Composing chords...' : 'Generate progression from vibe'}
+                ?disabled=${this.isGenerating}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M5 12h14M12 5l7 7-7 7"/>
-                </svg>
+                ${this.isGenerating ? html`
+                  <svg class="vibe-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round">
+                    <circle cx="12" cy="12" r="9" stroke="rgba(46,39,31,0.2)" stroke-width="2.6"/>
+                    <path d="M12 3a9 9 0 0 1 9 9" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"/>
+                  </svg>
+                ` : html`
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                  </svg>
+                `}
               </button>
             </div>
+            ${this.isGenerating ? html`
+              <div class="generating-status">
+                <div class="generating-dot-pulse">
+                  <span></span><span></span><span></span>
+                </div>
+                <span>Finding chords for <strong>${this.freeText.trim() ? `"${this.freeText.trim()}"` : `${this.genre} · ${this.mood}`}</strong>...</span>
+              </div>
+            ` : ''}
             ${this.showCapacityNote ? html`
               <div class="capacity-note" @click=${() => { this.showCapacityNote = false; }}>
                 ${this.capacityCharges > 0
@@ -1587,11 +1660,20 @@ export class SeedScreen extends LitElement {
           </div>
 
           <button
-            class="cta ${this.capacityCharges <= 0 ? 'disabled' : ''}"
-            style="background:${moodColor}; opacity: ${this.capacityCharges > 0 ? '1' : '0.4'};"
+            class="cta ${this.capacityCharges <= 0 || this.isGenerating ? 'disabled' : ''} ${this.isGenerating ? 'generating' : ''}"
+            style="background:${moodColor}; opacity: ${this.capacityCharges > 0 && !this.isGenerating ? '1' : '0.6'};"
             @click=${this.generate}
+            ?disabled=${this.isGenerating}
           >
-            ${best ? "Let's go to your progression" : 'Generate loop'} <span>→</span>
+            ${this.isGenerating ? html`
+              <svg class="vibe-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round">
+                <circle cx="12" cy="12" r="9" stroke="rgba(46,39,31,0.2)" stroke-width="2.6"/>
+                <path d="M12 3a9 9 0 0 1 9 9" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"/>
+              </svg>
+              <span>Composing chords...</span>
+            ` : html`
+              ${best ? "Let's go to your progression" : 'Generate loop'} <span>→</span>
+            `}
           </button>
           <div class="caption">Nothing here is permanent — swap any chord after.</div>
 
