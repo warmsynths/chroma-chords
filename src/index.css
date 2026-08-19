@@ -30,9 +30,40 @@ body {
   border-radius: 4px;
 }
 
+@keyframes cvfv-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes cvfv-float1 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(0, -14px) rotate(4deg); }
+}
+
+@keyframes cvfv-float2 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(0, 12px) rotate(-5deg); }
+}
+
+@keyframes cvfv-float3 {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(10px, -8px) rotate(3deg); }
+}
+
+@keyframes cvfv-bg-drift-a {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(0, -7px) rotate(1.5deg); }
+}
+
+@keyframes cvfv-bg-drift-b {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(0, 6px) rotate(-1.5deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
 }
+

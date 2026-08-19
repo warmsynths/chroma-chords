@@ -13,6 +13,7 @@ import './mascot-parade';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, genreDefaultInstrumentName, genreDefaultPlayStyleName } from '../services/audio-service';
 import { downloadWav, downloadMidi } from '../services/export-service';
 import './save-set-modal';
+import './app-header';
 
 // Side-gutter slots for the desktop-only background mascot — only shows once there's real
 // gutter space beside the centered .content column (see the min-width:900px media query below).
@@ -559,11 +560,19 @@ export class LoopScreen extends LitElement {
       color: var(--cv-ink-muted);
       margin-top: 12px;
     }
+    .cta-button-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 28px;
+      flex-wrap: wrap;
+    }
     .build-song-btn {
-      width: 100%;
+      flex: 1;
+      min-width: 200px;
       border: none;
       color: var(--cv-ink);
-      padding: 16px;
+      padding: 16px 24px;
       border-radius: 100px;
       font-family: inherit;
       font-weight: 800;
@@ -574,11 +583,34 @@ export class LoopScreen extends LitElement {
       justify-content: center;
       gap: 10px;
       cursor: pointer;
-      margin-top: 24px;
       transition: transform 160ms var(--cv-ease);
     }
     .build-song-btn:active {
       transform: scale(0.98);
+    }
+    .play-along-cta-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      background: transparent;
+      border: 2px solid rgba(46, 39, 31, 0.18);
+      color: var(--cv-ink);
+      padding: 14px 24px;
+      border-radius: 100px;
+      font-weight: 800;
+      font-size: 15px;
+      font-family: inherit;
+      cursor: pointer;
+      min-width: 150px;
+      transition: transform 160ms var(--cv-ease), border-color 200ms ease, background 200ms ease;
+    }
+    .play-along-cta-btn:hover {
+      border-color: rgba(46, 39, 31, 0.36);
+      background: rgba(46, 39, 31, 0.04);
+    }
+    .play-along-cta-btn:active {
+      transform: scale(0.97);
     }
     .back-to-seed-row {
       margin-top: 24px;
@@ -1479,9 +1511,22 @@ export class LoopScreen extends LitElement {
             </div>
           ` : ''}
 
-          <button class="build-song-btn" style="background:${moodColor}" @click=${() => this.emit('view-song')}>
-            Build the full song <span>→</span>
-          </button>
+          <div class="cta-button-group">
+            <button class="build-song-btn" style="background:${moodColor}" @click=${() => this.emit('view-song')}>
+              Build the full song <span>→</span>
+            </button>
+            <button
+              class="play-along-cta-btn"
+              @click=${() => this.emit('view-play-along')}
+              aria-label="Practice chords with hands"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2.5" y="7" width="19" height="10" rx="2"/>
+                <path d="M8 7v10M13 7v10M18 7v10"/>
+              </svg>
+              Play along
+            </button>
+          </div>
           <div class="back-to-seed-row">
             <div class="back-to-seed-link" @click=${() => this.emit('back')}>← Back to seed</div>
           </div>

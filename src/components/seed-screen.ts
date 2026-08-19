@@ -6,6 +6,7 @@ import { NormalizedPrompt } from '../services/freetext-schema';
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
 import './mascot-parade';
+import './app-header';
 
 // Side-gutter slots for the desktop-only background mascot — mobile has zero spare vertical
 // room here (the whole picker is tuned to fit one screen), so it only appears once there's
@@ -585,7 +586,7 @@ export class SeedScreen extends LitElement {
       flex-direction: column;
       align-items: center;
       box-sizing: border-box;
-      padding: 36px 40px 80px;
+      padding: 24px 32px 80px;
     }
     .wordmark {
       display: flex;
@@ -602,12 +603,12 @@ export class SeedScreen extends LitElement {
     .content {
       width: 100%;
       max-width: 520px;
-      margin-top: 20px;
+      margin-top: 10px;
     }
     .hero {
       position: relative;
       text-align: center;
-      margin-bottom: 24px;
+      margin-bottom: 28px;
     }
     .aquarium-layer {
       position: absolute;
@@ -630,17 +631,17 @@ export class SeedScreen extends LitElement {
     }
     h1 {
       margin: 0;
-      font-size: clamp(28px, 6vw, 42px);
+      font-size: clamp(30px, 5.5vw, 42px);
       font-weight: 800;
       line-height: 1.14;
       letter-spacing: -0.02em;
       color: var(--cv-ink);
     }
     .subcopy {
-      font-size: 15px;
-      line-height: 1.6;
-      color: var(--cv-ink-muted);
-      margin-top: 12px;
+      font-size: 16px;
+      line-height: 1.65;
+      color: #6B5F50;
+      margin-top: 14px;
     }
     .vibe-input-shell {
       position: relative;
@@ -652,26 +653,11 @@ export class SeedScreen extends LitElement {
       display: flex;
       align-items: center;
       gap: 10px;
-      background: var(--cv-cream);
-      background-clip: padding-box;
-      border: 1.5px solid transparent;
+      background: var(--cv-cream, #FBF3E6);
+      border: 1.5px solid rgba(46, 39, 31, 0.1);
       border-radius: 100px;
       padding: 8px 10px 8px 20px;
       box-shadow: 0 14px 30px -20px rgba(46, 39, 31, 0.5);
-    }
-    .capacity-ring-shell {
-      position: relative;
-      border-radius: 104px;
-      padding: 4px;
-      cursor: pointer;
-      transition: background 320ms ease;
-    }
-    .capacity-ring-shell.pulsing {
-      animation: cvfv-ring-pulse 2s ease-in-out infinite;
-    }
-    @keyframes cvfv-ring-pulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(242, 167, 155, 0.55); }
-      50% { box-shadow: 0 0 0 6px rgba(242, 167, 155, 0); }
     }
     .capacity-note {
       text-align: center;
@@ -719,8 +705,8 @@ export class SeedScreen extends LitElement {
       animation: cv-spin 1s linear infinite;
     }
     .vibe-submit-btn {
-      width: 38px;
-      height: 38px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
       border: none;
       display: inline-flex;
@@ -766,12 +752,20 @@ export class SeedScreen extends LitElement {
       padding: 10px 0;
       min-width: 0;
     }
+    .vibe-input:focus,
+    .vibe-input:focus-visible {
+      outline: none;
+    }
+    .vibe-input-wrap:focus-within {
+      border-color: rgba(46, 39, 31, 0.28);
+      box-shadow: 0 14px 32px -16px rgba(46, 39, 31, 0.45);
+    }
     .vibe-input::placeholder {
       color: rgba(46, 39, 31, 0.55);
       opacity: 1;
       transition: color 0.3s ease;
     }
-    :focus-visible {
+    button:focus-visible {
       outline: 2.5px solid var(--cv-ink);
       outline-offset: 2px;
     }
@@ -822,36 +816,36 @@ export class SeedScreen extends LitElement {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin: 32px 0 8px;
+      margin: 36px 0 8px;
     }
     .divider-rule {
       flex: 1;
       height: 1px;
-      background: var(--cv-ink-14);
+      background: rgba(46, 39, 31, 0.14);
     }
     .divider-label {
       font-size: 11.5px;
       font-weight: 800;
       letter-spacing: 1.5px;
-      color: var(--cv-label);
+      color: #8A6B3F;
       text-transform: uppercase;
       white-space: nowrap;
     }
     .section-label {
-      margin-top: 24px;
-      margin-bottom: 12px;
-      font-size: 12.5px;
+      margin-top: 26px;
+      margin-bottom: 10px;
+      font-size: 11.5px;
       font-weight: 800;
       letter-spacing: 1.5px;
-      color: var(--cv-label);
+      color: #8A6B3F;
       text-transform: uppercase;
-      text-align: center;
+      text-align: left;
     }
     .pill-grid {
       display: flex;
       flex-wrap: wrap;
-      gap: 9px;
-      justify-content: center;
+      gap: 8px;
+      justify-content: flex-start;
     }
     .pill {
       display: flex;
@@ -918,12 +912,12 @@ export class SeedScreen extends LitElement {
       transition: background 150ms var(--cv-ease);
     }
     .length-control {
-      background: var(--cv-surface-2);
-      border-radius: 20px;
-      padding: 16px 20px;
+      background: #F1E4CC;
+      border-radius: 18px;
+      padding: 14px 18px;
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
     }
     .length-btn {
       width: 30px;
@@ -981,9 +975,9 @@ export class SeedScreen extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 9px;
       cursor: pointer;
-      margin-top: 36px;
+      margin-top: 30px;
       transition: transform 160ms var(--cv-ease);
     }
     .cta:active {
@@ -991,16 +985,16 @@ export class SeedScreen extends LitElement {
     }
     .caption {
       text-align: center;
-      font-size: 11.5px;
-      color: var(--cv-ink-45);
-      margin-top: 12px;
+      font-size: 13px;
+      color: #8A7C6B;
+      margin-top: 14px;
     }
     .footer {
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 10px;
-      margin-top: 28px;
+      margin-top: 40px;
       font-size: 12px;
       color: rgba(46, 39, 31, 0.4);
     }
@@ -1019,47 +1013,37 @@ export class SeedScreen extends LitElement {
       opacity: 0.6;
     }
 
-    @media (min-width: 640px) {
-      .content { max-width: 620px; }
-      .frame { padding-top: 56px; }
-    }
-
     .mascot-slot {
       display: none;
       position: absolute;
       z-index: 1;
       opacity: 0.9;
     }
-    /* Real gutter space beside the centered .content column only exists on wider viewports —
-       and mobile's short-viewport spacing above is tuned to fit exactly, with nothing to spare. */
     @media (min-width: 980px) and (min-height: 700px) {
       .mascot-slot { display: block; }
       .mascot-slot.left { left: 40px; }
       .mascot-slot.right { right: 40px; }
     }
 
-    /* Short mobile viewports (the constraint is vertical space, not width) — tighten spacing
-       throughout so the whole picker, including the CTA, stays visible without scrolling. */
-    @media (max-height: 920px) {
-      .frame { padding: 18px 26px 16px; }
-      .hero { margin-bottom: 14px; }
-      h1 { font-size: clamp(24px, 6.5vw, 34px); }
-      .subcopy { margin-top: 6px; font-size: 13.5px; line-height: 1.45; }
-      .vibe-input-shell { margin-top: 16px; }
-      .vibe-input-wrap { padding: 6px 8px 6px 16px; }
-      .vibe-input { padding: 7px 0; font-size: 14px; }
-      .suggestion-wrap { margin-top: 6px; }
-      .divider-row { margin: 16px 0 4px; }
-      .section-label { margin-top: 14px; margin-bottom: 7px; }
-      .pill-grid { gap: 6px; }
-      .pill { padding: 6px 14px 6px 9px; font-size: 13px; }
+    @media (max-width: 600px) {
+      .frame { padding: 16px 20px 40px; }
+      .content { max-width: 100%; }
+      .hero { margin-bottom: 20px; }
+      h1 { font-size: 26px; line-height: 1.16; }
+      .subcopy { margin-top: 10px; font-size: 13px; line-height: 1.6; }
+      .vibe-input-shell { margin-top: 20px; }
+      .vibe-input-wrap { padding: 6px 8px 6px 14px; }
+      .vibe-submit-btn { width: 38px; height: 38px; }
+      .divider-row { margin: 24px 0 12px; }
+      .section-label { margin-top: 22px; margin-bottom: 8px; font-size: 11px; }
+      .pill-grid { gap: 7px; }
+      .pill { padding: 7px 14px 7px 9px; font-size: 12.5px; }
       .genre-icon-wrap { width: 18px; height: 18px; margin-right: 6px; }
       .mood-badge { width: 20px; height: 20px; margin-right: 6px; }
-      .length-control { padding: 10px 16px; gap: 10px; }
-      .length-btn { width: 26px; height: 26px; }
-      .cta { margin-top: 16px; padding: 13px; font-size: 14.5px; }
-      .caption { margin-top: 6px; font-size: 11px; }
-      .footer { margin-top: 12px; font-size: 11px; }
+      .length-control { padding: 12px 16px; border-radius: 16px; }
+      .cta { margin-top: 24px; padding: 15px; font-size: 15px; }
+      .caption { margin-top: 10px; font-size: 12px; }
+      .footer { margin-top: 24px; font-size: 11px; }
     }
 
     .footer-admin-btn {
@@ -1382,68 +1366,6 @@ export class SeedScreen extends LitElement {
 
   private onFreeTextChange(e: Event) {
     this.freeText = (e.target as HTMLInputElement).value;
-    this.llmSuggestion = null;
-    this.llmResolved = false;
-    this.classifyError = null;
-    if (this.freeText.trim().length <= 2) {
-      this.isClassifying = false;
-    }
-    this.scheduleClassify();
-
-    // Instant feedback: auto-apply the offline keyword guess the moment it has real signal,
-    // so the genre/mood pills (and the CTA copy) react live as you type rather than waiting on
-    // a click. The LLM result upgrades this in place once it resolves (see scheduleClassify).
-    const trimmed = this.freeText.trim();
-    if (trimmed.length > 2) {
-      const instant = heuristicClassify(trimmed);
-      if (instant) this.applyBest(instant);
-    }
-  }
-
-  private scheduleClassify() {
-    if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
-    const text = this.freeText.trim();
-    const lower = text.toLowerCase();
-    if (text.length <= 2 || ['m', 'mo', 'moc', 't', 'te', 'tes'].includes(lower)) {
-      this.isClassifying = false;
-      return;
-    }
-
-    const token = ++this.classifyToken;
-
-    this.classifyDebounce = setTimeout(async () => {
-      this.isClassifying = true;
-      try {
-        const result = await classifyFreeText(text);
-        if (token !== this.classifyToken) return; // text changed while the call was in flight
-        if (result?._rateLimit?.remaining !== undefined) {
-          if (result._rateLimit.provider === 'google' || this.currentProvider === 'google') {
-            this.googleRemaining = result._rateLimit.remaining;
-            if (result._rateLimit.limit) this.googleLimit = result._rateLimit.limit;
-            if (result._rateLimit.cooldownSeconds) this.googleCooldownSec = result._rateLimit.cooldownSeconds;
-          } else {
-            this.orRemaining = result._rateLimit.remaining;
-            if (result._rateLimit.limit) this.orLimit = result._rateLimit.limit;
-          }
-        } else {
-          if (this.currentProvider === 'google') {
-            this.googleRemaining = Math.max(0, this.googleRemaining - 1);
-          } else if (this.currentProvider === 'openrouter') {
-            this.orRemaining = Math.max(0, this.orRemaining - 1);
-          }
-        }
-        this.startCooldownTimer();
-
-        this.llmSuggestion = result;
-        this.llmResolved = true;
-        this.classifyError = result ? null : CLASSIFY_ERROR_MESSAGES[Math.floor(Math.random() * CLASSIFY_ERROR_MESSAGES.length)];
-        if (result) this.applyBest(result);
-      } finally {
-        if (token === this.classifyToken) {
-          this.isClassifying = false;
-        }
-      }
-    }, CLASSIFY_DEBOUNCE_MS);
   }
 
   private applyBest(best: NormalizedPrompt) {
@@ -1503,26 +1425,22 @@ export class SeedScreen extends LitElement {
     const shownMoodNames = this.expandedMood ? primaryMoodNames.concat(restMoodNames) : primaryMoodNames;
     const shownMoods = shownMoodNames.map(n => MOODS.find(m => m.name === n)!);
     const freeTextTrimmed = this.freeText.trim();
-    let best: NormalizedPrompt | null = null;
-    if (freeTextTrimmed.length > 2) {
-      // Once the LLM call has resolved, trust its answer even if that answer is "no idea"
-      // (null) — only fall back to the instant heuristic guess while still waiting on it.
-      best = this.llmResolved ? this.llmSuggestion : heuristicClassify(freeTextTrimmed);
-    }
-
-    // 4 discrete capacity arc segments
-    const tokens = this.capacityCharges;
-    const GAP = 8, SEG = 360 / CAPACITY_MAX;
-    const stops: string[] = [];
-    for (let i = 0; i < CAPACITY_MAX; i++) {
-      const from = i * SEG;
-      stops.push(`${i < tokens ? '#F2A79B' : 'rgba(46,39,31,0.13)'} ${from}deg ${from + SEG - GAP}deg`);
-      stops.push(`transparent ${from + SEG - GAP}deg ${from + SEG}deg`);
-    }
-    const capacityRingBackground = `conic-gradient(from -90deg, ${stops.join(', ')})`;
+    const best: NormalizedPrompt | null = freeTextTrimmed.length > 2 ? heuristicClassify(freeTextTrimmed) : null;
 
     return html`
       <div class="frame" @mousemove=${this.onFrameMouseMove} @mouseleave=${this.onFrameMouseLeave}>
+        <app-header
+          .capacityCharges=${this.capacityCharges}
+          .capacityMax=${CAPACITY_MAX}
+          .rechargeNextSec=${this.rechargeNextSec}
+          .isAuthenticated=${this.isAuthenticated}
+          .userEmail=${this.userEmail}
+          @view-sets=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}
+          @request-login=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}
+          @request-logout=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}
+          @wordmark-click=${() => this.onWordmarkClick()}
+        ></app-header>
+
         <div class="aquarium-layer">
           ${this.jellyBodies.map(b => html`
             <div class="jelly-shape-wrapper" id="jelly-${b.id}" style="transform: translate3d(${b.x - b.radius}px, ${b.y - b.radius}px, 0) rotate(${b.angle}deg) scale(${b.squishX}, ${b.squishY})">
@@ -1536,29 +1454,17 @@ export class SeedScreen extends LitElement {
             <mascot-character .kind=${this.mascot.kind} .scale=${0.75}></mascot-character>
           </div>
         ` : ''}
-        
-        ${this.isAuthenticated ? html`
-          <div class="your-sets-btn" @click=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-            Your sets
-          </div>
-        ` : ''}
-        
-        <div class="wordmark" @click=${() => this.onWordmarkClick()}>
-          <svg width="22" height="22" viewBox="0 0 30 30">
-            <circle cx="11" cy="11" r="9" fill="#F2A79B" />
-            <circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" />
-          </svg>
-          <div class="wordmark-text">Chroma Chords</div>
-        </div>
+
         <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 
         <div class="content">
-          <div class="hero">
-            <h1>Describe a vibe,<br />hear it as chords.</h1>
-            <div class="subcopy">Type a feeling in your own words — or pick a genre and mood below.</div>
+          <div style="position:relative;text-align:center;margin-bottom:28px;">
+            <svg style="position:absolute;top:-34px;left:-6px;animation:cvfv-float1 14s ease-in-out infinite;transform-origin:center;pointer-events:none;" width="46" height="46" viewBox="0 0 38 38"><path d="M19 2C28 2 36 9 36 19C36 29 28 36 18 36C8 36 2 27 2 18C2 9 10 2 19 2Z" fill="#F6D98B"/></svg>
+            <svg style="position:absolute;bottom:-22px;right:-30px;animation:cvfv-float2 17s ease-in-out infinite;transform-origin:center;pointer-events:none;" width="38" height="38" viewBox="0 0 30 30"><rect x="2" y="2" width="26" height="26" rx="9" fill="#9CC0EC"/></svg>
+            <svg style="position:absolute;top:-16px;right:56px;animation:cvfv-float3 20s ease-in-out infinite;animation-delay:-4s;transform-origin:center;pointer-events:none;" width="54" height="54" viewBox="0 0 46 46"><circle cx="23" cy="23" r="20" fill="none" stroke="#F2A79B" stroke-width="6" opacity="0.6"/></svg>
+
+            <h1 style="font-size:40px;font-weight:800;line-height:1.14;letter-spacing:-0.02em;color:#2E271F;margin:0;">Describe a vibe,<br />hear it as chords.</h1>
+            <div style="font-size:15.5px;line-height:1.65;color:#6B5F50;margin-top:12px;">Type a feeling in your own words — or pick a genre and mood below.</div>
           </div>
 
           <div class="vibe-input-shell">
@@ -1567,53 +1473,43 @@ export class SeedScreen extends LitElement {
                 <mascot-character .kind=${this.peekMascot.kind} .scale=${0.4}></mascot-character>
               </div>
             ` : ''}
-            <div
-              class="capacity-ring-shell ${this.capacityCharges === 0 ? 'pulsing' : ''}"
-              style="background: ${capacityRingBackground};"
-              @click=${() => { this.showCapacityNote = !this.showCapacityNote; }}
-            >
-              <div class="vibe-input-wrap">
-                ${this.isClassifying ? html`
-                  <div class="vibe-input-icon" title="Classifying vibe...">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                    </svg>
-                  </div>
-                ` : ''}
-                <input
-                  type="text"
-                  class="vibe-input"
-                  .value=${this.freeText}
-                  @input=${(e: Event) => this.onFreeTextChange(e)}
-                  @keydown=${(e: KeyboardEvent) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      this.generate();
-                    }
-                  }}
-                  placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
-                />
-                ${this.isAdmin ? html`
-                  <button class="vibe-admin-btn" @click=${(e: Event) => { e.stopPropagation(); this.showAdminModal = true; }} title="AI Model Configuration">
-                    ⚡ ${this.currentProvider === 'google'
-                      ? `Google AI (${this.googleRemaining} left)`
-                      : this.currentProvider === 'anthropic'
-                          ? 'Claude'
-                          : `OpenRouter (${this.orRemaining} left)`}
-                  </button>
-                ` : ''}
-                <button
-                  class="vibe-submit-btn ${!this.freeText.trim() || this.capacityCharges <= 0 ? 'disabled' : ''}"
-                  style="background: ${moodColor}; opacity: ${this.capacityCharges > 0 ? '1' : '0.4'};"
-                  @click=${(e: Event) => { e.stopPropagation(); this.generate(); }}
-                  aria-label="Hear this vibe as chords"
-                  title="Generate progression from vibe"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M5 12h14M12 5l7 7-7 7"/>
-                  </svg>
+            <div class="vibe-input-wrap">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--cv-label, #8A6B3F)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/>
+              </svg>
+              <input
+                type="text"
+                class="vibe-input"
+                .value=${this.freeText}
+                @input=${(e: Event) => this.onFreeTextChange(e)}
+                @keydown=${(e: KeyboardEvent) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.generate();
+                  }
+                }}
+                placeholder=${VIBE_EXAMPLES[this.placeholderIdx]}
+              />
+              ${this.isAdmin ? html`
+                <button class="vibe-admin-btn" @click=${(e: Event) => { e.stopPropagation(); this.showAdminModal = true; }} title="AI Model Configuration">
+                  ⚡ ${this.currentProvider === 'google'
+                    ? `Google AI (${this.googleRemaining} left)`
+                    : this.currentProvider === 'anthropic'
+                        ? 'Claude'
+                        : `OpenRouter (${this.orRemaining} left)`}
                 </button>
-              </div>
+              ` : ''}
+              <button
+                class="vibe-submit-btn ${!this.freeText.trim() || this.capacityCharges <= 0 ? 'disabled' : ''}"
+                style="background: ${moodColor}; opacity: ${this.capacityCharges > 0 ? '1' : '0.4'};"
+                @click=${(e: Event) => { e.stopPropagation(); this.generate(); }}
+                aria-label="Hear this vibe as chords"
+                title="Generate progression from vibe"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+              </button>
             </div>
             ${this.showCapacityNote ? html`
               <div class="capacity-note" @click=${() => { this.showCapacityNote = false; }}>
@@ -1623,17 +1519,11 @@ export class SeedScreen extends LitElement {
               </div>
             ` : ''}
           </div>
-          ${this.isClassifying ? html`
-            <div class="suggestion-wrap">
-              <div class="suggestion-note loading">✨ ${CUTE_WAITING_MESSAGES[this.loadingMsgIdx]}</div>
-            </div>
-          ` : best ? html`
-            <div class="suggestion-wrap">
-              <div class="suggestion-note">Sounds like <span class="suggestion-highlight" style="color:${moodColor}">${best.genre} · ${best.mood}</span> — the picks below already match.</div>
-            </div>
-          ` : this.classifyError ? html`
-            <div class="suggestion-wrap">
-              <div class="suggestion-note error">${this.classifyError}</div>
+          ${best ? html`
+            <div style="text-align:center;margin-top:10px;">
+              <div style="display:inline-flex;align-items:center;gap:6px;border:1.5px solid ${moodColor};color:#2E271F;padding:8px 16px;border-radius:100px;font-size:12.5px;font-weight:700;cursor:pointer;background:#FBF3E6;transition:transform 150ms ease;" @click=${() => this.applyBest(best!)}>
+                Try <span style="font-weight:800;">${best.genre} · ${best.mood}</span> →
+              </div>
             </div>
           ` : ''}
 
@@ -1714,13 +1604,6 @@ export class SeedScreen extends LitElement {
             <span>Made with ❤️ by warmsynths</span>
             <span class="footer-divider">·</span>
             <a class="footer-link" href="https://ko-fi.com/warmsynths" target="_blank" rel="noopener">Ko-fi</a>
-            <span class="footer-divider">·</span>
-            ${this.isAuthenticated ? html`
-              <span class="footer-user-email">${this.userEmail ? this.userEmail.split('@')[0] : 'Signed in'}</span>
-              <button class="footer-login-btn" @click=${this.onLogoutClick}>Sign out</button>
-            ` : html`
-              <button class="footer-login-btn" @click=${this.onLoginClick}>Sign in</button>
-            `}
           </div>
         </div>
 

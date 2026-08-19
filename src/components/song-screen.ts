@@ -9,6 +9,7 @@ import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
 import './mascot-parade';
 import './save-set-modal';
+import './app-header';
 
 const MASCOT_ALIGN = ['flex-start', 'center', 'flex-end'] as const;
 
@@ -428,19 +429,12 @@ export class SongScreen extends LitElement {
 
     return html`
       <div class="frame">
-        <div class="wordmark" @click=${() => this.onWordmarkClick()}>
-          <svg width="22" height="22" viewBox="0 0 30 30"><circle cx="11" cy="11" r="9" fill="#F2A79B" /><circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" /></svg>
-          <div class="wordmark-text">Chroma Chords</div>
-        </div>
-
-        ${this.isAuthenticated ? html`
-          <div class="your-sets-btn" @click=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-            Your sets
-          </div>
-        ` : ''}
+        <app-header
+          .isAuthenticated=${this.isAuthenticated}
+          .savedCount=${0}
+          @view-sets=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}
+          @wordmark-click=${() => this.onWordmarkClick()}
+        ></app-header>
 
         <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 

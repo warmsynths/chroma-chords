@@ -15,10 +15,11 @@ import './components/seed-screen';
 import './components/loop-screen';
 import './components/song-screen';
 import './components/sets-screen';
+import './components/play-along-screen';
 import './components/auth-modal';
 import { SongSection } from './components/song-screen';
 
-type Screen = 'seed' | 'loop' | 'song' | 'sets';
+type Screen = 'seed' | 'loop' | 'song' | 'sets' | 'play-along';
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
@@ -254,7 +255,12 @@ export class ChromaChordsApp extends LitElement {
         this.previousScreenBeforeSets = this.screen;
       }
       this.screen = 'sets';
-      this.sheetOpen = false;
+    } else if (hash === 'play-along' || hash === '12a') {
+      if (this.progression) {
+        this.screen = 'play-along';
+      } else {
+        this.screen = 'seed';
+      }
     } else if (hash === 'song' || hash === '5a') {
       if (this.progression) {
         this.screen = 'song';
@@ -601,6 +607,17 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.setSong(this.sections);
   }
 
+  private onViewPlayAlong() {
+    playbackEngine.stopAutoplay();
+    this.playing = false;
+    this.sheetOpen = false;
+    this.setScreen('play-along');
+  }
+
+  private onBackFromPlayAlong() {
+    this.setScreen('loop');
+  }
+
   private onSelectSection(e: CustomEvent<number>) {
     const section = this.sections[e.detail];
     if (!section) return;
@@ -727,6 +744,18 @@ export class ChromaChordsApp extends LitElement {
           @view-sets=${this.onViewSets}
         ></seed-screen>
       `;
+    } else if (this.screen === 'play-along' && this.progression) {
+      screenContent = html`
+        <play-along-screen
+          .progression=${this.progression}
+          .order=${this.order}
+          .isAuthenticated=${this.isAuthenticated}
+          .userEmail=${this.userEmail}
+          .savedCount=${projectStorage.getProjects().length}
+          @back=${() => this.onBackFromPlayAlong()}
+          @chord-preview=${(e: CustomEvent<number>) => this.onChordPreview(e)}
+        ></play-along-screen>
+      `;
     } else if (this.screen === 'song') {
       screenContent = html`
         <song-screen
@@ -791,6 +820,7 @@ export class ChromaChordsApp extends LitElement {
           @reorder=${this.onReorder}
           @set-length=${this.onSetLength}
           @view-song=${this.onViewSong}
+          @view-play-along=${() => this.onViewPlayAlong()}
           @save-set=${this.onSaveSet}
           @view-sets=${this.onViewSets}
         ></loop-screen>

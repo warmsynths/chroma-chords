@@ -5,6 +5,7 @@ import { SyncStatus, projectStorage } from '../services/project-storage';
 import { getMoodColor, displayKeyName, roleForTension } from '../services/chord-engine';
 import { rollMascot } from './mascot-character';
 import './mascot-character';
+import './app-header';
 
 @customElement('sets-screen')
 export class SetsScreen extends LitElement {
@@ -542,74 +543,26 @@ export class SetsScreen extends LitElement {
   render() {
     return html`
       <div class="frame">
-        <div class="top-bar">
-          <button class="back-btn" @click=${this.onBack}>
+        <app-header
+          .isAuthenticated=${this.isAuthenticated}
+          .userEmail=${this.userEmail}
+          .savedCount=${this.projects.length}
+          .syncStatus=${this.syncStatus}
+          @request-login=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}
+          @request-logout=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}
+          @sync-projects=${this.onSync}
+        ></app-header>
+        
+        <div class="content" style="margin-top: 10px;">
+          <button class="back-btn" @click=${this.onBack} style="margin-bottom: 20px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M19 12H5M12 19l-7-7 7-7" />
             </svg>
             Back
           </button>
-          
-          <div class="top-bar-actions">
-            ${!this.isAuthenticated ? html`
-              <button
-                class="status-pill status-signin"
-                @click=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}
-                title="Sign in to sync your saved sets across devices"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>
-                </svg>
-                Sign in to sync
-              </button>
-            ` : html`
-              ${this.syncStatus === 'syncing' || this.isSyncing ? html`
-                <span class="status-pill status-syncing" title="Syncing sets with cloud...">
-                  <span class="status-dot"></span>
-                  Syncing...
-                </span>
-              ` : this.syncStatus === 'offline' ? html`
-                <span class="status-pill status-offline" title="Working offline. Edits are saved locally and will sync when reconnected.">
-                  <span class="status-dot"></span>
-                  Offline
-                </span>
-              ` : html`
-                <span class="status-pill status-synced" title="All saved sets are backed up to the cloud">
-                  <span class="status-dot"></span>
-                  Synced
-                </span>
-              `}
 
-              <span class="user-badge" title=${this.userEmail || 'Account'}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-                ${this.userEmail ? this.userEmail.split('@')[0] : 'Signed in'}
-              </span>
-              <button class="sign-out-btn" @click=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}>Sign out</button>
-
-              <button
-                class="sync-btn"
-                @click=${this.onSync}
-                ?disabled=${this.isSyncing || this.syncStatus === 'syncing'}
-                title="Sync Now"
-              >
-                <svg class=${this.isSyncing || this.syncStatus === 'syncing' ? 'spin' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 2v6h-6"></path>
-                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
-                  <path d="M3 22v-6h6"></path>
-                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
-                </svg>
-                ${this.isSyncing || this.syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
-              </button>
-            `}
-          </div>
-        </div>
-        
-        <div class="content">
           <h1>Your saved sets</h1>
-          <div class="subcopy">All your progressions, synced and ready to play.</div>
+          <div class="subcopy">Tap one to load it back into the progression player.</div>
 
           ${this.projects.length === 0 ? html`
             <div class="empty-state">
