@@ -330,7 +330,7 @@ export class ProjectStorageManager {
               scaleType: s.scaleType,
               bpm: s.bpm,
               showTheory: s.showTheory,
-              chords: s.chords,
+              chords: Array.isArray(s.chords) ? s.chords : [],
               syncedToCloud: true,
             });
           }
