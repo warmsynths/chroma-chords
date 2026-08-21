@@ -51,6 +51,32 @@ export interface Alternative {
   rationale: string;
 }
 
+export interface TheoryGroupRow {
+  name: string;
+  roman: string;
+  notes: string[];
+  sub: string;
+  chord: ChordBlock;
+  tension: number;
+}
+
+export interface TheoryGroup {
+  name: string;
+  sub: string;
+  tension: number;
+  rows: TheoryGroupRow[];
+}
+
+export interface BorrowedChordRow {
+  name: string;
+  sub: string;
+  roman: string;
+  notes: string[];
+  chord: ChordBlock;
+  tension: number;
+}
+
+
 const NOTE_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const NOTE_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -1244,93 +1270,195 @@ export function applyVoicingToChord(chord: ChordBlock, quality: string, extensio
   };
 }
 
-export function generateAlternatives(data: RawChordData, progression: Progression, chordIndex: number): Alternative[] {
-  const chord = progression.chords[chordIndex];
-  const scale = data.scales[chord.scaleKey];
-  const degreeOrder = Object.keys(scale.degrees);
-  const preferFlat = preferFlatSpelling(progression.key, progression.scaleType);
-  const results: Alternative[] = [];
-
-  const prevIndex = (chordIndex - 1 + progression.chords.length) % progression.chords.length;
-  const prevDegree = progression.chords[prevIndex]?.degree || 'TONIC';
-
-  const parallelType = progression.scaleType.includes('MINOR') ? 'MAJOR' : 'NATURAL_MINOR';
-  const parallelKey = `${progression.key}_${parallelType}`;
-  const parallelScale = data.scales[parallelKey];
-  const preferFlatParallel = preferFlatSpelling(progression.key, parallelType);
-  const borrowCandidates = parallelType === 'NATURAL_MINOR' ? ['SUBMEDIANT', 'MEDIANT', 'SUBDOMINANT'] : ['SUBDOMINANT', 'SUBMEDIANT'];
-  if (parallelScale) {
-    const borrowedDegree = pickDegreeWithMarkov(borrowCandidates, Object.keys(parallelScale.degrees), chord.degree, prevDegree, progression.scaleType, progression.genre, progression.mood);
-    if (borrowedDegree) {
-      const block = buildChordBlock(parallelKey, borrowedDegree, parallelScale, preferFlatParallel);
-      results.push({
-        label: 'Darker',
-        sub: 'heavier, more shadow',
-        chord: block,
-        functionCaption: `Borrowed · ${block.notes.join(' · ')}`,
-        rationale: `A borrowed chord from the parallel ${parallelType === 'NATURAL_MINOR' ? 'minor' : 'major'} — it darkens the color with an unexpected shadow.`,
-      });
-    }
-  } else {
-    const block = parallelType === 'NATURAL_MINOR'
-      ? synthBorrowedBlock(progression.key, 8, 'maj', 'Submediant', 'bVI', 'hold', preferFlatParallel)
-      : synthBorrowedBlock(progression.key, 5, 'maj', 'Subdominant', 'IV', 'lift', preferFlatParallel);
-    results.push({
-      label: 'Darker',
-      sub: 'heavier, more shadow',
-      chord: block,
-      functionCaption: `Borrowed · ${block.notes.join(' · ')}`,
-      rationale: `A borrowed chord — it darkens the color with a shadow pulled from outside the current key.`,
-    });
-  }
-
-  let tensionScaleKey = chord.scaleKey;
-  let tensionScale = scale;
-  if (progression.scaleType === 'NATURAL_MINOR' && Math.random() < 0.5) {
-    const hmKey = `${progression.key}_HARMONIC_MINOR`;
-    const hmScale = data.scales[hmKey];
-    if (hmScale?.degrees.DOMINANT) {
-      tensionScaleKey = hmKey;
-      tensionScale = hmScale;
-    }
-  }
-  const tensionDegree = pickDegreeWithMarkov(['DOMINANT', 'LEADING-TONE', 'SUPERTONIC'], Object.keys(tensionScale.degrees), chord.degree, prevDegree, progression.scaleType, progression.genre, progression.mood);
-  if (tensionDegree) {
-    const block = buildChordBlock(tensionScaleKey, tensionDegree, tensionScale, preferFlat);
-    results.push({
-      label: 'More tension',
-      sub: 'sharper pull forward',
-      chord: block,
-      functionCaption: `${block.functionLabel} · ${block.notes.join(' · ')}`,
-      rationale: `Aimed at the ${block.functionLabel.toLowerCase()} — it sharpens the pull forward with extra bite.`,
-    });
-  }
-
-  const dreamierDegree = pickDegreeWithMarkov(['SUBDOMINANT', 'MEDIANT', 'SUBMEDIANT'], degreeOrder, chord.degree, prevDegree, progression.scaleType, progression.genre, progression.mood);
-  if (dreamierDegree) {
-    const block = buildChordBlock(chord.scaleKey, dreamierDegree, scale, preferFlat);
-    results.push({
-      label: 'Dreamier',
-      sub: 'softer, more air',
-      chord: block,
-      functionCaption: `${block.functionLabel} · ${block.notes.join(' · ')}`,
-      rationale: `Soft and airy — it floats rather than resolving.`,
-    });
-  }
-
-  if (degreeOrder.includes('TONIC')) {
-    const block = buildChordBlock(chord.scaleKey, 'TONIC', scale, preferFlat);
-    results.push({
-      label: 'Resolve home',
-      sub: 'settles back to center',
-      chord: block,
-      functionCaption: `${block.functionLabel} · ${block.notes.join(' · ')}`,
-      rationale: `Returns to the tonic — full resolution, the sense of arriving home.`,
-    });
-  }
-
-  return results;
+export function synthCustomBlock(
+  root: string,
+  quality: string,
+  extension: string,
+  roman: string,
+  functionLabel: string,
+  desc: string,
+  tension: number,
+  preferFlat: boolean
+): ChordBlock {
+  const name = voicingChordName(root, quality, extension);
+  const notes = buildVoicingNotes(root, quality, extension, preferFlat);
+  return {
+    name,
+    tag: roman || 'sub',
+    roman,
+    color: colorForTension(tension),
+    functionLabel,
+    notes,
+    scaleLabel: 'Substitution',
+    desc,
+    degree: 'SUBSTITUTION',
+    scaleKey: '',
+    tension,
+  };
 }
+
+export function generateTheoryGroups(data: RawChordData, progression: Progression, chordIndex: number): TheoryGroup[] {
+  const keyPc = PITCH_CLASS[progression.key] ?? 0;
+  const isMinor = progression.scaleType.includes('MINOR');
+  const preferFlat = preferFlatSpelling(progression.key, progression.scaleType);
+
+  const darkerRows: TheoryGroupRow[] = isMinor ? [
+    (() => {
+      const root = noteName(keyPc + 1, true);
+      const chord = synthCustomBlock(root, 'Major', 'Major 7th (M7)', '♭II', 'Neapolitan', 'a dark, dramatic slide in from a half-step above', 0.6, true);
+      return { name: chord.name, roman: '♭II', notes: chord.notes, sub: 'Neapolitan chord — a dramatic slide in from a half-step above', chord, tension: 0.6 };
+    })(),
+    (() => {
+      const root = noteName(keyPc + 5, true);
+      const chord = synthCustomBlock(root, 'Minor', '7th (dom / m7)', 'iv', 'Minor subdominant', 'the minor subdominant — softer, sadder', 0.45, true);
+      return { name: chord.name, roman: 'iv', notes: chord.notes, sub: 'the minor subdominant — deeper minor mood', chord, tension: 0.45 };
+    })(),
+    (() => {
+      const root = noteName(keyPc + 10, true);
+      const chord = synthCustomBlock(root, 'Minor', '7th (dom / m7)', 'v', 'Minor dominant', 'unresolved minor drift', 0.52, true);
+      return { name: chord.name, roman: 'v', notes: chord.notes, sub: 'a step further into shadow — unresolving drift', chord, tension: 0.52 };
+    })(),
+  ] : [
+    (() => {
+      const root = noteName(keyPc + 8, true);
+      const chord = synthCustomBlock(root, 'Major', 'Major 7th (M7)', '♭VI', 'Flat submediant', `borrowed from ${progression.key} minor — the cinematic shadow`, 0.5, true);
+      return { name: chord.name, roman: '♭VI', notes: chord.notes, sub: `borrowed from ${progression.key} minor — the cinematic shadow`, chord, tension: 0.5 };
+    })(),
+    (() => {
+      const root = noteName(keyPc + 5, true);
+      const chord = synthCustomBlock(root, 'Minor', '7th (dom / m7)', 'iv', 'Minor subdominant', 'the minor subdominant — softer, sadder', 0.42, true);
+      return { name: chord.name, roman: 'iv', notes: chord.notes, sub: 'the minor subdominant — softer, sadder', chord, tension: 0.42 };
+    })(),
+    (() => {
+      const root = noteName(keyPc + 3, true);
+      const chord = synthCustomBlock(root, 'Major', 'Major 7th (M7)', '♭III', 'Flat mediant', 'a step further out — cooler, more remote', 0.58, true);
+      return { name: chord.name, roman: '♭III', notes: chord.notes, sub: 'a step further out — cooler, more remote', chord, tension: 0.58 };
+    })(),
+  ];
+
+  const tensionRows: TheoryGroupRow[] = [
+    (() => {
+      const targetNote = noteName(keyPc + 7, preferFlat);
+      const root = noteName(keyPc + 2, preferFlat);
+      const chord = synthCustomBlock(root, 'Major', '7th (dom / m7)', 'V7/V', 'Secondary dominant', `aimed at ${targetNote}7 — sharpens the approach`, 0.82, preferFlat);
+      return { name: chord.name, roman: 'V7/V', notes: chord.notes, sub: `aimed at ${targetNote}7 — sharpens the approach`, chord, tension: 0.82 };
+    })(),
+    (() => {
+      const targetNote = noteName(keyPc + (isMinor ? 3 : 9), preferFlat);
+      const root = noteName(keyPc + 4, preferFlat);
+      const chord = synthCustomBlock(root, 'Major', '7th (dom / m7)', 'V7/vi', 'Secondary dominant', `aimed at ${targetNote}m7 — makes it feel arrived at`, 0.88, preferFlat);
+      return { name: chord.name, roman: 'V7/vi', notes: chord.notes, sub: `aimed at ${targetNote}m7 — makes it feel arrived at`, chord, tension: 0.88 };
+    })(),
+    (() => {
+      const root = noteName(keyPc + 1, true);
+      const chord = synthCustomBlock(root, 'Major', '7th (dom / m7)', 'subV7', 'Tritone substitute', 'a tritone substitute — slides in sideways', 0.95, true);
+      return { name: chord.name, roman: 'subV7', notes: chord.notes, sub: 'a tritone substitute — slides in sideways', chord, tension: 0.95 };
+    })(),
+  ];
+
+  const dreamierRows: TheoryGroupRow[] = [
+    (() => {
+      const root = noteName(keyPc + 5, preferFlat);
+      const chord = synthCustomBlock(root, 'Major', 'Major 7th (M7)', isMinor ? 'IV' : 'IVmaj7', 'Subdominant', 'floats rather than resolving', 0.3, preferFlat);
+      return { name: chord.name, roman: isMinor ? 'IV' : 'IV', notes: chord.notes, sub: 'floats rather than resolving', chord, tension: 0.3 };
+    })(),
+    (() => {
+      const root = noteName(keyPc, preferFlat);
+      const chord = synthCustomBlock(root, isMinor ? 'Minor' : 'Major', '9th', isMinor ? 'im9' : 'Imaj9', 'Tonic extension', 'the same home with more air in it', 0.18, preferFlat);
+      return { name: chord.name, roman: isMinor ? 'im9' : 'Imaj9', notes: chord.notes, sub: 'the same home with more air in it', chord, tension: 0.18 };
+    })(),
+    (() => {
+      const root = noteName(keyPc + (isMinor ? 3 : 4), preferFlat);
+      const chord = synthCustomBlock(root, isMinor ? 'Major' : 'Minor', '7th (dom / m7)', isMinor ? '♭III' : 'iii', 'Mediant', 'wistful, halfway between home and away', 0.35, preferFlat);
+      return { name: chord.name, roman: isMinor ? '♭III' : 'iii', notes: chord.notes, sub: 'wistful, halfway between home and away', chord, tension: 0.35 };
+    })(),
+  ];
+
+  const resolveRows: TheoryGroupRow[] = [
+    (() => {
+      const root = noteName(keyPc, preferFlat);
+      const chord = synthCustomBlock(root, isMinor ? 'Minor' : 'Major', isMinor ? 'None' : 'Major 7th (M7)', isMinor ? 'i' : 'I', 'Tonic', 'full resolution — the sense of arriving', 0.05, preferFlat);
+      return { name: chord.name, roman: isMinor ? 'i' : 'I', notes: chord.notes, sub: 'full resolution — the sense of arriving', chord, tension: 0.05 };
+    })(),
+    (() => {
+      const root = noteName(keyPc + 7, preferFlat);
+      const chord = synthCustomBlock(root, 'Major', '7th (dom / m7)', 'V7', 'Dominant', 'the pull that makes home feel earned', 1.0, preferFlat);
+      return { name: chord.name, roman: 'V7', notes: chord.notes, sub: 'the pull that makes home feel earned', chord, tension: 1.0 };
+    })(),
+    (() => {
+      const root = noteName(keyPc + (isMinor ? 8 : 9), preferFlat);
+      const chord = synthCustomBlock(root, isMinor ? 'Major' : 'Minor', '7th (dom / m7)', isMinor ? '♭VI' : 'vi', 'Submediant', 'a soft landing instead of a full stop', 0.28, preferFlat);
+      return { name: chord.name, roman: isMinor ? '♭VI' : 'vi', notes: chord.notes, sub: 'a soft landing instead of a full stop', chord, tension: 0.28 };
+    })(),
+  ];
+
+  return [
+    { name: 'Darker', sub: 'heavier, more shadow', tension: 0.55, rows: darkerRows },
+    { name: 'More tension', sub: 'sharper pull forward', tension: 0.85, rows: tensionRows },
+    { name: 'Dreamier', sub: 'softer, more air', tension: 0.3, rows: dreamierRows },
+    { name: 'Resolve home', sub: 'settles back to center', tension: 0.05, rows: resolveRows },
+  ];
+}
+
+export function generateBorrowedChords(data: RawChordData, progression: Progression, chordIndex: number): BorrowedChordRow[] {
+  const keyPc = PITCH_CLASS[progression.key] ?? 0;
+  const isMinor = progression.scaleType.includes('MINOR');
+  const preferFlat = preferFlatSpelling(progression.key, progression.scaleType);
+  const chords = progression.chords;
+
+  if (isMinor) {
+    // Parallel Major borrowed chords
+    const c1 = chords[0]?.name || 'chord 1';
+    const c2 = chords[1]?.name || 'chord 2';
+    const c3 = chords[2]?.name || 'chord 3';
+    const c4 = chords[3]?.name || 'chord 4';
+
+    const b1 = synthCustomBlock(noteName(keyPc, preferFlat), 'Major', 'None', 'I', 'Major tonic', 'same root, turned bright', 0.2, preferFlat);
+    const b2 = synthCustomBlock(noteName(keyPc + 5, preferFlat), 'Major', 'None', 'IV', 'Major subdominant', 'the Dorian lift, sunny and open', 0.35, preferFlat);
+    const b3 = synthCustomBlock(noteName(keyPc + 9, preferFlat), 'Minor', 'None', 'vi', 'Submediant', 'melodic lift upward', 0.4, preferFlat);
+    const b4 = synthCustomBlock(noteName(keyPc + 11, preferFlat), 'Diminished', 'None', 'vii°', 'Leading tone', 'classical harmonic pull', 0.55, preferFlat);
+
+    return [
+      { name: b1.name, sub: `in place of ${c1} · same root, turned bright`, roman: 'I', notes: b1.notes, chord: b1, tension: 0.2 },
+      { name: b2.name, sub: `in place of ${c2} · the Dorian lift, sunny and open`, roman: 'IV', notes: b2.notes, chord: b2, tension: 0.35 },
+      { name: b3.name, sub: `in place of ${c3} · melodic lift upward`, roman: 'vi', notes: b3.notes, chord: b3, tension: 0.4 },
+      { name: b4.name, sub: `in place of ${c4} · classical harmonic pull`, roman: 'vii°', notes: b4.notes, chord: b4, tension: 0.55 },
+    ];
+  }
+
+  // Parallel Minor borrowed chords
+  const c1 = chords[0]?.name || 'chord 1';
+  const c2 = chords[1]?.name || 'chord 2';
+  const c3 = chords[2]?.name || 'chord 3';
+  const c4 = chords[3]?.name || 'chord 4';
+
+  const b1 = synthCustomBlock(noteName(keyPc, preferFlat), 'Minor', 'None', 'i', 'Tonic minor', 'same root, turned sad', 0.3, preferFlat);
+  const b2 = synthCustomBlock(noteName(keyPc + 5, true), 'Minor', 'None', 'iv', 'Minor subdominant', 'the lift, but heavier', 0.4, true);
+  const b3 = synthCustomBlock(noteName(keyPc + 8, true), 'Major', 'None', '♭VI', 'Flat submediant', 'big and cinematic', 0.45, true);
+  const b4 = synthCustomBlock(noteName(keyPc + 10, true), 'Major', 'None', '♭VII', 'Flat subtonic', 'lands sideways, not home', 0.5, true);
+
+  return [
+    { name: b1.name, sub: `in place of ${c1} · same root, turned sad`, roman: 'i', notes: b1.notes, chord: b1, tension: 0.3 },
+    { name: b2.name, sub: `in place of ${c2} · the lift, but heavier`, roman: 'iv', notes: b2.notes, chord: b2, tension: 0.4 },
+    { name: b3.name, sub: `in place of ${c3} · big and cinematic`, roman: '♭VI', notes: b3.notes, chord: b3, tension: 0.45 },
+    { name: b4.name, sub: `in place of ${c4} · lands sideways, not home`, roman: '♭VII', notes: b4.notes, chord: b4, tension: 0.5 },
+  ];
+}
+
+export function generateAlternatives(data: RawChordData, progression: Progression, chordIndex: number): Alternative[] {
+  const groups = generateTheoryGroups(data, progression, chordIndex);
+  return groups.map(g => {
+    const primaryRow = g.rows[0];
+    return {
+      label: g.name,
+      sub: g.sub,
+      chord: primaryRow.chord,
+      functionCaption: `${primaryRow.roman} · ${primaryRow.notes.join(' · ')}`,
+      rationale: primaryRow.sub,
+    };
+  });
+}
+
 
 export type ShareDevice = 'm8' | 'circuit';
 

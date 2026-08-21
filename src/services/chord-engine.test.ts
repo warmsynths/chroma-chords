@@ -5,6 +5,8 @@ import {
   generateProgression,
   getStartingDegreeWeight,
   generateAlternatives,
+  generateTheoryGroups,
+  generateBorrowedChords,
   injectModes,
   RawChordData,
   Progression,
@@ -95,7 +97,7 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
     });
   });
 
-  describe('generateAlternatives', () => {
+  describe('generateAlternatives, generateTheoryGroups, and generateBorrowedChords', () => {
     it('returns chord substitution options including Darker, Tension, and Dreamier', () => {
       const prog: Progression = generateProgression(chordData, 'Pop', 'Uplifting', { length: 4 });
       const alts = generateAlternatives(chordData, prog, 1);
@@ -103,5 +105,34 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
       const labels = alts.map(a => a.label);
       expect(labels).toContain('Darker');
     });
+
+    it('generates 4 rich theory groups each with 3 chord substitutions', () => {
+      const prog: Progression = generateProgression(chordData, 'Pop', 'Uplifting', { length: 4, key: 'C' });
+      const groups = generateTheoryGroups(chordData, prog, 0);
+      expect(groups).toHaveLength(4);
+      expect(groups.map(g => g.name)).toEqual(['Darker', 'More tension', 'Dreamier', 'Resolve home']);
+      for (const g of groups) {
+        expect(g.rows).toHaveLength(3);
+        for (const r of g.rows) {
+          expect(r.name).toBeTruthy();
+          expect(r.roman).toBeTruthy();
+          expect(r.notes.length).toBeGreaterThanOrEqual(3);
+          expect(r.chord).toBeDefined();
+        }
+      }
+    });
+
+    it('generates 4 borrowed chords for major and minor keys', () => {
+      const majorProg: Progression = generateProgression(chordData, 'Pop', 'Uplifting', { length: 4, key: 'C' });
+      const majorBorrowed = generateBorrowedChords(chordData, majorProg, 0);
+      expect(majorBorrowed).toHaveLength(4);
+      expect(majorBorrowed[0].roman).toBe('i');
+
+      const minorProg: Progression = generateProgression(chordData, 'Lo-fi/Chill', 'Melancholy', { length: 4, key: 'A', scaleType: 'NATURAL_MINOR' });
+      const minorBorrowed = generateBorrowedChords(chordData, minorProg, 0);
+      expect(minorBorrowed).toHaveLength(4);
+      expect(minorBorrowed[0].roman).toBe('I');
+    });
   });
 });
+

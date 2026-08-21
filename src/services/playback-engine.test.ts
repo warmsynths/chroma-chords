@@ -101,5 +101,39 @@ describe('PlaybackEngine Deep Module', () => {
     engine.playChordNotes(['C4', 'E4', 'G4'], 0.8);
     expect(engine.isPlaying()).toBe(false);
   });
+
+  it('applies AB chord override during progression playback', () => {
+    engine.setProgression(sampleProgression);
+    const playNotesSpy = vi.spyOn(engine, 'playChordNotes');
+
+    const candidateChord = {
+      name: 'Abmaj7',
+      tag: 'bVI',
+      roman: 'bVI',
+      color: '#fff',
+      functionLabel: 'Borrowed',
+      notes: ['Ab', 'C', 'Eb', 'G'],
+      scaleLabel: 'Ab Maj',
+      desc: '',
+      degree: 'b6',
+      scaleKey: 'C',
+      tension: 0.5,
+    };
+
+    // Override index 0 with candidate chord on side 'after'
+    engine.setABOverride(0, candidateChord, 'after');
+    engine.playActiveChord(); // activeIndex is 0
+    expect(playNotesSpy).toHaveBeenCalledWith(['Ab', 'C', 'Eb', 'G'], 1.2);
+
+    // Switch override side to 'before'
+    engine.setABOverride(0, candidateChord, 'before');
+    engine.playActiveChord();
+    expect(playNotesSpy).toHaveBeenCalledWith(['C', 'E', 'G'], 1.2);
+
+    // Clear override
+    engine.clearABOverride();
+    engine.playActiveChord();
+    expect(playNotesSpy).toHaveBeenCalledWith(['C', 'E', 'G'], 1.2);
+  });
 });
 

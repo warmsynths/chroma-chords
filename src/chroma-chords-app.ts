@@ -6,7 +6,9 @@ import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
 import { SongArranger, SECTION_TEMPLATES } from './services/song-arranger';
 import {
-  loadChordData, generateProgression, RawChordData, Progression, ChordBlock, Alternative, generateAlternatives, applyVoicingToChord,
+  loadChordData, generateProgression, RawChordData, Progression, ChordBlock, Alternative,
+  TheoryGroup, BorrowedChordRow, generateAlternatives, generateTheoryGroups, generateBorrowedChords, applyVoicingToChord,
+  notesForSymbol, preferFlatSpelling,
 } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
 import { NormalizedPrompt } from './services/freetext-schema';
@@ -41,6 +43,8 @@ export class ChromaChordsApp extends LitElement {
   @state() private sheetMode: 'swap' | 'voicing' = 'swap';
   @state() private swapIndex: number | null = null;
   @state() private alternatives: Alternative[] = [];
+  @state() private theoryGroups: TheoryGroup[] = [];
+  @state() private borrowedChords: BorrowedChordRow[] = [];
   @state() private length = 4;
   @state() private sections: SongSection[] = [];
   @state() private activeSectionIdx = 0;
@@ -570,18 +574,32 @@ export class ChromaChordsApp extends LitElement {
 
   private onChordTap(e: CustomEvent<number>) {
     if (!this.progression) return;
+    if (this.playing) {
+      playbackEngine.stopAutoplay();
+      this.playing = false;
+    }
+    playbackEngine.clearABOverride();
     this.swapIndex = e.detail;
     this.sheetMode = 'swap';
     this.alternatives = generateAlternatives(this.chordData, this.progression, e.detail);
+    this.theoryGroups = generateTheoryGroups(this.chordData, this.progression, e.detail);
+    this.borrowedChords = generateBorrowedChords(this.chordData, this.progression, e.detail);
     this.sheetOpen = true;
     playbackEngine.playChordAtIndex(e.detail, 0.8);
   }
 
   private onChordVoicingTap(e: CustomEvent<number>) {
     if (!this.progression) return;
+    if (this.playing) {
+      playbackEngine.stopAutoplay();
+      this.playing = false;
+    }
+    playbackEngine.clearABOverride();
     this.swapIndex = e.detail;
     this.sheetMode = 'voicing';
     this.alternatives = [];
+    this.theoryGroups = [];
+    this.borrowedChords = [];
     this.sheetOpen = true;
     playbackEngine.playChordAtIndex(e.detail, 0.8);
   }
@@ -595,21 +613,37 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.playChordAtIndex(e.detail, 0.8);
   }
 
+  private onAuditionChord(e: CustomEvent<ChordBlock>) {
+    const chord = e.detail;
+    let notes = Array.isArray(chord.notes) ? chord.notes : [];
+    if (notes.length === 0 && chord.name && this.progression) {
+      notes = notesForSymbol(chord.name, preferFlatSpelling(this.progression.key, this.progression.scaleType));
+    }
+    playbackEngine.playChordNotes(notes, 0.8);
+  }
+
   private onSheetClose() {
+    playbackEngine.clearABOverride();
     this.sheetOpen = false;
     this.swapIndex = null;
   }
 
-  private onSelectAlternative(e: CustomEvent<Alternative>) {
+  private onSelectAlternative(e: CustomEvent<{ chord: ChordBlock } | Alternative>) {
     if (!this.progression || this.swapIndex === null) return;
+    if (this.playing) {
+      playbackEngine.stopAutoplay();
+      this.playing = false;
+    }
+    playbackEngine.clearABOverride();
+    const chord = (e.detail as any).chord ?? (e.detail as any);
     const chords = [...this.progression.chords];
-    chords[this.swapIndex] = e.detail.chord;
+    chords[this.swapIndex] = chord;
     this.progression = { ...this.progression, chords };
     playbackEngine.setProgression(this.progression, this.order);
     this.sheetOpen = false;
     this.swapIndex = null;
     this.syncActiveSection();
-    playbackEngine.playChordNotes(e.detail.chord.notes, 0.8);
+    playbackEngine.playChordNotes(chord.notes, 0.8);
   }
 
   private onVoicingPreview(e: CustomEvent<string[]>) {
@@ -837,6 +871,8 @@ export class ChromaChordsApp extends LitElement {
           .swapChord=${swapChord}
           .swapIndex=${this.swapIndex}
           .alternatives=${this.alternatives}
+          .theoryGroups=${this.theoryGroups}
+          .borrowedChords=${this.borrowedChords}
           @back=${this.onBack}
           @theory-toggle=${this.onTheoryToggle}
           @set-instrument=${this.onSetInstrument}
@@ -845,6 +881,7 @@ export class ChromaChordsApp extends LitElement {
           @chord-tap=${this.onChordTap}
           @chord-voicing-tap=${this.onChordVoicingTap}
           @chord-preview=${this.onChordPreview}
+          @audition-chord=${this.onAuditionChord}
           @close=${this.onSheetClose}
           @select-alternative=${this.onSelectAlternative}
           @voicing-preview=${this.onVoicingPreview}

@@ -1,7 +1,7 @@
 import { LitElement, html, css, svg, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
-  Progression, ChordBlock, Alternative, ShareDevice, buildDeviceShareUrl,
+  Progression, ChordBlock, Alternative, TheoryGroup, BorrowedChordRow, ShareDevice, buildDeviceShareUrl,
   MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension, MOODS,
   AUTOPLAY_INTERVAL_MS, displayKeyName, ROOT_KEYS, buildProgressionStaff, getKeySignature,
 } from '../services/chord-engine';
@@ -102,6 +102,8 @@ export class LoopScreen extends LitElement {
   @property({ type: Object }) swapChord: ChordBlock | null = null;
   @property({ type: Number }) swapIndex: number | null = null;
   @property({ type: Array }) alternatives: Alternative[] = [];
+  @property({ type: Array }) theoryGroups: TheoryGroup[] = [];
+  @property({ type: Array }) borrowedChords: BorrowedChordRow[] = [];
 
   @state() private menuMounted = false;
   @state() private menuVisible = false;
@@ -171,6 +173,24 @@ export class LoopScreen extends LitElement {
     if (changed.has('progressStep')) {
       const prevStep = changed.get('progressStep') as number | undefined;
       this.snapProgress = prevStep !== undefined && this.progressStep < prevStep;
+    }
+    if (changed.has('sheetOpen')) {
+      if (this.sheetOpen) {
+        if (this.sheetCloseTimer) {
+          clearTimeout(this.sheetCloseTimer);
+          this.sheetCloseTimer = null;
+        }
+        this.sheetMounted = true;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          this.sheetVisible = true;
+        }));
+      } else {
+        this.sheetVisible = false;
+        if (this.sheetCloseTimer) clearTimeout(this.sheetCloseTimer);
+        this.sheetCloseTimer = setTimeout(() => {
+          this.sheetMounted = false;
+        }, SHEET_CLOSE_MS);
+      }
     }
   }
 
@@ -1536,14 +1556,24 @@ export class LoopScreen extends LitElement {
         ${this.sheetMounted && this.swapChord ? html`
           <swap-sheet
             .chord=${this.swapChord}
+            .swapIndex=${this.swapIndex}
+            .progression=${this.progression}
+            .order=${this.order}
             .alternatives=${this.alternatives}
+            .theoryGroups=${this.theoryGroups}
+            .borrowedChords=${this.borrowedChords}
             .showTheory=${this.showTheory}
             .mode=${this.sheetMode}
             .moodColor=${moodColor}
-            .position=${(this.swapIndex ?? 0) + 1}
+            .position=${(this.order.indexOf(this.swapIndex ?? 0) >= 0 ? this.order.indexOf(this.swapIndex ?? 0) : (this.swapIndex ?? 0)) + 1}
             .total=${this.order.length}
             .visible=${this.sheetVisible}
             .resetKey=${this.swapIndex}
+            @close=${() => this.emit('close')}
+            @select-alternative=${(e: CustomEvent) => this.emit('select-alternative', e.detail)}
+            @audition-chord=${(e: CustomEvent) => this.emit('audition-chord', e.detail)}
+            @voicing-preview=${(e: CustomEvent) => this.emit('voicing-preview', e.detail)}
+            @voicing-change=${(e: CustomEvent) => this.emit('voicing-change', e.detail)}
           ></swap-sheet>
         ` : ''}
 

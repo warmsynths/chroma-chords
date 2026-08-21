@@ -1,5 +1,5 @@
 import { playChordForGenre } from './audio-service';
-import { Progression, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
+import { Progression, ChordBlock, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
 import type { SongSection } from '../components/song-screen';
 
 export type PlaybackTickCallback = (
@@ -24,6 +24,7 @@ export class PlaybackEngine {
   private playStyle: string | null = null;
   private autoplayTimer: ReturnType<typeof setInterval> | null = null;
   private tickCallbacks = new Set<PlaybackTickCallback>();
+  private abOverride: { index: number; chord: ChordBlock | null; side: 'before' | 'after' } | null = null;
 
   public setProgression(progression: Progression | null, order?: number[]): void {
     this.mode = 'single';
@@ -171,6 +172,18 @@ export class PlaybackEngine {
     return this.playing;
   }
 
+  public setABOverride(index: number | null, chord: ChordBlock | null, side: 'before' | 'after'): void {
+    if (index === null) {
+      this.abOverride = null;
+    } else {
+      this.abOverride = { index, chord, side };
+    }
+  }
+
+  public clearABOverride(): void {
+    this.abOverride = null;
+  }
+
   public playActiveChord(): void {
     if (this.mode === 'song') {
       const sec = this.sections[this.activeSectionIndex];
@@ -192,7 +205,12 @@ export class PlaybackEngine {
     } else {
       if (!this.progression) return;
       const chordIndex = this.order[this.activeIndex] ?? 0;
-      const chord = this.progression.chords[chordIndex];
+      let chord = this.progression.chords[chordIndex];
+      if (this.abOverride && this.abOverride.index === chordIndex) {
+        if (this.abOverride.side === 'after' && this.abOverride.chord) {
+          chord = this.abOverride.chord;
+        }
+      }
       if (chord) {
         let notes = Array.isArray(chord.notes) ? chord.notes : [];
         if (notes.length === 0 || !notes.every(n => typeof n === 'string' && n.trim().length > 0)) {
@@ -237,6 +255,14 @@ export class PlaybackEngine {
       instrument: this.instrument ?? undefined,
       playStyle: this.playStyle ?? undefined,
     });
+  }
+
+  public jumpToStep(step: number): void {
+    if (!this.progression || this.order.length <= 0) return;
+    this.activeIndex = step % this.order.length;
+    this.progressStep = step % this.order.length;
+    this.playActiveChord();
+    this.notifyTick();
   }
 
   public reset(): void {
