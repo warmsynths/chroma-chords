@@ -469,10 +469,34 @@ export class ChromaChordsApp extends LitElement {
     }
   }
 
-  private onLoadProject(e: CustomEvent<string>) {
+  private async onLoadProject(e: CustomEvent<string>) {
     const id = e.detail;
     const p = projectStorage.getProjects().find(proj => proj.id === id);
     if (!p) return;
+    let chords = Array.isArray(p.chords) ? (p.chords as unknown as ChordBlock[]) : [];
+
+    if (chords.length === 0) {
+      try {
+        let data = this.chordData;
+        if (!data || !data.scales || Object.keys(data.scales).length === 0) {
+          data = await loadChordData();
+          this.chordData = data;
+        }
+        const generated = generateProgression(data, p.genre || 'Pop', p.mood || 'Neutral', {
+          key: p.key || 'C',
+          scaleType: p.scaleType || 'MAJOR',
+          length: 4,
+        });
+        chords = generated.chords;
+        p.chords = chords as unknown as ProjectChord[];
+        projectStorage.saveProject(p);
+      } catch (err) {
+        console.error(`Failed to auto-recover chords for project "${id}":`, err);
+        this.showToast('Unable to load set: empty chord data.');
+        return;
+      }
+    }
+
     this.currentProjectId = p.id;
     this.progression = {
       genre: p.genre || 'Unknown',
@@ -480,7 +504,7 @@ export class ChromaChordsApp extends LitElement {
       key: p.key || 'C',
       scaleType: p.scaleType || 'MAJOR',
       bpm: p.bpm || 120,
-      chords: p.chords as unknown as ChordBlock[],
+      chords,
     };
     this.order = Array.from({ length: this.progression.chords.length }, (_, i) => i);
     this.length = this.progression.chords.length;
@@ -806,6 +830,7 @@ export class ChromaChordsApp extends LitElement {
           .instrument=${this.instrument}
           .playStyle=${this.playStyle}
           .isAuthenticated=${this.isAuthenticated}
+          .userEmail=${this.userEmail}
           .isBookmarked=${isBookmarked}
           .sheetOpen=${this.sheetOpen}
           .sheetMode=${this.sheetMode}
@@ -835,6 +860,8 @@ export class ChromaChordsApp extends LitElement {
           @view-play-along=${() => this.onViewPlayAlong()}
           @save-set=${this.onSaveSet}
           @view-sets=${this.onViewSets}
+          @request-login=${this.onLoginRequest}
+          @request-logout=${this.onLogoutRequest}
         ></loop-screen>
       `;
     }

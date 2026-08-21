@@ -431,7 +431,6 @@ export class SongScreen extends LitElement {
       <div class="frame">
         <app-header
           .isAuthenticated=${this.isAuthenticated}
-          .savedCount=${0}
           @view-sets=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}
           @wordmark-click=${() => this.onWordmarkClick()}
         ></app-header>

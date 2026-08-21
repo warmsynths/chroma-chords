@@ -48,6 +48,10 @@ export class ProjectService {
             p.genre = 'Pop';
             needsSave = true;
           }
+          if (!Array.isArray(p.chords)) {
+            p.chords = [];
+            needsSave = true;
+          }
         });
         
         if (needsSave) {

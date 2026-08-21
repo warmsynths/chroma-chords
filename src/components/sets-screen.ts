@@ -241,166 +241,132 @@ export class SetsScreen extends LitElement {
     }
     .content {
       width: 100%;
-      max-width: 680px;
+      max-width: 640px;
     }
     h1 {
-      margin: 0;
-      font-size: clamp(26px, 5vw, 36px);
+      margin: 22px 0 0 0;
+      font-size: 34px;
       font-weight: 800;
       line-height: 1.15;
       letter-spacing: -0.02em;
-      color: var(--cv-ink);
+      color: var(--cv-ink, #2E271F);
     }
     .subcopy {
       font-size: 15px;
-      color: var(--cv-ink-muted);
-      margin-top: 8px;
-      margin-bottom: 32px;
+      line-height: 1.7;
+      color: #6B5F50;
+      margin-top: 10px;
+      margin-bottom: 30px;
     }
     .empty-state {
       text-align: center;
-      padding: 56px 24px;
-      background: var(--cv-surface);
-      border-radius: 24px;
-      border: 1.5px dashed var(--cv-ink-16);
+      padding: 44px 30px;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 20px;
+      border: 1.5px dashed rgba(46, 39, 31, 0.18);
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
     }
     .empty-mascot-wrap {
       margin-bottom: 4px;
     }
     .empty-state-title {
-      font-size: 19px;
+      font-size: 17px;
       font-weight: 800;
-      color: var(--cv-ink);
+      color: #2E271F;
     }
     .empty-state-desc {
       font-size: 14px;
-      color: var(--cv-ink-muted);
-      max-width: 360px;
-      line-height: 1.5;
+      line-height: 1.65;
+      color: #6B5F50;
+      max-width: 340px;
     }
     .empty-cta-btn {
-      margin-top: 8px;
-      background: var(--cv-ink);
-      color: var(--cv-cream);
+      margin-top: 22px;
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
       border: none;
-      padding: 12px 24px;
+      padding: 14px 26px;
       border-radius: 100px;
-      font-size: 14px;
+      font-size: 14.5px;
       font-weight: 800;
       cursor: pointer;
       font-family: inherit;
       transition: transform 0.15s ease, background 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
     }
     .empty-cta-btn:hover {
-      transform: scale(1.03);
+      transform: scale(1.02);
     }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 20px;
+    .saved-sets-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 30px;
+      width: 100%;
     }
     .card {
-      background: var(--cv-surface);
-      border: 1.5px solid var(--cv-ink-10);
+      background: var(--cv-surface, #F6EADB);
       border-radius: 20px;
       padding: 20px;
       cursor: pointer;
       display: flex;
       flex-direction: column;
+      gap: 14px;
       position: relative;
-      overflow: hidden;
-      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      box-sizing: border-box;
+      transition: transform 150ms var(--cv-ease, cubic-bezier(0.16, 1, 0.3, 1)), box-shadow 150ms ease;
     }
     .card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 12px 24px -10px rgba(46, 39, 31, 0.15);
-      border-color: var(--cv-ink-16);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px -8px rgba(46, 39, 31, 0.12);
     }
-    .card-title-row {
+    .swatch-bar {
+      width: 100%;
+      height: 56px;
+      border-radius: 14px;
       display: flex;
       align-items: center;
-      gap: 6px;
-      margin-bottom: 4px;
-      padding-right: 76px;
+      gap: 8px;
+      padding: 0 14px;
+      box-sizing: border-box;
+    }
+    .chip-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(46, 39, 31, 0.55);
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .card-content-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .card-info {
+      min-width: 0;
+      flex: 1;
     }
     .card-title {
-      font-size: 18px;
-      font-weight: 800;
-      color: var(--cv-ink);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      cursor: pointer;
-    }
-    .card-title:hover {
-      text-decoration: underline;
-      text-decoration-color: var(--cv-ink-30);
-    }
-    .rename-input {
       font-size: 17px;
       font-weight: 800;
-      color: var(--cv-ink);
-      font-family: inherit;
-      background: #ffffff;
-      border: 1.5px solid var(--cv-ink);
-      border-radius: 8px;
-      padding: 4px 8px;
-      outline: none;
-      width: 100%;
-      box-sizing: border-box;
-      box-shadow: 0 0 0 3px rgba(46, 39, 31, 0.08);
+      color: #2E271F;
     }
-    .card-meta {
+    .card-meta-line {
       font-size: 13px;
-      font-weight: 600;
-      color: var(--cv-ink-muted);
-      margin-bottom: 12px;
-    }
-    .section-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      flex-shrink: 0;
-      margin-bottom: 16px;
-    }
-    .section-chip {
-      width: 14px;
-      height: 14px;
-      flex-shrink: 0;
-    }
-    .card-details {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: auto;
-    }
-    .detail-pill {
-      background: var(--cv-surface-2);
-      padding: 4px 10px;
-      border-radius: 100px;
-      font-size: 11.5px;
-      font-weight: 700;
-      color: var(--cv-ink-55);
-    }
-    .color-accent {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 6px;
+      color: #6B5F50;
+      margin-top: 4px;
     }
     .card-actions {
-      position: absolute;
-      top: 8px;
-      right: 8px;
       display: flex;
-      align-items: center;
-      gap: 2px;
-      z-index: 5;
+      gap: 6px;
+      flex-shrink: 0;
     }
     .action-btn {
       width: 44px;
@@ -412,66 +378,101 @@ export class SetsScreen extends LitElement {
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      color: var(--cv-ink-35);
-      transition: color 0.15s ease, background 0.15s ease;
+      color: #6B5F50;
+      transition: background 150ms ease;
       touch-action: manipulation;
     }
     .action-btn:hover {
-      background: var(--cv-ink-08);
-      color: var(--cv-ink);
+      background: rgba(46, 39, 31, 0.07);
     }
     .action-btn.delete:hover {
-      background: rgba(229, 57, 53, 0.12);
-      color: #e53935;
+      background: rgba(200, 86, 75, 0.12);
+      color: #C6564B;
+    }
+    .rename-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .rename-input {
+      flex: 1;
+      min-width: 0;
+      box-sizing: border-box;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 2px solid rgba(46, 39, 31, 0.15);
+      font-size: 14px;
+      font-family: inherit;
+      background: #ffffff;
+      color: #2E271F;
+      outline: none;
+    }
+    .btn-save-rename {
+      border: none;
+      font-family: inherit;
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 100px;
+      background: #2E271F;
+      color: #F4EBDB;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-cancel-rename {
+      border: none;
+      font-family: inherit;
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 100px;
+      background: transparent;
+      color: #6B5F50;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
     }
     .delete-confirm-banner {
-      background: rgba(229, 57, 53, 0.09);
-      border: 1.5px solid rgba(229, 57, 53, 0.28);
-      border-radius: 12px;
-      padding: 8px 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 6px;
-      margin-top: 10px;
-      margin-bottom: 4px;
+      gap: 12px;
+      background: rgba(200, 86, 75, 0.1);
+      border-radius: 14px;
+      padding: 12px 14px;
+      flex-wrap: wrap;
+    }
+    .delete-confirm-text {
+      font-size: 13px;
+      font-weight: 700;
+      color: #A64236;
+    }
+    .delete-confirm-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-keep {
+      border: none;
+      font-family: inherit;
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 100px;
+      background: transparent;
+      color: #6B5F50;
       font-size: 12.5px;
       font-weight: 700;
-      color: #c62828;
-      animation: cv-banner-in 0.18s ease-out;
-    }
-    @keyframes cv-banner-in {
-      from { opacity: 0; transform: translateY(-4px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    .confirm-btn-group {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .confirm-btn {
-      border: none;
-      padding: 5px 10px;
-      border-radius: 100px;
-      font-size: 11.5px;
-      font-weight: 800;
       cursor: pointer;
+    }
+    .btn-delete-confirm {
+      border: none;
       font-family: inherit;
-      transition: background 0.15s ease;
-    }
-    .confirm-btn.cancel {
-      background: var(--cv-surface-2);
-      color: var(--cv-ink);
-    }
-    .confirm-btn.cancel:hover {
-      background: var(--cv-ink-14);
-    }
-    .confirm-btn.delete {
-      background: #e53935;
-      color: #ffffff;
-    }
-    .confirm-btn.delete:hover {
-      background: #c62828;
+      min-height: 36px;
+      padding: 0 16px;
+      border-radius: 100px;
+      background: #C6564B;
+      color: #FBF3E6;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
     }
   `;
 
@@ -561,7 +562,7 @@ export class SetsScreen extends LitElement {
             Back
           </button>
 
-          <h1>Your saved sets</h1>
+          <h1>Your saved sets.</h1>
           <div class="subcopy">Tap one to load it back into the progression player.</div>
 
           ${this.projects.length === 0 ? html`
@@ -571,100 +572,99 @@ export class SetsScreen extends LitElement {
                   <mascot-character .kind=${this.emptyMascot.kind} .scale=${0.8}></mascot-character>
                 </div>
               ` : ''}
-              <div class="empty-state-title">No saved sets yet</div>
-              <div class="empty-state-desc">When you find a progression you like, tap the bookmark icon on any loop to save it here.</div>
-              <button class="empty-cta-btn" @click=${this.onBack}>Start a new loop →</button>
+              <div class="empty-state-title">Nothing saved yet.</div>
+              <div class="empty-state-desc">Generate a loop you like, then tap the bookmark to keep it here.</div>
+              <button class="empty-cta-btn" @click=${this.onBack}>Make one <span>→</span></button>
             </div>
           ` : html`
-            <div class="grid">
+            <div class="saved-sets-list">
               ${this.projects.map(p => {
                 const safeScaleType = p.scaleType || 'MAJOR';
                 const safeKey = p.key || 'C';
-                const safeBpm = p.bpm || 120;
                 const safeName = p.name || 'Untitled Set';
                 const safeGenre = p.genre || 'Unknown';
                 const safeMood = p.mood || 'Neutral';
-                const date = p.lastModified ? new Date(p.lastModified).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown Date';
                 const moodColor = getMoodColor(safeMood);
                 const isRenaming = this.renamingId === p.id;
                 const isConfirmingDelete = this.confirmDeleteId === p.id;
-                
+                const chordCount = (p.chords && p.chords.length) ? p.chords.length : 4;
+                const metaLine = `${safeGenre} · ${safeMood} · ${chordCount} bars`;
+
                 return html`
                   <div class="card" @click=${() => this.onLoadProject(p.id)}>
-                    <div class="color-accent" style="background: ${moodColor}"></div>
-                    
-                    <div class="card-actions">
-                      <button
-                        class="action-btn"
-                        title="Rename set"
-                        aria-label="Rename set"
-                        @click=${(e: Event) => this.startRename(e, p.id, safeName)}
-                      >
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                      </button>
-                      <button
-                        class="action-btn delete"
-                        title="Delete set"
-                        aria-label="Delete set"
-                        @click=${(e: Event) => this.askDelete(e, p.id)}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
-                        </svg>
-                      </button>
+                    <div class="swatch-bar" style="background: ${moodColor};">
+                      ${(p.chords && p.chords.length ? p.chords : [{ tension: 0 }, { tension: 1 }, { tension: 2 }, { tension: 3 }]).map((c: any) => {
+                        const tension = typeof c === 'object' && c !== null ? (c.tension ?? 0) : 0;
+                        const role = roleForTension(tension);
+                        const color = role?.color || 'rgba(46, 39, 31, 0.55)';
+                        const name = typeof c === 'object' && c !== null ? (c.name || '') : '';
+                        return html`<span class="chip-dot" style="background: ${color};" title=${name}></span>`;
+                      })}
                     </div>
 
-                    ${isRenaming ? html`
-                      <input
-                        class="rename-input"
-                        .value=${this.draftName}
-                        @input=${this.onDraftChange}
-                        @keydown=${(e: KeyboardEvent) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            this.commitRename(p.id);
-                          } else if (e.key === 'Escape') {
-                            e.preventDefault();
-                            this.cancelRename();
-                          }
-                        }}
-                        @blur=${() => this.commitRename(p.id)}
-                        @click=${(e: Event) => e.stopPropagation()}
-                        autofocus
-                      />
-                    ` : html`
-                      <div class="card-title-row">
-                        <div class="card-title" title="Click to rename" @click=${(e: Event) => this.startRename(e, p.id, safeName)}>${safeName}</div>
+                    <div class="card-content-row">
+                      <div class="card-info">
+                        ${isRenaming ? html`
+                          <div class="rename-row">
+                            <input
+                              class="rename-input"
+                              .value=${this.draftName}
+                              @input=${this.onDraftChange}
+                              @keydown=${(e: KeyboardEvent) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  this.commitRename(p.id);
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  this.cancelRename();
+                                }
+                              }}
+                              @click=${(e: Event) => e.stopPropagation()}
+                              autofocus
+                            />
+                            <button class="btn-save-rename" @click=${(e: Event) => { e.stopPropagation(); this.commitRename(p.id); }}>Save</button>
+                            <button class="btn-cancel-rename" @click=${(e: Event) => { e.stopPropagation(); this.cancelRename(); }}>Cancel</button>
+                          </div>
+                        ` : html`
+                          <div class="card-title">${safeName}</div>
+                        `}
+                        <div class="card-meta-line">${metaLine}</div>
                       </div>
-                    `}
 
-                    <div class="card-meta">${safeGenre} · ${safeMood}</div>
-                    
-                    <div class="section-chips">
-                      ${(p.chords || []).map(c => {
-                        const role = roleForTension(c.tension);
-                        return html`<div class="section-chip" style="background:${role.color};border-radius:${Math.round(role.radius * 0.35)}px;" title=${c.name}></div>`;
-                      })}
+                      <div class="card-actions">
+                        <button
+                          class="action-btn"
+                          title="Rename set"
+                          aria-label="Rename set"
+                          @click=${(e: Event) => this.startRename(e, p.id, safeName)}
+                        >
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B5F50" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 20h9"/>
+                            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>
+                          </svg>
+                        </button>
+                        <button
+                          class="action-btn delete"
+                          title="Delete set"
+                          aria-label="Delete set"
+                          @click=${(e: Event) => this.askDelete(e, p.id)}
+                        >
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B5F50" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>
+                          </svg>
+                        </button>
+                      </div>
                     </div>
 
                     ${isConfirmingDelete ? html`
                       <div class="delete-confirm-banner" @click=${(e: Event) => e.stopPropagation()}>
-                        <span>Delete this set?</span>
-                        <div class="confirm-btn-group">
-                          <button class="confirm-btn cancel" @click=${(e: Event) => this.cancelDelete(e)}>Cancel</button>
-                          <button class="confirm-btn delete" @click=${(e: Event) => this.confirmDelete(e, p.id)}>Delete</button>
+                        <div class="delete-confirm-text">Delete this set for good?</div>
+                        <div class="delete-confirm-actions">
+                          <button class="btn-keep" @click=${(e: Event) => this.cancelDelete(e)}>Keep</button>
+                          <button class="btn-delete-confirm" @click=${(e: Event) => this.confirmDelete(e, p.id)}>Delete</button>
                         </div>
                       </div>
                     ` : ''}
-                    
-                    <div class="card-details">
-                      <div class="detail-pill">${displayKeyName(safeKey, safeScaleType)} ${safeScaleType.replace('_', ' ')}</div>
-                      <div class="detail-pill">${safeBpm} BPM</div>
-                      <div class="detail-pill">${date}</div>
-                    </div>
                   </div>
                 `;
               })}

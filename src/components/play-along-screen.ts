@@ -550,7 +550,6 @@ export class PlayAlongScreen extends LitElement {
       <app-header
         .isAuthenticated=${this.isAuthenticated}
         .userEmail=${this.userEmail}
-        .savedCount=${this.savedCount}
       ></app-header>
 
       <div class="container">

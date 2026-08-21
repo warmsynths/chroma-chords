@@ -14,19 +14,22 @@ export interface AuthState {
 
 export type AuthStateListener = (state: AuthState) => void;
 
+const DEFAULT_SUPABASE_URL = 'https://nfinswlsukomnworyfbj.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_EyU-FxgU_9GRE5RVl1MFug_B4t_C3aU';
+
 function getEnvSupabaseUrl(): string | undefined {
   try {
-    return (import.meta as any).env?.VITE_SUPABASE_URL || undefined;
+    return (import.meta as any).env?.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
   } catch {
-    return undefined;
+    return DEFAULT_SUPABASE_URL;
   }
 }
 
 function getEnvSupabaseAnonKey(): string | undefined {
   try {
-    return (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || undefined;
+    return (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
   } catch {
-    return undefined;
+    return DEFAULT_SUPABASE_ANON_KEY;
   }
 }
 

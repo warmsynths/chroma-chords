@@ -1,5 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { projectStorage } from '../services/project-storage';
 
 @customElement('app-header')
 export class AppHeader extends LitElement {
@@ -15,6 +16,8 @@ export class AppHeader extends LitElement {
 
   @state() private accountMenuOpen = false;
   @state() private showCapacityNote = false;
+
+  private unsubscribeProjects: (() => void) | null = null;
 
   static styles = css`
     :host {
@@ -284,11 +287,19 @@ export class AppHeader extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     window.addEventListener('keydown', this.onKeyDown);
+    this.unsubscribeProjects = projectStorage.subscribeProjects((projects) => {
+      this.savedCount = projects.length;
+      this.requestUpdate();
+    });
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener('keydown', this.onKeyDown);
+    if (this.unsubscribeProjects) {
+      this.unsubscribeProjects();
+      this.unsubscribeProjects = null;
+    }
   }
 
   private onKeyDown = (e: KeyboardEvent) => {

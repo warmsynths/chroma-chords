@@ -57,6 +57,27 @@ describe('ProjectStorageManager', () => {
     expect(manager.getProjects()).toHaveLength(0);
   });
 
+  it('sanitizes projects with missing or undefined chords on getProjects', () => {
+    const rawProjects = [
+      {
+        id: 'proj-no-chords',
+        name: 'Legacy Project',
+        lastModified: Date.now(),
+        genre: 'Pop',
+        mood: 'Upbeat',
+        key: 'G',
+        scaleType: 'MAJOR',
+        bpm: 120,
+      },
+    ];
+    localStorage.setItem('chroma_chords_projects', JSON.stringify(rawProjects));
+    const projects = manager.getProjects();
+    expect(projects).toHaveLength(1);
+    expect(projects[0].id).toBe('proj-no-chords');
+    expect(Array.isArray(projects[0].chords)).toBe(true);
+    expect(projects[0].chords).toHaveLength(0);
+  });
+
   it('records tombstones on delete and clears on save', () => {
     const sampleProject: ProjectData = {
       id: 'proj-tombstone',

@@ -96,6 +96,7 @@ export class LoopScreen extends LitElement {
   @property({ type: String }) playStyle: string | null = null;
   @property({ type: Boolean }) sheetOpen = false;
   @property({ type: Boolean }) isAuthenticated = false;
+  @property({ type: String }) userEmail: string | null = null;
   @property({ type: Boolean }) isBookmarked = false;
   @property({ type: String }) sheetMode: 'swap' | 'voicing' = 'swap';
   @property({ type: Object }) swapChord: ChordBlock | null = null;
@@ -1287,24 +1288,15 @@ export class LoopScreen extends LitElement {
           </div>
         ` : ''}
 
-        <div class="top-bar">
-          <div class="icon-btn" @click=${() => this.emit('back')}>‹</div>
-          <div class="wordmark" @click=${() => this.onWordmarkClick()}>
-            <svg width="18" height="18" viewBox="0 0 30 30"><circle cx="11" cy="11" r="9" fill="#F2A79B" /><circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9" /></svg>
-            <div class="wordmark-text">Chroma Chords</div>
-          </div>
-          <div style="display:flex; gap:8px; align-items:center;">
-            ${this.isAuthenticated ? html`
-              <div class="your-sets-btn" @click=${() => this.emit('view-sets')}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                </svg>
-                <span class="your-sets-text">Your sets</span>
-              </div>
-            ` : ''}
-            <div class="icon-btn" @click=${() => this.toggleMenu()}>…</div>
-          </div>
-        </div>
+        <app-header
+          .isAuthenticated=${this.isAuthenticated}
+          .userEmail=${this.userEmail}
+          @view-sets=${() => this.emit('view-sets')}
+          @request-login=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}
+          @request-logout=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}
+          @wordmark-click=${() => this.onWordmarkClick()}
+        ></app-header>
+
         <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 
         ${this.menuMounted ? html`
@@ -1353,8 +1345,17 @@ export class LoopScreen extends LitElement {
         ` : ''}
 
         <div class="content">
+          <div class="progression-nav-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px;width:100%;">
+            <button class="back-pill" @click=${() => this.emit('back')} style="display:inline-flex;align-items:center;gap:6px;background:#F1E4CC;padding:8px 16px;min-height:36px;border-radius:100px;font-size:12.5px;font-weight:700;color:#8A6B3F;border:none;cursor:pointer;font-family:inherit;transition:transform 150ms ease, background 150ms ease;">
+              ← Back
+            </button>
+            <button class="key-scale-pill" @click=${() => this.toggleMenu()} style="display:inline-flex;align-items:center;gap:6px;background:#F1E4CC;padding:8px 16px;min-height:36px;border-radius:100px;font-size:12.5px;font-weight:700;color:#2E271F;border:none;cursor:pointer;font-family:inherit;transition:transform 150ms ease, background 150ms ease;" title="Change key, scale, or genre">
+              ${displayKeyName(p.key, p.scaleType)} ${p.scaleType.replace('_', ' ')} ▾
+            </button>
+          </div>
+
           ${this.renderHeaderTitle(p, moodColor)}
-          <div class="subcopy">Tap a chord to hear it.</div>
+          <div class="subcopy">${p.genre} · ${p.chords.length} bars · tap a chord to hear it</div>
 
           <div class="panel-shell">
             ${this.panelPeekMascot.show ? html`
