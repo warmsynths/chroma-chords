@@ -16,6 +16,7 @@ vi.mock('tone', () => ({
 
 import { normalize } from './freetext-schema';
 import { presetIdToUserInstrumentName, matchRhythmStyleToPlayStyleName } from './audio-service';
+import { CapacityService, CAPACITY_MAX, RECHARGE_INTERVAL_MS } from './capacity-service';
 
 describe('LLM Payload Plumbing & Normalization', () => {
   const fallback = { genre: 'Pop', mood: 'Dreamy' };
@@ -143,9 +144,6 @@ describe('Hash Routing & Navigation Seam', () => {
 });
 
 describe('Capacity Ring & Cooldown Rate Limiting (Ticket 02)', () => {
-  const CAPACITY_MAX = 4;
-  const RECHARGE_INTERVAL_MS = 45000;
-
   it('calculates restored charges accurately over time intervals', () => {
     const calculateRestoration = (currentCharges: number, elapsedMs: number) => {
       const restored = Math.floor(elapsedMs / RECHARGE_INTERVAL_MS);
@@ -165,6 +163,29 @@ describe('Capacity Ring & Cooldown Rate Limiting (Ticket 02)', () => {
     expect(calculateRestoration(0, 90000)).toEqual({ newCharges: 2, nextInSec: 45 });
     // 200 seconds elapsed from 0 -> all 4 charges capped
     expect(calculateRestoration(0, 200000).newCharges).toBe(4);
+  });
+
+  it('manages capacity correctly in CapacityService instance', () => {
+    const service = new CapacityService();
+    expect(service.getCapacityMax()).toBe(4);
+    const initial = service.getCharges();
+    expect(initial).toBeGreaterThanOrEqual(0);
+
+    let observedCharges = -1;
+    const unsub = service.subscribe((st) => {
+      observedCharges = st.charges;
+    });
+    expect(observedCharges).toBe(service.getCharges());
+
+    // Test spending
+    if (service.getCharges() > 0) {
+      const before = service.getCharges();
+      const spent = service.spendCharge();
+      expect(spent).toBe(true);
+      expect(service.getCharges()).toBe(before - 1);
+      expect(observedCharges).toBe(before - 1);
+    }
+    unsub();
   });
 
   it('generates 4 discrete segmented conic gradient stops with gaps', () => {

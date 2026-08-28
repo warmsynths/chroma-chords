@@ -4,9 +4,12 @@ import { MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, MOODS, GENRES, getMoodC
 import { heuristicClassify, classifyFreeText, getLLMProvider, setLLMProvider, getLLMModel, setLLMModel, LLMProvider, OPENCODE_MODELS, GOOGLE_MODELS, fetchGlobalRateLimit } from '../services/freetext-service';
 import { NormalizedPrompt } from '../services/freetext-schema';
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
+import { capacityService, CAPACITY_MAX, RECHARGE_INTERVAL_MS, STORAGE_CAPACITY_KEY } from '../services/capacity-service';
 import './mascot-character';
 import './mascot-parade';
 import './app-header';
+
+export { CAPACITY_MAX, RECHARGE_INTERVAL_MS, STORAGE_CAPACITY_KEY };
 
 // Side-gutter slots for the desktop-only background mascot — mobile has zero spare vertical
 // room here (the whole picker is tuned to fit one screen), so it only appears once there's
@@ -19,10 +22,6 @@ const MASCOT_SLOTS = [
 ] as const;
 
 const CLASSIFY_DEBOUNCE_MS = 800;
-
-export const CAPACITY_MAX = 4;
-export const RECHARGE_INTERVAL_MS = 45000;
-export const STORAGE_CAPACITY_KEY = 'chroma_chords_capacity_v2';
 
 const GENRE_ICON_PALETTE = ['#F2A79B', '#9CC0EC', '#F6D98B'];
 // index % 3 -> corner radius on the genre pill's icon swatch: rounded square, squarer, near-circle.
@@ -113,82 +112,14 @@ export class SeedScreen extends LitElement {
   @state() private capacityCharges = CAPACITY_MAX;
   @state() private rechargeNextSec = 45;
   @state() private showCapacityNote = false;
-  private lastCapacityTime = Date.now();
-  private capacityTimer: ReturnType<typeof setInterval> | null = null;
-
-  private initCapacity() {
-    try {
-      const raw = localStorage.getItem(STORAGE_CAPACITY_KEY);
-      const now = Date.now();
-      if (raw) {
-        const data = JSON.parse(raw);
-        const charges = typeof data.charges === 'number' ? data.charges : CAPACITY_MAX;
-        const lastTime = typeof data.lastTime === 'number' ? data.lastTime : now;
-        if (charges < CAPACITY_MAX) {
-          const elapsed = Math.max(0, now - lastTime);
-          const restored = Math.floor(elapsed / RECHARGE_INTERVAL_MS);
-          this.capacityCharges = Math.min(CAPACITY_MAX, charges + restored);
-          const remainder = elapsed % RECHARGE_INTERVAL_MS;
-          this.rechargeNextSec = Math.max(1, Math.ceil((RECHARGE_INTERVAL_MS - remainder) / 1000));
-          this.lastCapacityTime = now - remainder;
-        } else {
-          this.capacityCharges = CAPACITY_MAX;
-          this.rechargeNextSec = 45;
-          this.lastCapacityTime = now;
-        }
-      } else {
-        this.capacityCharges = CAPACITY_MAX;
-        this.rechargeNextSec = 45;
-        this.lastCapacityTime = now;
-      }
-    } catch {
-      this.capacityCharges = CAPACITY_MAX;
-      this.rechargeNextSec = 45;
-    }
-    this.saveCapacity();
-    this.startCapacityRechargeTimer();
-  }
-
-  private saveCapacity() {
-    try {
-      localStorage.setItem(STORAGE_CAPACITY_KEY, JSON.stringify({
-        charges: this.capacityCharges,
-        lastTime: this.lastCapacityTime,
-      }));
-    } catch {}
-  }
-
-  private startCapacityRechargeTimer() {
-    if (this.capacityTimer) clearInterval(this.capacityTimer);
-    this.capacityTimer = setInterval(() => {
-      if (this.capacityCharges < CAPACITY_MAX) {
-        const now = Date.now();
-        const elapsed = Math.max(0, now - this.lastCapacityTime);
-        if (elapsed >= RECHARGE_INTERVAL_MS) {
-          const restored = Math.floor(elapsed / RECHARGE_INTERVAL_MS);
-          this.capacityCharges = Math.min(CAPACITY_MAX, this.capacityCharges + restored);
-          this.lastCapacityTime = now - (elapsed % RECHARGE_INTERVAL_MS);
-          this.saveCapacity();
-        }
-        const remainder = (now - this.lastCapacityTime) % RECHARGE_INTERVAL_MS;
-        this.rechargeNextSec = Math.max(1, Math.ceil((RECHARGE_INTERVAL_MS - remainder) / 1000));
-      } else {
-        this.rechargeNextSec = 45;
-      }
-    }, 1000);
-  }
+  private unsubscribeCapacity: (() => void) | null = null;
 
   private spendCapacityCharge(): boolean {
-    if (this.capacityCharges <= 0) {
+    const success = capacityService.spendCharge();
+    if (!success) {
       this.showCapacityNote = true;
-      return false;
     }
-    if (this.capacityCharges === CAPACITY_MAX) {
-      this.lastCapacityTime = Date.now();
-    }
-    this.capacityCharges -= 1;
-    this.saveCapacity();
-    return true;
+    return success;
   }
 
   private loadingTimer: ReturnType<typeof setInterval> | null = null;
@@ -542,7 +473,11 @@ export class SeedScreen extends LitElement {
     this.placeholderTimer = setInterval(() => {
       this.placeholderIdx = (this.placeholderIdx + 1) % VIBE_EXAMPLES.length;
     }, 2800);
-    this.initCapacity();
+    this.unsubscribeCapacity = capacityService.subscribe((state) => {
+      this.capacityCharges = state.charges;
+      this.rechargeNextSec = state.rechargeNextSec;
+      this.requestUpdate();
+    });
     this.loadKeyInfo();
     this.initJellyBodies();
   }
@@ -567,7 +502,10 @@ export class SeedScreen extends LitElement {
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
     if (this.classifyDebounce) clearTimeout(this.classifyDebounce);
     if (this.cooldownTimer) clearInterval(this.cooldownTimer);
-    if (this.capacityTimer) clearInterval(this.capacityTimer);
+    if (this.unsubscribeCapacity) {
+      this.unsubscribeCapacity();
+      this.unsubscribeCapacity = null;
+    }
     this.stopLoadingTimer();
   }
 
@@ -670,26 +608,48 @@ export class SeedScreen extends LitElement {
       user-select: none;
       transition: opacity 0.2s ease;
     }
-    .vibe-admin-btn {
+    .vibe-capacity-chip {
       flex-shrink: 0;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 7px;
       padding: 6px 12px;
       font-size: 12px;
       font-weight: 700;
       font-family: inherit;
-      color: var(--cv-ink-70);
-      background: rgba(46, 39, 31, 0.06);
-      border: 1.5px solid var(--cv-ink-14);
-      border-radius: 20px;
+      color: #6B5F50;
+      background: rgba(46, 39, 31, 0.05);
+      border: 1.5px solid rgba(46, 39, 31, 0.12);
+      border-radius: 100px;
       cursor: pointer;
-      transition: all 0.2s ease;
+      user-select: none;
+      transition: background 200ms ease, border-color 200ms ease, transform 150ms var(--cv-ease);
     }
-    .vibe-admin-btn:hover {
-      background: rgba(46, 39, 31, 0.12);
-      color: var(--cv-ink);
-      border-color: var(--cv-ink-30);
+    .vibe-capacity-chip:hover {
+      background: rgba(46, 39, 31, 0.09);
+      border-color: rgba(46, 39, 31, 0.2);
+    }
+    .vibe-capacity-chip.low {
+      border-color: rgba(224, 138, 60, 0.5);
+      color: #9E5212;
+    }
+    .pips-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .pip {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(46, 39, 31, 0.18);
+      transition: background 200ms ease;
+    }
+    .pip.filled {
+      background: #F2735F;
+    }
+    .pip.filled.low {
+      background: #E08A3C;
     }
     @keyframes cv-spin {
       from { transform: rotate(0deg); }
@@ -1486,6 +1446,8 @@ export class SeedScreen extends LitElement {
     return html`
       <div class="frame" @mousemove=${this.onFrameMouseMove} @mouseleave=${this.onFrameMouseLeave}>
         <app-header
+          hideCapacity
+          .isAdmin=${this.isAdmin}
           .capacityCharges=${this.capacityCharges}
           .capacityMax=${CAPACITY_MAX}
           .rechargeNextSec=${this.rechargeNextSec}
@@ -1494,6 +1456,7 @@ export class SeedScreen extends LitElement {
           @view-sets=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}
           @request-login=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}
           @request-logout=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}
+          @open-admin-modal=${() => { this.showAdminModal = true; }}
           @wordmark-click=${() => this.onWordmarkClick()}
         ></app-header>
 
@@ -1547,15 +1510,22 @@ export class SeedScreen extends LitElement {
                 }}
                 placeholder=${this.isGenerating ? 'Composing your chords...' : VIBE_EXAMPLES[this.placeholderIdx]}
               />
-              ${this.isAdmin && !this.isGenerating ? html`
-                <button class="vibe-admin-btn" @click=${(e: Event) => { e.stopPropagation(); this.showAdminModal = true; }} title="AI Model Configuration">
-                  ⚡ ${this.currentProvider === 'google'
-                    ? `Google AI (${this.googleRemaining} left)`
-                    : this.currentProvider === 'anthropic'
-                        ? 'Claude'
-                        : `OpenRouter (${this.orRemaining} left)`}
-                </button>
-              ` : ''}
+              <button
+                class="vibe-capacity-chip ${this.capacityCharges <= 1 ? 'low' : ''}"
+                @click=${(e: Event) => { e.stopPropagation(); this.showCapacityNote = !this.showCapacityNote; }}
+                title=${this.capacityCharges > 0
+                  ? `${this.capacityCharges} of ${CAPACITY_MAX} AI generates left. One comes back every ${this.rechargeNextSec > 0 ? this.rechargeNextSec : 45}s.`
+                  : `Cooling down — next one unlocks in ${Math.floor(this.rechargeNextSec / 60)}:${String(this.rechargeNextSec % 60).padStart(2, '0')}`}
+                aria-label="AI generates remaining"
+                type="button"
+              >
+                <span class="pips-wrap">
+                  ${Array.from({ length: CAPACITY_MAX }, (_, i) => html`
+                    <span class="pip ${i < this.capacityCharges ? 'filled' : ''} ${this.capacityCharges <= 1 ? 'low' : ''}"></span>
+                  `)}
+                </span>
+                <span>${this.capacityCharges > 0 ? `${this.capacityCharges} left` : `+1 in ${this.rechargeNextSec}s`}</span>
+              </button>
               <button
                 class="vibe-submit-btn ${!this.freeText.trim() || this.capacityCharges <= 0 || this.isGenerating ? 'disabled' : ''} ${this.isGenerating ? 'generating' : ''}"
                 style="background: ${moodColor}; opacity: ${this.capacityCharges > 0 && !this.isGenerating ? '1' : '0.6'};"

@@ -1,10 +1,13 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { projectStorage } from '../services/project-storage';
+import { capacityService } from '../services/capacity-service';
 
 @customElement('app-header')
 export class AppHeader extends LitElement {
   @property({ type: Boolean }) compact = false;
+  @property({ type: Boolean }) hideCapacity = false;
+  @property({ type: Boolean }) isAdmin = false;
   @property({ type: Number }) capacityCharges = 4;
   @property({ type: Number }) capacityMax = 4;
   @property({ type: Number }) rechargeNextSec = 60;
@@ -18,6 +21,7 @@ export class AppHeader extends LitElement {
   @state() private showCapacityNote = false;
 
   private unsubscribeProjects: (() => void) | null = null;
+  private unsubscribeCapacity: (() => void) | null = null;
 
   static styles = css`
     :host {
@@ -291,6 +295,12 @@ export class AppHeader extends LitElement {
       this.savedCount = projects.length;
       this.requestUpdate();
     });
+    this.unsubscribeCapacity = capacityService.subscribe((state) => {
+      this.capacityCharges = state.charges;
+      this.capacityMax = state.max;
+      this.rechargeNextSec = state.rechargeNextSec;
+      this.requestUpdate();
+    });
   }
 
   disconnectedCallback() {
@@ -299,6 +309,10 @@ export class AppHeader extends LitElement {
     if (this.unsubscribeProjects) {
       this.unsubscribeProjects();
       this.unsubscribeProjects = null;
+    }
+    if (this.unsubscribeCapacity) {
+      this.unsubscribeCapacity();
+      this.unsubscribeCapacity = null;
     }
   }
 
@@ -344,8 +358,17 @@ export class AppHeader extends LitElement {
     this.dispatchEvent(new CustomEvent('sync-projects', { bubbles: true, composed: true }));
   }
 
+  private onOpenAdminModal() {
+    this.closeOverlays();
+    this.dispatchEvent(new CustomEvent('open-admin-modal', { bubbles: true, composed: true }));
+  }
+
   private onBrandingClick() {
     this.dispatchEvent(new CustomEvent('wordmark-click', { bubbles: true, composed: true }));
+  }
+
+  get isUserAdmin(): boolean {
+    return Boolean(this.isAdmin || projectStorage.isAdmin);
   }
 
   render() {
@@ -375,18 +398,20 @@ export class AppHeader extends LitElement {
         </div>
 
         <div class="actions-group">
-          <button
-            class="capacity-chip ${isLow ? 'low' : ''}"
-            @click=${this.toggleCapacityNote}
-            aria-label="AI generates remaining"
-          >
-            <span class="pips-wrap">
-              ${Array.from({ length: this.capacityMax }, (_, i) => html`
-                <span class="pip ${i < this.capacityCharges ? 'filled' : ''} ${isLow ? 'low' : ''}"></span>
-              `)}
-            </span>
-            <span>${capacityLabel}</span>
-          </button>
+          ${!this.hideCapacity ? html`
+            <button
+              class="capacity-chip ${isLow ? 'low' : ''}"
+              @click=${this.toggleCapacityNote}
+              aria-label="AI generates remaining"
+            >
+              <span class="pips-wrap">
+                ${Array.from({ length: this.capacityMax }, (_, i) => html`
+                  <span class="pip ${i < this.capacityCharges ? 'filled' : ''} ${isLow ? 'low' : ''}"></span>
+                `)}
+              </span>
+              <span>${capacityLabel}</span>
+            </button>
+          ` : ''}
 
           ${!this.isAuthenticated ? html`
             <button class="btn-sign-in" @click=${this.onSignInClick}>Sign in</button>
@@ -437,6 +462,14 @@ export class AppHeader extends LitElement {
               </svg>
               <span>Sync now</span>
             </button>
+            ${this.isUserAdmin ? html`
+              <button class="menu-item" @click=${this.onOpenAdminModal} role="menuitem">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A6B3F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                <span>AI model config</span>
+              </button>
+            ` : ''}
             <div class="menu-divider"></div>
             <button class="menu-item muted" @click=${this.onSignOutClick} role="menuitem">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B5F50" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
