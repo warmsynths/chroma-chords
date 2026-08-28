@@ -1,179 +1,182 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AuthService } from './auth-service';
 
-describe('AuthService', () => {
+// Mock localStorage for node environment
+const store: Record<string, string> = {};
+const mockLocalStorage = {
+  getItem: (key: string) => store[key] || null,
+  setItem: (key: string, val: string) => {
+    store[key] = val;
+  },
+  removeItem: (key: string) => {
+    delete store[key];
+  },
+  clear: () => {
+    Object.keys(store).forEach((k) => delete store[k]);
+  },
+};
+
+(globalThis as any).localStorage = mockLocalStorage;
+(globalThis as any).window = globalThis;
+
+import { AuthService, parseJwtPayload, AUTH_STORAGE_TOKEN_KEY, AUTH_STORAGE_USER_KEY } from './auth-service';
+
+function createMockGoogleJwt(sub: string, email: string, expSecondsFromNow = 3600): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  const exp = Math.floor(Date.now() / 1000) + expSecondsFromNow;
+  const payload = Buffer.from(
+    JSON.stringify({
+      iss: 'https://accounts.google.com',
+      sub,
+      email,
+      name: 'Test Musician',
+      picture: 'https://lh3.googleusercontent.com/a/mock-pic',
+      exp,
+    })
+  ).toString('base64url');
+  return `${header}.${payload}.mockSignature123`;
+}
+
+describe('AuthService (Google OAuth / JWT)', () => {
   let authService: AuthService;
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    authService = new AuthService('https://mock.supabase.co', 'mock-anon-key');
+    mockLocalStorage.clear();
+    authService = new AuthService('mock-client-id.apps.googleusercontent.com');
   });
 
-  it('initializes with unauthenticated state when no session exists', () => {
-    const state = authService.getAuthState();
-    expect(state.isAuthenticated).toBe(false);
-    expect(state.user).toBeNull();
-    expect(state.accessToken).toBeNull();
+  describe('parseJwtPayload', () => {
+    it('correctly decodes claims from valid JWT structure', () => {
+      const token = createMockGoogleJwt('user-google-123', 'creator@example.com');
+      const payload = parseJwtPayload(token);
+      expect(payload).not.toBeNull();
+      expect(payload?.sub).toBe('user-google-123');
+      expect(payload?.email).toBe('creator@example.com');
+      expect(payload?.name).toBe('Test Musician');
+    });
+
+    it('returns null for malformed tokens', () => {
+      expect(parseJwtPayload('')).toBeNull();
+      expect(parseJwtPayload('invalid.token')).toBeNull();
+      expect(parseJwtPayload('not-a-jwt')).toBeNull();
+    });
   });
 
-  it('returns false and error message when trying to sign in without credentials', async () => {
-    const unconfigured = new AuthService('', '');
-    expect(unconfigured.isConfigured()).toBe(false);
-    const res = await unconfigured.signInWithPassword('test@example.com', 'password123');
-    expect(res.success).toBe(false);
-    expect(res.message).toContain('not configured');
-  });
+  describe('Session Lifecycle & State', () => {
+    it('initializes with unauthenticated state when no stored session exists', () => {
+      const state = authService.getAuthState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+      expect(state.accessToken).toBeNull();
+    });
 
-  it('returns false when trying to sign up, sign out, or use magic link without credentials', async () => {
-    const unconfigured = new AuthService('', '');
-    const upRes = await unconfigured.signUp('test@example.com', 'password123');
-    expect(upRes.success).toBe(false);
+    it('successfully handles and stores valid Google credential response', () => {
+      const token = createMockGoogleJwt('google-999', 'jam@chromachords.io');
+      const res = authService.handleCredentialResponse(token);
 
-    const otpRes = await unconfigured.signInWithOtp('test@example.com');
-    expect(otpRes.success).toBe(false);
+      expect(res.success).toBe(true);
+      expect(res.user?.id).toBe('google-999');
+      expect(res.user?.email).toBe('jam@chromachords.io');
 
-    const oauthRes = await unconfigured.signInWithOAuth('google');
-    expect(oauthRes.success).toBe(false);
+      const state = authService.getAuthState();
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.user?.id).toBe('google-999');
+      expect(state.accessToken).toBe(token);
 
-    const outRes = await unconfigured.signOut();
-    expect(outRes.success).toBe(true);
-  });
+      // Verify localStorage persistence
+      expect(mockLocalStorage.getItem(AUTH_STORAGE_TOKEN_KEY)).toBe(token);
+    });
 
-  it('notifies subscribers on subscribe and handles unsubscribe cleanly', () => {
-    const listener = vi.fn();
-    const unsubscribe = authService.subscribe(listener);
+    it('rejects expired Google credentials', () => {
+      const expiredToken = createMockGoogleJwt('google-old', 'old@example.com', -60); // expired 60s ago
+      const res = authService.handleCredentialResponse(expiredToken);
 
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
-      isAuthenticated: false,
-      user: null,
-      accessToken: null,
-    }));
+      expect(res.success).toBe(false);
+      expect(res.message).toContain('expired');
+      expect(authService.getAuthState().isAuthenticated).toBe(false);
+    });
 
-    unsubscribe();
-  });
+    it('restores valid session from localStorage on initialization', () => {
+      const validToken = createMockGoogleJwt('google-restored', 'restored@example.com', 7200);
+      mockLocalStorage.setItem(AUTH_STORAGE_TOKEN_KEY, validToken);
+      mockLocalStorage.setItem(
+        AUTH_STORAGE_USER_KEY,
+        JSON.stringify({ id: 'google-restored', email: 'restored@example.com' })
+      );
 
-  it('handles client session and authentication lifecycle using client mock', async () => {
-    let authStateCallback: ((event: string, session: any) => void) | null = null;
-    const mockSession = {
-      user: { id: 'user-123', email: 'creator@example.com' },
-      access_token: 'fake-jwt-token',
-    };
+      const newService = new AuthService('mock-client-id.apps.googleusercontent.com');
+      const state = newService.getAuthState();
 
-    const mockClient: any = {
-      auth: {
-        getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
-        onAuthStateChange: vi.fn().mockImplementation((cb: any) => {
-          authStateCallback = cb;
-          return { data: { subscription: { unsubscribe: vi.fn() } } };
-        }),
-        signInWithPassword: vi.fn().mockResolvedValue({
-          data: { session: mockSession, user: mockSession.user },
-          error: null,
-        }),
-        signUp: vi.fn().mockResolvedValue({
-          data: { session: null, user: { id: 'user-456', email: 'new@example.com' } },
-          error: null,
-        }),
-        signInWithOAuth: vi.fn().mockResolvedValue({
-          data: {},
-          error: null,
-        }),
-        signInWithOtp: vi.fn().mockResolvedValue({
-          data: {},
-          error: null,
-        }),
-        signOut: vi.fn().mockResolvedValue({
-          error: null,
-        }),
-      },
-    };
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.user?.id).toBe('google-restored');
+      expect(state.user?.email).toBe('restored@example.com');
+      expect(state.accessToken).toBe(validToken);
+    });
 
-    const serviceWithMock = new AuthService(undefined, undefined, mockClient);
-    expect(serviceWithMock.isConfigured()).toBe(true);
+    it('clears expired session from localStorage on initialization', () => {
+      const expiredToken = createMockGoogleJwt('google-expired', 'expired@example.com', -120);
+      mockLocalStorage.setItem(AUTH_STORAGE_TOKEN_KEY, expiredToken);
 
-    const listener = vi.fn();
-    serviceWithMock.subscribe(listener);
+      const newService = new AuthService('mock-client-id.apps.googleusercontent.com');
+      const state = newService.getAuthState();
 
-    // Simulate login
-    const loginRes = await serviceWithMock.signInWithPassword('creator@example.com', 'secret123');
-    expect(loginRes.success).toBe(true);
-    expect(serviceWithMock.getUser()?.email).toBe('creator@example.com');
-    expect(serviceWithMock.getAuthState().isAuthenticated).toBe(true);
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+      expect(mockLocalStorage.getItem(AUTH_STORAGE_TOKEN_KEY)).toBeNull();
+    });
 
-    // Simulate auth state change event from Supabase
-    if (authStateCallback) {
-      (authStateCallback as any)('SIGNED_OUT', null);
-      expect(serviceWithMock.getAuthState().isAuthenticated).toBe(false);
-      expect(serviceWithMock.getUser()).toBeNull();
-    }
+    it('notifies subscribers on auth state change and supports clean unsubscription', () => {
+      const listener = vi.fn();
+      const unsubscribe = authService.subscribe(listener);
 
-    // Simulate signup
-    const signupRes = await serviceWithMock.signUp('new@example.com', 'secret123');
-    expect(signupRes.success).toBe(true);
-    expect(signupRes.user?.email).toBe('new@example.com');
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isAuthenticated: false,
+          user: null,
+          accessToken: null,
+        })
+      );
 
-    // Simulate OAuth
-    const oauthRes = await serviceWithMock.signInWithOAuth('google');
-    expect(oauthRes.success).toBe(true);
+      const token = createMockGoogleJwt('google-sub-user', 'sub@example.com');
+      authService.handleCredentialResponse(token);
 
-    // Simulate OTP
-    const otpRes = await serviceWithMock.signInWithOtp('creator@example.com');
-    expect(otpRes.success).toBe(true);
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isAuthenticated: true,
+          user: expect.objectContaining({ id: 'google-sub-user' }),
+        })
+      );
 
-    // Simulate sign out
-    const logoutRes = await serviceWithMock.signOut();
-    expect(logoutRes.success).toBe(true);
-    expect(serviceWithMock.getAuthState().isAuthenticated).toBe(false);
-  });
+      unsubscribe();
+      authService.signOut();
+      expect(listener).toHaveBeenCalledTimes(2); // No more calls after unsubscribe
+    });
 
-  it('handles client errors gracefully during sign in, sign up, and sign out', async () => {
-    const mockErrorClient: any = {
-      auth: {
-        getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: new Error('Session error') }),
-        onAuthStateChange: vi.fn(),
-        signInWithPassword: vi.fn().mockResolvedValue({
-          data: { session: null, user: null },
-          error: { message: 'Invalid login credentials' },
-        }),
-        signUp: vi.fn().mockResolvedValue({
-          data: { session: null, user: null },
-          error: { message: 'User already registered' },
-        }),
-        signInWithOAuth: vi.fn().mockResolvedValue({
-          data: {},
-          error: { message: 'OAuth failed' },
-        }),
-        signInWithOtp: vi.fn().mockResolvedValue({
-          data: {},
-          error: { message: 'Rate limited' },
-        }),
-        signOut: vi.fn().mockResolvedValue({
-          error: { message: 'Network error' },
-        }),
-      },
-    };
+    it('signs out and purges storage cleanly', async () => {
+      const token = createMockGoogleJwt('google-logout', 'logout@example.com');
+      authService.handleCredentialResponse(token);
+      expect(authService.getAuthState().isAuthenticated).toBe(true);
 
-    const serviceWithError = new AuthService(undefined, undefined, mockErrorClient);
+      const res = await authService.signOut();
+      expect(res.success).toBe(true);
 
-    const signin = await serviceWithError.signInWithPassword('bad@example.com', 'wrong');
-    expect(signin.success).toBe(false);
-    expect(signin.message).toBe('Invalid login credentials');
+      const state = authService.getAuthState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.user).toBeNull();
+      expect(state.accessToken).toBeNull();
+      expect(mockLocalStorage.getItem(AUTH_STORAGE_TOKEN_KEY)).toBeNull();
+    });
 
-    const signup = await serviceWithError.signUp('bad@example.com', 'wrong');
-    expect(signup.success).toBe(false);
-    expect(signup.message).toBe('User already registered');
+    it('automatically signs out when getAccessToken is called with expired token', async () => {
+      const token = createMockGoogleJwt('google-exp-check', 'check@example.com', -5);
+      (authService as any).currentAccessToken = token;
+      (authService as any).currentUser = { id: 'google-exp-check', email: 'check@example.com' };
 
-    const oauth = await serviceWithError.signInWithOAuth('google');
-    expect(oauth.success).toBe(false);
-    expect(oauth.message).toBe('OAuth failed');
-
-    const otp = await serviceWithError.signInWithOtp('bad@example.com');
-    expect(otp.success).toBe(false);
-    expect(otp.message).toBe('Rate limited');
-
-    const signout = await serviceWithError.signOut();
-    expect(signout.success).toBe(false);
-    expect(signout.message).toBe('Network error');
+      const tokenRes = await authService.getAccessToken();
+      expect(tokenRes).toBeNull();
+      expect(authService.getAuthState().isAuthenticated).toBe(false);
+    });
   });
 });

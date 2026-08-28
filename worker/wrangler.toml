@@ -13,3 +13,9 @@ ALLOWED_ORIGIN = "https://warmsynths.github.io"
 binding = "RATE_LIMIT_KV"
 id = "b64e128fb68e42d3a16913552d43cb9a"
 preview_id = "b64e128fb68e42d3a16913552d43cb9a"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chroma_chords_db"
+database_id = "956fdeba-62f3-47b6-98e2-ff531f9c5f76"
+preview_database_id = "DB"

@@ -1,8 +1,8 @@
-import { createClient, SupabaseClient, User, Session as SupabaseSession, Provider } from '@supabase/supabase-js';
-
 export interface AuthUser {
-  id: string;
+  id: string; // Google User ID (sub)
   email?: string;
+  name?: string;
+  picture?: string;
 }
 
 export interface AuthState {
@@ -14,114 +14,111 @@ export interface AuthState {
 
 export type AuthStateListener = (state: AuthState) => void;
 
-const DEFAULT_SUPABASE_URL = 'https://nfinswlsukomnworyfbj.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_EyU-FxgU_9GRE5RVl1MFug_B4t_C3aU';
+export interface GoogleJwtPayload {
+  iss?: string;
+  sub: string;
+  aud?: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+  exp: number;
+  iat?: number;
+  [key: string]: unknown;
+}
 
-function getEnvSupabaseUrl(): string | undefined {
+export const AUTH_STORAGE_TOKEN_KEY = 'chroma_chords_auth_token';
+export const AUTH_STORAGE_USER_KEY = 'chroma_chords_auth_user';
+export const DEFAULT_GOOGLE_CLIENT_ID = '184710057667-s8j8uvuthct60tpppbhp7iiphp0s8qpq.apps.googleusercontent.com';
+
+export function parseJwtPayload(token: string): GoogleJwtPayload | null {
   try {
-    return (import.meta as any).env?.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
+    
+    // Cross-environment base64 decode (Browser + Node/Vitest)
+    let decodedStr = '';
+    if (typeof atob === 'function') {
+      decodedStr = atob(base64);
+    } else if (typeof Buffer !== 'undefined') {
+      decodedStr = Buffer.from(base64, 'base64').toString('binary');
+    } else {
+      return null;
+    }
+
+    const jsonPayload = decodeURIComponent(
+      decodedStr
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload) as GoogleJwtPayload;
   } catch {
-    return DEFAULT_SUPABASE_URL;
+    return null;
   }
 }
 
-function getEnvSupabaseAnonKey(): string | undefined {
+function getEnvGoogleClientId(): string {
   try {
-    return (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
+    return (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
   } catch {
-    return DEFAULT_SUPABASE_ANON_KEY;
+    return DEFAULT_GOOGLE_CLIENT_ID;
   }
 }
 
 export class AuthService {
-  private client: SupabaseClient | null = null;
+  private clientId: string;
   private currentUser: AuthUser | null = null;
   private currentAccessToken: string | null = null;
   private isLoading = true;
   private listeners: Set<AuthStateListener> = new Set();
+  private gisLoaded = false;
 
-  constructor(supabaseUrl?: string, supabaseAnonKey?: string, clientOverride?: SupabaseClient) {
-    if (clientOverride) {
-      this.client = clientOverride;
-      this.initClientSession();
+  constructor(clientId?: string) {
+    this.clientId = clientId !== undefined ? clientId : getEnvGoogleClientId();
+    this.initSession();
+  }
+
+  private initSession() {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      this.isLoading = false;
       return;
     }
 
-    const url = supabaseUrl !== undefined ? supabaseUrl : getEnvSupabaseUrl();
-    const key = supabaseAnonKey !== undefined ? supabaseAnonKey : getEnvSupabaseAnonKey();
-
-    if (url && key) {
-      try {
-        this.client = createClient(url, key, {
-          auth: {
-            persistSession: true,
-            autoRefreshToken: true,
-            detectSessionInUrl: true,
-          },
-        });
-        this.initClientSession();
-      } catch (err) {
-        console.error('Failed to initialize Supabase Auth client:', err);
-        this.isLoading = false;
+    try {
+      const storedToken = localStorage.getItem(AUTH_STORAGE_TOKEN_KEY);
+      if (storedToken) {
+        const payload = parseJwtPayload(storedToken);
+        // Verify expiry: payload.exp is in seconds
+        if (payload && payload.exp && payload.exp * 1000 > Date.now()) {
+          this.currentAccessToken = storedToken;
+          this.currentUser = {
+            id: payload.sub,
+            email: payload.email,
+            name: payload.name,
+            picture: payload.picture,
+          };
+        } else {
+          // Stored token is expired, clean it up
+          localStorage.removeItem(AUTH_STORAGE_TOKEN_KEY);
+          localStorage.removeItem(AUTH_STORAGE_USER_KEY);
+          this.currentAccessToken = null;
+          this.currentUser = null;
+        }
       }
-    } else {
+    } catch (e) {
+      console.warn('Failed to restore auth session from localStorage:', e);
+    } finally {
       this.isLoading = false;
     }
-  }
-
-  private initClientSession() {
-    if (!this.client) return;
-
-    this.client.auth.getSession().then(({ data }) => {
-      this.handleSession(data.session);
-      this.isLoading = false;
-      this.notify();
-    }).catch(() => {
-      this.isLoading = false;
-      this.notify();
-    });
-
-    this.client.auth.onAuthStateChange((_event, session) => {
-      this.handleSession(session);
-      this.isLoading = false;
-      this.notify();
-    });
-  }
-
-  private handleSession(session: SupabaseSession | null) {
-    if (session && session.user) {
-      this.currentUser = {
-        id: session.user.id,
-        email: session.user.email,
-      };
-      this.currentAccessToken = session.access_token;
-    } else {
-      this.currentUser = null;
-      this.currentAccessToken = null;
-    }
-  }
-
-  private notify() {
-    const state = this.getAuthState();
-    this.listeners.forEach((listener) => {
-      try {
-        listener(state);
-      } catch (e) {
-        console.error('Error in AuthState listener:', e);
-      }
-    });
-  }
-
-  public subscribe(listener: AuthStateListener): () => void {
-    this.listeners.add(listener);
-    listener(this.getAuthState());
-    return () => {
-      this.listeners.delete(listener);
-    };
   }
 
   public isConfigured(): boolean {
-    return this.client !== null;
+    return !!this.clientId;
   }
 
   public getAuthState(): AuthState {
@@ -138,121 +135,224 @@ export class AuthService {
   }
 
   public async getAccessToken(): Promise<string | null> {
-    if (!this.client) return null;
-    try {
-      const { data } = await this.client.auth.getSession();
-      if (data.session) {
-        this.currentAccessToken = data.session.access_token;
-        return data.session.access_token;
+    if (this.currentAccessToken) {
+      const payload = parseJwtPayload(this.currentAccessToken);
+      if (payload && payload.exp && payload.exp * 1000 <= Date.now()) {
+        await this.signOut();
+        return null;
       }
-    } catch {
-      // fallback to stored access token
     }
     return this.currentAccessToken;
   }
 
-  public async signUp(email: string, password: string): Promise<{ success: boolean; message?: string; user?: User }> {
-    if (!this.client) {
-      return { success: false, message: 'Supabase credentials are not configured.' };
-    }
-    try {
-      const { data, error } = await this.client.auth.signUp({
-        email: email.trim(),
-        password,
-      });
-      if (error) {
-        return { success: false, message: error.message };
+  public subscribe(listener: AuthStateListener): () => void {
+    this.listeners.add(listener);
+    listener(this.getAuthState());
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notify() {
+    const state = this.getAuthState();
+    this.listeners.forEach((listener) => {
+      try {
+        listener(state);
+      } catch (e) {
+        console.error('Error in AuthState listener:', e);
       }
-      return { success: true, user: data.user || undefined };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, message: msg };
+    });
+  }
+
+  /**
+   * Directly ingest and validate a Google ID token (JWT)
+   */
+  public handleCredentialResponse(idToken: string): { success: boolean; message?: string; user?: AuthUser } {
+    if (!idToken || typeof idToken !== 'string') {
+      return { success: false, message: 'Invalid credential provided.' };
+    }
+
+    const payload = parseJwtPayload(idToken);
+    if (!payload || !payload.sub) {
+      return { success: false, message: 'Failed to decode Google user token.' };
+    }
+
+    if (payload.exp && payload.exp * 1000 <= Date.now()) {
+      return { success: false, message: 'Google session token has expired.' };
+    }
+
+    this.currentAccessToken = idToken;
+    this.currentUser = {
+      id: payload.sub,
+      email: payload.email,
+      name: payload.name,
+      picture: payload.picture,
+    };
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(AUTH_STORAGE_TOKEN_KEY, idToken);
+        localStorage.setItem(AUTH_STORAGE_USER_KEY, JSON.stringify(this.currentUser));
+      }
+    } catch (e) {
+      console.warn('Failed to persist auth session to localStorage:', e);
+    }
+
+    this.notify();
+    return { success: true, user: this.currentUser };
+  }
+
+  /**
+   * Load Google Identity Services (GIS) client script if not already on window
+   */
+  public async loadGisScript(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    if ((window as any).google?.accounts?.id) {
+      this.gisLoaded = true;
+      return true;
+    }
+
+    return new Promise((resolve) => {
+      const existing = document.querySelector('script[src*="accounts.google.com/gsi/client"]');
+      if (existing) {
+        existing.addEventListener('load', () => {
+          this.gisLoaded = true;
+          resolve(true);
+        });
+        existing.addEventListener('error', () => resolve(false));
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        this.gisLoaded = true;
+        resolve(true);
+      };
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+  }
+
+  /**
+   * Render official Google button into target element
+   */
+  public async renderGoogleButton(
+    container: HTMLElement,
+    onDone?: (res: { success: boolean; message?: string }) => void
+  ): Promise<void> {
+    if (!this.clientId || typeof window === 'undefined' || !container) return;
+    await this.loadGisScript();
+    const google = (window as any).google;
+    if (google?.accounts?.id) {
+      try {
+        google.accounts.id.initialize({
+          client_id: this.clientId,
+          callback: (response: { credential?: string }) => {
+            if (response.credential) {
+              const res = this.handleCredentialResponse(response.credential);
+              onDone?.({ success: res.success, message: res.message });
+            } else {
+              onDone?.({ success: false, message: 'No credential returned from Google.' });
+            }
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
+
+        container.innerHTML = '';
+        google.accounts.id.renderButton(container, {
+          theme: 'outline',
+          size: 'large',
+          type: 'standard',
+          shape: 'pill',
+          text: 'continue_with',
+          logo_alignment: 'left',
+          width: 320,
+        });
+      } catch (err) {
+        console.warn('Failed to render Google button:', err);
+      }
     }
   }
 
-  public async signInWithPassword(email: string, password: string): Promise<{ success: boolean; message?: string }> {
-    if (!this.client) {
-      return { success: false, message: 'Supabase credentials are not configured.' };
+  /**
+   * Trigger Google Sign-In popup or prompt
+   */
+  public async signInWithGoogle(): Promise<{ success: boolean; message?: string }> {
+    if (!this.clientId) {
+      return { success: false, message: 'Google Client ID is not configured.' };
     }
-    try {
-      const { data, error } = await this.client.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (error) {
-        return { success: false, message: error.message };
+
+    if (typeof window === 'undefined') {
+      return { success: false, message: 'Window is not available in current environment.' };
+    }
+
+    await this.loadGisScript();
+
+    const google = (window as any).google;
+    if (!google?.accounts?.id) {
+      return { success: false, message: 'Google Sign-In script failed to load.' };
+    }
+
+    return new Promise((resolve) => {
+      try {
+        google.accounts.id.initialize({
+          client_id: this.clientId,
+          callback: (response: { credential?: string }) => {
+            if (response.credential) {
+              const res = this.handleCredentialResponse(response.credential);
+              resolve({ success: res.success, message: res.message });
+            } else {
+              resolve({ success: false, message: 'No credential returned from Google.' });
+            }
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true,
+        });
+
+        google.accounts.id.prompt((notification: any) => {
+          if (notification.isNotDisplayed?.() || notification.isSkippedMoment?.()) {
+            console.info('Google prompt skipped or not displayed.');
+          }
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        resolve({ success: false, message: msg });
       }
-      this.handleSession(data.session);
-      this.notify();
-      return { success: true };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, message: msg };
-    }
+    });
   }
 
-  public async signInWithOAuth(provider: Provider = 'google'): Promise<{ success: boolean; message?: string }> {
-    if (!this.client) {
-      return { success: false, message: 'Supabase credentials are not configured.' };
+  /**
+   * Backward-compatible alias for OAuth login
+   */
+  public async signInWithOAuth(provider = 'google'): Promise<{ success: boolean; message?: string }> {
+    if (provider !== 'google') {
+      return { success: false, message: `Unsupported auth provider: ${provider}. Only Google is supported.` };
     }
-    try {
-      const { error } = await this.client.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-        },
-      });
-      if (error) {
-        return { success: false, message: error.message };
-      }
-      return { success: true };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, message: msg };
-    }
-  }
-
-  public async signInWithOtp(email: string): Promise<{ success: boolean; message?: string }> {
-    if (!this.client) {
-      return { success: false, message: 'Supabase credentials are not configured.' };
-    }
-    try {
-      const { error } = await this.client.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-        },
-      });
-      if (error) {
-        return { success: false, message: error.message };
-      }
-      return { success: true, message: 'Check your email for the magic login link!' };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, message: msg };
-    }
+    return this.signInWithGoogle();
   }
 
   public async signOut(): Promise<{ success: boolean; message?: string }> {
-    if (!this.client) {
-      this.currentUser = null;
-      this.currentAccessToken = null;
-      this.notify();
-      return { success: true };
-    }
+    this.currentUser = null;
+    this.currentAccessToken = null;
+
     try {
-      const { error } = await this.client.auth.signOut();
-      if (error) {
-        return { success: false, message: error.message };
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(AUTH_STORAGE_TOKEN_KEY);
+        localStorage.removeItem(AUTH_STORAGE_USER_KEY);
       }
-      this.currentUser = null;
-      this.currentAccessToken = null;
-      this.notify();
-      return { success: true };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { success: false, message: msg };
+      if (typeof window !== 'undefined' && (window as any).google?.accounts?.id) {
+        (window as any).google.accounts.id.disableAutoSelect?.();
+      }
+    } catch (e) {
+      console.warn('Error during sign out storage cleanup:', e);
     }
+
+    this.notify();
+    return { success: true };
   }
 }
 

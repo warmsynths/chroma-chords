@@ -1,3 +1,17 @@
+export interface D1PreparedStatement {
+  bind(...values: unknown[]): D1PreparedStatement;
+  first<T = unknown>(colName?: string): Promise<T | null>;
+  run<T = unknown>(): Promise<{ success: boolean; meta?: unknown; results?: T[] }>;
+  all<T = unknown>(): Promise<{ success: boolean; meta?: unknown; results?: T[] }>;
+}
+
+export interface D1Database {
+  prepare(query: string): D1PreparedStatement;
+  dump(): Promise<ArrayBuffer>;
+  batch<T = unknown>(statements: D1PreparedStatement[]): Promise<{ success: boolean; meta?: unknown; results?: T[] }[]>;
+  exec<T = unknown>(query: string): Promise<{ count: number; duration: number }>;
+}
+
 export interface Env {
   OPENCODE_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
@@ -7,10 +21,8 @@ export interface Env {
   ALLOWED_ORIGIN?: string;
   ALLOWED_EMAILS?: string;
   RATE_LIMIT_KV?: any;
-  SUPABASE_URL?: string;
-  SUPABASE_ANON_KEY?: string;
-  SUPABASE_SERVICE_ROLE_KEY?: string;
-  SUPABASE_SECRET_KEY?: string;
+  DB?: D1Database;
+  GOOGLE_CLIENT_ID?: string;
   ENVIRONMENT?: string;
 }
 
@@ -63,8 +75,8 @@ export interface SyncResponsePayload {
   tombstones?: Tombstone[];
 }
 
-export interface SupabaseSetRow {
-  user_id?: string;
+export interface D1SetRow {
+  user_id: string;
   id: string;
   name: string;
   genre: string;
@@ -72,13 +84,13 @@ export interface SupabaseSetRow {
   key: string;
   scale_type: string;
   bpm: number;
-  show_theory: boolean;
+  show_theory: number;
   deleted_at: string | null;
   updated_at: string;
 }
 
-export interface SupabaseSetChordRow {
-  user_id?: string;
+export interface D1SetChordRow {
+  user_id: string;
   set_id: string;
   position: number;
   name: string;
@@ -86,7 +98,7 @@ export interface SupabaseSetChordRow {
   roman: string;
   color: string;
   function_label: string;
-  notes: string[];
+  notes: string;
   scale_label: string;
   desc: string;
   degree: string;
@@ -98,18 +110,33 @@ export interface JwtClaims {
   sub?: string;
   email?: string;
   exp?: number;
-  role?: string;
+  iss?: string;
   aud?: string;
+  name?: string;
+  picture?: string;
+  role?: string;
 }
 
 export function parseJwtClaims(token: string): JwtClaims | null {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    const base64Url = parts[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
+    
+    let decodedStr = '';
+    if (typeof atob === 'function') {
+      decodedStr = atob(base64);
+    } else if (typeof Buffer !== 'undefined') {
+      decodedStr = Buffer.from(base64, 'base64').toString('binary');
+    } else {
+      return null;
+    }
+
     const jsonPayload = decodeURIComponent(
-      atob(base64)
+      decodedStr
         .split('')
         .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
         .join('')

@@ -7,8 +7,9 @@
 // 2. "anthropic": Calls Claude Haiku directly using ANTHROPIC_API_KEY.
 
 import { GENRES, MOODS, ROOT_KEYS, SCALE_TYPES, CHORD_QUALITIES } from '../src/services/chord-engine';
-import { SupabaseClient } from './src/supabase';
-import { Env, SyncRequestPayload, SyncResponsePayload, parseJwtClaims } from './src/types';
+import { D1Client } from './src/d1';
+import { verifyGoogleToken } from './src/auth';
+import { Env, SyncRequestPayload, SyncResponsePayload } from './src/types';
 
 export type { Env };
 
@@ -603,26 +604,20 @@ export default {
       }, 200, request, env);
     }
 
-    // Route: POST /api/sync (Supabase saved sets cloud sync)
+    // Route: POST /api/sync (Cloudflare D1 & Cloud Sync)
     if (pathname === '/api/sync' && request.method === 'POST') {
       const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
       const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
       if (!token) {
-        return jsonResponse({ error: 'Unauthorized: Missing Supabase bearer token' }, 401, request, env);
+        return jsonResponse({ error: 'Unauthorized: Missing bearer token' }, 401, request, env);
       }
 
-      const claims = parseJwtClaims(token);
-      if (!claims || !claims.sub) {
-        return jsonResponse({ error: 'Unauthorized: Invalid JWT structure' }, 401, request, env);
-      }
-      if (claims.exp && Date.now() / 1000 > claims.exp) {
-        return jsonResponse({ error: 'Unauthorized: Access token has expired' }, 401, request, env);
+      const authResult = await verifyGoogleToken(token, env);
+      if (!authResult.verified || !authResult.userId) {
+        return jsonResponse({ error: `Unauthorized: ${authResult.error || 'Invalid token'}` }, 401, request, env);
       }
 
-      const supabaseKey = env.SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY;
-      if (!env.SUPABASE_URL || !supabaseKey) {
-        return jsonResponse({ error: 'Server configuration error: Supabase credentials missing' }, 500, request, env);
-      }
+      const userId = authResult.userId;
 
       try {
         let payload: SyncRequestPayload;
@@ -632,28 +627,32 @@ export default {
           return jsonResponse({ error: 'Invalid JSON body' }, 400, request, env);
         }
 
-        const supabase = new SupabaseClient(env.SUPABASE_URL, supabaseKey, token, claims.sub);
+        if (!env.DB) {
+          return jsonResponse({ error: 'Server configuration error: Cloudflare D1 database binding missing' }, 500, request, env);
+        }
+
+        const d1 = new D1Client(env.DB, userId);
 
         if (payload.sets && payload.sets.length > 0) {
-          await supabase.upsertSets(payload.sets);
+          await d1.upsertSets(payload.sets);
         }
 
         if (payload.tombstones && payload.tombstones.length > 0) {
-          await supabase.applyTombstones(payload.tombstones);
+          await d1.applyTombstones(payload.tombstones);
         }
 
-        const delta = await supabase.getDeltaSets(payload.lastSyncTime || payload.lastSyncedAt || null);
+        const delta = await d1.getDeltaSets(payload.lastSyncTime || payload.lastSyncedAt || null);
 
         const responsePayload: SyncResponsePayload = {
           sets: delta.sets,
-          lastSyncTime: new Date().toISOString(),
-          syncedAt: new Date().toISOString(),
+          lastSyncTime: delta.lastSyncTime,
+          syncedAt: delta.lastSyncTime,
           tombstones: delta.tombstones,
         };
 
         return jsonResponse(responsePayload, 200, request, env);
       } catch (err: unknown) {
-        console.error('Supabase sync error:', err);
+        console.error('Cloud sync error:', err);
         const errMsg = err instanceof Error ? err.message : String(err);
         return jsonResponse({ error: `Sync failed: ${errMsg}` }, 500, request, env);
       }
