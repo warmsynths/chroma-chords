@@ -13,6 +13,9 @@ An individual chord element within a progression containing root pitch, quality 
 ### SongSection
 A structural section of a song (e.g. Verse, Chorus, Bridge) derived from a base progression via a section permutation template.
 
+### Band DNA Profile (`BandProfile`)
+An archetype configuration defining artist-specific harmonic substitution tendencies (e.g., Major $III$, minor $iv$), Markov progression weights, Tone.js sound presets, and guitar/keyboard voicing patterns.
+
 ## Architectural Seams & Modules
 
 ### Project Storage (`ProjectStorageManager`)
@@ -26,3 +29,6 @@ A deep module that resolves freeform natural language text prompts into structur
 
 ### Song Arranger (`SongArranger`)
 A deep module encapsulating song section template reordering algorithms and active progression section synchronization.
+
+### Band Registry (`BandRegistry`)
+A typed registry and heuristic transformer that provides offline chord substitutions, prompt keyword extraction, and sound profile presets for artist DNA modes.
