@@ -11,6 +11,7 @@ import { projectStorage } from '../services/project-storage';
 import { ProjectData } from '../services/project-service';
 import { SongArranger } from '../services/song-arranger';
 import { SongSection } from './song-screen';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES } from '../services/audio-service';
 import './share-modal';
 
 export interface BandArchetype {
@@ -92,7 +93,8 @@ export const BANDS: BandArchetype[] = [
 
 const GENRE_PRIMARY = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Synthwave', 'Indie/Folk', 'Rock', 'Jazz-ish', 'Cinematic'];
 const GENRE_ALL = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Rock', 'Cinematic', 'Ambient/Drone', 'House/Dance', 'Reggae/Dub', 'Gospel'];
-const MOOD_PRIMARY = ['Warm', 'Melancholy', 'Dreamy', 'Uplifting', 'Tense', 'Nostalgic'];
+const MOOD_ALL = ['Uplifting', 'Melancholy', 'Dreamy', 'Tense', 'Warm', 'Nostalgic'];
+const MOOD_PRIMARY = ['Uplifting', 'Melancholy', 'Dreamy'];
 
 const MOOD_ICONS: Record<string, string> = {
   Uplifting: 'M4 18 C 8 18 8 11 12 11 C 16 11 16 5 20 5',
@@ -261,13 +263,14 @@ export class LoopScreen extends LitElement {
 
   @state() private isMobile = window.innerWidth < 900;
   @state() private activeView: ViewTab = 'loop';
-  @state() private soundOpen = false;
+  @state() private activeSoundDrawer: 'instrument' | 'playstyle' | null = null;
   @state() private shareOpen = false;
   @state() private vibeOpen = false;
   @state() private selectedBand: string | null = null;
   @state() private freeText = '';
   @state() private vibePlaceholderIdx = 0;
   @state() private expandedGenre = false;
+  @state() private expandedMood = false;
   @state() private activeSwapFamily = 'Darker';
   @state() private swapIndex: number | null = null;
   @state() private isInspectorOpen = false;
@@ -286,6 +289,24 @@ export class LoopScreen extends LitElement {
   @state() private mobileSheetOpen = false;
   @state() private snapProgress = false;
   @state() private abPlaying = false;
+  @state() private dragState: {
+    dragIndex: number;
+    targetIndex: number;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    offsetX: number;
+    offsetY: number;
+    velocityX: number;
+    velocityY: number;
+    lastTime: number;
+    lastX: number;
+    lastY: number;
+    isDragging: boolean;
+    itemBounds: { center: { x: number; y: number }; width: number; height: number }[];
+    pendingTapFn: (() => void) | null;
+  } | null = null;
 
   private vibeExamples = ['Rainy drive at 2am, first day of summer...', 'Portishead trip-hop', 'Bohemian Rhapsody', 'Tame Impala neo-psychedelia', 'Warm acoustic fireplace'];
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
@@ -520,15 +541,20 @@ export class LoopScreen extends LitElement {
       background: transparent;
       color: var(--cv-label);
     }
+    .pill.mood-pill {
+      padding: 6px 12px 6px 6px;
+      gap: 6px;
+      font-size: 12.5px;
+    }
     .mood-badge {
-      width: 24px;
-      height: 24px;
+      width: 22px;
+      height: 22px;
       border-radius: 50%;
-      background: rgba(46, 39, 31, 0.08);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      transition: background 150ms ease;
     }
 
     .band-trick-text {
@@ -546,7 +572,10 @@ export class LoopScreen extends LitElement {
     .sidebar-footer {
       position: relative;
       border-top: 1px solid rgba(46, 39, 31, 0.09);
-      padding: 10px 12px 12px;
+      height: 68px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
       background: var(--cv-cream);
     }
     .library-toggle {
@@ -578,17 +607,15 @@ export class LoopScreen extends LitElement {
       position: absolute;
       left: 8px;
       width: 300px;
-      bottom: 62px;
+      bottom: calc(100% + 6px);
       z-index: 30;
       max-height: calc(100vh - 150px);
       overflow-y: auto;
       overscroll-behavior: contain;
-      mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
-      -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
       background: var(--cv-cream, #FBF3E6);
       border: 1px solid rgba(46, 39, 31, 0.1);
       border-radius: 16px;
-      padding: 10px;
+      padding: 10px 10px 12px;
       box-shadow: 0 22px 44px -20px rgba(46, 39, 31, 0.5);
       animation: cvfv-sheet-up 180ms var(--cv-ease);
     }
@@ -599,16 +626,14 @@ export class LoopScreen extends LitElement {
       left: 14px;
       right: 14px;
       bottom: 82px;
-      z-index: 40;
+      z-index: 101;
       max-height: calc(100vh - 190px);
       overflow-y: auto;
       overscroll-behavior: contain;
-      mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
-      -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
       background: var(--cv-cream, #FBF3E6);
-      border: 1px solid rgba(46, 39, 31, 0.1);
+      border: 1px solid rgba(46, 39, 31, 0.12);
       border-radius: 18px;
-      padding: 10px;
+      padding: 12px 12px 14px;
       box-shadow: 0 22px 44px -18px rgba(46, 39, 31, 0.55);
       animation: cvfv-sheet-up 180ms var(--cv-ease);
     }
@@ -822,24 +847,27 @@ export class LoopScreen extends LitElement {
     }
 
     .mobile-loops-toggle-btn {
-      width: 100%;
+      width: 42px;
+      height: 42px;
+      flex-shrink: 0;
       border: none;
+      border-radius: 50%;
       background: var(--cv-surface, #F6EADB);
       color: var(--cv-ink);
-      min-height: 44px;
-      padding: 0 14px;
-      border-radius: 14px;
-      font-size: 13px;
-      font-weight: 800;
       display: flex;
       align-items: center;
-      gap: 9px;
+      justify-content: center;
       cursor: pointer;
-      margin-top: 10px;
-      transition: background 150ms ease;
+      transition: background 150ms ease, transform 100ms ease;
     }
     .mobile-loops-toggle-btn:hover {
       background: var(--cv-surface-2, #F1E4CC);
+    }
+    .mobile-loops-toggle-btn:active {
+      transform: scale(0.96);
+    }
+    .mobile-loops-toggle-btn.active {
+      background: var(--mood-color, #F6D98B);
     }
 
     /* Center Main Stage */
@@ -979,13 +1007,42 @@ export class LoopScreen extends LitElement {
       flex-direction: column;
       align-items: center;
       gap: 8px;
-      cursor: pointer;
+      cursor: grab;
       transition: transform 160ms var(--cv-ease);
       outline: none;
       position: relative;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
     }
     .chord-item-wrap:hover {
       transform: translateY(-3px);
+    }
+    .chord-item-wrap:focus-visible {
+      outline: 2px solid var(--cv-plum);
+      outline-offset: 4px;
+      border-radius: 16px;
+    }
+    .drag-grip-indicator {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      opacity: 0.35;
+      color: #2E271F;
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .chord-item-wrap:hover .drag-grip-indicator,
+    .chord-item-wrap:focus-visible .drag-grip-indicator {
+      opacity: 0.85;
+      transform: scale(1.1);
+    }
+    .chord-item-wrap.is-dragging .drag-grip-indicator {
+      opacity: 1;
+      transform: scale(1.2);
     }
     .chord-block-shape {
       position: relative;
@@ -1121,7 +1178,8 @@ export class LoopScreen extends LitElement {
       min-width: 0;
       border-top: 1px solid rgba(46, 39, 31, 0.09);
       background: var(--cv-cream);
-      padding: 11px 22px;
+      height: 68px;
+      padding: 0 22px;
       display: flex;
       align-items: center;
       gap: 10px;
@@ -1607,9 +1665,210 @@ export class LoopScreen extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener('resize', this.onResizeHandler);
+    window.removeEventListener('pointermove', this.onWindowPointerMove);
+    window.removeEventListener('pointerup', this.onWindowPointerUp);
+    window.removeEventListener('pointercancel', this.onWindowPointerUp);
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
     if (this.previewTimer) clearTimeout(this.previewTimer);
     if (this.unsubscribeProjects) this.unsubscribeProjects();
+  }
+
+  private onChordPointerDown = (idx: number, e: PointerEvent, tapFn: () => void) => {
+    if (e.button !== 0) return;
+
+    const stageContainer = this.shadowRoot?.querySelector('.chords-flex-row');
+    const itemEls = stageContainer ? Array.from(stageContainer.querySelectorAll('.chord-item-wrap')) : [];
+    const itemBounds = itemEls.map((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+
+    this.dragState = {
+      dragIndex: idx,
+      targetIndex: idx,
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+      offsetX: 0,
+      offsetY: 0,
+      velocityX: 0,
+      velocityY: 0,
+      lastTime: performance.now(),
+      lastX: e.clientX,
+      lastY: e.clientY,
+      isDragging: false,
+      itemBounds,
+      pendingTapFn: tapFn,
+    };
+
+    window.addEventListener('pointermove', this.onWindowPointerMove);
+    window.addEventListener('pointerup', this.onWindowPointerUp);
+    window.addEventListener('pointercancel', this.onWindowPointerUp);
+  };
+
+  private onWindowPointerMove = (e: PointerEvent) => {
+    if (!this.dragState) return;
+    const state = this.dragState;
+    const dx = e.clientX - state.startX;
+    const dy = e.clientY - state.startY;
+    const dist = Math.hypot(dx, dy);
+
+    if (!state.isDragging) {
+      if (dist > 6) {
+        state.isDragging = true;
+        document.body.style.cursor = 'grabbing';
+        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10);
+      } else {
+        return;
+      }
+    }
+
+    if (e.cancelable) e.preventDefault();
+
+    const now = performance.now();
+    const dt = Math.max(1, now - state.lastTime);
+    state.velocityX = (e.clientX - state.lastX) / dt;
+    state.velocityY = (e.clientY - state.lastY) / dt;
+    state.lastX = e.clientX;
+    state.lastY = e.clientY;
+    state.lastTime = now;
+    state.currentX = e.clientX;
+    state.currentY = e.clientY;
+    state.offsetX = dx;
+    state.offsetY = dy;
+
+    if (state.itemBounds.length > 0) {
+      const origCenter = state.itemBounds[state.dragIndex]?.center || { x: state.startX, y: state.startY };
+      const currentCenterX = origCenter.x + dx;
+      const currentCenterY = origCenter.y + dy;
+
+      let closestIdx = state.dragIndex;
+      let minDist = Infinity;
+
+      state.itemBounds.forEach((b, i) => {
+        const d = Math.hypot(currentCenterX - b.center.x, currentCenterY - b.center.y);
+        if (d < minDist) {
+          minDist = d;
+          closestIdx = i;
+        }
+      });
+      state.targetIndex = closestIdx;
+    }
+
+    this.requestUpdate();
+  };
+
+  private onWindowPointerUp = () => {
+    if (!this.dragState) return;
+    window.removeEventListener('pointermove', this.onWindowPointerMove);
+    window.removeEventListener('pointerup', this.onWindowPointerUp);
+    window.removeEventListener('pointercancel', this.onWindowPointerUp);
+    document.body.style.cursor = '';
+
+    const { dragIndex, targetIndex, isDragging, pendingTapFn } = this.dragState;
+    this.dragState = null;
+
+    if (!isDragging) {
+      if (pendingTapFn) pendingTapFn();
+      this.requestUpdate();
+      return;
+    }
+
+    if (targetIndex !== dragIndex && this.progression?.chords) {
+      const newChords = [...this.progression.chords];
+      const [moved] = newChords.splice(dragIndex, 1);
+      newChords.splice(targetIndex, 0, moved);
+
+      if (this.swapIndex === dragIndex) {
+        this.swapIndex = targetIndex;
+      } else if (this.swapIndex !== null) {
+        if (dragIndex < targetIndex && this.swapIndex > dragIndex && this.swapIndex <= targetIndex) {
+          this.swapIndex--;
+        } else if (dragIndex > targetIndex && this.swapIndex >= targetIndex && this.swapIndex < dragIndex) {
+          this.swapIndex++;
+        }
+      }
+
+      this.progression = {
+        ...this.progression,
+        chords: newChords,
+      };
+
+      playbackEngine.setProgression(this.progression, this.order);
+      this.dispatchEvent(new CustomEvent('progression-change', { detail: this.progression, bubbles: true, composed: true }));
+      this.dispatchEvent(new CustomEvent('toast', { detail: 'Reordered chords', bubbles: true, composed: true }));
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(18);
+    }
+
+    this.requestUpdate();
+  };
+
+  private getChordDragStyle(idx: number): string {
+    if (!this.dragState || !this.dragState.isDragging) {
+      return 'cursor: grab; transition: transform 0.25s var(--cv-ease), box-shadow 0.25s ease;';
+    }
+
+    const { dragIndex, targetIndex, offsetX, offsetY, velocityX, itemBounds } = this.dragState;
+
+    if (idx === dragIndex) {
+      const tilt = Math.max(-8, Math.min(8, offsetX * 0.04 + velocityX * 8));
+      return `transform: translate3d(${offsetX}px, ${offsetY}px, 0) scale(1.08) rotate(${tilt.toFixed(2)}deg); z-index: 50; cursor: grabbing; box-shadow: 0 20px 40px -8px rgba(46, 39, 31, 0.35), 0 8px 16px -4px rgba(0, 0, 0, 0.2); transition: none; pointer-events: none; opacity: 0.96;`;
+    }
+
+    let shiftDirection = 0;
+    if (dragIndex < targetIndex && idx > dragIndex && idx <= targetIndex) {
+      shiftDirection = -1;
+    } else if (dragIndex > targetIndex && idx >= targetIndex && idx < dragIndex) {
+      shiftDirection = 1;
+    }
+
+    let shiftDist = 0;
+    if (shiftDirection !== 0 && itemBounds.length > 0) {
+      const bCurrent = itemBounds[idx];
+      const bTarget = itemBounds[idx + shiftDirection];
+      if (bCurrent && bTarget) {
+        shiftDist = bTarget.center.x - bCurrent.center.x;
+      } else {
+        shiftDist = shiftDirection * 110;
+      }
+    }
+
+    return `transform: translate3d(${shiftDist}px, 0, 0) scale(0.96); transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease; opacity: 0.84;`;
+  }
+
+  private onChordKeyDown(idx: number, e: KeyboardEvent) {
+    if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      const targetIndex = e.key === 'ArrowLeft' ? Math.max(0, idx - 1) : Math.min(this.progression.chords.length - 1, idx + 1);
+      if (targetIndex !== idx && this.progression?.chords) {
+        const newChords = [...this.progression.chords];
+        const [moved] = newChords.splice(idx, 1);
+        newChords.splice(targetIndex, 0, moved);
+
+        if (this.swapIndex === idx) {
+          this.swapIndex = targetIndex;
+        }
+
+        this.progression = {
+          ...this.progression,
+          chords: newChords,
+        };
+
+        playbackEngine.setProgression(this.progression, this.order);
+        this.dispatchEvent(new CustomEvent('progression-change', { detail: this.progression, bubbles: true, composed: true }));
+        this.dispatchEvent(new CustomEvent('toast', { detail: 'Reordered chords', bubbles: true, composed: true }));
+
+        this.updateComplete.then(() => {
+          const items = this.shadowRoot?.querySelectorAll('.chord-item-wrap');
+          (items?.[targetIndex] as HTMLElement)?.focus();
+        });
+      }
+    }
   }
 
   private refreshSavedSets() {
@@ -1659,10 +1918,19 @@ export class LoopScreen extends LitElement {
     this.requestUpdate();
   }
 
-  private onChordSelect(index: number) {
+  private onChordPreview(index: number) {
     this.previewIndex = index;
     if (this.previewTimer) clearTimeout(this.previewTimer);
     this.previewTimer = setTimeout(() => { this.previewIndex = -1; }, 500);
+
+    if (this.progression) {
+      playbackEngine.playChordAtIndex(index, 0.8);
+    }
+    this.requestUpdate();
+  }
+
+  private onChordSelect(index: number) {
+    this.onChordPreview(index);
 
     this.swapIndex = index;
     this.isInspectorOpen = true;
@@ -1674,10 +1942,6 @@ export class LoopScreen extends LitElement {
     this.isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
     if (this.isMobile) {
       this.mobileSheetOpen = true;
-    }
-
-    if (this.progression) {
-      playbackEngine.playChordAtIndex(index, 0.8);
     }
     this.requestUpdate();
   }
@@ -2238,6 +2502,13 @@ export class LoopScreen extends LitElement {
     const moodColor = getMoodColor(this.progression?.mood || 'Warm');
     const activeBand = BANDS.find(b => b.name === this.selectedBand);
     const shownGenres = this.expandedGenre ? GENRE_ALL : GENRE_PRIMARY;
+    const currentMood = this.progression?.mood || 'Warm';
+    let primaryMoodNames = ['Uplifting', 'Melancholy', 'Dreamy'];
+    if (!primaryMoodNames.includes(currentMood)) {
+      primaryMoodNames = ['Uplifting', 'Melancholy', currentMood];
+    }
+    const restMoodNames = MOOD_ALL.filter(n => !primaryMoodNames.includes(n));
+    const shownMoods = this.expandedMood ? MOOD_ALL : primaryMoodNames;
 
     // Harmonic Arc computation
     const tensions = chords.map(c => c.tension || 0.1);
@@ -2352,15 +2623,17 @@ export class LoopScreen extends LitElement {
 
               <div class="kicker-label spaced">Mood</div>
               <div class="pills-group">
-                ${MOOD_PRIMARY.map(m => {
+                ${shownMoods.map(m => {
                   const mCol = getMoodColor(m);
+                  const isActive = this.progression?.mood === m;
                   return html`
                     <button
-                      class="pill ${this.progression?.mood === m ? 'active' : ''}"
+                      class="pill mood-pill ${isActive ? 'active' : ''}"
+                      style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}"
                       @click=${() => this.onMoodClick(m)}
                     >
-                      <span class="mood-badge">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${mCol}" stroke-width="2.2" stroke-linecap="round">
+                      <span class="mood-badge" style="background: ${isActive ? 'rgba(46, 39, 31, 0.12)' : mCol + '33'};">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round">
                           <path d="${MOOD_ICONS[m] || 'M12 4 a6.5 6.5 0 1 0 6.5 6.5'}"/>
                         </svg>
                       </span>
@@ -2368,6 +2641,11 @@ export class LoopScreen extends LitElement {
                     </button>
                   `;
                 })}
+                ${restMoodNames.length ? html`
+                  <button class="pill more-toggle" @click=${() => { this.expandedMood = !this.expandedMood; }}>
+                    ${this.expandedMood ? 'Show less ⌃' : `+${restMoodNames.length} more ⌄`}
+                  </button>
+                ` : ''}
               </div>
 
               <div class="kicker-label spaced" style="display: flex; align-items: baseline; gap: 6px;">
@@ -2413,11 +2691,8 @@ export class LoopScreen extends LitElement {
                   <button class="round-btn" @click=${this.onBookmark} aria-label="Bookmark loop">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
                   </button>
-                  <button class="round-btn ${this.soundOpen ? 'active' : ''}" @click=${() => { this.soundOpen = !this.soundOpen; }} aria-label="Sound settings">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                  </button>
                   <button class="round-btn" @click=${() => { this.shareOpen = true; }} aria-label="Share loop">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 12v7a1 1 0 0 1 1 1h14a1 1 0 0 1 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
                   </button>
                 </div>
               </div>
@@ -2448,16 +2723,21 @@ export class LoopScreen extends LitElement {
 
                       return html`
                         <div
-                          class="chord-item-wrap"
-                          @click=${() => this.onChordSelect(idx)}
+                          class="chord-item-wrap ${this.dragState?.dragIndex === idx ? 'is-dragging' : ''}"
+                          style="${this.getChordDragStyle(idx)}"
+                          @pointerdown=${(e: PointerEvent) => this.onChordPointerDown(idx, e, () => this.onChordSelect(idx))}
+                          @keydown=${(e: KeyboardEvent) => this.onChordKeyDown(idx, e)}
                           tabindex="0"
                           role="button"
-                          aria-label="${chord.name}, ${chord.functionLabel || 'Chord'}"
+                          aria-label="${chord.name}, ${chord.functionLabel || 'Chord'}. Grab and drag to reorder."
                         >
                           <div
                             class="chord-block-shape ${isLit ? 'active-pulse' : ''} ${isInspected ? 'selected-inspector' : ''}"
                             style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color}; transform: ${isPreview ? 'scale(0.94)' : 'none'};"
                           >
+                            <div class="drag-grip-indicator" title="Drag to reorder">
+                              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="4" r="1.4"/><circle cx="12" cy="4" r="1.4"/><circle cx="4" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/></svg>
+                            </div>
                             ${this.showTheory && chord.roman ? html`
                               <div class="roman-pill-badge">${chord.roman}</div>
                             ` : ''}
@@ -2470,34 +2750,69 @@ export class LoopScreen extends LitElement {
                   </div>
                 </div>
 
-                ${this.soundOpen ? html`
-                  <div class="sound-drawer">
-                    <div class="kicker-label">Instrument</div>
-                    <div class="sound-options-flex">
-                      ${['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad', 'Synth Bell'].map(inst => html`
-                        <button
-                          class="pill ${(this.instrument || 'Piano') === inst ? 'active' : ''}"
-                          @click=${() => {
-                            this.instrument = inst;
-                            playbackEngine.setInstrument(inst);
-                            this.requestUpdate();
-                          }}
-                        >${inst}</button>
-                      `)}
-                    </div>
-                    <div class="kicker-label spaced">Playing Style</div>
-                    <div class="sound-options-flex">
-                      ${['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)', 'Half-time'].map(st => html`
-                        <button
-                          class="pill ${(this.playStyle || 'Block chords') === st ? 'active' : ''}"
-                          @click=${() => {
-                            this.playStyle = st;
-                            playbackEngine.setPlayStyle(st);
-                            this.requestUpdate();
-                          }}
-                        >${st}</button>
-                      `)}
-                    </div>
+                <!-- Quick Instrument & Play Style Chips (Desktop) -->
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px;">
+                  <button
+                    class="pill ${this.activeSoundDrawer === 'instrument' ? 'active' : ''}"
+                    style="${this.activeSoundDrawer === 'instrument' ? `background: ${moodColor}; color: #2E271F; font-weight: 800;` : ''}"
+                    @click=${() => { this.activeSoundDrawer = this.activeSoundDrawer === 'instrument' ? null : 'instrument'; }}
+                    aria-label="Change instrument"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${this.activeSoundDrawer === 'instrument' ? '#2E271F' : '#5B5145'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
+                    ${this.instrument || 'Piano'} <span style="opacity: 0.6;">${this.activeSoundDrawer === 'instrument' ? '⌃' : '⌄'}</span>
+                  </button>
+                  <button
+                    class="pill ${this.activeSoundDrawer === 'playstyle' ? 'active' : ''}"
+                    style="${this.activeSoundDrawer === 'playstyle' ? `background: ${moodColor}; color: #2E271F; font-weight: 800;` : ''}"
+                    @click=${() => { this.activeSoundDrawer = this.activeSoundDrawer === 'playstyle' ? null : 'playstyle'; }}
+                    aria-label="Change playing style"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${this.activeSoundDrawer === 'playstyle' ? '#2E271F' : '#5B5145'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
+                    ${this.playStyle || 'Block chords'} <span style="opacity: 0.6;">${this.activeSoundDrawer === 'playstyle' ? '⌃' : '⌄'}</span>
+                  </button>
+                </div>
+
+                ${this.activeSoundDrawer ? html`
+                  <div class="sound-drawer" style="margin-top: 12px; padding: 14px 18px; background: var(--cv-surface); border-radius: 18px;">
+                    ${this.activeSoundDrawer === 'instrument' ? html`
+                      <div class="kicker-label" style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase; margin-bottom: 8px;">Instrument</div>
+                      <div class="sound-options-flex">
+                        ${USER_INSTRUMENTS.map(i => html`
+                          <button
+                            class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
+                            style="${(this.instrument || 'Piano') === i.name ? `background: ${moodColor}; color: #2E271F; font-weight: 800;` : 'background: var(--cv-surface-2); color: #5B5145; font-weight: 700;'}"
+                            @click=${() => {
+                              this.instrument = i.name;
+                              playbackEngine.setInstrument(i.name);
+                              this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+                              this.activeSoundDrawer = null;
+                              this.requestUpdate();
+                            }}
+                          >
+                            <span class="control-dot" style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex-shrink: 0;"></span>${i.name}
+                          </button>
+                        `)}
+                      </div>
+                    ` : html`
+                      <div class="kicker-label" style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase; margin-bottom: 8px;">Play Style</div>
+                      <div class="sound-options-flex">
+                        ${USER_PLAY_STYLES.map(s => html`
+                          <button
+                            class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
+                            style="${(this.playStyle || 'Block chords') === s.name ? `background: ${moodColor}; color: #2E271F; font-weight: 800;` : 'background: var(--cv-surface-2); color: #5B5145; font-weight: 700;'}"
+                            @click=${() => {
+                              this.playStyle = s.name;
+                              playbackEngine.setPlayStyle(s.name);
+                              this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
+                              this.activeSoundDrawer = null;
+                              this.requestUpdate();
+                            }}
+                          >
+                            <span class="control-dot" style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex-shrink: 0;"></span>${s.name}
+                          </button>
+                        `)}
+                      </div>
+                    `}
                   </div>
                 ` : ''}
               ` : this.activeView === 'song' ? html`
@@ -2510,6 +2825,8 @@ export class LoopScreen extends LitElement {
                       class="song-card ${this.activeSectionIdx === i ? 'active-sec' : ''}"
                       @click=${() => {
                         this.activeSectionIdx = i;
+                        this.activeView = 'loop';
+                        this.dispatchEvent(new CustomEvent('select-section', { detail: i, bubbles: true, composed: true }));
                         this.requestUpdate();
                       }}
                     >
@@ -2521,9 +2838,11 @@ export class LoopScreen extends LitElement {
                         <div style="font-size: 12px; color: var(--cv-ink-muted); margin-top: 2px;">${sec.desc}</div>
                       </div>
                       <div style="display: flex; gap: 4px;">
-                        ${sec.progression.chords.map(c => {
+                        ${sec.order.map(idx => {
+                          const c = sec.progression.chords[idx];
+                          if (!c) return '';
                           const r = roleForTension(c.tension || 0.1);
-                          return html`<span style="width: 14px; height: 14px; border-radius: 4px; background: ${r.color};"></span>`;
+                          return html`<span style="width: 14px; height: 14px; border-radius: 4px; background: ${r.color};" title="${c.name}"></span>`;
                         })}
                       </div>
                     </div>
@@ -2535,6 +2854,7 @@ export class LoopScreen extends LitElement {
                         const res = SongArranger.addSection(this.sections, this.progression);
                         this.sections = res.sections;
                         this.activeSectionIdx = res.activeIndex;
+                        this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }));
                         this.requestUpdate();
                       }
                     }}
@@ -2899,9 +3219,14 @@ export class LoopScreen extends LitElement {
 
                 <div class="kicker-label spaced">Mood</div>
                 <div class="pills-group">
-                  ${MOOD_PRIMARY.map(m => html`
+                  ${shownMoods.map(m => html`
                     <button class="pill ${this.progression?.mood === m ? 'active' : ''}" @click=${() => this.onMoodClick(m)}>${m}</button>
                   `)}
+                  ${restMoodNames.length ? html`
+                    <button class="pill more-toggle" @click=${() => { this.expandedMood = !this.expandedMood; }}>
+                      ${this.expandedMood ? 'Show less ⌃' : `+${restMoodNames.length} more ⌄`}
+                    </button>
+                  ` : ''}
                 </div>
 
                 <div class="kicker-label spaced">Band</div>
@@ -2910,12 +3235,6 @@ export class LoopScreen extends LitElement {
                     <button class="pill ${this.selectedBand === b.name ? 'active' : ''}" @click=${() => this.onBandClick(b.name)}>${b.name}</button>
                   `)}
                 </div>
-
-                <button class="mobile-loops-toggle-btn" @click=${() => this.toggleLibrary(true)}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
-                  <span style="flex: 1; text-align: left;">Your saved loops (${this.savedSets.length})</span>
-                  <span style="font-weight: 800;">→</span>
-                </button>
               </div>
             ` : ''}
           </div>
@@ -2944,18 +3263,29 @@ export class LoopScreen extends LitElement {
                     const radius = Math.round(r.radius * (size / r.size));
 
                     return html`
-                      <div class="chord-item-wrap" @click=${() => this.onChordSelect(idx)}>
+                      <div
+                        class="chord-item-wrap ${this.dragState?.dragIndex === idx ? 'is-dragging' : ''}"
+                        style="${this.getChordDragStyle(idx)}"
+                        @pointerdown=${(e: PointerEvent) => this.onChordPointerDown(idx, e, () => this.onChordPreview(idx))}
+                        @keydown=${(e: KeyboardEvent) => this.onChordKeyDown(idx, e)}
+                        tabindex="0"
+                        role="button"
+                        aria-label="${chord.name}, ${chord.functionLabel || 'Chord'}. Grab and drag to reorder."
+                      >
                         <div
                           class="chord-block-shape ${isLit ? 'active-pulse' : ''}"
                           style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color};"
                         >
+                          <div class="drag-grip-indicator" title="Drag to reorder">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="4" r="1.4"/><circle cx="12" cy="4" r="1.4"/><circle cx="4" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/></svg>
+                          </div>
                           ${this.showTheory && chord.roman ? html`
                             <div class="roman-pill-badge">${chord.roman}</div>
                           ` : ''}
                           <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.76)}px;">${chord.name}</div>
 
                           <!-- Quick Mobile Action Buttons -->
-                          <button class="quick-action-btn swap" @click=${(e: Event) => { e.stopPropagation(); this.onChordSelect(idx); }} aria-label="Swap chord">
+                          <button class="quick-action-btn swap" @pointerdown=${(e: Event) => e.stopPropagation()} @click=${(e: Event) => { e.stopPropagation(); this.onChordSelect(idx); }} aria-label="Swap chord">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
                           </button>
                         </div>
@@ -2968,24 +3298,55 @@ export class LoopScreen extends LitElement {
 
               <!-- Quick Instrument & Play Style Chips -->
               <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px;">
-                <button class="pill" @click=${() => { this.soundOpen = !this.soundOpen; }}>
+                <button class="pill ${this.activeSoundDrawer === 'instrument' ? 'active' : ''}" @click=${() => { this.activeSoundDrawer = this.activeSoundDrawer === 'instrument' ? null : 'instrument'; }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
                   ${this.instrument || 'Piano'}
                 </button>
-                <button class="pill" @click=${() => { this.soundOpen = !this.soundOpen; }}>
+                <button class="pill ${this.activeSoundDrawer === 'playstyle' ? 'active' : ''}" @click=${() => { this.activeSoundDrawer = this.activeSoundDrawer === 'playstyle' ? null : 'playstyle'; }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
                   ${this.playStyle || 'Block chords'}
                 </button>
               </div>
 
-              ${this.soundOpen ? html`
+              ${this.activeSoundDrawer ? html`
                 <div class="sound-drawer">
-                  <div class="kicker-label">Instrument</div>
-                  <div class="sound-options-flex">
-                    ${['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad'].map(inst => html`
-                      <button class="pill ${(this.instrument || 'Piano') === inst ? 'active' : ''}" @click=${() => { this.instrument = inst; playbackEngine.setInstrument(inst); this.requestUpdate(); }}>${inst}</button>
-                    `)}
-                  </div>
+                  ${this.activeSoundDrawer === 'instrument' ? html`
+                    <div class="kicker-label">Instrument</div>
+                    <div class="sound-options-flex">
+                      ${USER_INSTRUMENTS.map(i => html`
+                        <button
+                          class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
+                          @click=${() => {
+                            this.instrument = i.name;
+                            playbackEngine.setInstrument(i.name);
+                            this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+                            this.activeSoundDrawer = null;
+                            this.requestUpdate();
+                          }}
+                        >
+                          <span class="control-dot" style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
+                        </button>
+                      `)}
+                    </div>
+                  ` : html`
+                    <div class="kicker-label">Play Style</div>
+                    <div class="sound-options-flex">
+                      ${USER_PLAY_STYLES.map(s => html`
+                        <button
+                          class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
+                          @click=${() => {
+                            this.playStyle = s.name;
+                            playbackEngine.setPlayStyle(s.name);
+                            this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
+                            this.activeSoundDrawer = null;
+                            this.requestUpdate();
+                          }}
+                        >
+                          <span class="control-dot" style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${s.name}
+                        </button>
+                      `)}
+                    </div>
+                  `}
                 </div>
               ` : ''}
 
@@ -3004,7 +3365,7 @@ export class LoopScreen extends LitElement {
                       const r = roleForTension(chord.tension || 0.1);
                       const h = Math.round(16 + (chord.tension || 0.1) * 50);
                       return html`
-                        <div class="arc-bar-col" @click=${() => this.onChordSelect(idx)}>
+                        <div class="arc-bar-col" @click=${() => this.onChordPreview(idx)}>
                           <div class="arc-bar-pillar" style="height: ${h}px; background: ${r.color};"></div>
                           <div style="font-size: 10px; font-weight: 800; color: var(--cv-ink); margin-top: 4px;">${chord.name}</div>
                         </div>
@@ -3017,10 +3378,26 @@ export class LoopScreen extends LitElement {
             ` : this.activeView === 'song' ? html`
               <div class="song-track-list">
                 ${this.sections.map((sec, i) => html`
-                  <div class="song-card ${this.activeSectionIdx === i ? 'active-sec' : ''}" @click=${() => { this.activeSectionIdx = i; this.requestUpdate(); }}>
+                  <div
+                    class="song-card ${this.activeSectionIdx === i ? 'active-sec' : ''}"
+                    @click=${() => {
+                      this.activeSectionIdx = i;
+                      this.activeView = 'loop';
+                      this.dispatchEvent(new CustomEvent('select-section', { detail: i, bubbles: true, composed: true }));
+                      this.requestUpdate();
+                    }}
+                  >
                     <div style="flex: 1;">
                       <div style="font-size: 15px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
                       <div style="font-size: 11.5px; color: var(--cv-ink-muted);">${sec.desc}</div>
+                      <div class="section-chips" style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
+                        ${sec.order.map(idx => {
+                          const c = sec.progression.chords[idx];
+                          if (!c) return '';
+                          const role = roleForTension(c.tension || 0.1);
+                          return html`<div class="section-chip" style="width: 10px; height: 10px; background:${role.color}; border-radius:${Math.round(role.radius * 0.35)}px;" title="${c.name}"></div>`;
+                        })}
+                      </div>
                     </div>
                   </div>
                 `)}
@@ -3029,6 +3406,7 @@ export class LoopScreen extends LitElement {
                     const res = SongArranger.addSection(this.sections, this.progression);
                     this.sections = res.sections;
                     this.activeSectionIdx = res.activeIndex;
+                    this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }));
                     this.requestUpdate();
                   }
                 }}>
@@ -3102,7 +3480,7 @@ export class LoopScreen extends LitElement {
             <button class="round-btn" style="width: 42px; height: 42px; flex-shrink: 0;" @click=${this.onBookmark} aria-label="Keep this loop">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
             </button>
-            <button class="mobile-loops-toggle-btn" style="background: ${this.libraryOpen ? moodColor : 'var(--cv-surface)'};" @click=${() => this.toggleLibrary()} aria-label="Your saved loops">
+            <button class="round-btn mobile-loops-toggle-btn ${this.libraryOpen ? 'active' : ''}" style="width: 42px; height: 42px; flex-shrink: 0; ${this.libraryOpen ? `--mood-color: ${moodColor};` : ''}" @click=${() => this.toggleLibrary()} aria-label="Your saved loops">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M19 4v10l-2.4-1.6L14.2 14V4z" fill="#2E271F" stroke="none"/></svg>
             </button>
             <button class="round-btn" style="width: 42px; height: 42px; flex-shrink: 0;" @click=${() => { this.shareOpen = true; }} aria-label="Share this loop">
@@ -3110,6 +3488,7 @@ export class LoopScreen extends LitElement {
             </button>
 
             ${this.libraryOpen ? html`
+              <div class="sheet-scrim" style="z-index: 100; background: rgba(46, 39, 31, 0.2);" @click=${() => this.toggleLibrary(false)}></div>
               <div class="library-popover-mobile">
                 ${this.renderLibraryPopoverContent(moodColor)}
               </div>
@@ -3296,6 +3675,9 @@ export class LoopScreen extends LitElement {
       <share-modal
         .open=${this.shareOpen}
         .progression=${this.progression}
+        .order=${this.order}
+        .instrument=${this.instrument || this.playInstrument}
+        .playStyle=${this.playStyle}
         @close=${() => { this.shareOpen = false; }}
       ></share-modal>
 

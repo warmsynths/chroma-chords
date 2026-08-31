@@ -184,4 +184,93 @@ describe('Studio Component Interactions', () => {
 
     document.body.removeChild(el);
   });
+
+  it('opens separate instrument and playstyle sound drawers', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const instSpy = vi.fn();
+    const styleSpy = vi.fn();
+    el.addEventListener('set-instrument', (e: any) => instSpy(e.detail));
+    el.addEventListener('set-play-style', (e: any) => styleSpy(e.detail));
+
+    // Open Instrument drawer
+    const soundPills = el.shadowRoot?.querySelectorAll('.sound-drawer, button.pill');
+    const instChip = Array.from(soundPills || []).find(p => p.textContent?.includes('Piano')) as HTMLElement;
+    instChip?.click();
+    await el.updateComplete;
+
+    const drawer = el.shadowRoot?.querySelector('.sound-drawer');
+    expect(drawer).toBeTruthy();
+    expect(drawer?.textContent).toContain('Instrument');
+
+    // Click an instrument option
+    const rhodesOpt = Array.from(drawer?.querySelectorAll('button') || []).find(b => b.textContent?.includes('Rhodes')) as HTMLElement;
+    rhodesOpt?.click();
+    expect(instSpy).toHaveBeenCalledWith('Rhodes');
+
+    document.body.removeChild(el);
+  });
+
+  it('mobile chord chip click previews audio only while edit icon opens swap sheet', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // Mobile chord item
+    const chordCard = el.shadowRoot?.querySelector('.chord-item-wrap') as HTMLElement;
+    expect(chordCard).toBeTruthy();
+
+    // Click main card -> preview only, swap sheet remains closed
+    chordCard.click();
+    await el.updateComplete;
+    expect((el as any).mobileSheetOpen).toBe(false);
+
+    // Click swap icon -> opens swap sheet
+    const swapBtn = chordCard.querySelector('.quick-action-btn.swap') as HTMLElement;
+    expect(swapBtn).toBeTruthy();
+    swapBtn.click();
+    await el.updateComplete;
+    expect((el as any).mobileSheetOpen).toBe(true);
+
+    document.body.removeChild(el);
+  });
+
+  it('mobile song section rendering displays chord chips and clicking section navigates', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    el.sections = [
+      { name: 'Verse', desc: 'Settled', progression: sampleProgression, order: [0, 1, 2, 3] },
+      { name: 'Chorus', desc: 'Brighter', progression: sampleProgression, order: [2, 3, 0, 1] },
+    ];
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // Switch to song view tab
+    const tabs = el.shadowRoot?.querySelectorAll('.view-tab');
+    (tabs![1] as HTMLElement).click();
+    await el.updateComplete;
+
+    // Check section chips exist
+    const secCards = el.shadowRoot?.querySelectorAll('.song-card');
+    expect(secCards?.length).toBe(2);
+
+    const chips = secCards![0].querySelectorAll('.section-chip');
+    expect(chips.length).toBe(4);
+
+    // Click chorus section -> emits select-section and switches back to loop view
+    const selectSpy = vi.fn();
+    el.addEventListener('select-section', (e: any) => selectSpy(e.detail));
+
+    (secCards![1] as HTMLElement).click();
+    await el.updateComplete;
+
+    expect(selectSpy).toHaveBeenCalledWith(1);
+    expect((el as any).activeView).toBe('loop');
+
+    document.body.removeChild(el);
+  });
 });

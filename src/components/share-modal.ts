@@ -1,6 +1,7 @@
 import { LitElement, html, css, svg } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import { ShareDevice } from '../services/chord-engine';
+import { Progression, ShareDevice, buildDeviceShareUrl } from '../services/chord-engine';
+import { downloadWav, downloadMidi } from '../services/export-service';
 
 // Reuses the original app's inline device illustrations verbatim (still exist in git
 // history at 3383fcf's renderShareModal) rather than the flat mono-badge placeholder
@@ -264,209 +265,259 @@ const CIRCUIT_SVG = svg`
 
 interface Dest {
   device: ShareDevice;
+  mono: string;
   name: string;
   desc: string;
   svg: ReturnType<typeof svg>;
 }
 
 const DESTS: Dest[] = [
-  { device: 'm8', name: 'M8 Tracker', desc: 'Opens the M8 helper with this progression.', svg: M8_SVG },
-  { device: 'circuit', name: 'Circuit Tracks', desc: 'Opens the Circuit Tracks helper with this progression.', svg: CIRCUIT_SVG },
+  { device: 'm8', mono: 'M8', name: 'M8 Tracker', desc: 'Opens the M8 helper with this progression.', svg: M8_SVG },
+  { device: 'circuit', mono: 'CT', name: 'Circuit Tracks', desc: 'Opens the Circuit Tracks helper with this progression.', svg: CIRCUIT_SVG },
 ];
 
 @customElement('share-modal')
 export class ShareModal extends LitElement {
+  @property({ type: Boolean }) open = false;
   @property({ type: Boolean }) visible = false;
+  @property({ type: Object }) progression: Progression | null = null;
+  @property({ type: Array }) order: number[] = [];
+  @property({ type: String }) instrument: string | null = null;
+  @property({ type: String }) playStyle: string | null = null;
+
+  get isOpened(): boolean {
+    return this.open || this.visible;
+  }
 
   static styles = css`
     :host {
       display: block;
-      font-family: var(--cv-font);
+      font-family: var(--cv-font, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif);
     }
     .backdrop {
       position: fixed;
-      inset: -2px;
-      z-index: 58;
+      inset: 0;
+      z-index: 1000;
       background: rgba(46, 39, 31, 0);
+      backdrop-filter: blur(0px);
+      -webkit-backdrop-filter: blur(0px);
       pointer-events: none;
-      transition: background 0.26s ease, backdrop-filter 0.26s ease;
-    }
-    .backdrop.visible {
-      background: rgba(46, 39, 31, 0.5);
-      backdrop-filter: blur(2px);
-      -webkit-backdrop-filter: blur(2px);
-      pointer-events: auto;
-    }
-    .modal {
-      position: absolute;
-      left: 20px;
-      right: 20px;
-      max-width: 560px;
-      margin: 0 auto;
-      top: 50%;
-      background: var(--cv-cream);
-      border-radius: 24px;
-      box-shadow: 0 30px 60px -20px rgba(46, 39, 31, 0.4);
-      z-index: 59;
-      padding: 26px;
-      box-sizing: border-box;
       opacity: 0;
-      pointer-events: none;
-      transform: translateY(calc(-50% + 14px)) scale(0.92);
-      transition: opacity 0.26s cubic-bezier(.16,1,.3,1), transform 0.3s cubic-bezier(.16,1,.3,1);
+      transition: opacity 260ms cubic-bezier(0.16, 1, 0.3, 1), background 260ms cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .modal.visible {
+    .backdrop.open {
+      background: rgba(46, 39, 31, 0.5);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
       opacity: 1;
       pointer-events: auto;
-      transform: translateY(-50%) scale(1);
+    }
+    .share-drawer {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1001;
+      max-width: 580px;
+      margin: 0 auto;
+      max-height: 85vh;
+      background: var(--cv-cream, #FBF6EC);
+      border-radius: 26px 26px 0 0;
+      box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
+      box-sizing: border-box;
+    }
+    .share-drawer.open {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .handle-bar {
+      padding: 11px 0 0;
+      display: flex;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .handle-pill {
+      width: 38px;
+      height: 4px;
+      border-radius: 100px;
+      background: rgba(46, 39, 31, 0.18);
+    }
+    .drawer-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 14px 22px 28px;
     }
     .head-row {
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
+      gap: 12px;
     }
     .title {
-      font-size: 22px;
+      font-size: 21px;
       font-weight: 800;
       letter-spacing: -0.01em;
-      color: var(--cv-ink);
+      color: var(--cv-ink, #2E271F);
     }
-    .desc {
+    .subtitle {
       font-size: 12.5px;
-      color: var(--cv-ink-muted);
+      line-height: 1.55;
+      color: var(--cv-ink-muted, #6B5F50);
       margin-top: 6px;
-      line-height: 1.5;
-      max-width: 260px;
     }
     .close-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: var(--cv-surface);
-      font-size: 16px;
-      color: var(--cv-ink);
-      cursor: pointer;
-      flex-shrink: 0;
-      margin-left: 10px;
       border: none;
+      font-family: inherit;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--cv-surface, #F6EADB);
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 18px;
+      color: var(--cv-ink, #2E271F);
+      flex-shrink: 0;
+      cursor: pointer;
+      transition: background 150ms ease, transform 120ms ease;
     }
-    .dest-row {
+    .close-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .close-btn:active {
+      transform: scale(0.94);
+    }
+    .dests-grid {
       display: flex;
       gap: 12px;
       margin-top: 20px;
     }
     .dest-card {
       flex: 1;
-      background: var(--cv-surface);
-      border-radius: 18px;
-      padding: 14px 10px 16px;
-      box-sizing: border-box;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      opacity: 0;
-      transform: translateY(8px);
-      transition: transform 0.18s ease, opacity 0.3s ease;
-    }
-    .dest-card:nth-child(2) {
-      transition-delay: 0.06s;
-    }
-    .dest-card.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    .dest-card:hover {
-      transform: translateY(-3px);
-    }
-    .dest-name {
-      font-size: 12px;
-      letter-spacing: 0.4px;
-      font-weight: 700;
-      color: var(--cv-ink);
-      margin-top: 8px;
-    }
-    .dest-desc {
-      font-size: 11px;
-      color: var(--cv-ink-muted);
-      margin-top: 3px;
-      line-height: 1.4;
-    }
-    .section-header {
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.8px;
-      color: var(--cv-label, #8A6B3F);
-      text-transform: uppercase;
-      margin-top: 24px;
-      margin-bottom: 12px;
-    }
-    .save-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .save-card {
       background: var(--cv-surface, #F6EADB);
       border-radius: 18px;
-      padding: 14px 18px;
-      box-sizing: border-box;
+      padding: 16px 14px;
       cursor: pointer;
+      transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms ease, box-shadow 150ms ease;
       display: flex;
-      align-items: center;
-      gap: 16px;
-      opacity: 0;
-      transform: translateY(8px);
-      transition: transform 0.18s ease, opacity 0.3s ease, background-color 0.15s ease;
+      flex-direction: column;
+      align-items: flex-start;
+      box-sizing: border-box;
     }
-    .save-card:nth-child(1) {
-      transition-delay: 0.08s;
-    }
-    .save-card:nth-child(2) {
-      transition-delay: 0.14s;
-    }
-    .save-card.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    .save-card:hover {
+    .dest-card:hover {
+      background: var(--cv-surface-2, #F1E4CC);
       transform: translateY(-2px);
-      background: var(--cv-surface-2, #F1E4CC);
+      box-shadow: 0 8px 20px -8px rgba(46, 39, 31, 0.15);
     }
-    .save-badge {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background: var(--cv-surface-2, #F1E4CC);
-      color: var(--cv-label, #8A6B3F);
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
+    .dest-card:active {
+      transform: scale(0.97);
+    }
+    .device-svg-box {
+      width: 100%;
+      height: 100px;
       display: flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
+      margin-bottom: 10px;
+      background: rgba(0, 0, 0, 0.03);
+      border-radius: 12px;
+      padding: 6px;
+      box-sizing: border-box;
     }
-    .save-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      text-align: left;
+    .device-svg-box svg {
+      max-width: 100%;
+      max-height: 100%;
+      height: auto;
+      filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.12));
+      transition: transform 180ms ease;
     }
-    .save-title {
-      font-size: 15px;
+    .dest-card:hover .device-svg-box svg {
+      transform: translateY(-2px) scale(1.03);
+    }
+    .dest-badge {
+      padding: 3px 7px;
+      border-radius: 7px;
+      background: var(--cv-surface-2, #F1E4CC);
+      font-size: 10.5px;
+      font-weight: 800;
+      color: var(--cv-label, #8A6B3F);
+      letter-spacing: 0.4px;
+    }
+    .dest-name {
+      font-size: 13.5px;
       font-weight: 800;
       color: var(--cv-ink, #2E271F);
-      letter-spacing: -0.01em;
+      margin-top: 8px;
     }
-    .save-desc {
-      font-size: 12.5px;
+    .dest-desc {
+      font-size: 11.5px;
+      line-height: 1.5;
       color: var(--cv-ink-muted, #6B5F50);
-      line-height: 1.4;
+      margin-top: 4px;
+      text-wrap: pretty;
+    }
+    .section-label {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      color: var(--cv-label, #8A6B3F);
+      text-transform: uppercase;
+      margin: 24px 0 11px;
+    }
+    .export-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .export-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 16px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms ease;
+    }
+    .export-row:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+      transform: translateY(-1px);
+    }
+    .export-row:active {
+      transform: scale(0.99);
+    }
+    .export-badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: var(--cv-surface-2, #F1E4CC);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--cv-label, #8A6B3F);
+      flex-shrink: 0;
+    }
+    .export-title {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+    }
+    .export-desc {
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-top: 2px;
+      text-wrap: pretty;
     }
   `;
 
@@ -481,8 +532,8 @@ export class ShareModal extends LitElement {
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && this.visible) {
-      this.emit('close');
+    if (e.key === 'Escape' && this.isOpened) {
+      this.close();
     }
   };
 
@@ -490,41 +541,89 @@ export class ShareModal extends LitElement {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
 
+  private close() {
+    this.emit('close');
+  }
+
+  private handleDeviceClick(device: ShareDevice) {
+    if (!this.progression) return;
+    const url = buildDeviceShareUrl(this.progression, device, this.order);
+    window.open(url, '_blank');
+    const label = device === 'm8' ? 'M8 Tracker' : 'Circuit Tracks';
+    this.emit('toast', `Opening ${label} helper...`);
+    this.close();
+  }
+
+  private async handleWavClick() {
+    if (!this.progression) return;
+    this.emit('toast', 'Generating WAV audio...');
+    try {
+      await downloadWav(this.progression, this.order, this.instrument, this.playStyle);
+      this.emit('toast', 'WAV file downloaded');
+    } catch (err) {
+      console.error('WAV export failed', err);
+      this.emit('toast', 'Failed to generate WAV file');
+    }
+    this.close();
+  }
+
+  private handleMidiClick() {
+    if (!this.progression) return;
+    try {
+      downloadMidi(this.progression, this.order, this.instrument, this.playStyle);
+      this.emit('toast', 'MIDI file downloaded');
+    } catch (err) {
+      console.error('MIDI export failed', err);
+      this.emit('toast', 'Failed to generate MIDI file');
+    }
+    this.close();
+  }
+
   render() {
-    if (!this.visible) return html``;
+    const opened = this.isOpened;
     return html`
-      <div class="backdrop ${this.visible ? 'visible' : ''}" @click=${() => this.emit('close')}></div>
-      <div class="modal ${this.visible ? 'visible' : ''}">
-        <div class="head-row">
-          <div>
-            <div class="title">Share progression</div>
-            <div class="desc">Send this loop to a device — opens its companion helper with the progression loaded.</div>
-          </div>
-          <button class="close-btn" @click=${() => this.emit('close')}>×</button>
-        </div>
-        <div class="dest-row">
-          ${DESTS.map(d => html`
-            <div class="dest-card ${this.visible ? 'visible' : ''}" @click=${() => this.emit('export', d)}>
-              ${d.svg}
-              <div class="dest-name">${d.name}</div>
-              <div class="dest-desc">${d.desc}</div>
+      <div class="backdrop ${opened ? 'open' : ''}" @click=${this.close}></div>
+      <div class="share-drawer ${opened ? 'open' : ''}">
+        <div class="handle-bar"><div class="handle-pill"></div></div>
+        <div class="drawer-content">
+          <div class="head-row">
+            <div>
+              <div class="title">Share progression</div>
+              <div class="subtitle">Send it somewhere you can actually play it.</div>
             </div>
-          `)}
-        </div>
-        <div class="section-header">SAVE TO THIS DEVICE</div>
-        <div class="save-list">
-          <div class="save-card ${this.visible ? 'visible' : ''}" @click=${() => this.emit('export-wav')}>
-            <div class="save-badge">WAV</div>
-            <div class="save-info">
-              <div class="save-title">Save as WAV</div>
-              <div class="save-desc">Rendered audio, ready to drop into any player.</div>
-            </div>
+            <button class="close-btn" @click=${this.close} aria-label="Close">×</button>
           </div>
-          <div class="save-card ${this.visible ? 'visible' : ''}" @click=${() => this.emit('export-midi')}>
-            <div class="save-badge">MID</div>
-            <div class="save-info">
-              <div class="save-title">Save as MIDI</div>
-              <div class="save-desc">Just the notes — reopen it in your own instrument.</div>
+
+          <div class="dests-grid">
+            ${DESTS.map(d => html`
+              <div class="dest-card" @click=${() => this.handleDeviceClick(d.device)}>
+                <div class="device-svg-box">
+                  ${d.svg}
+                </div>
+                <div class="dest-badge">${d.mono}</div>
+                <div class="dest-name">${d.name}</div>
+                <div class="dest-desc">${d.desc}</div>
+              </div>
+            `)}
+          </div>
+
+          <div class="section-label">Or export a file</div>
+
+          <div class="export-list">
+            <div class="export-row" @click=${this.handleWavClick}>
+              <div class="export-badge">WAV</div>
+              <div>
+                <div class="export-title">Save as WAV</div>
+                <div class="export-desc">Rendered audio, ready to drop into any player.</div>
+              </div>
+            </div>
+
+            <div class="export-row" @click=${this.handleMidiClick}>
+              <div class="export-badge">MID</div>
+              <div>
+                <div class="export-title">Save as MIDI</div>
+                <div class="export-desc">Just the notes — reopen it in your own instrument.</div>
+              </div>
             </div>
           </div>
         </div>
