@@ -288,12 +288,14 @@ export class ShareModal extends LitElement {
       inset: -2px;
       z-index: 58;
       background: rgba(46, 39, 31, 0);
+      pointer-events: none;
       transition: background 0.26s ease, backdrop-filter 0.26s ease;
     }
     .backdrop.visible {
       background: rgba(46, 39, 31, 0.5);
       backdrop-filter: blur(2px);
       -webkit-backdrop-filter: blur(2px);
+      pointer-events: auto;
     }
     .modal {
       position: absolute;
@@ -309,11 +311,13 @@ export class ShareModal extends LitElement {
       padding: 26px;
       box-sizing: border-box;
       opacity: 0;
+      pointer-events: none;
       transform: translateY(calc(-50% + 14px)) scale(0.92);
       transition: opacity 0.26s cubic-bezier(.16,1,.3,1), transform 0.3s cubic-bezier(.16,1,.3,1);
     }
     .modal.visible {
       opacity: 1;
+      pointer-events: auto;
       transform: translateY(-50%) scale(1);
     }
     .head-row {
@@ -487,6 +491,7 @@ export class ShareModal extends LitElement {
   }
 
   render() {
+    if (!this.visible) return html``;
     return html`
       <div class="backdrop ${this.visible ? 'visible' : ''}" @click=${() => this.emit('close')}></div>
       <div class="modal ${this.visible ? 'visible' : ''}">

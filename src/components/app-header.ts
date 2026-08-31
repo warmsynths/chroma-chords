@@ -30,203 +30,132 @@ export class AppHeader extends LitElement {
       position: relative;
       z-index: 50;
       box-sizing: border-box;
+      font-family: var(--cv-font, 'Plus Jakarta Sans', sans-serif);
     }
     .header-wrap {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 24px 36px 8px;
+      padding: 16px 24px;
       box-sizing: border-box;
+      width: 100%;
     }
     :host([compact]) .header-wrap {
-      padding: 16px 16px 6px;
+      padding: 12px 16px;
     }
     @media (max-width: 600px) {
       .header-wrap {
-        padding: 16px 16px 6px;
+        padding: 12px 16px;
       }
     }
 
     .branding {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 9px;
       min-width: 0;
       cursor: pointer;
       user-select: none;
       text-decoration: none;
     }
     .brand-title {
-      font-size: 15.5px;
+      font-size: 15px;
       font-weight: 800;
       letter-spacing: 0.2px;
-      color: #2E271F;
+      color: var(--cv-ink, #2E271F);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    :host([compact]) .brand-title,
-    @media (max-width: 600px) {
-      .brand-title {
-        font-size: 13.5px;
-      }
-    }
 
-    .actions-group {
+    .right-actions {
       display: flex;
       align-items: center;
       gap: 8px;
       flex-shrink: 0;
+      position: relative;
     }
 
-    .capacity-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      height: 34px;
-      padding: 0 13px;
-      border-radius: 100px;
-      border: 1.5px solid rgba(46, 39, 31, 0.12);
-      background: #F1E4CC;
-      font-family: inherit;
-      font-size: 12px;
-      font-weight: 700;
-      color: #6B5F50;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: background 300ms ease, border-color 300ms ease, transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
-    }
-    .capacity-chip:hover {
-      background: #EADBBE;
-    }
-    .capacity-chip.low {
-      border-color: rgba(224, 138, 60, 0.5);
-      background: rgba(224, 138, 60, 0.14);
-      color: #A0632A;
-    }
-    .pips-wrap {
-      display: flex;
-      gap: 3px;
-      align-items: center;
-    }
-    .pip {
-      width: 6px;
-      height: 6px;
-      border-radius: 2px;
-      background: rgba(46, 39, 31, 0.18);
-      transition: background 300ms ease;
-    }
-    .pip.filled {
-      background: #F2735F;
-    }
-    .pip.filled.low {
-      background: #E08A3C;
-    }
-
-    .btn-sign-in {
-      display: inline-flex;
-      align-items: center;
-      height: 34px;
-      padding: 0 16px;
-      border-radius: 100px;
+    .sign-in-btn {
       border: none;
-      background: #2E271F;
-      color: #F4EBDB;
       font-family: inherit;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink, #2E271F);
       font-size: 12.5px;
-      font-weight: 700;
+      font-weight: 800;
+      padding: 7px 14px;
+      border-radius: 100px;
       cursor: pointer;
-      white-space: nowrap;
-      transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1), background 150ms ease;
+      transition: background 150ms ease, transform 100ms ease;
     }
-    .btn-sign-in:hover {
-      background: #42382D;
+    .sign-in-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
     }
-    .btn-sign-in:active {
+    .sign-in-btn:active {
       transform: scale(0.96);
     }
 
-    .btn-account {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      border: 1.5px solid rgba(46, 39, 31, 0.14);
-      background: #F2A79B;
+    .account-btn {
+      border: none;
       font-family: inherit;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--cv-plum, #9B7CA8);
+      color: #FBF3E6;
       font-size: 13px;
       font-weight: 800;
-      color: #2E271F;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      flex-shrink: 0;
-      transition: border-color 200ms ease, transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
+      transition: transform 150ms ease;
     }
-    .btn-account.active {
-      border-color: rgba(46, 39, 31, 0.4);
-    }
-    .btn-account:hover {
+    .account-btn:hover {
       transform: scale(1.05);
-    }
-    .btn-account:active {
-      transform: scale(0.96);
     }
 
     .popover-panel {
       position: absolute;
-      right: 36px;
-      top: 66px;
-      z-index: 60;
-      box-sizing: border-box;
-      background: #FBF6EC;
-      border: 1.5px solid rgba(46, 39, 31, 0.12);
+      top: calc(100% + 8px);
+      right: 0;
+      z-index: 100;
+      background: var(--cv-cream, #FBF3E6);
+      border: 1px solid rgba(46, 39, 31, 0.1);
       border-radius: 16px;
-      box-shadow: 0 22px 46px -24px rgba(46, 39, 31, 0.7);
-      text-align: left;
-      animation: popover-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 16px 36px -12px rgba(46, 39, 31, 0.35);
+      animation: cvfv-sheet-up 180ms cubic-bezier(0.23, 1, 0.32, 1);
     }
-    :host([compact]) .popover-panel,
-    @media (max-width: 600px) {
-      .popover-panel {
-        right: 16px;
-        top: 56px;
-      }
-    }
-
-    @keyframes popover-in {
-      from { opacity: 0; transform: translateY(-6px) scale(0.97); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
+    .panel-close-btn {
+      border: none;
+      background: transparent;
+      font-size: 18px;
+      line-height: 1;
+      color: rgba(46, 39, 31, 0.5);
+      cursor: pointer;
+      padding: 0;
+      margin-left: auto;
     }
 
-    .capacity-note-panel {
-      width: 256px;
-      padding: 14px 16px;
-      font-size: 12.5px;
-      line-height: 1.55;
-      font-weight: 600;
-      color: #6B5F50;
-    }
-
-    .account-menu {
+    .account-menu-panel {
       width: 240px;
       padding: 8px;
     }
-    .account-header {
+    .account-header-info {
       padding: 10px 12px 12px;
       border-bottom: 1px solid rgba(46, 39, 31, 0.08);
       margin-bottom: 6px;
     }
-    .account-name {
-      font-size: 13.5px;
+    .account-email {
+      font-size: 13px;
       font-weight: 800;
-      color: #2E271F;
+      color: var(--cv-ink, #2E271F);
+      white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      white-space: nowrap;
     }
-    .sync-status {
+    .sync-status-line {
       display: flex;
       align-items: center;
       gap: 6px;
@@ -241,7 +170,7 @@ export class AppHeader extends LitElement {
       border-radius: 50%;
       background: #7FA968;
     }
-    .menu-item {
+    .menu-action-btn {
       display: flex;
       align-items: center;
       gap: 10px;
@@ -254,233 +183,132 @@ export class AppHeader extends LitElement {
       font-family: inherit;
       font-size: 13px;
       font-weight: 700;
-      color: #2E271F;
+      color: var(--cv-ink, #2E271F);
       text-align: left;
       cursor: pointer;
-      text-decoration: none;
       transition: background 150ms ease;
     }
-    .menu-item:hover {
+    .menu-action-btn:hover {
       background: rgba(46, 39, 31, 0.06);
     }
-    .menu-item.muted {
-      color: #6B5F50;
-    }
-    .menu-badge {
+    .saved-badge {
+      margin-left: auto;
       background: rgba(138, 107, 63, 0.18);
-      color: #8A6B3F;
+      color: var(--cv-label, #8A6B3F);
       border-radius: 100px;
       padding: 2px 8px;
       font-size: 11px;
       font-weight: 800;
-      margin-left: auto;
     }
     .menu-divider {
       height: 1px;
       background: rgba(46, 39, 31, 0.08);
       margin: 6px 12px;
     }
-    .backdrop-overlay {
-      position: fixed;
-      inset: 0;
-      z-index: 55;
-      background: transparent;
+    .menu-action-btn.sign-out {
+      color: var(--cv-ink-muted, #6B5F50);
     }
   `;
 
   connectedCallback() {
     super.connectedCallback();
-    window.addEventListener('keydown', this.onKeyDown);
-    this.unsubscribeProjects = projectStorage.subscribeProjects((projects) => {
-      this.savedCount = projects.length;
+    this.unsubscribeProjects = projectStorage.subscribeProjects(() => {
+      this.savedCount = projectStorage.getProjects().length;
+      this.syncStatus = projectStorage.getSyncStatus();
       this.requestUpdate();
     });
-    this.unsubscribeCapacity = capacityService.subscribe((state) => {
+    this.unsubscribeCapacity = capacityService.subscribe(state => {
       this.capacityCharges = state.charges;
       this.capacityMax = state.max;
       this.rechargeNextSec = state.rechargeNextSec;
       this.requestUpdate();
     });
+    this.savedCount = projectStorage.getProjects().length;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    window.removeEventListener('keydown', this.onKeyDown);
-    if (this.unsubscribeProjects) {
-      this.unsubscribeProjects();
-      this.unsubscribeProjects = null;
-    }
-    if (this.unsubscribeCapacity) {
-      this.unsubscribeCapacity();
-      this.unsubscribeCapacity = null;
-    }
+    if (this.unsubscribeProjects) this.unsubscribeProjects();
+    if (this.unsubscribeCapacity) this.unsubscribeCapacity();
   }
 
-  private onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      this.closeOverlays();
-    }
-  };
-
-  private closeOverlays() {
-    this.accountMenuOpen = false;
-    this.showCapacityNote = false;
-  }
-
-  private toggleCapacityNote() {
-    this.accountMenuOpen = false;
+  private toggleCapacityNote(e: Event) {
+    e.stopPropagation();
     this.showCapacityNote = !this.showCapacityNote;
+    this.accountMenuOpen = false;
   }
 
-  private toggleAccountMenu() {
-    this.showCapacityNote = false;
+  private toggleAccountMenu(e: Event) {
+    e.stopPropagation();
     this.accountMenuOpen = !this.accountMenuOpen;
+    this.showCapacityNote = false;
   }
 
-  private onSignInClick() {
-    this.closeOverlays();
+  private onSignIn() {
     this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }));
   }
 
-  private onSignOutClick() {
-    this.closeOverlays();
+  private onSignOut() {
+    this.accountMenuOpen = false;
     this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }));
   }
 
-  private onViewSetsClick(e: Event) {
-    e.preventDefault();
-    this.closeOverlays();
+  private onViewSets() {
+    this.accountMenuOpen = false;
     this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }));
   }
 
-  private onSyncNowClick() {
-    this.closeOverlays();
+  private onSyncNow() {
+    this.accountMenuOpen = false;
     this.dispatchEvent(new CustomEvent('sync-projects', { bubbles: true, composed: true }));
   }
 
-  private onOpenAdminModal() {
-    this.closeOverlays();
-    this.dispatchEvent(new CustomEvent('open-admin-modal', { bubbles: true, composed: true }));
-  }
-
-  private onBrandingClick() {
-    this.dispatchEvent(new CustomEvent('wordmark-click', { bubbles: true, composed: true }));
-  }
-
-  get isUserAdmin(): boolean {
-    return Boolean(this.isAdmin || projectStorage.isAdmin);
-  }
-
   render() {
-    const isLow = this.capacityCharges <= 1;
-    const mins = Math.floor(this.rechargeNextSec / 60);
-    const secs = String(this.rechargeNextSec % 60).padStart(2, '0');
-    const clock = `${mins}:${secs}`;
-    const capacityLabel = this.capacityCharges > 0
-      ? `${this.capacityCharges} left`
-      : `+1 in ${clock}`;
-
-    const capacityNote = this.capacityCharges > 0
-      ? `${this.capacityCharges} of ${this.capacityMax} AI generates left. One comes back every ${this.rechargeNextSec > 0 ? this.rechargeNextSec : 60}s.`
-      : `You've used all ${this.capacityMax} AI generates. The next one unlocks in ${clock}.`;
-
-    const userInitial = (this.userEmail ? this.userEmail.charAt(0) : 'U').toUpperCase();
-    const displayName = this.userEmail ? this.userEmail.split('@')[0] : 'Signed in';
+    const userInitial = (this.userEmail || 'U')[0].toUpperCase();
 
     return html`
       <div class="header-wrap">
-        <div class="branding" @click=${this.onBrandingClick}>
-          <svg width="${this.compact ? 20 : 24}" height="${this.compact ? 20 : 24}" viewBox="0 0 30 30" style="flex-shrink:0;">
+        <div class="branding" @click=${() => this.dispatchEvent(new CustomEvent('brand-click', { bubbles: true, composed: true }))}>
+          <svg width="24" height="24" viewBox="0 0 30 30" style="flex-shrink:0;">
             <circle cx="11" cy="11" r="9" fill="#F2A79B"/>
             <circle cx="19" cy="19" r="9" fill="#9CC0EC" opacity="0.9"/>
           </svg>
-          <div class="brand-title">${this.title}</div>
+          <span class="brand-title">${this.title}</span>
         </div>
 
-        <div class="actions-group">
-          ${!this.hideCapacity ? html`
-            <button
-              class="capacity-chip ${isLow ? 'low' : ''}"
-              @click=${this.toggleCapacityNote}
-              aria-label="AI generates remaining"
-            >
-              <span class="pips-wrap">
-                ${Array.from({ length: this.capacityMax }, (_, i) => html`
-                  <span class="pip ${i < this.capacityCharges ? 'filled' : ''} ${isLow ? 'low' : ''}"></span>
-                `)}
-              </span>
-              <span>${capacityLabel}</span>
-            </button>
-          ` : ''}
-
+        <div class="right-actions">
           ${!this.isAuthenticated ? html`
-            <button class="btn-sign-in" @click=${this.onSignInClick}>Sign in</button>
+            <button class="sign-in-btn" @click=${this.onSignIn}>Sign in</button>
           ` : html`
-            <button
-              class="btn-account ${this.accountMenuOpen ? 'active' : ''}"
-              @click=${this.toggleAccountMenu}
-              aria-haspopup="menu"
-              aria-label="Account and saved sets"
-            >
-              ${userInitial}
-            </button>
+            <button class="account-btn" @click=${this.toggleAccountMenu} aria-haspopup="menu" aria-label="Account and saved sets">${userInitial}</button>
           `}
-        </div>
 
-        ${(this.showCapacityNote || this.accountMenuOpen) ? html`
-          <div class="backdrop-overlay" @click=${this.closeOverlays}></div>
-        ` : ''}
-
-        ${this.showCapacityNote ? html`
-          <div class="popover-panel capacity-note-panel">
-            ${capacityNote}
-          </div>
-        ` : ''}
-
-        ${this.accountMenuOpen ? html`
-          <div class="popover-panel account-menu" role="menu">
-            <div class="account-header">
-              <div class="account-name">${displayName}</div>
-              <div class="sync-status">
-                <span class="sync-dot"></span>
-                ${this.syncStatus === 'syncing' ? 'Syncing...' : 'Synced just now'}
+          ${this.accountMenuOpen ? html`
+            <div class="popover-panel account-menu-panel" role="menu">
+              <div class="account-header-info">
+                <div class="account-email">${this.userEmail || 'Signed in'}</div>
+                <div class="sync-status-line">
+                  <span class="sync-dot"></span>
+                  <span>${this.syncStatus === 'synced' ? 'Synced with cloud' : 'Syncing...'}</span>
+                </div>
               </div>
-            </div>
-            <button class="menu-item" @click=${this.onViewSetsClick} role="menuitem">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="#8A6B3F" style="flex-shrink:0;">
-                <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>
-              </svg>
-              <span>Your sets</span>
-              <span class="menu-badge">${this.savedCount}</span>
-            </button>
-            <button class="menu-item" @click=${this.onSyncNowClick} role="menuitem">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A6B3F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-                <path d="M20 11a8 8 0 0 0-13.7-5.6L3 8"/>
-                <path d="M3 4v4h4"/>
-                <path d="M4 13a8 8 0 0 0 13.7 5.6L21 16"/>
-                <path d="M21 20v-4h-4"/>
-              </svg>
-              <span>Sync now</span>
-            </button>
-            ${this.isUserAdmin ? html`
-              <button class="menu-item" @click=${this.onOpenAdminModal} role="menuitem">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A6B3F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                </svg>
-                <span>AI model config</span>
+              <button class="menu-action-btn" role="menuitem" @click=${this.onViewSets}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#8A6B3F" style="flex-shrink:0;"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+                <span>Your sets</span>
+                <span class="saved-badge">${this.savedCount}</span>
               </button>
-            ` : ''}
-            <div class="menu-divider"></div>
-            <button class="menu-item muted" @click=${this.onSignOutClick} role="menuitem">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B5F50" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                <path d="M16 17l5-5-5-5"/>
-                <path d="M21 12H9"/>
-              </svg>
-              <span>Sign out</span>
-            </button>
-          </div>
-        ` : ''}
+              <button class="menu-action-btn" role="menuitem" @click=${this.onSyncNow}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A6B3F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M20 11a8 8 0 0 0-13.7-5.6L3 8"/><path d="M3 4v4h4"/><path d="M4 13a8 8 0 0 0 13.7 5.6L21 16"/><path d="M21 20v-4h-4"/></svg>
+                <span>Sync now</span>
+              </button>
+              <div class="menu-divider"></div>
+              <button class="menu-action-btn sign-out" role="menuitem" @click=${this.onSignOut}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B5F50" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+                <span>Sign out</span>
+              </button>
+            </div>
+          ` : ''}
+        </div>
       </div>
     `;
   }

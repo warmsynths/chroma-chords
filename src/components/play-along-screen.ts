@@ -63,6 +63,7 @@ export class PlayAlongScreen extends LitElement {
   @property({ type: String }) userEmail: string | null = null;
   @property({ type: Number }) savedCount = 0;
 
+  @property({ type: Boolean }) embedded = false;
   @state() private playInstrument: PlayInstrument = 'Piano';
   @state() private showDegrees = false;
   @state() private activeChordIndex: number | null = null;
@@ -547,15 +548,19 @@ export class PlayAlongScreen extends LitElement {
       : 'Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.';
 
     return html`
-      <app-header
-        .isAuthenticated=${this.isAuthenticated}
-        .userEmail=${this.userEmail}
-      ></app-header>
+      ${!this.embedded ? html`
+        <app-header
+          .isAuthenticated=${this.isAuthenticated}
+          .userEmail=${this.userEmail}
+        ></app-header>
+      ` : ''}
 
-      <div class="container">
-        <button class="back-btn" @click=${this.onBackClick}>
-          ← Back to progression
-        </button>
+      <div class="container" style="${this.embedded ? 'padding: 10px 0 40px;' : ''}">
+        ${!this.embedded ? html`
+          <button class="back-btn" @click=${this.onBackClick}>
+            ← Back to progression
+          </button>
+        ` : ''}
 
         <div class="page-header">
           <h1 class="page-title">Play it yourself.</h1>

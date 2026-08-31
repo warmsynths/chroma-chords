@@ -56,13 +56,14 @@ export class AuthModal extends LitElement {
       opacity: 0;
       transform: translateY(12px) scale(0.96);
       transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1), transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
-      pointer-events: auto;
+      pointer-events: none;
       max-height: 90vh;
       overflow-y: auto;
     }
     .modal.visible {
       opacity: 1;
       transform: translateY(0) scale(1);
+      pointer-events: auto;
     }
     .header-row {
       display: flex;
@@ -207,6 +208,12 @@ export class AuthModal extends LitElement {
     }
   `;
 
+  protected willUpdate(changedProps: PropertyValues) {
+    if (changedProps.has('open') && this.open) {
+      this.mounted = true;
+    }
+  }
+
   protected updated(changedProps: PropertyValues) {
     if (changedProps.has('open')) {
       if (this.open) {
@@ -260,7 +267,7 @@ export class AuthModal extends LitElement {
   }
 
   render() {
-    if (!this.mounted) return html``;
+    if (!this.open && !this.mounted) return html``;
 
     return html`
       <div class="scrim ${this.open ? 'visible' : ''}" @click=${this.close}></div>

@@ -84,7 +84,7 @@ export class AuthService {
   }
 
   private initSession() {
-    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') {
       this.isLoading = false;
       return;
     }

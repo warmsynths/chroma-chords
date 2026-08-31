@@ -100,6 +100,10 @@ const QUALITY_INTERVALS: Record<string, number[]> = {
   maj7: [0, 4, 7, 11],
   dim7: [0, 3, 6, 9],
   sus4: [0, 5, 7],
+  sus2: [0, 2, 7],
+  dom9: [0, 4, 7, 10, 14],
+  maj9: [0, 4, 7, 11, 14],
+  min9: [0, 3, 7, 10, 14],
 };
 
 export const CHORD_QUALITIES = Object.keys(QUALITY_INTERVALS);
@@ -138,14 +142,141 @@ const DEGREE_TENSION: Record<string, number> = {
 };
 
 const ROMAN_BY_SCALE: Record<string, Record<string, string>> = {
-  MAJOR: { TONIC: 'I', SUPERTONIC: 'ii', MEDIANT: 'iii', SUBDOMINANT: 'IV', DOMINANT: 'V', SUBMEDIANT: 'vi', 'LEADING-TONE': 'vii°' },
-  NATURAL_MINOR: { TONIC: 'i', SUPERTONIC: 'ii°', MEDIANT: 'III', SUBDOMINANT: 'iv', DOMINANT: 'v', SUBMEDIANT: 'VI', SUBTONIC: 'VII' },
-  HARMONIC_MINOR: { TONIC: 'i', SUPERTONIC: 'ii°', MEDIANT: 'III+', SUBDOMINANT: 'iv', DOMINANT: 'V', SUBMEDIANT: 'VI', 'LEADING-TONE': 'vii°' },
-  MELODIC_MINOR: { TONIC: 'i', SUPERTONIC: 'ii', MEDIANT: 'III+', SUBDOMINANT: 'IV', DOMINANT: 'V', SUBMEDIANT: 'vi°', 'LEADING-TONE': 'vii°' },
-  DORIAN: { TONIC: 'i', SUPERTONIC: 'ii', MEDIANT: 'III', SUBDOMINANT: 'IV', DOMINANT: 'v', SUBMEDIANT: 'vi°', SUBTONIC: 'VII' },
-  MIXOLYDIAN: { TONIC: 'I', SUPERTONIC: 'ii', MEDIANT: 'iii°', SUBDOMINANT: 'IV', DOMINANT: 'v', SUBMEDIANT: 'vi', SUBTONIC: 'VII' },
-  LYDIAN: { TONIC: 'I', SUPERTONIC: 'II', MEDIANT: 'iii', SUBDOMINANT: 'iv°', DOMINANT: 'V', SUBMEDIANT: 'vi', 'LEADING-TONE': 'vii' },
+  MAJOR: {
+    TONIC: 'I',
+    SUPERTONIC: 'ii',
+    MEDIANT: 'iii',
+    SUBDOMINANT: 'IV',
+    DOMINANT: 'V',
+    SUBMEDIANT: 'vi',
+    'LEADING-TONE': 'vii°',
+    SUBTONIC: '♭VII',
+  },
+  NATURAL_MINOR: {
+    TONIC: 'i',
+    SUPERTONIC: 'ii°',
+    MEDIANT: '♭III',
+    SUBDOMINANT: 'iv',
+    DOMINANT: 'v',
+    SUBMEDIANT: '♭VI',
+    'LEADING-TONE': 'vii°',
+    SUBTONIC: '♭VII',
+  },
+  HARMONIC_MINOR: {
+    TONIC: 'i',
+    SUPERTONIC: 'ii°',
+    MEDIANT: '♭III+',
+    SUBDOMINANT: 'iv',
+    DOMINANT: 'V',
+    SUBMEDIANT: '♭VI',
+    'LEADING-TONE': 'vii°',
+    SUBTONIC: '♭VII',
+  },
+  MELODIC_MINOR: {
+    TONIC: 'i',
+    SUPERTONIC: 'ii',
+    MEDIANT: '♭III+',
+    SUBDOMINANT: 'IV',
+    DOMINANT: 'V',
+    SUBMEDIANT: 'vi°',
+    'LEADING-TONE': 'vii°',
+    SUBTONIC: '♭VII',
+  },
+  DORIAN: {
+    TONIC: 'i',
+    SUPERTONIC: 'ii',
+    MEDIANT: '♭III',
+    SUBDOMINANT: 'IV',
+    DOMINANT: 'v',
+    SUBMEDIANT: 'vi°',
+    'LEADING-TONE': 'vii°',
+    SUBTONIC: '♭VII',
+  },
+  MIXOLYDIAN: {
+    TONIC: 'I',
+    SUPERTONIC: 'ii',
+    MEDIANT: 'iii°',
+    SUBDOMINANT: 'IV',
+    DOMINANT: 'v',
+    SUBMEDIANT: 'vi',
+    'LEADING-TONE': 'vii°',
+    SUBTONIC: '♭VII',
+  },
+  LYDIAN: {
+    TONIC: 'I',
+    SUPERTONIC: 'II',
+    MEDIANT: 'iii',
+    SUBDOMINANT: 'iv°',
+    DOMINANT: 'V',
+    SUBMEDIANT: 'vi',
+    'LEADING-TONE': 'vii',
+    SUBTONIC: '♭VII',
+  },
+  PHRYGIAN: {
+    TONIC: 'i',
+    SUPERTONIC: '♭II',
+    MEDIANT: '♭III',
+    SUBDOMINANT: 'iv',
+    DOMINANT: 'v°',
+    SUBMEDIANT: '♭VI',
+    'LEADING-TONE': 'vii',
+    SUBTONIC: '♭vii',
+  },
+  LOCRIAN: {
+    TONIC: 'i°',
+    SUPERTONIC: '♭II',
+    MEDIANT: '♭iii',
+    SUBDOMINANT: 'iv',
+    DOMINANT: '♭V',
+    SUBMEDIANT: '♭VI',
+    'LEADING-TONE': '♭vii',
+    SUBTONIC: '♭vii',
+  },
 };
+
+function noteName(pc: number, preferFlat: boolean): string {
+  const idx = ((pc % 12) + 12) % 12;
+  return preferFlat ? NOTE_FLAT[idx] : NOTE_SHARP[idx];
+}
+
+// Chord names can be formatted standard (e.g. "Bbmaj7", "E7", "F#m", "Eb")
+// or uppercase database notation (e.g. "BBMAJ", "ABMAJ7", "CMAJ").
+export function parseChordSymbol(symbol: string): { root: string; quality: keyof typeof QUALITY_INTERVALS } {
+  if (!symbol) return { root: 'C', quality: 'maj' };
+  const clean = symbol.trim();
+  const first = clean[0]?.toUpperCase();
+  let root = 'C';
+  let rest = clean;
+  if (first && /[A-G]/.test(first)) {
+    const second = clean[1];
+    if (second === 'b' || second === 'B' || second === '♭' || second === '\u266d') {
+      root = `${first}b`;
+      rest = clean.slice(2);
+    } else if (second === '#' || second === '♯' || second === '\u266f') {
+      root = `${first}#`;
+      rest = clean.slice(2);
+    } else {
+      root = first;
+      rest = clean.slice(1);
+    }
+  }
+  rest = rest.toLowerCase();
+  let quality: keyof typeof QUALITY_INTERVALS = 'maj';
+  if (rest.includes('maj9') || (rest.includes('m9') && rest.includes('maj'))) quality = 'maj9';
+  else if (rest.includes('min9') || rest.includes('m9')) quality = 'min9';
+  else if (rest.includes('9') || rest.includes('dom9')) quality = 'dom9';
+  else if (rest.includes('maj7') || (rest.includes('m7') && rest.includes('maj'))) quality = 'maj7';
+  else if (rest.includes('min7') || rest.includes('m7')) quality = 'min7';
+  else if (rest.includes('dim7')) quality = 'dim7';
+  else if (rest.includes('dim') || rest.includes('°')) quality = 'dim';
+  else if (rest.includes('aug') || rest.includes('+')) quality = 'aug';
+  else if (rest.includes('sus2')) quality = 'sus2';
+  else if (rest.includes('sus4') || rest.includes('sus')) quality = 'sus4';
+  else if (rest.includes('7')) quality = 'dom7';
+  else if (rest.includes('min') || rest === 'm') quality = 'min';
+  else quality = 'maj';
+  return { root, quality };
+}
 
 export const SCALE_TYPES = Object.keys(ROMAN_BY_SCALE);
 
@@ -629,43 +760,7 @@ function walkMarkovGraph(
   return chosenDegrees;
 }
 
-function noteName(pc: number, preferFlat: boolean): string {
-  const idx = ((pc % 12) + 12) % 12;
-  return preferFlat ? NOTE_FLAT[idx] : NOTE_SHARP[idx];
-}
 
-// Chord names in the source data are uppercase with sharps as '#' but flats written as a
-// literal 'B' after the root letter (e.g. "BBMAJ" = Bb major, "ABMAJ" = Ab major) — not
-// standard "Bb"/"b" notation, so this can't be a simple case-insensitive regex match.
-function parseChordSymbol(symbol: string): { root: string; quality: keyof typeof QUALITY_INTERVALS } {
-  const first = symbol[0]?.toUpperCase();
-  let root = 'C';
-  let rest = symbol;
-  if (first && /[A-G]/.test(first)) {
-    if (symbol[1] === 'B') {
-      root = `${first}b`;
-      rest = symbol.slice(2);
-    } else if (symbol[1] === '#') {
-      root = `${first}#`;
-      rest = symbol.slice(2);
-    } else {
-      root = first;
-      rest = symbol.slice(1);
-    }
-  }
-  rest = rest.toLowerCase();
-  let quality: keyof typeof QUALITY_INTERVALS = 'maj';
-  if (rest.includes('maj7')) quality = 'maj7';
-  else if (rest.includes('min7') || rest.includes('m7')) quality = 'min7';
-  else if (rest.includes('dim7')) quality = 'dim7';
-  else if (rest.includes('dim')) quality = 'dim';
-  else if (rest.includes('aug')) quality = 'aug';
-  else if (rest.includes('sus')) quality = 'sus4';
-  else if (rest === '7') quality = 'dom7';
-  else if (rest.includes('min') || rest === 'm') quality = 'min';
-  else quality = 'maj';
-  return { root, quality };
-}
 
 export function notesForSymbol(symbol: string, preferFlat: boolean): string[] {
   const { root, quality } = parseChordSymbol(symbol);

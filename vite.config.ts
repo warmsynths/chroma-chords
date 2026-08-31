@@ -28,5 +28,9 @@ export default defineConfig({
     alias: {
       'human-engine': resolve(__dirname, '../human-midi/docs/human-engine.js')
     }
+  },
+  // @ts-ignore
+  test: {
+    exclude: ['**/node_modules/**', '**/e2e/**', '**/dist/**', '**/docs/**']
   }
 });

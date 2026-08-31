@@ -10,6 +10,36 @@ export type PlaybackTickCallback = (
   isSongMode?: boolean
 ) => void;
 
+export function pitchNotesAscending(notes: string[], baseOctave = 4): string[] {
+  const validNotes = Array.isArray(notes) ? notes.filter(n => typeof n === 'string' && n.trim().length > 0) : [];
+  if (validNotes.length === 0) return [];
+
+  const noteToPc: Record<string, number> = {
+    'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5,
+    'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
+  };
+  
+  const clean = validNotes.map(n => n.replace(/\d+$/, ''));
+  const root = clean[0];
+  const rootPc = noteToPc[root] ?? 0;
+  let currentOctave = baseOctave;
+  let lastPc = rootPc;
+  
+  const pitched: string[] = [];
+  clean.forEach((n, idx) => {
+    const pc = noteToPc[n] ?? 0;
+    if (idx > 0 && pc <= lastPc) {
+      currentOctave++;
+    }
+    pitched.push(`${n}${currentOctave}`);
+    lastPc = pc;
+  });
+  
+  // Add fundamental root bass note in lower register (e.g. C3, E3)
+  const bassNote = `${root}${baseOctave - 1}`;
+  return [bassNote, ...pitched];
+}
+
 export class PlaybackEngine {
   private mode: 'single' | 'song' = 'single';
   private progression: Progression | null = null;
@@ -172,11 +202,17 @@ export class PlaybackEngine {
     return this.playing;
   }
 
-  public setABOverride(index: number | null, chord: ChordBlock | null, side: 'before' | 'after'): void {
-    if (index === null) {
+  public setABOverride(
+    overrideOrIndex: { index: number; chord: ChordBlock | null; side: 'before' | 'after' } | number | null,
+    chord?: ChordBlock | null,
+    side: 'before' | 'after' = 'before'
+  ): void {
+    if (overrideOrIndex === null || overrideOrIndex === undefined) {
       this.abOverride = null;
+    } else if (typeof overrideOrIndex === 'object') {
+      this.abOverride = overrideOrIndex;
     } else {
-      this.abOverride = { index, chord, side };
+      this.abOverride = { index: overrideOrIndex, chord: chord || null, side };
     }
   }
 
@@ -194,7 +230,7 @@ export class PlaybackEngine {
         const notes = (chord.notes && chord.notes.length > 0) 
           ? chord.notes 
           : notesForSymbol(chord.name, preferFlatSpelling(sec.progression.key, sec.progression.scaleType));
-        const pitchedNotes = notes.map(n => `${n}4`);
+        const pitchedNotes = pitchNotesAscending(notes, 4);
         playChordForGenre(pitchedNotes, sec.progression.genre, {
           bpm: sec.progression.bpm,
           duration: 1.2,
@@ -224,6 +260,18 @@ export class PlaybackEngine {
     }
   }
 
+  public auditionChord(chord: ChordBlock, duration = 0.8): void {
+    if (!chord) return;
+    let notes = Array.isArray(chord.notes) ? chord.notes : [];
+    if (notes.length === 0 || !notes.every(n => typeof n === 'string' && n.trim().length > 0)) {
+      const safeName = chord.name || 'CMAJ';
+      const key = this.progression?.key || 'C';
+      const scaleType = this.progression?.scaleType || 'MAJOR';
+      notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
+    }
+    this.playChordNotes(notes, duration);
+  }
+
   public playChordAtIndex(index: number, duration = 0.8): void {
     if (!this.progression || !this.progression.chords[index]) return;
     const chord = this.progression.chords[index];
@@ -245,9 +293,7 @@ export class PlaybackEngine {
     const validNotes = Array.isArray(notes) ? notes.filter(n => typeof n === 'string' && n.trim().length > 0) : [];
     if (validNotes.length === 0) return;
 
-    // Strip existing octaves (if any) and re-apply 4th octave to prevent "D44"
-    const cleanNotes = validNotes.map(n => n.replace(/\d+$/, ''));
-    const pitchedNotes = cleanNotes.map(n => `${n}4`);
+    const pitchedNotes = pitchNotesAscending(validNotes, 4);
 
     playChordForGenre(pitchedNotes, this.progression.genre || 'Unknown', {
       bpm: this.progression.bpm || 120,

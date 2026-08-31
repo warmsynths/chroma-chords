@@ -101,10 +101,12 @@ export class SwapSheet extends LitElement {
       inset: 0;
       background: rgba(46, 39, 31, 0);
       z-index: 40;
+      pointer-events: none;
       transition: background 0.28s ease;
     }
     .scrim.visible {
       background: rgba(46, 39, 31, 0.5);
+      pointer-events: auto;
     }
     .sheet {
       position: fixed;
@@ -123,11 +125,13 @@ export class SwapSheet extends LitElement {
       flex-direction: column;
       box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.5);
       transform: translateY(100%);
+      pointer-events: none;
       transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
       overflow: hidden;
     }
     .sheet.visible {
       transform: translateY(0);
+      pointer-events: auto;
     }
     .grabber-wrap {
       padding: 12px 0 0;
@@ -887,7 +891,7 @@ export class SwapSheet extends LitElement {
 
   render() {
     const c = this.chord;
-    if (!c) return html``;
+    if (!c || !this.visible) return html``;
 
     const dragStyle = this.dragging || this.snapping
       ? `transform: translateY(${this.dragY}px); transition: ${this.dragging ? 'none' : 'transform .26s cubic-bezier(.32,.72,0,1)'};`

@@ -535,7 +535,7 @@ export function midiToNoteName(midi: number): string {
 function waitForSamplesReady(): Promise<void> {
   return Promise.race([
     Tone.loaded(),
-    new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+    new Promise<void>((resolve) => setTimeout(resolve, 80)),
   ]);
 }
 

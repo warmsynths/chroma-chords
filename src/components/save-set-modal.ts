@@ -52,11 +52,12 @@ export class SaveSetModal extends LitElement {
       opacity: 0;
       transform: translateY(8px) scale(0.96);
       transition: opacity 0.24s cubic-bezier(.16,1,.3,1), transform 0.26s cubic-bezier(.16,1,.3,1);
-      pointer-events: auto;
+      pointer-events: none;
     }
     .modal.visible {
       opacity: 1;
       transform: translateY(0) scale(1);
+      pointer-events: auto;
     }
     h2 {
       margin: 0 0 6px 0;

@@ -1,529 +1,1134 @@
-import { LitElement, html, css, svg, PropertyValues } from 'lit';
+import { LitElement, html, svg, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
-  Progression, ChordBlock, Alternative, TheoryGroup, BorrowedChordRow, ShareDevice, buildDeviceShareUrl,
-  MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension, MOODS,
-  AUTOPLAY_INTERVAL_MS, displayKeyName, ROOT_KEYS, buildProgressionStaff, getKeySignature,
+  Progression, ChordBlock, Alternative, TheoryGroup, BorrowedChordRow,
+  MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension,
+  generateProgression, generateAlternatives, generateTheoryGroups, generateBorrowedChords,
+  RawChordData, AUTOPLAY_INTERVAL_MS, preferFlatSpelling, notesForSymbol,
 } from '../services/chord-engine';
-import './swap-sheet';
+import { playbackEngine } from '../services/playback-engine';
+import { projectStorage } from '../services/project-storage';
+import { ProjectData } from '../services/project-service';
+import { SongArranger } from '../services/song-arranger';
+import { SongSection } from './song-screen';
 import './share-modal';
-import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
-import './mascot-character';
-import './mascot-parade';
-import { USER_INSTRUMENTS, USER_PLAY_STYLES, genreDefaultInstrumentName, genreDefaultPlayStyleName } from '../services/audio-service';
-import { downloadWav, downloadMidi } from '../services/export-service';
-import './save-set-modal';
-import './app-header';
 
-// Side-gutter slots for the desktop-only background mascot — only shows once there's real
-// gutter space beside the centered .content column (see the min-width:900px media query below).
-const MASCOT_SLOTS = [
-  { side: 'left', top: '18%' },
-  { side: 'left', top: '58%' },
-  { side: 'right', top: '24%' },
-  { side: 'right', top: '64%' },
-] as const;
+export interface BandArchetype {
+  name: string;
+  color: string;
+  r: number;
+  plain: string;
+  theory: string;
+  hoist: string[];
+  font: string;
+  weight?: number;
+  italic?: boolean;
+  pillFs: number;
+  pillTrack: string;
+}
 
-const MENU_GENRES = [
-  "Pop",
-  "Lo-fi/Chill",
-  "R&B/Soul",
-  "Indie/Folk",
-  "Synthwave",
-  "Jazz-ish",
-  "Gospel",
-  "Cinematic",
-  "Rock",
-  "House/Dance",
-  "Blues",
-  "Funk/Disco",
-  "Country/Bluegrass",
-  "Reggae/Dub",
-  "Metal",
-  "Punk",
-  "Ambient/Drone",
-  "Trap/Hip-Hop",
-  "Bossa Nova/Latin",
-  "Classical/Orchestral",
-  "EDM/Trance",
-  "Afrobeats",
-  "Shoegaze"
+export const BANDS: BandArchetype[] = [
+  {
+    name: 'Oasis',
+    color: '#F6D98B',
+    r: 10,
+    plain: 'leans on a bright chord that shouldn’t fit, then walks home',
+    theory: 'borrowed major ♭III, plagal IV–I, sus4 held over a static root',
+    hoist: ['E♭maj7', 'Fmaj7', 'A♭'],
+    font: 'Anton, sans-serif',
+    pillFs: 13,
+    pillTrack: '0.08em',
+  },
+  {
+    name: 'Radiohead',
+    color: '#C9A9E0',
+    r: 3,
+    plain: 'swaps a chord for its stranger neighbour a third away',
+    theory: 'chromatic mediants and modal mixture — ♭VI and ♭III against a major tonic',
+    hoist: ['A♭maj7', 'E♭maj7', 'Em7'],
+    font: "'Space Mono', monospace",
+    weight: 700,
+    pillFs: 12.5,
+    pillTrack: '0.02em',
+  },
+  {
+    name: 'Nirvana',
+    color: '#F2A79B',
+    r: 2,
+    plain: 'moves the root in big jumps and leaves the middle empty',
+    theory: 'power-chord roots by minor third and tritone — no thirds, so major or minor stays open',
+    hoist: ['A♭', 'E♭maj7', 'B♭'],
+    font: "'Plus Jakarta Sans', sans-serif",
+    weight: 800,
+    pillFs: 12,
+    pillTrack: '0.04em',
+  },
+  {
+    name: 'Steely Dan',
+    color: '#9CC0EC',
+    r: 13,
+    plain: 'adds one note that makes a plain chord sound expensive',
+    theory: 'major triad plus 9th with no 7th, ii–V chains, tritone substitution',
+    hoist: ['Cmaj9', 'D♭7', 'Fm7'],
+    font: "'Plus Jakarta Sans', sans-serif",
+    weight: 800,
+    italic: true,
+    pillFs: 13,
+    pillTrack: '0.01em',
+  },
+  {
+    name: 'Mac DeMarco',
+    color: '#B8CC9E',
+    r: 7,
+    plain: 'two lush chords looped loose, bass sliding underneath',
+    theory: 'maj7 vamp with chromatic bass motion, no real resolution',
+    hoist: ['Fmaj7', 'Cmaj9', 'Em7'],
+    font: "'Plus Jakarta Sans', sans-serif",
+    weight: 800,
+    pillFs: 12,
+    pillTrack: '-0.01em',
+  },
 ];
-const GENRE_PRIMARY = ['Lo-fi/Chill', 'R&B/Soul', 'Pop', 'Synthwave'];
-const MOOD_PRIMARY = ['Warm', 'Melancholy', 'Nostalgic', 'Dreamy'];
-const INSTRUMENT_PRIMARY = ['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad'];
-const PLAY_STYLE_PRIMARY = ['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)'];
-const MENU_SCALES: { label: string; value: string }[] = [
-  { label: 'Major', value: 'MAJOR' },
-  { label: 'Minor', value: 'NATURAL_MINOR' },
-  { label: 'Harmonic Minor', value: 'HARMONIC_MINOR' },
-  { label: 'Dorian', value: 'DORIAN' },
-  { label: 'Mixolydian', value: 'MIXOLYDIAN' },
-  { label: 'Lydian', value: 'LYDIAN' },
-];
 
-// The design animates the menu popover/backdrop in on mount and out before unmount:
-// set the `mounted` flag immediately, flip `visible` a frame later so the CSS transition
-// runs, and reverse that order on close so the fade-out plays before the DOM is removed.
-const MENU_CLOSE_MS = 220;
-const SHEET_CLOSE_MS = 280;
+const GENRE_PRIMARY = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Synthwave', 'Indie/Folk', 'Rock', 'Jazz-ish', 'Cinematic'];
+const GENRE_ALL = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Rock', 'Cinematic', 'Ambient/Drone', 'House/Dance', 'Reggae/Dub', 'Gospel'];
+const MOOD_PRIMARY = ['Warm', 'Melancholy', 'Dreamy', 'Uplifting', 'Tense', 'Nostalgic'];
 
-// Container-level "alive" motion per mood — the whole progression panel sways/ripples,
-// while each chord's own shape/size/color stays fixed to its harmonic role.
-const PANEL_ANIM: Record<string, { anim: string; dur: number; ease: string }> = {
-  Uplifting: { anim: 'cv-panel-uplifting', dur: 2.4, ease: 'ease-out' },
-  Melancholy: { anim: 'cv-panel-melancholy', dur: 6, ease: 'ease-in-out' },
-  Dreamy: { anim: 'cv-panel-dreamy', dur: 7, ease: 'ease-in-out' },
-  Tense: { anim: 'cv-panel-tense', dur: 0.9, ease: 'ease-in-out' },
-  Warm: { anim: 'cv-panel-warm', dur: 4.2, ease: 'ease-in-out' },
-  Nostalgic: { anim: 'cv-panel-nostalgic', dur: 5.4, ease: 'ease-in-out' },
+const MOOD_ICONS: Record<string, string> = {
+  Uplifting: 'M4 18 C 8 18 8 11 12 11 C 16 11 16 5 20 5',
+  Melancholy: 'M3 9 Q 8 9 9 14 T 15 17 Q 19 18 21 15',
+  Dreamy: 'M4 15 a4 4 0 1 1 8 0 a4 4 0 1 1 8 0',
+  Tense: 'M3 12 L7 6 L11 16 L15 6 L19 16 L21 12',
+  Warm: 'M12 4 a6.5 6.5 0 1 0 6.5 6.5',
+  Nostalgic: 'M3 12 C 7 6 9 18 13 12 C 17 6 19 18 21 12',
 };
+
+const ROLE_PLAIN: Record<string, string> = {
+  Tonic: 'home',
+  Subdominant: 'moving away',
+  Dominant: 'pulling home',
+  'Dominant 7th': 'pulling hard',
+  Supertonic: 'stepping out',
+  Mediant: 'in between',
+  Submediant: 'soft home',
+};
+
+const PC_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+const PC: Record<string, number> = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11 };
+const DEG: Record<number, string> = { 0: '1', 1: '♭9', 2: '9', 3: '♭3', 4: '3', 5: '4', 6: '♭5', 7: '5', 8: '♭6', 9: '6', 10: '♭7', 11: '7' };
+const QUAL: Record<string, number[]> = {
+  '': [0, 4, 7], maj: [0, 4, 7], m: [0, 3, 7], min: [0, 3, 7],
+  maj7: [0, 4, 7, 11], m7: [0, 3, 7, 10], '7': [0, 4, 7, 10],
+  '6': [0, 4, 7, 9], m6: [0, 3, 7, 9], dim: [0, 3, 6], m7b5: [0, 3, 6, 10],
+  sus4: [0, 5, 7], sus2: [0, 2, 7], '9': [0, 4, 7, 10], maj9: [0, 4, 7, 11],
+  m9: [0, 3, 7, 10], add9: [0, 4, 7],
+};
+const QFALL: Record<string, string> = { '9': '7', maj9: 'maj7', m9: 'm7', add9: 'maj', sus2: 'sus4', min: 'm', '': 'maj' };
+
+const SHAPES: Record<number, Record<string, (number | null)[]>> = {
+  6: {
+    maj: [0, 2, 2, 1, 0, 0],
+    m: [0, 2, 2, 0, 0, 0],
+    '7': [0, 2, 0, 1, 0, 0],
+    maj7: [0, 2, 1, 1, 0, 0],
+    m7: [0, 2, 0, 0, 0, 0],
+    '6': [0, 2, 2, 1, 2, 0],
+    m6: [0, 2, 2, 0, 2, 0],
+    sus4: [0, 2, 2, 2, 0, 0],
+  },
+  5: {
+    maj: [null, 0, 2, 2, 2, 0],
+    m: [null, 0, 2, 2, 1, 0],
+    '7': [null, 0, 2, 0, 2, 0],
+    maj7: [null, 0, 2, 1, 2, 0],
+    m7: [null, 0, 2, 0, 1, 0],
+    '6': [null, 0, 2, 2, 2, 2],
+    m6: [null, 0, 2, 2, 1, 2],
+    sus4: [null, 0, 2, 2, 3, 0],
+    dim: [null, 0, 1, 2, 1, null],
+    m7b5: [null, 0, 1, 0, 1, null],
+  },
+};
+
+function shapeQual(q: string): string {
+  const key = q === '' ? 'maj' : q;
+  if (SHAPES[5][key] || SHAPES[6][key]) return key;
+  const f = QFALL[key];
+  if (f && (SHAPES[5][f] || SHAPES[6][f])) return f;
+  return 'maj';
+}
+
+function guitarVoicing(c: { root: string; rootPc: number; q: string; intervals: number[] }): (number | null)[] | null {
+  const sq = shapeQual(c.q);
+  const cands: { rootFret: number; frets: (number | null)[] }[] = [];
+  ([[6, 4], [5, 9]] as [number, number][]).forEach(([anchor, openPc]) => {
+    const shape = SHAPES[anchor][sq];
+    if (!shape) return;
+    const rootFret = ((c.rootPc - openPc) % 12 + 12) % 12;
+    cands.push({ rootFret, frets: shape.map(o => (o === null ? null : o + rootFret)) });
+  });
+  if (!cands.length) return null;
+  cands.sort((a, b) => a.rootFret - b.rootFret);
+  return cands[0].frets;
+}
+
+function ukeVoicing(c: { root: string; rootPc: number; q: string; intervals: number[] }): (number | null)[] | null {
+  const open = [7, 0, 4, 9];
+  const want = c.intervals.map(i => (c.rootPc + i) % 12);
+  const attempt = (targets: number[]): { frets: number[]; score: number } | null => {
+    const targetSet = new Set(targets);
+    let best: { frets: number[]; score: number } | null = null;
+    const frets: number[] = [];
+    const rec = (i: number) => {
+      if (i === 4) {
+        const pcs = frets.map((f, k) => (open[k] + f) % 12);
+        for (const w of targetSet) if (pcs.indexOf(w) < 0) return;
+        for (const p of pcs) if (!targetSet.has(p)) return;
+        const nz = frets.filter(f => f > 0);
+        const span = nz.length ? Math.max(...nz) - Math.min(...nz) : 0;
+        if (span > 3) return;
+        const score = span * 12 + frets.reduce((a, b) => a + b, 0);
+        if (!best || score < best.score) best = { frets: frets.slice(), score };
+        return;
+      }
+      for (let f = 0; f <= 5; f++) { frets.push(f); rec(i + 1); frets.pop(); }
+    };
+    rec(0);
+    return best;
+  };
+  const full = attempt(want);
+  if (full) return full.frets;
+  const noFifth = attempt(c.intervals.filter(i => i !== 7).map(i => (c.rootPc + i) % 12));
+  return noFifth ? noFifth.frets : null;
+}
+
+export interface SwapFamilyItem {
+  key: string;
+  label: string;
+  tension: number;
+  twoTone?: boolean;
+}
+
+export const SWAP_FAMILIES: SwapFamilyItem[] = [
+  { key: 'Darker', label: 'Darker', tension: 0.55 },
+  { key: 'More tension', label: 'Tense', tension: 0.9 },
+  { key: 'Dreamier', label: 'Dreamy', tension: 0.3 },
+  { key: 'Resolve home', label: 'Home', tension: 0.05 },
+  { key: 'Borrowed', label: 'Borrow', tension: 0.42, twoTone: true },
+];
+
+export const GROUP_NOTES: Record<string, [string, string]> = {
+  Darker: [
+    'Three chords that add weight without changing the key.',
+    'All three pull from the parallel minor or its subdominant — same key, more shadow.',
+  ],
+  'More tension': [
+    'Three chords that lean harder into the next bar.',
+    'Dominant approaches — each one aims at a chord later in the loop.',
+  ],
+  Dreamier: [
+    'Three chords that open the bar up and let it float.',
+    'Extensions and softer degrees — less pull toward home.',
+  ],
+  'Resolve home': [
+    'Three chords that settle the bar back to center.',
+    'Tonic and its neighbours — the sense of arriving.',
+  ],
+};
+
+type ViewTab = 'loop' | 'song' | 'play';
+type PlayInstrument = 'Piano' | 'Guitar' | 'Ukulele';
 
 @customElement('loop-screen')
 export class LoopScreen extends LitElement {
+  @property({ type: Object }) chordData: RawChordData = { chords: {}, scales: {} };
   @property({ type: Object }) progression!: Progression;
   @property({ type: Number }) activeIndex = 0;
-  // Drives the progress bar specifically — kept separate from activeIndex because a
-  // drag-to-reorder remaps activeIndex to preserve which chord's sound stays "active," which
-  // isn't playback advancing and shouldn't move the bar.
   @property({ type: Number }) progressStep = 0;
   @property({ type: Array }) order: number[] = [0, 1, 2, 3];
-  @property({ type: Boolean }) playing = true;
+  @property({ type: Boolean }) playing = false;
   @property({ type: Boolean }) showTheory = false;
-  // null = no explicit user override — the chip displays (and playback uses) the current
-  // genre's existing default instead of a fixed value.
   @property({ type: String }) instrument: string | null = null;
   @property({ type: String }) playStyle: string | null = null;
-  @property({ type: Boolean }) sheetOpen = false;
   @property({ type: Boolean }) isAuthenticated = false;
   @property({ type: String }) userEmail: string | null = null;
-  @property({ type: Boolean }) isBookmarked = false;
-  @property({ type: String }) sheetMode: 'swap' | 'voicing' = 'swap';
-  @property({ type: Object }) swapChord: ChordBlock | null = null;
-  @property({ type: Number }) swapIndex: number | null = null;
-  @property({ type: Array }) alternatives: Alternative[] = [];
-  @property({ type: Array }) theoryGroups: TheoryGroup[] = [];
-  @property({ type: Array }) borrowedChords: BorrowedChordRow[] = [];
+  @property({ type: Array }) sections: SongSection[] = [];
+  @property({ type: Number }) activeSectionIdx = 0;
+  @property({ type: Number }) activePlayingSectionIdx = 0;
+  @property({ type: Number }) totalSongSteps = 0;
+  @property({ type: Boolean }) isGenerating = false;
+  @property({ type: Boolean }) libraryOpen = false;
 
-  @state() private menuMounted = false;
-  @state() private menuVisible = false;
-  @state() private flashedIndex: number | null = null;
-  @state() private expandedMenuGenre = false;
-  @state() private expandedMenuMood = false;
-  @state() private expandedAllInstruments = false;
-  @state() private expandedAllPlayStyles = false;
-  @state() private saveModalVisible = false;
-  @state() private shareMounted = false;
-  @state() private shareVisible = false;
-  @state() private sheetMounted = false;
-  @state() private sheetVisible = false;
-  @state() private toast: string | null = null;
-  @state() private spinning = false;
-  @state() private drag: { pos: number; offsetX: number; offsetY: number } | null = null;
-  // True only on the single update where activeIndex wraps back to 0 from the last chord —
-  // disables the progress-fill transition for that one render so the bar resets instantly
-  // instead of visibly sliding backward, then clears itself on the very next forward step.
+  @state() private isMobile = window.innerWidth < 900;
+  @state() private activeView: ViewTab = 'loop';
+  @state() private soundOpen = false;
+  @state() private shareOpen = false;
+  @state() private vibeOpen = false;
+  @state() private selectedBand: string | null = null;
+  @state() private freeText = '';
+  @state() private vibePlaceholderIdx = 0;
+  @state() private expandedGenre = false;
+  @state() private activeSwapFamily = 'Darker';
+  @state() private swapIndex: number | null = null;
+  @state() private isInspectorOpen = false;
+  @state() private abPick: { label: string; tension: number; chord: string; roman: string; fn: string } | null = null;
+  @state() private abSide: 'before' | 'after' = 'before';
+  @state() private savedSets: ProjectData[] = [];
+  @state() private renamingId: string | null = null;
+  @state() private draftName = '';
+  @state() private confirmDeleteId: string | null = null;
+  @state() private librarySearch = '';
+  @state() private librarySelectMode = false;
+  @state() private librarySelected: string[] = [];
+  @state() private previewIndex = -1;
+  @state() private playInstrument: PlayInstrument = 'Piano';
+  @state() private showDegrees = false;
+  @state() private mobileSheetOpen = false;
   @state() private snapProgress = false;
-  @state() private expandedInstrument = false;
-  @state() private expandedPlayStyle = false;
-  // Rolled fresh every time this screen mounts — a small background critter in the desktop
-  // side gutter, shown roughly a third of the time so it's a rare, subtle surprise rather than
-  // a fixture. Mobile has no reliable empty space here, so it's desktop-only (see CSS).
-  @state() private mascot = rollMascot(0.35);
-  @state() private mascotSlot = pickSlot(MASCOT_SLOTS);
-  // A second, independent, very-occasional roll: a mascot peeking up from behind the chord
-  // panel's top edge, like the panel is a little window it's looking in through. Unlike the
-  // side-gutter mascot above, this doesn't need spare width, so it shows on every screen size.
-  @state() private panelPeekMascot = rollMascot(0.18);
-  @state() private panelPeekSide: 'left' | 'right' = pickSlot(['left', 'right'] as const);
+  @state() private abPlaying = false;
 
-  // Easter egg: click the wordmark 7 times fast to bring out the whole gang.
-  private eggCounter = new EasterEggCounter();
-  @state() private paradeTrigger = 0;
-
-  private onWordmarkClick() {
-    if (this.eggCounter.click()) this.paradeTrigger++;
-  }
-
-  private menuCloseTimer: ReturnType<typeof setTimeout> | null = null;
-  private shareCloseTimer: ReturnType<typeof setTimeout> | null = null;
-  private sheetCloseTimer: ReturnType<typeof setTimeout> | null = null;
-  private toastTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // Drag-to-reorder: press-and-hold (150ms, without moving >8px) starts a drag instead of a
-  // tap, so a quick tap still previews the chord. On release, the dragged chip drops into
-  // whichever chip's measured center it's now closest to — simple nearest-neighbor placement
-  // that works regardless of how the flex-wrap panel has reflowed the (variably-sized, by
-  // tension) chips.
-  private pressTimer: ReturnType<typeof setTimeout> | null = null;
-  private pressTapFn: (() => void) | null = null;
-  private pressStartX = 0;
-  private pressStartY = 0;
-  private lastPointerX = 0;
-  private lastPointerY = 0;
-
-  connectedCallback() {
-    super.connectedCallback();
-    window.addEventListener('pointermove', this.onDragMove);
-    window.addEventListener('pointerup', this.onDragEnd);
-    window.addEventListener('pointercancel', this.onDragEnd);
-  }
-
-  willUpdate(changed: PropertyValues) {
-    if (changed.has('progressStep')) {
-      const prevStep = changed.get('progressStep') as number | undefined;
-      this.snapProgress = prevStep !== undefined && this.progressStep < prevStep;
-    }
-    if (changed.has('sheetOpen')) {
-      if (this.sheetOpen) {
-        if (this.sheetCloseTimer) {
-          clearTimeout(this.sheetCloseTimer);
-          this.sheetCloseTimer = null;
-        }
-        this.sheetMounted = true;
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          this.sheetVisible = true;
-        }));
-      } else {
-        this.sheetVisible = false;
-        if (this.sheetCloseTimer) clearTimeout(this.sheetCloseTimer);
-        this.sheetCloseTimer = setTimeout(() => {
-          this.sheetMounted = false;
-        }, SHEET_CLOSE_MS);
-      }
-    }
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this.menuCloseTimer) clearTimeout(this.menuCloseTimer);
-    if (this.shareCloseTimer) clearTimeout(this.shareCloseTimer);
-    if (this.sheetCloseTimer) clearTimeout(this.sheetCloseTimer);
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    if (this.pressTimer) clearTimeout(this.pressTimer);
-    window.removeEventListener('pointermove', this.onDragMove);
-    window.removeEventListener('pointerup', this.onDragEnd);
-    window.removeEventListener('pointercancel', this.onDragEnd);
-  }
+  private vibeExamples = ['Rainy drive at 2am, first day of summer...', 'Portishead trip-hop', 'Bohemian Rhapsody', 'Tame Impala neo-psychedelia', 'Warm acoustic fireplace'];
+  private placeholderTimer: ReturnType<typeof setInterval> | null = null;
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+  private unsubscribeProjects: (() => void) | null = null;
+  private onResizeHandler = () => {
+    this.isMobile = window.innerWidth < 900;
+  };
 
   static styles = css`
     :host {
-      display: block;
-      position: relative;
-      min-height: 100%;
-      background: var(--cv-cream);
-      font-family: var(--cv-font);
-    }
-    @keyframes cv-panel-uplifting {
-      0%, 100% { border-radius: 32px; transform: scale(1); }
-      50% { border-radius: 44px 24px 40px 26px; transform: scale(1.008); }
-    }
-    @keyframes cv-panel-melancholy {
-      0%, 100% { border-radius: 32px; transform: rotate(0deg); }
-      50% { border-radius: 22px 34px 46px 28px; transform: rotate(-0.4deg); }
-    }
-    @keyframes cv-panel-dreamy {
-      0%, 100% { border-radius: 32px; }
-      33% { border-radius: 44px 24px 42px 22px; }
-      66% { border-radius: 22px 42px 24px 44px; }
-    }
-    @keyframes cv-panel-tense {
-      0%, 100% { border-radius: 32px; transform: translateX(0); }
-      20% { border-radius: 38px 22px 28px 34px; transform: translateX(-1px); }
-      40% { border-radius: 22px 34px 38px 24px; transform: translateX(1px); }
-      60% { border-radius: 34px 24px 22px 38px; transform: translateX(-1px); }
-      80% { border-radius: 24px 38px 34px 22px; transform: translateX(1px); }
-    }
-    @keyframes cv-panel-warm {
-      0%, 100% { border-radius: 32px; transform: scale(1); }
-      50% { border-radius: 40px 34px 40px 34px; transform: scale(1.006); }
-    }
-    @keyframes cv-panel-nostalgic {
-      0%, 100% { border-radius: 32px; transform: rotate(0deg); }
-      50% { border-radius: 24px 40px 26px 38px; transform: rotate(-0.3deg); }
-    }
-    @keyframes cv-bg-drift-a {
-      0%, 100% { transform: translate(0, 0) rotate(0deg); }
-      50% { transform: translate(0, -7px) rotate(1.5deg); }
-    }
-    @keyframes cv-bg-drift-b {
-      0%, 100% { transform: translate(0, 0) rotate(0deg); }
-      50% { transform: translate(0, 6px) rotate(-1.5deg); }
-    }
-    @keyframes cv-now-pulse {
-      0%, 100% { opacity: 0.5; }
-      50% { opacity: 1; }
-    }
-    .frame {
-      position: relative;
-      width: 100%;
-      min-height: 100%;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      box-sizing: border-box;
-      padding: 24px 20px 40px;
-    }
-    .top-bar {
+      height: 100%;
       width: 100%;
-      max-width: 640px;
-      display: grid;
-      grid-template-columns: 1fr auto 1fr;
-      align-items: center;
+      background: var(--cv-cream, #FBF3E6);
+      font-family: var(--cv-font, 'Plus Jakarta Sans', sans-serif);
+      color: var(--cv-ink, #2E271F);
+      box-sizing: border-box;
+      overflow: hidden;
+      position: relative;
     }
-    .top-bar > *:first-child {
-      justify-self: start;
+
+    * {
+      box-sizing: border-box;
+      scrollbar-width: none;
     }
-    .top-bar > *:last-child {
-      justify-self: end;
+    *::-webkit-scrollbar {
+      display: none;
     }
-    .icon-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      border: none;
-      background: var(--cv-surface-2);
+
+    /* Top Band DNA Banner */
+    .band-bar {
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      color: var(--cv-ink);
-      cursor: pointer;
+      justify-content: space-between;
+      padding: 10px 24px;
+      border-bottom: 1px solid rgba(46, 39, 31, 0.08);
+      flex-shrink: 0;
+      animation: cvfv-sheet-up 180ms var(--cv-ease);
     }
-    .wordmark {
+    .band-bar-content {
       display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
     }
-    .wordmark-text {
+    .band-bar-kicker {
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: rgba(46, 39, 31, 0.55);
+    }
+    .band-bar-name {
       font-size: 14px;
       font-weight: 800;
       color: var(--cv-ink);
     }
-    .content {
-      width: 100%;
-      max-width: 640px;
-      margin-top: 24px;
-    }
-    h1 {
-      margin: 0;
-      font-size: clamp(24px, 5vw, 36px);
-      font-weight: 800;
-      line-height: 1.16;
-      letter-spacing: -0.02em;
-      color: var(--cv-ink);
-    }
-    .subcopy {
-      font-size: 14.5px;
-      line-height: 1.6;
+    .band-bar-trick {
+      font-size: 12.5px;
+      font-weight: 600;
       color: var(--cv-ink-muted);
-      margin-top: 10px;
     }
-    .panel-shell {
-      position: relative;
-      margin-top: 26px;
-    }
-    .panel {
-      position: relative;
-      z-index: 1;
-      background: var(--cv-surface);
-      border: 1.5px solid var(--cv-ink-08);
-      border-radius: 28px;
-      padding: 34px 22px;
-      overflow: hidden;
-      min-height: 180px;
-      box-shadow: 0 30px 60px -30px rgba(46, 39, 31, 0.22);
-      transition: border-radius 240ms cubic-bezier(0.23, 1, 0.32, 1);
-    }
-    :focus-visible {
-      outline: 2.5px solid var(--cv-ink);
-      outline-offset: 2px;
-    }
-    /* Peeks up from behind the panel's top edge — z-index 0 vs. the panel's 1 means the
-       panel's own (opaque) background paints over the lower portion, so only a small sliver
-       shows above the rim, like the character is looking in through a little window. */
-    .panel-peek {
-      position: absolute;
-      top: -16px;
-      z-index: 0;
-      pointer-events: none;
-    }
-    .panel-peek.left { left: 26px; }
-    .panel-peek.right { right: 26px; }
-    .panel-blob {
-      position: absolute;
-      opacity: 0.9;
-      pointer-events: none;
-    }
-    .panel-blob.a {
-      left: -40px;
-      top: -40px;
-      animation: cv-bg-drift-a 11s ease-in-out infinite;
-    }
-    .panel-blob.b {
-      right: -30px;
-      bottom: -30px;
-      animation: cv-bg-drift-b 13s ease-in-out infinite;
-    }
-    .chip-row {
-      position: relative;
-      display: grid;
-      grid-template-columns: repeat(4, auto);
-      justify-content: center;
-      justify-items: center;
-      align-items: center;
-      gap: 30px 14px; /* row-gap column-gap */
-      z-index: 2;
-    }
-    .chord-chip {
-      position: relative;
+    .band-bar-close {
+      border: none;
+      background: rgba(251, 243, 230, 0.7);
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      font-size: 15px;
+      line-height: 1;
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--cv-ink);
+      transition: background 150ms ease;
+    }
+    .band-bar-close:hover {
+      background: var(--cv-cream);
+    }
+
+    /* Desktop 3-Column Grid */
+    .studio-grid {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      display: grid;
+      grid-template-columns: clamp(238px, 19vw, 296px) minmax(0, 1fr) clamp(304px, 26vw, 384px);
+    }
+
+    /* Left Sidebar */
+    .sidebar-left {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) auto;
+      border-right: 1px solid rgba(46, 39, 31, 0.09);
+      background: var(--cv-cream, #FBF3E6);
+      min-height: 0;
+      min-width: 0;
+    }
+    .sidebar-scroll {
+      overflow-y: auto;
+      padding: 20px 18px 24px;
+    }
+    .kicker-label {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 1.4px;
+      color: var(--cv-label, #8A6B3F);
+      text-transform: uppercase;
+      margin-bottom: 9px;
+    }
+    .kicker-label.spaced {
+      margin-top: 22px;
+    }
+
+    .vibe-input-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--cv-cream);
+      border: 1.5px solid rgba(46, 39, 31, 0.12);
+      border-radius: 16px;
+      padding: 5px 5px 5px 12px;
+      margin-top: 9px;
+      transition: border-color 180ms ease, box-shadow 180ms ease;
+    }
+    .vibe-input-row.generating {
+      border-color: rgba(46, 39, 31, 0.35);
+      background: rgba(251, 243, 230, 0.75);
+      animation: cvfv-vibe-pulse 1.2s ease-in-out infinite alternate;
+    }
+    @keyframes cvfv-vibe-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(46, 39, 31, 0); }
+      100% { box-shadow: 0 0 0 3px rgba(46, 39, 31, 0.1); }
+    }
+    .vibe-text-input {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      outline: none;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--cv-ink);
+      padding: 8px 0;
+    }
+    .vibe-text-input:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+    .vibe-submit-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 11px;
+      border: none;
+      display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
       cursor: pointer;
-      touch-action: none;
-      user-select: none;
-      box-shadow: 0 14px 28px -14px rgba(46, 39, 31, 0.2);
-      transition: transform 150ms var(--cv-ease), box-shadow 150ms var(--cv-ease);
-      width: var(--chip-size, 80px);
-      height: var(--chip-size, 80px);
-      border-radius: var(--chip-radius, 24px);
+      transition: transform 120ms ease, opacity 150ms ease;
     }
-    .chord-chip.active {
-      transform: scale(1.06);
-      box-shadow: 0 18px 34px -14px rgba(46, 39, 31, 0.32);
+    .vibe-submit-btn:disabled {
+      opacity: 0.75;
+      cursor: not-allowed;
     }
-    .chord-chip.flashed {
-      transform: scale(1.08);
-      filter: brightness(1.18);
-      box-shadow: 0 0 0 4px var(--cv-cream), 0 0 0 8px var(--cv-plum, #9B7CA8), 0 20px 36px -12px rgba(46, 39, 31, 0.4);
+    .vibe-submit-btn:active {
+      transform: scale(0.94);
     }
-    .chord-name {
-      font-weight: 800;
-      color: var(--cv-ink);
-      line-height: 1;
-      font-size: var(--chip-font, 24px);
-    }
-    .chord-role {
-      font-size: 10.5px;
+    .vibe-generating-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 7px;
+      padding: 4px 10px;
+      background: rgba(46, 39, 31, 0.06);
+      border-radius: 999px;
+      font-size: 11.5px;
       font-weight: 700;
-      color: rgba(46, 39, 31, 0.55);
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin-top: 6px;
+      color: var(--cv-ink-muted, #5B5145);
+      animation: cv-toast-in 200ms ease;
     }
-    .roman-badge {
+    .vibe-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(46, 39, 31, 0.25);
+      border-top-color: var(--cv-ink, #2E271F);
+      border-radius: 50%;
+      animation: cv-spin 0.7s linear infinite;
+    }
+    @keyframes cv-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .pills-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 9px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: none;
+      border-radius: 100px;
+      padding: 8px 16px;
+      font-size: 12.5px;
+      font-weight: 700;
+      font-family: inherit;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-ink-muted, #5B5145);
+      cursor: pointer;
+      transition: background 150ms ease, transform 100ms ease, color 150ms ease;
+    }
+    .pill:hover {
+      background: var(--cv-surface, #F6EADB);
+    }
+    .pill:active {
+      transform: scale(0.96);
+    }
+    .pill.active {
+      background: var(--mood-color, #F6D98B);
+      color: var(--cv-ink, #2E271F);
+    }
+    .pill.more-toggle {
+      border: 1.5px dashed rgba(46, 39, 31, 0.3);
+      background: transparent;
+      color: var(--cv-label);
+    }
+    .mood-badge {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(46, 39, 31, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .band-trick-text {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--cv-ink-muted);
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: var(--cv-surface);
+      border-radius: 12px;
+      border-left: 3px solid var(--cv-plum);
+      animation: cvfv-sheet-up 180ms var(--cv-ease);
+    }
+
+    .sidebar-footer {
+      position: relative;
+      border-top: 1px solid rgba(46, 39, 31, 0.09);
+      padding: 10px 12px 12px;
+      background: var(--cv-cream);
+    }
+    .library-toggle {
+      width: 100%;
+      border: none;
+      font-family: inherit;
+      background: transparent;
+      color: var(--cv-ink);
+      min-height: 44px;
+      padding: 0 12px;
+      border-radius: 12px;
+      font-size: 12.5px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      transition: background 150ms ease;
+    }
+    .library-toggle.open {
+      background: var(--cv-surface);
+    }
+    .library-toggle:hover {
+      background: var(--cv-surface);
+    }
+
+    /* Library Popover Panel (Desktop) */
+    .library-popover {
       position: absolute;
-      top: -8px;
+      left: 8px;
+      width: 300px;
+      bottom: 62px;
+      z-index: 30;
+      max-height: calc(100vh - 150px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
+      background: var(--cv-cream, #FBF3E6);
+      border: 1px solid rgba(46, 39, 31, 0.1);
+      border-radius: 16px;
+      padding: 10px;
+      box-shadow: 0 22px 44px -20px rgba(46, 39, 31, 0.5);
+      animation: cvfv-sheet-up 180ms var(--cv-ease);
+    }
+
+    /* Library Popover Panel (Mobile) */
+    .library-popover-mobile {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 82px;
+      z-index: 40;
+      max-height: calc(100vh - 190px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
+      background: var(--cv-cream, #FBF3E6);
+      border: 1px solid rgba(46, 39, 31, 0.1);
+      border-radius: 18px;
+      padding: 10px;
+      box-shadow: 0 22px 44px -18px rgba(46, 39, 31, 0.55);
+      animation: cvfv-sheet-up 180ms var(--cv-ease);
+    }
+
+    /* Library Popover Header */
+    .lib-pop-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 6px 8px;
+    }
+    .lib-pop-title {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      color: var(--cv-label, #8A6B3F);
+      text-transform: uppercase;
+      flex: 1;
+      min-width: 0;
+    }
+    .lib-pop-select-btn {
+      border: none;
+      font-family: inherit;
+      background: transparent;
+      color: var(--cv-ink-muted, #6B5F50);
+      font-size: 11.5px;
+      font-weight: 800;
+      padding: 6px 11px;
+      border-radius: 100px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    /* Library Search */
+    .lib-pop-search {
+      width: 100%;
+      box-sizing: border-box;
+      border: none;
+      background: var(--cv-surface, #F6EADB);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.1);
+      border-radius: 12px;
+      outline: none;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--cv-ink, #2E271F);
+      padding: 9px 12px;
+    }
+    .lib-pop-search::placeholder {
+      color: rgba(46, 39, 31, 0.52);
+    }
+
+    /* Library Row Items */
+    .lib-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .lib-row {
+      width: 100%;
+      box-sizing: border-box;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 0 7px 6px;
+      border-radius: 14px;
+      min-height: 44px;
+      transition: background 140ms ease;
+      cursor: pointer;
+    }
+    .lib-row:hover {
+      background: var(--cv-surface, #F6EADB);
+    }
+    .lib-row.active {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .lib-row.checked {
+      background: var(--cv-surface, #F6EADB);
+    }
+    .lib-row-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .lib-row-name-line {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      min-width: 0;
+    }
+    .lib-row-dots {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .lib-row-name {
+      flex: 1;
+      min-width: 0;
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lib-row-meta {
+      display: block;
+      font-size: 11.5px;
+      color: var(--cv-ink-muted, #6B5F50);
+      line-height: 1.35;
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lib-row-actions {
+      display: flex;
+      gap: 1px;
+      flex-shrink: 0;
+    }
+    .lib-icon-btn {
+      border: none;
+      font-family: inherit;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 140ms ease;
+    }
+    .lib-icon-btn:hover {
+      background: var(--cv-cream, #FBF3E6);
+    }
+    .lib-confirm-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .lib-confirm-delete-btn {
+      border: none;
+      font-family: inherit;
+      background: #D8624C;
+      color: #FBF3E6;
+      font-size: 11.5px;
+      font-weight: 800;
+      padding: 7px 11px;
+      border-radius: 100px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .lib-rename-input {
+      width: 100%;
+      box-sizing: border-box;
+      border: none;
+      background: var(--cv-cream, #FBF3E6);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.16);
+      border-radius: 11px;
+      outline: none;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      padding: 9px 11px;
+    }
+    .lib-check {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      color: #2E271F;
+      cursor: pointer;
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.22);
+    }
+    .lib-check.checked {
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.14);
+    }
+    .lib-no-match {
+      font-size: 12.5px;
+      color: var(--cv-ink-muted, #6B5F50);
+      padding: 10px 6px;
+    }
+    .lib-empty-text {
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: var(--cv-ink-muted, #6B5F50);
+      padding: 8px 6px;
+      text-wrap: pretty;
+    }
+    .lib-batch-delete-btn {
+      border: none;
+      font-family: inherit;
+      width: 100%;
+      font-size: 12.5px;
+      font-weight: 800;
+      min-height: 40px;
+      border-radius: 100px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    .mobile-loops-toggle-btn {
+      width: 100%;
+      border: none;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink);
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: background 150ms ease;
+    }
+    .mobile-loops-toggle-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+
+    /* Center Main Stage */
+    .stage-main {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      background: var(--cv-cream);
+    }
+    .stage-header {
+      min-width: 0;
+      padding: 14px 24px 10px;
+    }
+    .stage-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .stage-title {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -0.015em;
+      color: var(--cv-ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .stage-action-btns {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .round-btn {
+      border: none;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--cv-surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 150ms ease, transform 100ms ease;
+    }
+    .round-btn:hover {
+      background: var(--cv-surface-2);
+    }
+    .round-btn:active {
+      transform: scale(0.96);
+    }
+    .round-btn.active {
+      background: var(--mood-color, #F6D98B);
+    }
+
+    /* View Switcher Tabs: Chords | Song | Play it */
+    .view-tabs-bar {
+      display: flex;
+      gap: 2px;
+      background: var(--cv-surface);
+      border-radius: 100px;
+      padding: 4px;
+      margin-top: 10px;
+      width: fit-content;
+    }
+    .view-tab {
+      border: none;
+      min-height: 38px;
+      padding: 0 18px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 800;
+      font-family: inherit;
+      white-space: nowrap;
+      cursor: pointer;
+      background: transparent;
+      color: var(--cv-ink-muted);
+      transition: background 160ms ease, color 160ms ease;
+    }
+    .view-tab.active {
+      background: #2E271F;
+      color: #FBF3E6;
+    }
+
+    /* Stage Canvas Area */
+    .stage-canvas {
+      min-width: 0;
+      overflow-y: auto;
+      padding: 6px 26px 26px;
+      display: flex;
+      flex-direction: column;
+    }
+    .stage-panel {
+      position: relative;
+      min-height: 240px;
+      background: var(--cv-surface);
+      border-radius: 26px;
+      padding: 24px 16px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+    }
+    .drift-shape {
+      position: absolute;
+      pointer-events: none;
+      opacity: 0.45;
+    }
+    .drift-shape.a {
+      left: -64px;
+      top: -64px;
+      animation: cvfv-bg-drift-a 11s ease-in-out infinite;
+    }
+    .drift-shape.b {
+      right: -58px;
+      bottom: -58px;
+      animation: cvfv-bg-drift-b 13s ease-in-out infinite;
+    }
+
+    /* Geometric Chord Cards Grid */
+    .chords-flex-row {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+    .chord-item-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: transform 160ms var(--cv-ease);
+      outline: none;
+      position: relative;
+    }
+    .chord-item-wrap:hover {
+      transform: translateY(-3px);
+    }
+    .chord-block-shape {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: box-shadow 200ms ease, transform 160ms var(--cv-ease);
+    }
+    .chord-block-shape.active-pulse {
+      box-shadow: 0 0 0 5px var(--mood-color, #F6D98B), 0 18px 32px -14px rgba(46, 39, 31, 0.32);
+    }
+    .chord-block-shape.selected-inspector {
+      box-shadow: 0 0 0 3.5px var(--cv-plum), 0 16px 28px -12px rgba(46, 39, 31, 0.4);
+    }
+    .roman-pill-badge {
+      position: absolute;
+      top: -9px;
       left: 50%;
       transform: translateX(-50%);
-      background: var(--cv-ink);
-      color: var(--cv-cream);
-      font-size: 11px;
+      background: #2E271F;
+      color: #FBF3E6;
+      font-size: 10.5px;
       font-weight: 800;
       padding: 2px 9px;
       border-radius: 100px;
       white-space: nowrap;
-      box-shadow: 0 3px 8px -2px rgba(46, 39, 31, 0.4);
-      z-index: 3;
     }
-    .now-marker {
-      position: absolute;
-      top: 8px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      align-items: center;
-      gap: 5px;
+    .chord-title-text {
+      font-weight: 800;
+      color: #2E271F;
+      line-height: 1;
+      white-space: nowrap;
     }
-    .now-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: var(--cv-ink);
-      animation: cv-now-pulse 1.6s ease-in-out infinite;
-    }
-    .now-text {
-      font-size: 10px;
+    .chord-role-label {
+      font-size: 10.5px;
       font-weight: 700;
-      letter-spacing: 0.6px;
-      text-transform: uppercase;
+      letter-spacing: 0.1px;
       color: rgba(46, 39, 31, 0.55);
+      text-align: center;
     }
-    .swap-badge {
-      position: absolute;
-      top: -12px;
-      right: -12px;
-      width: 44px;
-      height: 44px;
-      background: transparent;
-      border: none;
-      padding: 0;
+
+    /* Sound Settings Drawer */
+    .sound-drawer {
+      margin-top: 14px;
+      padding: 14px 18px;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 20px;
+      animation: cvfv-sheet-up 180ms var(--cv-ease);
+    }
+    .sound-options-flex {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    /* Song View inside Stage */
+    .song-track-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 640px;
+      width: 100%;
+    }
+    .song-card {
       display: flex;
       align-items: center;
-      justify-content: center;
+      gap: 16px;
+      background: var(--cv-surface);
+      border-radius: 18px;
+      padding: 18px 20px;
       cursor: pointer;
-      z-index: 4;
-      touch-action: manipulation;
-    }
-    .swap-badge-inner {
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      background: var(--cv-cream);
-      border: 1.5px solid var(--cv-ink-14);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 6px rgba(46, 39, 31, 0.15);
       transition: transform 150ms var(--cv-ease);
     }
-    .swap-badge:hover .swap-badge-inner {
-      transform: scale(1.15);
+    .song-card:hover {
+      transform: translateY(-1px);
     }
-    .voicing-badge {
-      position: absolute;
-      bottom: -12px;
-      left: -12px;
-      width: 44px;
-      height: 44px;
-      background: transparent;
-      border: none;
-      padding: 0;
+    .song-card.active-sec {
+      box-shadow: inset 0 0 0 2px var(--mood-color, #F6D98B);
+    }
+    .add-sec-card {
+      border-radius: 16px;
+      border: 1.5px dashed rgba(46, 39, 31, 0.25);
+      padding: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 8px;
+      color: #8A6B3F;
+      font-weight: 700;
+      font-size: 14px;
       cursor: pointer;
-      z-index: 4;
-      touch-action: manipulation;
-    }
-    .voicing-badge-inner {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      background: var(--cv-cream);
-      border: 1.5px solid var(--cv-ink-14);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 6px rgba(46, 39, 31, 0.15);
       transition: transform 150ms var(--cv-ease);
     }
-    .voicing-badge:hover .voicing-badge-inner {
-      transform: scale(1.15);
+    .add-sec-card:hover {
+      background: rgba(46, 39, 31, 0.04);
     }
-    .transport {
+
+    /* Play It View inside Stage */
+    .play-it-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      width: 100%;
+      max-width: 720px;
+    }
+    .play-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    @media (max-width: 640px) {
+      .play-cards-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+    .play-card {
+      background: var(--cv-surface);
+      border-radius: 20px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      cursor: pointer;
+      transition: transform 150ms var(--cv-ease);
+    }
+    .play-card:hover {
+      transform: translateY(-2px);
+    }
+
+    /* Bottom Transport Bar */
+    .transport-footer {
+      min-width: 0;
+      border-top: 1px solid rgba(46, 39, 31, 0.09);
+      background: var(--cv-cream);
+      padding: 11px 22px;
       display: flex;
       align-items: center;
-      gap: 18px;
-      margin-top: 26px;
+      gap: 10px;
     }
-    .play-btn {
-      width: 56px;
-      height: 56px;
+    .play-circle-btn {
+      width: 46px;
+      height: 46px;
       border-radius: 50%;
       border: none;
       display: flex;
@@ -531,1074 +1136,2171 @@ export class LoopScreen extends LitElement {
       justify-content: center;
       cursor: pointer;
       flex-shrink: 0;
-      transition: transform 0.2s ease;
+      transition: transform 150ms ease;
     }
-    .play-btn:hover {
-      transform: scale(1.06);
+    .play-circle-btn:active {
+      transform: scale(0.96);
     }
-    .progress-track {
+    .progress-line-track {
       flex: 1;
       height: 9px;
       border-radius: 6px;
-      background: var(--cv-surface);
+      background: var(--cv-surface-2, #F1E4CC);
       overflow: hidden;
+      position: relative;
     }
-    .progress-fill {
+    .progress-line-fill {
       height: 100%;
+      transform-origin: left;
       border-radius: 6px;
-      /* Duration set inline to match AUTOPLAY_INTERVAL_MS so the fill sweeps continuously
-         across each chord's actual hold time instead of jumping there quickly and sitting
-         still — linear timing so the motion reads as constant, not eased/stepped. */
-      transition: width var(--progress-duration, 1.7s) linear, background 0.4s ease;
+      transition: transform var(--progress-duration, 1700ms) linear, background 0.4s ease;
+      will-change: transform;
     }
-    .progress-fill.snap {
-      transition: none;
+    .progress-line-fill.snap {
+      transition: none !important;
     }
-    .dice-btn {
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: var(--cv-surface);
-      border: 2px solid var(--cv-ink-12);
+    .stepper-wrap {
       display: flex;
       align-items: center;
-      justify-content: center;
-      cursor: pointer;
+      gap: 4px;
       flex-shrink: 0;
-      box-sizing: border-box;
-      transition: transform 0.3s ease, background 0.2s ease;
     }
-    .dice-btn:hover {
-      background: var(--cv-surface-2);
-    }
-    .dice-btn.spinning {
-      transform: rotate(360deg);
-    }
-    .transport-meta {
-      text-align: center;
-      font-size: 12.5px;
-      font-weight: 600;
-      color: var(--cv-ink-muted);
-      margin-top: 12px;
-    }
-    .cta-button-group {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-top: 28px;
-      flex-wrap: wrap;
-    }
-    .build-song-btn {
-      flex: 1;
-      min-width: 200px;
+    .stepper-btn {
       border: none;
-      color: var(--cv-ink);
-      padding: 16px 24px;
-      border-radius: 100px;
       font-family: inherit;
-      font-weight: 800;
-      font-size: 15px;
-      letter-spacing: 0.2px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      cursor: pointer;
-      transition: transform 160ms var(--cv-ease);
-    }
-    .build-song-btn:active {
-      transform: scale(0.98);
-    }
-    .play-along-cta-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 9px;
-      background: transparent;
-      border: 2px solid rgba(46, 39, 31, 0.18);
-      color: var(--cv-ink);
-      padding: 14px 24px;
-      border-radius: 100px;
-      font-weight: 800;
-      font-size: 15px;
-      font-family: inherit;
-      cursor: pointer;
-      min-width: 150px;
-      transition: transform 160ms var(--cv-ease), border-color 200ms ease, background 200ms ease;
-    }
-    .play-along-cta-btn:hover {
-      border-color: rgba(46, 39, 31, 0.36);
-      background: rgba(46, 39, 31, 0.04);
-    }
-    .play-along-cta-btn:active {
-      transform: scale(0.97);
-    }
-    .back-to-seed-row {
-      margin-top: 24px;
-      text-align: center;
-    }
-    .back-to-seed-link {
-      display: inline-block;
-      font-size: 13.5px;
-      font-weight: 700;
-      color: var(--cv-ink-muted);
-      cursor: pointer;
-      text-decoration: underline;
-      text-underline-offset: 4px;
-      transition: color 0.15s ease;
-    }
-    .back-to-seed-link:hover {
-      color: var(--cv-ink);
-    }
-    .your-sets-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--cv-surface-2);
-      padding: 8px 16px;
-      border-radius: 100px;
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--cv-ink);
-      cursor: pointer;
-      border: 1.5px solid var(--cv-ink-14);
-      z-index: 10;
-      transition: transform 0.15s ease, background 0.15s ease;
-    }
-    .your-sets-btn:hover {
-      background: var(--cv-ink-08);
-    }
-    .your-sets-btn:active {
-      transform: scale(0.96);
-    }
-    .your-sets-text {
-      display: inline;
-    }
-    @media (max-width: 600px) {
-      .your-sets-btn {
-        padding: 6px 12px;
-        font-size: 12px;
-      }
-    }
-    @media (max-width: 380px) {
-      .your-sets-text {
-        display: none;
-      }
-    }
-    .control-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 18px;
-    }
-    /* Mobile shows the compact icon-only buttons next to the dice instead of this text row —
-       see .control-icon-btn below. */
-    @media (max-width: 600px) {
-      .control-row { display: none; }
-    }
-    .control-icon-btn {
-      display: none;
-      width: 44px;
-      height: 44px;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
       background: var(--cv-surface);
-      border: 2px solid var(--cv-ink-12);
+      color: var(--cv-ink);
+      font-size: 15px;
+      line-height: 1;
+      display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      flex-shrink: 0;
-      box-sizing: border-box;
-      transition: transform 0.2s ease;
     }
-    .control-icon-btn:active {
-      transform: scale(0.92);
+    .stepper-btn:hover {
+      background: var(--cv-surface-2);
     }
-    @media (max-width: 600px) {
-      .control-icon-btn { display: flex; }
-      /* Two extra fixed-width buttons join the transport row here — tighten gap/sizes so the
-         progress bar keeps a comfortable width instead of getting squeezed to a sliver. */
-      .transport { gap: 10px; }
-      .play-btn { width: 48px; height: 48px; }
-      .dice-btn { width: 44px; height: 44px; }
+    .stepper-text {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--cv-ink-muted);
+      min-width: 58px;
+      text-align: center;
     }
-    .control-chip {
+    .dice-reroll-btn {
+      border: none;
+      font-family: inherit;
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      background: var(--cv-surface-2);
-      color: #5B5145;
-      padding: 9px 16px;
+      background: var(--cv-surface);
+      color: var(--cv-ink);
+      min-height: 36px;
+      padding: 0 14px;
       border-radius: 100px;
       font-size: 12.5px;
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: transform 150ms var(--cv-ease);
-    }
-    .control-chip:active {
-      transform: scale(0.96);
-    }
-    .control-chevron {
-      opacity: 0.6;
-    }
-    .control-options {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 10px;
-    }
-    .control-option {
-      display: inline-flex;
-      align-items: center;
-      background: var(--cv-surface-2);
-      color: #5B5145;
-      padding: 7px 14px;
-      border-radius: 100px;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: transform 150ms var(--cv-ease);
-    }
-    .control-option:active {
-      transform: scale(0.96);
-    }
-    .control-option.toggle {
-      background: transparent;
-      border: 1.5px dashed var(--cv-ink-25);
-      color: var(--cv-label);
-    }
-    .control-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      display: inline-block;
-      margin-right: 6px;
-      flex-shrink: 0;
-    }
-    .theory-toggle-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 22px;
-      cursor: pointer;
-    }
-    .theory-track {
-      width: 40px;
-      height: 23px;
-      border-radius: 100px;
-      background: var(--cv-ink-16);
-      position: relative;
-      transition: background 150ms var(--cv-ease);
-      flex-shrink: 0;
-    }
-    .theory-track.on {
-      background: var(--cv-plum);
-    }
-    .theory-knob {
-      width: 17px;
-      height: 17px;
-      border-radius: 50%;
-      background: var(--cv-cream);
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      transition: left 150ms var(--cv-ease);
-    }
-    .theory-knob.on {
-      left: 20px;
-    }
-    .theory-label {
-      font-size: 13.5px;
-      font-weight: 700;
-      color: var(--cv-ink-muted);
-    }
-    .theory-strip {
-      background: var(--cv-surface-2);
-      border: 1.5px solid var(--cv-ink-10);
-      border-radius: 18px;
-      padding: 18px 22px;
-      margin-top: 22px;
-    }
-    .theory-key-label {
-      font-size: 11px;
       font-weight: 800;
-      letter-spacing: 1.2px;
-      color: var(--cv-label);
-      text-transform: uppercase;
+      cursor: pointer;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: background 150ms ease;
     }
-    .theory-staff-scroll {
-      overflow-x: auto;
+    .dice-reroll-btn:hover {
+      background: var(--cv-surface-2);
+    }
+
+    /* Right Sidebar (Desktop only) */
+    .sidebar-right {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      border-left: 1px solid rgba(46, 39, 31, 0.09);
+      background: var(--cv-surface, #F6EADB);
+    }
+    .right-header {
+      padding: 18px 22px 14px;
+      border-bottom: 1px solid rgba(46, 39, 31, 0.08);
+    }
+    .right-scroll {
+      min-width: 0;
+      overflow-y: auto;
+      padding: 16px 22px 22px;
+    }
+
+    /* Tension Arc */
+    .arc-bars-box {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      height: 148px;
+      padding: 0 2px;
+    }
+    .arc-bar-col {
+      flex: 1;
+      border: none;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 4px 2px 5px;
+      border-radius: 11px;
+      cursor: pointer;
+      height: 100%;
+      transition: background 150ms ease;
+    }
+    .arc-bar-col:hover {
+      background: var(--cv-cream);
+    }
+    .arc-bar-pillar {
+      width: 100%;
+      max-width: 34px;
+      border-radius: 8px;
+      transition: height 280ms var(--cv-ease), background 280ms ease;
+    }
+
+    /* A/B Compare Box & Loop Progression Player */
+    @keyframes cvfv-abcell {
+      0%, 24% {
+        box-shadow: inset 0 0 0 2px #2E271F;
+      }
+      25%, 100% {
+        box-shadow: inset 0 0 0 0 rgba(0, 0, 0, 0);
+      }
+    }
+
+    .ab-box {
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 16px;
+      padding: 12px 13px;
       margin-top: 12px;
     }
-    .menu-scrim {
-      position: fixed;
-      inset: -2px;
-      z-index: 48;
-      background: rgba(46, 39, 31, 0);
-      transition: background 0.22s ease, backdrop-filter 0.22s ease;
-    }
-    .menu-scrim.visible {
-      background: rgba(46, 39, 31, 0.06);
-      backdrop-filter: blur(3px);
-      -webkit-backdrop-filter: blur(3px);
-    }
-    .menu {
-      position: absolute;
-      top: 68px;
-      right: max(20px, calc(50% - 320px));
-      width: 250px;
-      background: var(--cv-cream);
-      border-radius: 18px;
-      box-shadow: 0 24px 44px -18px rgba(46, 39, 31, 0.35);
-      z-index: 49;
-      padding: 16px;
-      box-sizing: border-box;
-      transform-origin: top right;
-      opacity: 0;
-      transform: translateY(-6px) scale(0.94);
-      transition: opacity 0.22s cubic-bezier(.16,1,.3,1), transform 0.26s cubic-bezier(.16,1,.3,1);
-    }
-    .menu.visible {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-    .menu-label {
-      font-size: 10.5px;
-      letter-spacing: 1.2px;
-      text-transform: uppercase;
-      color: var(--cv-label);
-      font-weight: 800;
-    }
-    .menu-label.spaced {
-      margin-top: 14px;
-    }
-    .menu-chips {
+    .ab-compare-row {
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 8px;
+      gap: 7px;
     }
-    .menu-chip {
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 11.5px;
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-      background: var(--cv-surface-2);
-      color: var(--cv-ink-muted);
-      transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
-    }
-    .menu-chip:active {
-      transform: scale(0.95);
-    }
-    .menu-chip.selected {
-      color: var(--cv-ink);
-    }
-    .menu-chip.toggle {
-      background: transparent;
-      border: 1.5px dashed var(--cv-ink-25);
-      color: var(--cv-label);
-      padding: 5px 11px;
-    }
-    .menu-nav-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-top: 14px;
-      padding-top: 12px;
-      border-top: 1px solid var(--cv-ink-10);
-      cursor: pointer;
-      text-decoration: none;
-      color: inherit;
-    }
-    .menu-nav-row.first {
-      border-top: none;
-      padding-top: 0;
-    }
-    .menu-nav-label {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--cv-ink);
-    }
-    .menu-nav-arrow {
-      font-size: 13px;
-      color: var(--cv-label);
-    }
-    .length-control {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .ab-card-half {
+      flex: 1;
+      min-width: 0;
+      text-align: left;
       border-radius: 14px;
-      background: var(--cv-surface-2);
       padding: 10px 12px;
-      margin-top: 8px;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      transition: all 150ms var(--cv-ease);
     }
-    .length-btn {
-      width: 24px;
-      height: 24px;
+    .ab-card-half:disabled {
+      cursor: default;
+    }
+    .ab-loop-player-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-top: 10px;
+    }
+    .ab-play-toggle-btn {
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
-      background: var(--cv-cream);
-      color: var(--cv-ink);
+      border: none;
+      flex-shrink: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
+      font-size: 13px;
       cursor: pointer;
-      flex-shrink: 0;
+      color: #2E271F;
+      transition: background 150ms var(--cv-ease), transform 120ms ease;
     }
-    .length-btn.disabled {
-      opacity: 0.35;
-      cursor: default;
+    .ab-play-toggle-btn:active {
+      transform: scale(0.94);
     }
-    .length-segments {
+    .ab-cells-track {
+      display: flex;
+      gap: 5px;
+      flex: 1;
+      min-width: 0;
+    }
+    .ab-cell-item {
+      flex: 1;
+      min-width: 0;
+      height: 40px;
+      border-radius: 11px;
+      border: none;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10.5px;
+      font-weight: 800;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      padding: 0 4px;
+      box-sizing: border-box;
+      color: #2E271F;
+      cursor: pointer;
+      user-select: none;
+      transition: background 160ms ease, opacity 160ms ease, transform 100ms ease, box-shadow 160ms ease;
+    }
+    .ab-cell-item:hover {
+      opacity: 1 !important;
+      filter: brightness(0.96);
+    }
+    .ab-cell-item:active {
+      transform: scale(0.94);
+    }
+    .ab-cell-item.active-step {
+      box-shadow: inset 0 0 0 2px #2E271F;
+    }
+
+    .accept-swap-btn {
+      border: none;
+      cursor: pointer;
+      width: 100%;
+      padding: 13px 16px;
+      font-size: 14px;
+      font-weight: 800;
+      border-radius: 100px;
+      margin-top: 10px;
+      transition: opacity 150ms ease, transform 100ms ease;
+    }
+    .accept-swap-btn:hover {
+      opacity: 0.92;
+    }
+    .accept-swap-btn:active {
+      transform: scale(0.98);
+    }
+
+    .swap-tab-nav {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      border-bottom: 1px solid rgba(46, 39, 31, 0.08);
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+      width: 100%;
+    }
+    .swap-family-tab {
+      border: none;
+      font-family: inherit;
+      background: transparent;
+      padding: 6px 3px 5px;
+      border-radius: 14px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      min-height: 48px;
+      flex: 1 1 0;
+      min-width: 0;
+      transition: background 150ms ease;
+    }
+    .swap-family-tab:hover {
+      background: var(--cv-cream);
+    }
+    .swap-family-tab.active {
+      background: rgba(255, 255, 255, 0.45);
+    }
+    .family-shape {
+      display: block;
+      transition: box-shadow 160ms ease, transform 150ms ease;
+    }
+    .two-tone-swatch {
       display: flex;
       gap: 3px;
-      flex: 1;
+      padding: 2px;
+      border-radius: 5px;
+      transition: box-shadow 160ms ease;
     }
-    .length-segment {
-      flex: 1;
-      height: 8px;
-      border-radius: 4px;
-      background: var(--cv-ink-10);
-      transition: background 0.25s ease;
+    .family-label {
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      text-transform: uppercase;
+      color: rgba(46, 39, 31, 0.45);
+      white-space: normal;
+      line-height: 1.1;
+      text-align: center;
+      max-width: 100%;
+      transition: color 150ms ease;
     }
-    .length-segment.filled {
-      background: var(--cv-red);
+    .family-label.active {
+      color: var(--cv-ink);
     }
-    .length-label-text {
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--cv-ink-muted);
-      white-space: nowrap;
+    .band-note-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      color: #6B5F50;
+      border-radius: 11px;
+      padding: 8px 11px;
+      margin-bottom: 12px;
     }
-    .toast {
-      position: fixed;
-      left: 50%;
-      bottom: 40px;
-      transform: translateX(-50%);
-      background: var(--cv-ink);
-      color: var(--cv-cream);
-      font-size: 12.5px;
-      font-weight: 600;
-      padding: 10px 18px;
-      border-radius: 999px;
-      z-index: 70;
-      box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.35);
-      animation: cv-toast-in 0.3s cubic-bezier(.16,1,.3,1);
-      white-space: nowrap;
+    .band-move-tag {
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      color: #2E271F;
+      border-radius: 100px;
+      padding: 3px 8px;
+      flex-shrink: 0;
     }
-    @keyframes cv-toast-in {
-      from { opacity: 0; transform: translateX(-50%) translateY(8px); }
-      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .alt-item-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--cv-cream);
+      margin-bottom: 7px;
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease, background 140ms ease;
+    }
+    .alt-item-row:hover {
+      background: #FFFBF5;
+      transform: translateY(-1px);
+    }
+    .alt-item-row.selected {
+      box-shadow: inset 0 0 0 2px var(--cv-plum);
+      background: #FDF9F2;
+    }
+    .alt-play-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #2E271F;
+      transition: background 150ms var(--cv-ease), transform 120ms ease;
+    }
+    .alt-play-btn:active {
+      transform: scale(0.92);
     }
 
-    @media (min-width: 720px) {
-      .content { max-width: 760px; }
-      .panel { padding: 48px 40px; }
+    /* Dedicated Mobile Layout */
+    .mobile-stage-wrap {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
-
-    .mascot-slot {
-      display: none;
+    .mobile-vibe-bar {
+      width: 100%;
+      border: none;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 18px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      text-align: left;
+    }
+    .quick-action-btn {
       position: absolute;
-      z-index: 1;
-      opacity: 0.9;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(46, 39, 31, 0.14);
+      background: var(--cv-cream);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(46, 39, 31, 0.15);
+      transition: transform 100ms ease;
     }
-    /* Only once the frame is wide enough to leave real gutter space beside the centered
-       .content column (760px content + generous margin) does the background mascot appear. */
-    @media (min-width: 980px) {
-      .mascot-slot { display: block; }
-      .mascot-slot.left { left: 36px; }
-      .mascot-slot.right { right: 36px; }
+    .quick-action-btn:active {
+      transform: scale(0.92);
+    }
+    .quick-action-btn.swap {
+      top: -10px;
+      right: -10px;
+    }
+    .quick-action-btn.detail {
+      bottom: -10px;
+      left: -10px;
     }
 
-    /* CSS grid natively forces a strict 4-column layout that evenly drops to the next row
-       without centering uneven rows (e.g. 6 items = 4 on row 1, 2 on row 2 left-aligned). */
-    @media (max-width: 600px) {
-      .chip-row {
-        grid-template-columns: repeat(2, auto);
-        gap: 30px 18px;
-      }
-      .chord-chip {
-        /* Increase chip size to fill the wider 2-col layout better */
-        --chip-size-mobile: calc(var(--chip-size) * 1.15);
-        --chip-radius-mobile: calc(var(--chip-radius) * 1.15);
-        width: var(--chip-size-mobile);
-        height: var(--chip-size-mobile);
-        border-radius: var(--chip-radius-mobile);
-        margin: 8px; /* breathing room for active state pop */
-      }
-      .chord-name {
-        font-size: calc(var(--chip-font) * 1.15);
-      }
+    /* Mobile Slide-Up Sheet Modal */
+    .sheet-scrim {
+      position: fixed;
+      inset: 0;
+      background: rgba(46, 39, 31, 0.4);
+      z-index: 100;
+      backdrop-filter: blur(4px);
+      animation: cvfv-sheet-up 180ms ease;
+    }
+    .mobile-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 80vh;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 24px 24px 0 0;
+      z-index: 101;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 20px 30px;
+      box-shadow: 0 -12px 32px rgba(46, 39, 31, 0.25);
+      animation: cvfv-sheet-up 220ms var(--cv-ease);
+      overflow-y: auto;
     }
   `;
 
-  private emit(name: string, detail?: unknown) {
-    this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
-  }
-
-  updated(changed: Map<string, unknown>) {
-    // On a wrap (progressStep drops back to 0), that render paints the bar snapped instantly
-    // to 0% with no transition. Clear the snap flag on the next frame so the very next paint
-    // (still progressStep 0, sweep target 1/length) picks up the transition again and sweeps
-    // forward for the new loop's first chord, instead of leaving the bar frozen at 0% for a
-    // whole interval or jumping straight to the target with no motion.
-    if (changed.has('progressStep') && this.snapProgress) {
-      // Double rAF: the snapped (transition:none, width:0%) frame must actually paint before
-      // transitions are re-enabled, or the browser never commits that intermediate state and
-      // instead animates straight from the old (near-100%) width down to the new target.
-      requestAnimationFrame(() => requestAnimationFrame(() => { this.snapProgress = false; }));
-    }
-    if (changed.has('sheetOpen')) {
-      if (this.sheetOpen) {
-        if (this.sheetCloseTimer) { clearTimeout(this.sheetCloseTimer); this.sheetCloseTimer = null; }
-        this.sheetMounted = true;
-        requestAnimationFrame(() => requestAnimationFrame(() => { this.sheetVisible = true; }));
+  willUpdate(changedProperties: PropertyValues) {
+    if (changedProperties.has('playing')) {
+      if (!this.playing) {
+        this.snapProgress = true;
       } else {
-        this.sheetVisible = false;
-        this.sheetCloseTimer = setTimeout(() => { this.sheetMounted = false; }, SHEET_CLOSE_MS);
+        this.snapProgress = true;
+        requestAnimationFrame(() => {
+          this.snapProgress = false;
+          this.requestUpdate();
+        });
+      }
+    }
+    if (changedProperties.has('progressStep')) {
+      const prev = changedProperties.get('progressStep') as number;
+      if (this.progressStep === 0 && prev !== undefined && prev > 0) {
+        this.snapProgress = true;
+        requestAnimationFrame(() => {
+          this.snapProgress = false;
+          this.requestUpdate();
+        });
       }
     }
   }
 
-  private toggleMenu() {
-    if (this.menuMounted) this.closeMenu();
-    else this.openMenu();
-  }
-
-  private openMenu() {
-    if (this.menuCloseTimer) { clearTimeout(this.menuCloseTimer); this.menuCloseTimer = null; }
-    this.menuMounted = true;
-    requestAnimationFrame(() => requestAnimationFrame(() => { this.menuVisible = true; }));
-  }
-
-  private closeMenu() {
-    this.menuVisible = false;
-    if (this.menuCloseTimer) clearTimeout(this.menuCloseTimer);
-    this.menuCloseTimer = setTimeout(() => {
-      this.menuMounted = false;
-      this.expandedMenuGenre = false;
-      this.expandedMenuMood = false;
-    }, MENU_CLOSE_MS);
-  }
-
-  private openShare() {
-    this.closeMenu();
-    if (this.shareCloseTimer) { clearTimeout(this.shareCloseTimer); this.shareCloseTimer = null; }
-    this.shareMounted = true;
-    requestAnimationFrame(() => requestAnimationFrame(() => { this.shareVisible = true; }));
-  }
-
-  private closeShare() {
-    this.shareVisible = false;
-    this.shareCloseTimer = setTimeout(() => { this.shareMounted = false; }, MENU_CLOSE_MS);
-  }
-
-  private exportDevice(device: ShareDevice, name: string) {
-    this.closeShare();
-    const url = buildDeviceShareUrl(this.progression, device, this.order);
-    window.open(url, '_blank');
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toast = `Sent to ${name}`;
-    this.toastTimer = setTimeout(() => { this.toast = null; }, 2000);
-  }
-
-  private async handleExportWav() {
-    this.closeShare();
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toast = 'Rendering WAV audio...';
-    try {
-      const p = this.progression;
-      const effectiveInst = this.instrument ?? genreDefaultInstrumentName(p.genre);
-      const effectiveStyle = this.playStyle ?? genreDefaultPlayStyleName(p.genre);
-      await downloadWav(p, this.order, effectiveInst, effectiveStyle);
-      this.toast = 'Saved WAV audio file';
-    } catch (err) {
-      console.error('WAV export error:', err);
-      this.toast = 'Failed to export WAV';
-    }
-    this.toastTimer = setTimeout(() => { this.toast = null; }, 2500);
-  }
-
-  private handleExportMidi() {
-    this.closeShare();
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    try {
-      const p = this.progression;
-      const effectiveInst = this.instrument ?? genreDefaultInstrumentName(p.genre);
-      const effectiveStyle = this.playStyle ?? genreDefaultPlayStyleName(p.genre);
-      downloadMidi(p, this.order, effectiveInst, effectiveStyle);
-      this.toast = 'Saved MIDI file';
-    } catch (err) {
-      console.error('MIDI export error:', err);
-      this.toast = 'Failed to export MIDI';
-    }
-    this.toastTimer = setTimeout(() => { this.toast = null; }, 2500);
-  }
-
-  private reroll() {
-    this.spinning = true;
-    setTimeout(() => { this.spinning = false; }, 400);
-    this.emit('reroll');
-  }
-
-  private pressStart(pos: number, tapFn: () => void, e: PointerEvent) {
-    e.preventDefault();
-    this.pressTapFn = tapFn;
-    this.pressStartX = e.clientX;
-    this.pressStartY = e.clientY;
-    if (this.pressTimer) clearTimeout(this.pressTimer);
-    this.pressTimer = setTimeout(() => {
-      this.pressTimer = null;
-      this.drag = { pos, offsetX: 0, offsetY: 0 };
-    }, 150);
-  }
-
-  private onDragMove = (e: PointerEvent) => {
-    this.lastPointerX = e.clientX;
-    this.lastPointerY = e.clientY;
-    if (this.pressTimer && !this.drag) {
-      if (Math.abs(e.clientY - this.pressStartY) > 8 || Math.abs(e.clientX - this.pressStartX) > 8) {
-        clearTimeout(this.pressTimer);
-        this.pressTimer = null;
-      }
-      return;
-    }
-    if (!this.drag) return;
-    this.drag = { ...this.drag, offsetX: e.clientX - this.pressStartX, offsetY: e.clientY - this.pressStartY };
-  };
-
-  private onDragEnd = () => {
-    if (this.pressTimer) { clearTimeout(this.pressTimer); this.pressTimer = null; }
-    if (!this.drag) {
-      if (this.pressTapFn) this.pressTapFn();
-      this.pressTapFn = null;
-      return;
-    }
-    const fromPos = this.drag.pos;
-    this.drag = null;
-    this.pressTapFn = null;
-
-    const chips = Array.from(this.renderRoot.querySelectorAll('.chord-chip')) as HTMLElement[];
-    let targetPos = fromPos;
-    let best = Infinity;
-    chips.forEach((el, i) => {
-      if (i === fromPos) return;
-      const r = el.getBoundingClientRect();
-      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      const d = (this.lastPointerX - cx) ** 2 + (this.lastPointerY - cy) ** 2;
-      if (d < best) { best = d; targetPos = i; }
+  connectedCallback() {
+    super.connectedCallback();
+    this.isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
+    this.refreshSavedSets();
+    window.addEventListener('resize', this.onResizeHandler);
+    this.unsubscribeProjects = projectStorage.subscribeProjects(() => {
+      this.refreshSavedSets();
     });
-
-    if (targetPos !== fromPos) {
-      const newOrder = [...this.order];
-      const [moved] = newOrder.splice(fromPos, 1);
-      newOrder.splice(targetPos, 0, moved);
-      this.emit('reorder', newOrder);
-    }
-  };
-
-  private previewChordTile(chordIndex: number) {
-    this.flashedIndex = chordIndex;
-    setTimeout(() => {
-      if (this.flashedIndex === chordIndex) {
-        this.flashedIndex = null;
-      }
-    }, 320);
-    this.emit('chord-preview', chordIndex);
+    this.placeholderTimer = setInterval(() => {
+      this.vibePlaceholderIdx = (this.vibePlaceholderIdx + 1) % this.vibeExamples.length;
+    }, 3200);
   }
 
-  private dragStyleFor(pos: number): string {
-    const d = this.drag;
-    if (d && d.pos === pos) {
-      return `transform:translate(${d.offsetX}px, ${d.offsetY}px) scale(1.08) rotate(-1deg);transition:none;z-index:20;box-shadow:0 20px 40px rgba(46,39,31,0.35);cursor:grabbing;`;
-    }
-    return `cursor:grab;`;
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('resize', this.onResizeHandler);
+    if (this.placeholderTimer) clearInterval(this.placeholderTimer);
+    if (this.previewTimer) clearTimeout(this.previewTimer);
+    if (this.unsubscribeProjects) this.unsubscribeProjects();
   }
 
-  private renderHeaderTitle(p: Progression, moodColor: string) {
-    if (p.searchTerm) {
-      const raw = p.searchTerm.trim();
+  private refreshSavedSets() {
+    this.savedSets = projectStorage.getProjects();
+    this.requestUpdate();
+  }
+
+  private renderStageTitle(moodColor: string) {
+    if (this.progression?.searchTerm) {
+      const raw = this.progression.searchTerm.trim();
       const cleaned = raw.endsWith('.') ? raw.slice(0, -1) : raw;
       const words = cleaned.split(/\s+/);
       if (words.length === 1) {
-        return html`<h1><span style="color:${moodColor}">${words[0]}.</span></h1>`;
+        return html`<span style="color: ${moodColor}">${words[0]}.</span>`;
       }
       const leading = words.slice(0, -1).join(' ');
       const lastWord = words[words.length - 1];
-      return html`<h1>${leading} <span style="color:${moodColor}">${lastWord}.</span></h1>`;
+      return html`${leading} <span style="color: ${moodColor}">${lastWord}.</span>`;
     }
-
-    return html`<h1>Your progression, feeling <span style="color:${moodColor}">${p.mood.toLowerCase()}.</span></h1>`;
+    return html`${this.progression?.genre || 'Pop'}, <span style="color: ${moodColor}">${(this.progression?.mood || 'Warm').toLowerCase()}.</span>`;
   }
 
-  private renderLengthControl() {
-    const len = this.progression.chords.length;
+  private onVibeSubmit(e: Event) {
+    e.preventDefault();
+    if (this.isGenerating || !this.freeText.trim()) return;
+    this.dispatchEvent(new CustomEvent('freetext-generate', {
+      detail: { promptText: this.freeText.trim() },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private onGenreClick(genre: string) {
+    this.dispatchEvent(new CustomEvent('set-genre', { detail: genre, bubbles: true, composed: true }));
+  }
+
+  private onMoodClick(mood: string) {
+    this.dispatchEvent(new CustomEvent('set-mood', { detail: mood, bubbles: true, composed: true }));
+  }
+
+  private onBandClick(bandName: string) {
+    this.selectedBand = this.selectedBand === bandName ? null : bandName;
+    const band = BANDS.find(b => b.name === this.selectedBand);
+    if (band) {
+      this.dispatchEvent(new CustomEvent('toast', { detail: `Active artist DNA: ${band.name}`, bubbles: true, composed: true }));
+    }
+    this.requestUpdate();
+  }
+
+  private onChordSelect(index: number) {
+    this.previewIndex = index;
+    if (this.previewTimer) clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => { this.previewIndex = -1; }, 500);
+
+    this.swapIndex = index;
+    this.isInspectorOpen = true;
+    this.abPick = null;
+    this.abSide = 'before';
+    this.abPlaying = false;
+    playbackEngine.setABOverride(null);
+
+    this.isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
+    if (this.isMobile) {
+      this.mobileSheetOpen = true;
+    }
+
+    if (this.progression) {
+      playbackEngine.playChordAtIndex(index, 0.8);
+    }
+    this.requestUpdate();
+  }
+
+  private setABSide(side: 'before' | 'after') {
+    this.abSide = side;
+    if (this.swapIndex !== null && this.progression) {
+      if (side === 'before') {
+        playbackEngine.setABOverride({
+          index: this.swapIndex,
+          side: 'before',
+          chord: this.progression.chords[this.swapIndex],
+        });
+        playbackEngine.playChordAtIndex(this.swapIndex, 0.8);
+      } else if (this.abPick) {
+        const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+        const candidateNotes = notesForSymbol(this.abPick.chord, preferFlat);
+        const pickedChord: ChordBlock = {
+          ...this.progression.chords[this.swapIndex],
+          name: this.abPick.chord,
+          roman: this.abPick.roman,
+          tension: this.abPick.tension,
+          notes: candidateNotes,
+        };
+        playbackEngine.setABOverride({
+          index: this.swapIndex,
+          side: 'after',
+          chord: pickedChord,
+        });
+        playbackEngine.auditionChord(pickedChord, 0.8);
+      }
+    }
+    this.requestUpdate();
+  }
+
+  private onAbCellClick(index: number) {
+    if (!this.progression) return;
+    const isSwapBar = index === this.swapIndex;
+    if (isSwapBar && this.abSide === 'after' && this.abPick) {
+      const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+      const candidateNotes = notesForSymbol(this.abPick.chord, preferFlat);
+      const pickedChord: ChordBlock = {
+        ...this.progression.chords[index],
+        name: this.abPick.chord,
+        roman: this.abPick.roman,
+        tension: this.abPick.tension,
+        notes: candidateNotes,
+      };
+      playbackEngine.auditionChord(pickedChord, 0.8);
+    } else {
+      playbackEngine.playChordAtIndex(index, 0.8);
+    }
+  }
+
+  private toggleAB() {
+    if (!this.progression) return;
+    this.abPlaying = !this.abPlaying;
+    if (this.abPlaying) {
+      if (this.swapIndex !== null) {
+        const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+        const candidateNotes = (this.abSide === 'after' && this.abPick)
+          ? notesForSymbol(this.abPick.chord, preferFlat)
+          : (this.progression.chords[this.swapIndex]?.notes || []);
+        const chordOverride: ChordBlock = (this.abSide === 'after' && this.abPick) ? {
+          ...this.progression.chords[this.swapIndex],
+          name: this.abPick.chord,
+          roman: this.abPick.roman,
+          tension: this.abPick.tension,
+          notes: candidateNotes,
+        } : this.progression.chords[this.swapIndex];
+        playbackEngine.setABOverride({
+          index: this.swapIndex,
+          side: this.abSide,
+          chord: chordOverride,
+        });
+      }
+      if (!this.playing) {
+        this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
+      }
+    } else {
+      if (this.playing) {
+        this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
+      }
+      playbackEngine.setABOverride(null);
+    }
+    this.requestUpdate();
+  }
+
+  private onAltAudition(alt: Alternative | { name: string; chord: ChordBlock; sub?: string; functionCaption?: string }) {
+    const chordBlock = 'chord' in alt ? alt.chord : alt;
+    const preferFlat = this.progression ? preferFlatSpelling(this.progression.key, this.progression.scaleType) : false;
+    const chordNotes = (chordBlock.notes && chordBlock.notes.length > 0)
+      ? chordBlock.notes
+      : notesForSymbol(chordBlock.name, preferFlat);
+
+    this.abPick = {
+      label: 'label' in alt ? alt.label : alt.name,
+      tension: chordBlock.tension || 0.5,
+      chord: chordBlock.name,
+      roman: chordBlock.roman || '',
+      fn: 'functionCaption' in alt && alt.functionCaption ? alt.functionCaption : 'Swapped chord',
+    };
+    this.abSide = 'after';
+    if (this.swapIndex !== null && this.progression) {
+      playbackEngine.setABOverride({
+        index: this.swapIndex,
+        side: 'after',
+        chord: {
+          ...this.progression.chords[this.swapIndex],
+          name: this.abPick.chord,
+          roman: this.abPick.roman,
+          tension: this.abPick.tension,
+          notes: chordNotes,
+        },
+      });
+    }
+    playbackEngine.auditionChord({ ...chordBlock, notes: chordNotes }, 0.8);
+    this.requestUpdate();
+  }
+
+  private onConfirmSwap() {
+    if (!this.abPick || this.swapIndex === null || !this.progression) return;
+    const oldChords = this.progression.chords;
+    const newChords = [...oldChords];
+    const original = oldChords[this.swapIndex];
+    const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+
+    newChords[this.swapIndex] = {
+      ...original,
+      name: this.abPick.chord,
+      roman: this.abPick.roman || original.roman,
+      tension: this.abPick.tension,
+      notes: notesForSymbol(this.abPick.chord, preferFlat),
+    };
+
+    const swappedName = this.abPick.chord;
+    this.progression = {
+      ...this.progression,
+      chords: newChords,
+    };
+    playbackEngine.setProgression(this.progression, this.order);
+    playbackEngine.setABOverride(null);
+    this.isInspectorOpen = false;
+    this.mobileSheetOpen = false;
+    this.swapIndex = null;
+    this.abPick = null;
+    this.abPlaying = false;
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: this.progression, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('toast', { detail: `Swapped in ${swappedName}`, bubbles: true, composed: true }));
+    this.requestUpdate();
+  }
+
+  private onStepLength(delta: number) {
+    if (!this.progression) return;
+    const nextLen = Math.max(MIN_PROGRESSION_LENGTH, Math.min(MAX_PROGRESSION_LENGTH, this.progression.chords.length + delta));
+    this.dispatchEvent(new CustomEvent('set-length', { detail: nextLen, bubbles: true, composed: true }));
+  }
+
+  private onReroll() {
+    this.dispatchEvent(new CustomEvent('reroll', { bubbles: true, composed: true }));
+  }
+
+  private onBookmark() {
+    if (!this.progression) return;
+    this.dispatchEvent(new CustomEvent('save-set', {
+      detail: `${this.progression.genre} · ${this.progression.mood}`,
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private toggleLibrary(open?: boolean) {
+    this.libraryOpen = open !== undefined ? open : !this.libraryOpen;
+    this.librarySelectMode = false;
+    this.librarySelected = [];
+    this.renamingId = null;
+    this.confirmDeleteId = null;
+    this.dispatchEvent(new CustomEvent('library-open-change', {
+      detail: this.libraryOpen,
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private startRename(e: Event, id: string, name: string) {
+    e.stopPropagation();
+    this.renamingId = id;
+    this.draftName = name;
+    this.confirmDeleteId = null;
+  }
+
+  private onDraftChange(e: Event) {
+    this.draftName = (e.target as HTMLInputElement).value;
+  }
+
+  private commitRename(id: string) {
+    const trimmed = this.draftName.trim();
+    if (!trimmed) {
+      this.cancelRename();
+      return;
+    }
+    const projects = projectStorage.getProjects();
+    const existing = projects.find(p => p.id === id);
+    if (existing) {
+      const updated: ProjectData = {
+        ...existing,
+        name: trimmed,
+        lastModified: Date.now(),
+      };
+      projectStorage.saveProject(updated);
+      this.refreshSavedSets();
+      this.dispatchEvent(new CustomEvent('toast', {
+        detail: `Renamed to "${trimmed}"`,
+        bubbles: true,
+        composed: true,
+      }));
+    }
+    this.renamingId = null;
+    this.draftName = '';
+  }
+
+  private cancelRename() {
+    this.renamingId = null;
+    this.draftName = '';
+  }
+
+  private askDelete(e: Event, id: string) {
+    e.stopPropagation();
+    this.confirmDeleteId = id;
+    this.renamingId = null;
+  }
+
+  private confirmDelete(id: string) {
+    projectStorage.deleteProject(id);
+    this.confirmDeleteId = null;
+    this.refreshSavedSets();
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: 'Deleted loop from library',
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private cancelDelete() {
+    this.confirmDeleteId = null;
+  }
+
+  private onLoadSavedProject(p: ProjectData) {
+    this.dispatchEvent(new CustomEvent('load-project', {
+      detail: p,
+      bubbles: true,
+      composed: true,
+    }));
+    this.toggleLibrary(false);
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: `Loaded "${p.name}"`,
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private renderLibraryPopoverContent(moodColor: string) {
+    const libQ = this.librarySearch.trim().toLowerCase();
+    const allSaved = this.savedSets;
+    const libVisible = allSaved.filter(s => {
+      if (!libQ) return true;
+      const searchable = `${s.name} ${s.genre} ${s.mood} ${(s.chords || []).map(c => typeof c === 'object' ? c.name : c).join(' ')}`.toLowerCase();
+      return searchable.indexOf(libQ) >= 0;
+    });
+    const hasMany = allSaved.length > 2;
+    const selectMode = this.librarySelectMode;
+    const selected = this.librarySelected;
+    const toggleLabel = allSaved.length ? `Your loops · ${allSaved.length}` : 'Your loops';
+
+    if (allSaved.length === 0) {
+      return html`<div class="lib-empty-text">Nothing kept yet. Use the bookmark to keep a loop here.</div>`;
+    }
+
     return html`
-      <div class="length-control">
-        <div class="length-btn ${len <= MIN_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => len > MIN_PROGRESSION_LENGTH && this.emit('set-length', len - 1)}>−</div>
-        <div class="length-segments">
-          ${Array.from({ length: MAX_PROGRESSION_LENGTH }, (_, i) => html`<div class="length-segment ${i < len ? 'filled' : ''}"></div>`)}
+      <div class="lib-pop-header">
+        <div class="lib-pop-title">${toggleLabel}</div>
+        <button class="lib-pop-select-btn" style="background: ${selectMode ? moodColor : 'transparent'};" @click=${() => { this.librarySelectMode = !this.librarySelectMode; this.librarySelected = []; this.confirmDeleteId = null; this.renamingId = null; }}>${selectMode ? 'Done' : 'Select'}</button>
+      </div>
+      ${hasMany ? html`
+        <div style="padding: 0 4px 9px;">
+          <input type="text" class="lib-pop-search" placeholder="Search loops" .value=${this.librarySearch} @input=${(e: Event) => { this.librarySearch = (e.target as HTMLInputElement).value; }} />
         </div>
-        <div class="length-btn ${len >= MAX_PROGRESSION_LENGTH ? 'disabled' : ''}" @click=${() => len < MAX_PROGRESSION_LENGTH && this.emit('set-length', len + 1)}>+</div>
-        <div class="length-label-text">${len} ${len === 1 ? 'bar' : 'bars'}</div>
+      ` : ''}
+      <div class="lib-rows">
+        ${libVisible.map(p => {
+          const isRenaming = this.renamingId === p.id;
+          const isConfirming = this.confirmDeleteId === p.id;
+          const checked = selected.indexOf(p.id) >= 0;
+          const chordsList = p.chords || [];
+          const cardMoodColor = getMoodColor(p.mood || 'Warm');
+
+          return html`
+            <div class="lib-row ${checked ? 'checked' : ''}" @click=${() => selectMode ? this.toggleLibrarySelected(p.id) : this.onLoadSavedProject(p)}>
+              ${selectMode ? html`
+                <div class="lib-check ${checked ? 'checked' : ''}" style="background: ${checked ? moodColor : 'transparent'};" @click=${(e: Event) => { e.stopPropagation(); this.toggleLibrarySelected(p.id); }}>${checked ? '✓' : ''}</div>
+              ` : ''}
+              <div class="lib-row-info" style="cursor: pointer;">
+                ${isRenaming ? html`
+                  <input
+                    type="text"
+                    class="lib-rename-input"
+                    .value=${this.draftName}
+                    @input=${this.onDraftChange}
+                    @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.commitRename(p.id); if (e.key === 'Escape') this.cancelRename(); }}
+                    @blur=${() => this.commitRename(p.id)}
+                    @click=${(e: Event) => e.stopPropagation()}
+                    autofocus
+                  />
+                ` : html`
+                  <div>
+                    <span class="lib-row-name-line">
+                      <span class="lib-row-dots">
+                        ${chordsList.map((c, i) => {
+                          const tension = typeof c === 'object' && c !== null ? (c.tension ?? 0.1) : 0.1;
+                          const role = roleForTension(tension);
+                          const d = 7;
+                          const radius = i % 2 ? '2px' : '50%';
+                          return html`<span style="width:${d}px;height:${d}px;border-radius:${radius};background:${cardMoodColor};"></span>`;
+                        })}
+                      </span>
+                      <span class="lib-row-name">${p.name || 'Untitled Loop'}</span>
+                    </span>
+                    <span class="lib-row-meta">${p.genre || 'Pop'} · ${p.mood || 'Warm'}</span>
+                  </div>
+                `}
+              </div>
+              ${!selectMode && !isConfirming && !isRenaming ? html`
+                <div class="lib-row-actions">
+                  <button class="lib-icon-btn" @click=${(e: Event) => { e.stopPropagation(); this.startRename(e, p.id, p.name || 'Untitled Loop'); }} aria-label="Rename loop">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                  </button>
+                  <button class="lib-icon-btn" @click=${(e: Event) => { e.stopPropagation(); this.askDelete(e, p.id); }} aria-label="Delete loop">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+                  </button>
+                </div>
+              ` : ''}
+              ${isConfirming ? html`
+                <div class="lib-confirm-actions">
+                  <button class="lib-confirm-delete-btn" @click=${(e: Event) => { e.stopPropagation(); this.confirmDelete(p.id); }}>Delete</button>
+                  <button class="lib-icon-btn" @click=${(e: Event) => { e.stopPropagation(); this.cancelDelete(); }} aria-label="Cancel">×</button>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        })}
+      </div>
+      ${allSaved.length > 0 && libVisible.length === 0 ? html`
+        <div class="lib-no-match">No loops match that.</div>
+      ` : ''}
+      ${selectMode ? html`
+        <button class="lib-batch-delete-btn" style="background: ${selected.length ? '#D8624C' : 'var(--cv-surface)'}; color: ${selected.length ? '#FBF3E6' : 'rgba(46,39,31,0.35)'}; cursor: ${selected.length ? 'pointer' : 'default'};" @click=${() => this.deleteLibrarySelected()}>Delete ${selected.length} loop${selected.length === 1 ? '' : 's'}</button>
+      ` : ''}
+    `;
+  }
+
+  private toggleLibrarySelected(id: string) {
+    const idx = this.librarySelected.indexOf(id);
+    if (idx >= 0) {
+      this.librarySelected = this.librarySelected.filter(x => x !== id);
+    } else {
+      this.librarySelected = [...this.librarySelected, id];
+    }
+  }
+
+  private deleteLibrarySelected() {
+    if (this.librarySelected.length === 0) return;
+    const toDelete = new Set(this.librarySelected);
+    for (const id of toDelete) {
+      projectStorage.deleteProject(id);
+    }
+    this.refreshSavedSets();
+    this.librarySelected = [];
+    this.librarySelectMode = false;
+  }
+
+  private renderLoopsDrawer(moodColor: string) {
+    // The library is now rendered inline as a popover in the sidebar footer (desktop)
+    // and inside the mobile toolbar area (mobile). This method is kept for the
+    // global floating render call but is now a no-op since the popover is rendered
+    // inside the sidebar-footer and mobile-toolbar containers directly.
+    return '';
+  }
+
+  private parseChord(name: string) {
+    const m = /^([A-G][b#]?)(.*)$/.exec(name || 'C');
+    const root = m ? m[1] : 'C';
+    const q = m ? m[2] : '';
+    const intervals = QUAL[q] || QUAL[QFALL[q] || 'maj'] || [0, 4, 7];
+    return { root, rootPc: PC[root] === undefined ? 0 : PC[root], q, intervals };
+  }
+
+  private renderPianoCard(ch: ChordBlock, i: number) {
+    const c = this.parseChord(ch.name);
+    const W = 22, PH = 86, BH = 52, WHITE_ORDER = [0, 2, 4, 5, 7, 9, 11];
+    const whites: { x: number; w: number; h: number }[] = [];
+    const blacks: { x: number; w: number; h: number }[] = [];
+    const marks: { cx: number; cy: number; r: number; fill: string; isRoot: boolean; label: string; lc: string }[] = [];
+
+    for (let o = 0; o < 2; o++) {
+      WHITE_ORDER.forEach((_pc, k) => {
+        whites.push({ x: (o * 7 + k) * W, w: W - 1.5, h: PH });
+      });
+    }
+    for (let o = 0; o < 2; o++) {
+      [0, 1, 3, 4, 5].forEach(k => {
+        const idx = o * 7 + k;
+        blacks.push({ x: idx * W + W * 0.64, w: W * 0.58, h: BH });
+      });
+    }
+
+    c.intervals.forEach(iv => {
+      const semi = c.rootPc + iv;
+      const oct = Math.floor(semi / 12);
+      const pc = semi % 12;
+      const wk = WHITE_ORDER.indexOf(pc);
+      const isRoot = iv === 0;
+      const onBlack = wk < 0;
+      const fill = isRoot ? '#F2735F' : (onBlack ? '#FBF3E6' : '#2E271F');
+      const lc = isRoot ? '#FBF3E6' : (onBlack ? '#2E271F' : '#FBF3E6');
+      const label = this.showDegrees ? DEG[iv % 12] : '';
+      if (wk >= 0) {
+        const idx = oct * 7 + wk;
+        marks.push({ cx: idx * W + (W - 1.5) / 2, cy: PH - 19, r: 9, fill, isRoot, label, lc });
+      } else {
+        const idx = oct * 7 + WHITE_ORDER.indexOf(pc - 1);
+        const bx = idx * W + W * 0.64;
+        const bw = W * 0.58;
+        marks.push({ cx: bx + bw / 2, cy: BH - 14, r: 7.5, fill, isRoot, label, lc });
+      }
+    });
+
+    const pw = 14 * W;
+    const notesLine = c.intervals.map(iv => {
+      const nm = PC_NAMES[(c.rootPc + iv) % 12];
+      return this.showDegrees ? `${nm} (${DEG[iv % 12]})` : nm;
+    }).join(' · ');
+
+    return html`
+      <div class="play-card" @click=${() => playbackEngine.playChordAtIndex(i, 0.8)} role="button" tabindex="0">
+        <div style="display: flex; align-items: baseline; gap: 9px;">
+          <div style="font-size: 17px; font-weight: 800; color: #2E271F;">${ch.name}</div>
+          ${this.showTheory && ch.roman ? html`
+            <div style="font-size: 11.5px; font-weight: 800; color: var(--cv-label); letter-spacing: 0.5px;">${ch.roman}</div>
+          ` : ''}
+        </div>
+        <svg width="${pw}" height="${PH}" viewBox="0 0 ${pw} ${PH}" style="display: block; width: 100%; max-width: ${pw}px; height: auto;">
+          ${whites.map(k => svg`
+            <rect x="${k.x}" y="0" width="${k.w}" height="${k.h}" rx="3" fill="#FFFDF8" stroke="rgba(46,39,31,0.22)" stroke-width="1"></rect>
+          `)}
+          ${blacks.map(b => svg`
+            <rect x="${b.x}" y="0" width="${b.w}" height="${b.h}" rx="2" fill="#3A3128"></rect>
+          `)}
+          ${marks.map(mk => svg`
+            <g>
+              <circle cx="${mk.cx}" cy="${mk.cy}" r="${mk.r}" fill="${mk.fill}" stroke="${mk.isRoot ? '#2E271F' : 'none'}" stroke-width="${mk.isRoot ? 1.6 : 0}"></circle>
+              ${mk.label ? svg`
+                <text x="${mk.cx}" y="${mk.cy}" dy="3.4" font-size="9" font-weight="800" text-anchor="middle" fill="${mk.lc}" font-family="'Plus Jakarta Sans',sans-serif">${mk.label}</text>
+              ` : ''}
+            </g>
+          `)}
+        </svg>
+        <div style="font-size: 12px; font-weight: 700; color: var(--cv-ink-muted);">${notesLine}</div>
+      </div>
+    `;
+  }
+
+  private renderFretCard(ch: ChordBlock, i: number, instrument: 'Guitar' | 'Ukulele') {
+    const c = this.parseChord(ch.name);
+    const GUITAR_OPEN = [4, 9, 2, 7, 11, 4];
+    const UKE_OPEN = [7, 0, 4, 9];
+    const isUke = instrument === 'Ukulele';
+    const openPcs = isUke ? UKE_OPEN : GUITAR_OPEN;
+    const frets = isUke ? ukeVoicing(c) || [null, null, null, null] : guitarVoicing(c) || [null, null, null, null, null, null];
+
+    const SP = 18, FR = 24, ROWS = 4, TOP = 16;
+    const n = openPcs.length;
+    const nz = frets.filter(f => f !== null && f > 0) as number[];
+    const base = (nz.length && Math.max(...nz) > 4) ? Math.min(...nz) - 1 : 0;
+    const strings: { x: number }[] = [];
+    const fretLines: { y: number; sw: number }[] = [];
+    const dots: { cx: number; cy: number; fill: string; label: string }[] = [];
+    const opens: { x: number }[] = [];
+    const mutes: { x: number }[] = [];
+
+    for (let s = 0; s < n; s++) strings.push({ x: s * SP });
+    for (let r = 0; r <= ROWS; r++) fretLines.push({ y: TOP + r * FR, sw: (r === 0 && base === 0) ? 3 : 1.2 });
+    frets.forEach((f, s) => {
+      const x = s * SP;
+      if (f === null) { mutes.push({ x }); return; }
+      if (f === 0) { opens.push({ x }); return; }
+      const iv = ((openPcs[s] + f - c.rootPc) % 12 + 12) % 12;
+      dots.push({
+        cx: x,
+        cy: TOP + (f - base - 0.5) * FR,
+        fill: iv === 0 ? '#F2735F' : '#2E271F',
+        label: this.showDegrees ? DEG[((openPcs[s] + f - c.rootPc) % 12 + 12) % 12] : '',
+      });
+    });
+    const w = (n - 1) * SP;
+    const sw = (n - 1) * SP + 26;
+    const sh = TOP + ROWS * FR + 12;
+    const posLabel = base > 0 ? `${base + 1}fr` : '';
+    const showPos = base > 0;
+
+    const notesLine = c.intervals.map(iv => {
+      const nm = PC_NAMES[(c.rootPc + iv) % 12];
+      return this.showDegrees ? `${nm} (${DEG[iv % 12]})` : nm;
+    }).join(' · ');
+
+    return html`
+      <div class="play-card" @click=${() => playbackEngine.playChordAtIndex(i, 0.8)} role="button" tabindex="0">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
+          <div style="display: flex; align-items: baseline; gap: 7px;">
+            <div style="font-size: 17px; font-weight: 800; color: #2E271F;">${ch.name}</div>
+            ${this.showTheory && ch.roman ? html`
+              <div style="font-size: 11.5px; font-weight: 800; color: var(--cv-label); letter-spacing: 0.5px;">${ch.roman}</div>
+            ` : ''}
+          </div>
+          ${showPos ? html`
+            <div style="font-size: 11px; font-weight: 800; color: var(--cv-label);">${posLabel}</div>
+          ` : ''}
+        </div>
+        <svg width="${sw}" height="${sh}" viewBox="-13 -2 ${sw} ${sh}" style="display: block; width: 100%; max-width: ${sw * 1.5}px; height: auto;">
+          ${fretLines.map(fl => svg`
+            <rect x="0" y="${fl.y}" width="${w}" height="${fl.sw}" fill="rgba(46,39,31,0.4)"></rect>
+          `)}
+          ${strings.map(st => svg`
+            <rect x="${st.x}" y="16" width="1.2" height="96" fill="rgba(46,39,31,0.4)"></rect>
+          `)}
+          ${opens.map(op => svg`
+            <circle cx="${op.x}" cy="7" r="4" fill="none" stroke="#2E271F" stroke-width="1.6"></circle>
+          `)}
+          ${mutes.map(mu => svg`
+            <text x="${mu.x}" y="11" font-size="11" font-weight="800" text-anchor="middle" fill="rgba(46,39,31,0.45)" font-family="'Plus Jakarta Sans',sans-serif">×</text>
+          `)}
+          ${dots.map(dt => svg`
+            <g>
+              <circle cx="${dt.cx}" cy="${dt.cy}" r="${dt.fill === '#F2735F' ? 7.5 : 7}" fill="${dt.fill}"></circle>
+              ${dt.label ? svg`
+                <text x="${dt.cx}" y="${dt.cy}" dy="3.2" font-size="8" font-weight="800" text-anchor="middle" fill="#FBF3E6" font-family="'Plus Jakarta Sans',sans-serif">${dt.label}</text>
+              ` : ''}
+            </g>
+          `)}
+        </svg>
+        <div style="font-size: 12px; font-weight: 700; color: var(--cv-ink-muted);">${notesLine}</div>
       </div>
     `;
   }
 
   render() {
-    const p = this.progression;
-    const moodColor = getMoodColor(p.mood);
-    // No explicit override yet → show (and, via app.ts, play with) this genre's existing
-    // default instead of a fixed value that would flatten every genre onto the same voice.
-    const effectiveInstrument = this.instrument ?? genreDefaultInstrumentName(p.genre);
-    const effectivePlayStyle = this.playStyle ?? genreDefaultPlayStyleName(p.genre);
-    // While playing, the fill sweeps toward the END of the chord currently sounding — i.e.
-    // chord N (progressStep N) sweeps toward (N+1)/length, landing exactly on that mark right
-    // as chord N finishes — so a 4-chord loop's bar reaches 100% precisely when the last chord
-    // ends, not 75%. At rest (never started, or just stopped) there's nothing to show yet. The
-    // one exception is the snap render right after a loop wrap: that frame must paint the bar
-    // at its pre-sweep baseline (N/length, i.e. 0% for the new loop's first chord) instead of
-    // the sweep target, or there's nothing for the following transition to visibly sweep from.
-    const staffLength = Math.max(1, this.order.length);
-    const progressPct = !this.playing
-      ? 0
-      : this.snapProgress
-        ? (this.progressStep / staffLength) * 100
-        : Math.min(100, ((this.progressStep + 1) / staffLength) * 100);
-    const panelAnim = PANEL_ANIM[p.mood] || PANEL_ANIM.Dreamy;
-    // Staff mirrors the same left-to-right order the chip row shows (post drag-reorder), not
-    // the progression's original array order, so the two views always read the same sequence.
-    const staff = this.showTheory ? buildProgressionStaff(this.order.map(i => p.chords[i]), p.key, p.scaleType) : null;
-    const sigCount = getKeySignature(p.key, p.scaleType).length;
-    const sigLabel = sigCount === 0 ? 'no sharps or flats' : `${sigCount} ${sigCount === 1 ? 'sharp/flat' : 'sharps/flats'}`;
+    const chords = this.progression?.chords || [];
+    const moodColor = getMoodColor(this.progression?.mood || 'Warm');
+    const activeBand = BANDS.find(b => b.name === this.selectedBand);
+    const shownGenres = this.expandedGenre ? GENRE_ALL : GENRE_PRIMARY;
 
-    // Configure popup menu option filtering (primary vs rest with less/more toggle)
-    let primaryMenuGenres = GENRE_PRIMARY.filter(n => MENU_GENRES.includes(n));
-    if (!primaryMenuGenres.includes(p.genre)) primaryMenuGenres = primaryMenuGenres.slice(0, -1).concat(p.genre);
-    const restMenuGenres = MENU_GENRES.filter(n => !primaryMenuGenres.includes(n));
-    const shownMenuGenres = this.expandedMenuGenre ? MENU_GENRES : primaryMenuGenres;
+    // Harmonic Arc computation
+    const tensions = chords.map(c => c.tension || 0.1);
+    const maxTension = Math.max(...tensions, 0.1);
+    const minTension = Math.min(...tensions, 0);
+    const peakIdx = tensions.indexOf(maxTension);
+    const isRising = tensions.every((v, i) => i === 0 || v >= tensions[i - 1]);
+    const arcTitle = (maxTension - minTension) < 0.28 ? 'Stays close to home'
+      : isRising ? 'A steady climb'
+      : (tensions[tensions.length - 1] < 0.25 && peakIdx < tensions.length - 1) ? 'Away, then home'
+      : 'Drifts, then settles';
 
-    const allMoodNames = MOODS.map(m => m.name);
-    let primaryMenuMoodNames = MOOD_PRIMARY.filter(n => allMoodNames.includes(n));
-    if (!primaryMenuMoodNames.includes(p.mood)) primaryMenuMoodNames = primaryMenuMoodNames.slice(0, -1).concat(p.mood);
-    const restMenuMoodNames = allMoodNames.filter(n => !primaryMenuMoodNames.includes(n));
-    const shownMenuMoodNames = this.expandedMenuMood ? allMoodNames : primaryMenuMoodNames;
-    const shownMenuMoods = shownMenuMoodNames.map(n => MOODS.find(m => m.name === n)!);
+    const arcSentence = `Opens ${ROLE_PLAIN[chords[0]?.functionLabel] || 'home'} and ${
+      (maxTension - minTension) < 0.28
+        ? 'never strays far — every chord sits in about the same harmonic neighborhood.'
+        : isRising
+        ? `tightens bar by bar, reaching peak tension on ${chords[peakIdx]?.name || 'the peak'}.`
+        : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before resolving back down.`
+    }`;
 
-    // Instrument and Play Style option filtering
-    const availInstruments = USER_INSTRUMENTS.filter(i => i.name !== effectiveInstrument);
-    let primaryInst = INSTRUMENT_PRIMARY.filter(name => availInstruments.some(i => i.name === name));
-    const restInst = availInstruments.filter(i => !primaryInst.includes(i.name));
-    const shownInst = this.expandedAllInstruments ? availInstruments : availInstruments.filter(i => primaryInst.includes(i.name));
+    // Theory groups & substitutions for the active chord
+    let familyRows: { name: string; roman?: string; notes?: string[]; sub: string; chord: ChordBlock; tension: number }[] = [];
+    let familyNote = '';
+    const isMinor = this.progression?.scaleType?.includes('MINOR') ?? false;
 
-    const availPlayStyles = USER_PLAY_STYLES.filter(s => s.name !== effectivePlayStyle);
-    let primaryStyles = PLAY_STYLE_PRIMARY.filter(name => availPlayStyles.some(s => s.name === name));
-    const restStyles = availPlayStyles.filter(s => !primaryStyles.includes(s.name));
-    const shownStyles = this.expandedAllPlayStyles ? availPlayStyles : availPlayStyles.filter(s => primaryStyles.includes(s.name));
+    if (this.swapIndex !== null && this.progression && this.chordData.scales) {
+      if (this.activeSwapFamily === 'Borrowed') {
+        familyRows = generateBorrowedChords(this.chordData, this.progression, this.swapIndex);
+        familyNote = this.showTheory
+          ? `Modal interchange — four chords from the parallel ${isMinor ? 'major' : 'minor'}, each matched to the chord it can stand in for.`
+          : `Four chords from the ${isMinor ? 'major' : 'minor'} version of this key. Each one swaps in for a chord you already have.`;
+      } else {
+        const groups = generateTheoryGroups(this.chordData, this.progression, this.swapIndex);
+        const matchedGroup = groups.find(g => g.name === this.activeSwapFamily) || groups[0];
+        familyRows = matchedGroup?.rows || [];
+        familyNote = GROUP_NOTES[this.activeSwapFamily] ? GROUP_NOTES[this.activeSwapFamily][this.showTheory ? 1 : 0] : '';
+      }
+
+      if (activeBand) {
+        const hoisted = familyRows.filter(r => activeBand.hoist.includes(r.name));
+        const rest = familyRows.filter(r => !activeBand.hoist.includes(r.name));
+        familyRows = [...hoisted, ...rest];
+      }
+    }
+    const currentSwapChord = this.swapIndex !== null ? chords[this.swapIndex] : null;
 
     return html`
-      <div class="frame">
-        ${this.mascot.show ? html`
-          <div class="mascot-slot ${this.mascotSlot.side}" style="top:${this.mascotSlot.top}">
-            <mascot-character .kind=${this.mascot.kind} .scale=${0.75}></mascot-character>
+      <!-- Top Band DNA Banner -->
+      ${activeBand ? html`
+        <div class="band-bar" style="background: ${activeBand.color}33;">
+          <div class="band-bar-content">
+            <span class="band-bar-kicker">Following Artist DNA</span>
+            <span class="band-bar-name" style="font-family: ${activeBand.font}; font-weight: ${activeBand.weight || 800}; font-style: ${activeBand.italic ? 'italic' : 'normal'}; letter-spacing: ${activeBand.pillTrack};">
+              ${activeBand.name}
+            </span>
+            <span class="band-bar-trick">— ${this.showTheory ? activeBand.theory : activeBand.plain}</span>
           </div>
-        ` : ''}
+          <button class="band-bar-close" @click=${() => this.onBandClick(activeBand.name)} aria-label="Dismiss band DNA">×</button>
+        </div>
+      ` : ''}
 
-        <app-header
-          .isAuthenticated=${this.isAuthenticated}
-          .userEmail=${this.userEmail}
-          @view-sets=${() => this.emit('view-sets')}
-          @request-login=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}
-          @request-logout=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}
-          @wordmark-click=${() => this.onWordmarkClick()}
-        ></app-header>
+      ${!this.isMobile ? html`
+        <!-- DESKTOP 3-COLUMN STUDIO LAYOUT -->
+        <div class="studio-grid" style="--mood-color: ${moodColor};">
 
-        <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
-
-        ${this.menuMounted ? html`
-          <div class="menu-scrim ${this.menuVisible ? 'visible' : ''}" @click=${() => this.closeMenu()}></div>
-          <div class="menu ${this.menuVisible ? 'visible' : ''}">
-            <div class="menu-label">Key &amp; scale</div>
-            <div class="menu-chips">
-              ${ROOT_KEYS.map(k => html`
-                <div class="menu-chip ${k === p.key ? 'selected' : ''}" style=${k === p.key ? `background:${moodColor}` : ''} @click=${() => this.emit('set-key', k)}>${displayKeyName(k, p.scaleType)}</div>
-              `)}
-            </div>
-            <div class="menu-chips">
-              ${MENU_SCALES.map(s => html`
-                <div class="menu-chip ${s.value === p.scaleType ? 'selected' : ''}" style=${s.value === p.scaleType ? `background:${moodColor}` : ''} @click=${() => this.emit('set-scale', s.value)}>${s.label}</div>
-              `)}
-            </div>
-            <div class="menu-label spaced">Genre</div>
-            <div class="menu-chips">
-              ${shownMenuGenres.map(g => html`
-                <div class="menu-chip ${g === p.genre ? 'selected' : ''}" style=${g === p.genre ? `background:${moodColor}` : ''} @click=${() => this.emit('set-genre', g)}>${g}</div>
-              `)}
-              ${restMenuGenres.length ? html`
-                <div class="menu-chip toggle" @click=${() => { this.expandedMenuGenre = !this.expandedMenuGenre; }}>
-                  ${this.expandedMenuGenre ? 'Show less ⌃' : `+${restMenuGenres.length} more ⌄`}
+          <!-- 1. LEFT SIDEBAR -->
+          <aside class="sidebar-left">
+            <div class="sidebar-scroll">
+              <div class="kicker-label">The Vibe</div>
+              <form class="vibe-input-row ${this.isGenerating ? 'generating' : ''}" @submit=${this.onVibeSubmit}>
+                <input
+                  type="text"
+                  class="vibe-text-input"
+                  .value=${this.freeText}
+                  @input=${(e: Event) => { this.freeText = (e.target as HTMLInputElement).value; }}
+                  placeholder=${this.isGenerating ? 'Composing your chords...' : this.vibeExamples[this.vibePlaceholderIdx]}
+                  ?disabled=${this.isGenerating}
+                />
+                <button
+                  type="submit"
+                  class="vibe-submit-btn ${this.isGenerating ? 'generating' : ''}"
+                  style="background: ${moodColor};"
+                  aria-label="${this.isGenerating ? 'Composing chords' : 'Generate loop from vibe'}"
+                  ?disabled=${this.isGenerating || !this.freeText.trim()}
+                >
+                  ${this.isGenerating ? html`
+                    <div class="vibe-spinner"></div>
+                  ` : html`
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+                  `}
+                </button>
+              </form>
+              ${this.isGenerating ? html`
+                <div class="vibe-generating-pill">
+                  <span class="vibe-spinner"></span>
+                  <span>Composing chords...</span>
                 </div>
               ` : ''}
-            </div>
-            <div class="menu-label spaced">Mood</div>
-            <div class="menu-chips">
-              ${shownMenuMoods.map(m => html`
-                <div class="menu-chip ${m.name === p.mood ? 'selected' : ''}" style=${m.name === p.mood ? `background:${m.dot}` : ''} @click=${() => this.emit('set-mood', m.name)}>${m.name}</div>
-              `)}
-              ${restMenuMoodNames.length ? html`
-                <div class="menu-chip toggle" @click=${() => { this.expandedMenuMood = !this.expandedMenuMood; }}>
-                  ${this.expandedMenuMood ? 'Show less ⌃' : `+${restMenuMoodNames.length} more ⌄`}
-                </div>
-              ` : ''}
-            </div>
-            <div class="menu-label spaced">Length</div>
-            ${this.renderLengthControl()}
-            <div class="menu-nav-row" @click=${() => this.openShare()}>
-              <div class="menu-nav-label">Share progression</div>
-              <div class="menu-nav-arrow">↗</div>
-            </div>
-          </div>
-        ` : ''}
 
-        <div class="content">
-          <div class="progression-nav-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px;width:100%;">
-            <button class="back-pill" @click=${() => this.emit('back')} style="display:inline-flex;align-items:center;gap:6px;background:#F1E4CC;padding:8px 16px;min-height:36px;border-radius:100px;font-size:12.5px;font-weight:700;color:#8A6B3F;border:none;cursor:pointer;font-family:inherit;transition:transform 150ms ease, background 150ms ease;">
-              ← Back
-            </button>
-            <button class="key-scale-pill" @click=${() => this.toggleMenu()} style="display:inline-flex;align-items:center;gap:6px;background:#F1E4CC;padding:8px 16px;min-height:36px;border-radius:100px;font-size:12.5px;font-weight:700;color:#2E271F;border:none;cursor:pointer;font-family:inherit;transition:transform 150ms ease, background 150ms ease;" title="Change key, scale, or genre">
-              ${displayKeyName(p.key, p.scaleType)} ${p.scaleType.replace('_', ' ')} ▾
-            </button>
-          </div>
-
-          ${this.renderHeaderTitle(p, moodColor)}
-          <div class="subcopy">${p.genre} · ${p.chords.length} bars · tap a chord to hear it</div>
-
-          <div class="panel-shell">
-            ${this.panelPeekMascot.show ? html`
-              <div class="panel-peek ${this.panelPeekSide}">
-                <mascot-character .kind=${this.panelPeekMascot.kind} .scale=${0.45}></mascot-character>
+              <div class="kicker-label spaced">Genre</div>
+              <div class="pills-group">
+                ${shownGenres.map(g => html`
+                  <button
+                    class="pill ${this.progression?.genre === g ? 'active' : ''}"
+                    @click=${() => this.onGenreClick(g)}
+                  >${g}</button>
+                `)}
+                <button class="pill more-toggle" @click=${() => { this.expandedGenre = !this.expandedGenre; }}>
+                  ${this.expandedGenre ? 'Show less ⌃' : '+more ⌄'}
+                </button>
               </div>
-            ` : ''}
-            <div class="panel">
-              <svg class="panel-blob a" width="140" height="140" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B" /></svg>
-              <svg class="panel-blob b" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC" /></svg>
-              <div class="chip-row">
-              ${this.order.map((chordIndex, pos) => {
-                const c = p.chords[chordIndex];
-                const role = roleForTension(c.tension);
-                const isActive = pos === this.activeIndex;
-                const isFlashed = this.flashedIndex === chordIndex;
-                return html`
-                  <div
-                    class="chord-chip ${isActive ? 'active' : ''} ${isFlashed ? 'flashed' : ''}"
-                    style="--chip-size:${role.size}px;--chip-radius:${role.radius}px;background:${role.color};${this.dragStyleFor(pos)}"
-                    @click=${() => this.previewChordTile(chordIndex)}
-                    @pointerdown=${(e: PointerEvent) => this.pressStart(pos, () => this.previewChordTile(chordIndex), e)}
-                  >
-                    ${this.showTheory ? html`<div class="roman-badge">${c.roman}</div>` : ''}
-                    ${isActive ? html`<div class="now-marker"><div class="now-dot"></div><div class="now-text">now</div></div>` : ''}
-                    <div class="chord-name" style="--chip-font:${role.fontSize}px;">${c.name}</div>
-                    <div class="chord-role">${c.functionLabel}</div>
+
+              <div class="kicker-label spaced">Mood</div>
+              <div class="pills-group">
+                ${MOOD_PRIMARY.map(m => {
+                  const mCol = getMoodColor(m);
+                  return html`
                     <button
-                      class="swap-badge"
-                      aria-label="Swap chord ${c.name}"
-                      @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                      @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit('chord-tap', chordIndex); }}
+                      class="pill ${this.progression?.mood === m ? 'active' : ''}"
+                      @click=${() => this.onMoodClick(m)}
                     >
-                      <div class="swap-badge-inner">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4" /><path d="M20 16H7M11 12l-4 4 4 4" /></svg>
+                      <span class="mood-badge">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${mCol}" stroke-width="2.2" stroke-linecap="round">
+                          <path d="${MOOD_ICONS[m] || 'M12 4 a6.5 6.5 0 1 0 6.5 6.5'}"/>
+                        </svg>
+                      </span>
+                      ${m}
+                    </button>
+                  `;
+                })}
+              </div>
+
+              <div class="kicker-label spaced" style="display: flex; align-items: baseline; gap: 6px;">
+                <span>Band</span>
+                <span style="font-size: 10px; font-weight: 700; color: rgba(46, 39, 31, 0.4); text-transform: lowercase;">optional</span>
+              </div>
+              <div class="pills-group">
+                ${BANDS.map(b => html`
+                  <button
+                    class="pill ${this.selectedBand === b.name ? 'active' : ''}"
+                    style="font-family: ${b.font}; font-weight: ${b.weight || 800}; font-style: ${b.italic ? 'italic' : 'normal'}; letter-spacing: ${b.pillTrack};"
+                    @click=${() => this.onBandClick(b.name)}
+                  >${b.name}</button>
+                `)}
+              </div>
+              ${activeBand ? html`
+                <div class="band-trick-text">
+                  ${this.showTheory ? activeBand.theory : activeBand.plain}
+                </div>
+              ` : ''}
+            </div>
+
+            <div class="sidebar-footer">
+              <button class="library-toggle ${this.libraryOpen ? 'open' : ''}" @click=${() => this.toggleLibrary()}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+                <span style="flex: 1; min-width: 0; text-align: left;">${this.savedSets.length ? `Your loops · ${this.savedSets.length}` : 'Your loops'}</span>
+                <span style="opacity: 0.55;">${this.libraryOpen ? '⌄' : '⌃'}</span>
+              </button>
+              ${this.libraryOpen ? html`
+                <div class="library-popover">
+                  ${this.renderLibraryPopoverContent(moodColor)}
+                </div>
+              ` : ''}
+            </div>
+          </aside>
+
+          <!-- 2. CENTER STAGE -->
+          <main class="stage-main">
+            <div class="stage-header">
+              <div class="stage-title-row">
+                <div class="stage-title">${this.renderStageTitle(moodColor)}</div>
+                <div class="stage-action-btns">
+                  <button class="round-btn" @click=${this.onBookmark} aria-label="Bookmark loop">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+                  </button>
+                  <button class="round-btn ${this.soundOpen ? 'active' : ''}" @click=${() => { this.soundOpen = !this.soundOpen; }} aria-label="Sound settings">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
+                  </button>
+                  <button class="round-btn" @click=${() => { this.shareOpen = true; }} aria-label="Share loop">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- VIEW TABS: Chords | Song | Play it -->
+              <div class="view-tabs-bar">
+                <button class="view-tab ${this.activeView === 'loop' ? 'active' : ''}" @click=${() => { this.activeView = 'loop'; }}>Chords</button>
+                <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
+                <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
+              </div>
+            </div>
+
+            <!-- Canvas -->
+            <div class="stage-canvas">
+              ${this.activeView === 'loop' ? html`
+                <div class="stage-panel">
+                  <svg class="drift-shape a" width="128" height="128" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
+                  <svg class="drift-shape b" width="112" height="112" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
+
+                  <div class="chords-flex-row">
+                    ${chords.map((chord, idx) => {
+                      const r = roleForTension(chord.tension || 0.1);
+                      const isLit = this.playing && idx === this.progressStep;
+                      const isInspected = this.isInspectorOpen && idx === this.swapIndex;
+                      const isPreview = idx === this.previewIndex;
+                      const size = Math.max(84, Math.min(130, r.size));
+                      const radius = Math.round(r.radius * (size / r.size));
+
+                      return html`
+                        <div
+                          class="chord-item-wrap"
+                          @click=${() => this.onChordSelect(idx)}
+                          tabindex="0"
+                          role="button"
+                          aria-label="${chord.name}, ${chord.functionLabel || 'Chord'}"
+                        >
+                          <div
+                            class="chord-block-shape ${isLit ? 'active-pulse' : ''} ${isInspected ? 'selected-inspector' : ''}"
+                            style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color}; transform: ${isPreview ? 'scale(0.94)' : 'none'};"
+                          >
+                            ${this.showTheory && chord.roman ? html`
+                              <div class="roman-pill-badge">${chord.roman}</div>
+                            ` : ''}
+                            <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.92)}px;">${chord.name}</div>
+                          </div>
+                          <div class="chord-role-label">${ROLE_PLAIN[chord.functionLabel] || chord.functionLabel || ''}</div>
+                        </div>
+                      `;
+                    })}
+                  </div>
+                </div>
+
+                ${this.soundOpen ? html`
+                  <div class="sound-drawer">
+                    <div class="kicker-label">Instrument</div>
+                    <div class="sound-options-flex">
+                      ${['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad', 'Synth Bell'].map(inst => html`
+                        <button
+                          class="pill ${(this.instrument || 'Piano') === inst ? 'active' : ''}"
+                          @click=${() => {
+                            this.instrument = inst;
+                            playbackEngine.setInstrument(inst);
+                            this.requestUpdate();
+                          }}
+                        >${inst}</button>
+                      `)}
+                    </div>
+                    <div class="kicker-label spaced">Playing Style</div>
+                    <div class="sound-options-flex">
+                      ${['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)', 'Half-time'].map(st => html`
+                        <button
+                          class="pill ${(this.playStyle || 'Block chords') === st ? 'active' : ''}"
+                          @click=${() => {
+                            this.playStyle = st;
+                            playbackEngine.setPlayStyle(st);
+                            this.requestUpdate();
+                          }}
+                        >${st}</button>
+                      `)}
+                    </div>
+                  </div>
+                ` : ''}
+              ` : this.activeView === 'song' ? html`
+                <div class="song-track-list">
+                  <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); margin-bottom: 8px;">
+                    Each section reuses the loop, related but never identical. Press play in the transport bar to hear the whole thing.
+                  </div>
+                  ${this.sections.map((sec, i) => html`
+                    <div
+                      class="song-card ${this.activeSectionIdx === i ? 'active-sec' : ''}"
+                      @click=${() => {
+                        this.activeSectionIdx = i;
+                        this.requestUpdate();
+                      }}
+                    >
+                      <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">
+                        Section ${i + 1}
                       </div>
+                      <div style="flex: 1; min-width: 0;">
+                        <div style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
+                        <div style="font-size: 12px; color: var(--cv-ink-muted); margin-top: 2px;">${sec.desc}</div>
+                      </div>
+                      <div style="display: flex; gap: 4px;">
+                        ${sec.progression.chords.map(c => {
+                          const r = roleForTension(c.tension || 0.1);
+                          return html`<span style="width: 14px; height: 14px; border-radius: 4px; background: ${r.color};"></span>`;
+                        })}
+                      </div>
+                    </div>
+                  `)}
+                  <div
+                    class="add-sec-card"
+                    @click=${() => {
+                      if (this.progression) {
+                        const res = SongArranger.addSection(this.sections, this.progression);
+                        this.sections = res.sections;
+                        this.activeSectionIdx = res.activeIndex;
+                        this.requestUpdate();
+                      }
+                    }}
+                  >
+                    <span style="font-size: 20px; line-height: 1;">+</span>
+                    <span>Add a related section</span>
+                  </div>
+                </div>
+              ` : html`
+                <div class="play-it-wrap">
+                  <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 10px; cursor: pointer;" @click=${() => { this.showDegrees = !this.showDegrees; }}>
+                      <div style="width: 36px; height: 20px; border-radius: 100px; background: ${this.showDegrees ? moodColor : 'rgba(46,39,31,0.2)'}; padding: 2px; display: flex; align-items: center; transition: background 150ms ease;">
+                        <div style="width: 16px; height: 16px; border-radius: 50%; background: #FFF; transform: ${this.showDegrees ? 'translateX(16px)' : 'translateX(0)'}; transition: transform 150ms ease;"></div>
+                      </div>
+                      <div style="font-size: 13.5px; font-weight: 700; color: var(--cv-ink-muted);">Scale degrees</div>
+                    </div>
+                  </div>
+
+                  <div style="display: flex; align-items: baseline; gap: 14px; margin-top: 10px; flex-wrap: wrap;">
+                    <div style="font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; color: var(--cv-label); text-transform: uppercase;">Piano</div>
+                    <div style="font-size: 12.5px; line-height: 1.6; color: #8A7C6B; flex: 1; min-width: 200px;">One voicing per chord, root position — the red dot is the root, play left to right.</div>
+                  </div>
+                  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 4px;">
+                    ${chords.map((ch, i) => this.renderPianoCard(ch, i))}
+                  </div>
+
+                  <div style="display: flex; align-items: center; gap: 14px; margin-top: 24px; flex-wrap: wrap;">
+                    <div style="display: flex; gap: 4px; background: var(--cv-surface-2); border-radius: 100px; padding: 4px;">
+                      ${['Guitar', 'Ukulele'].map(inst => html`
+                        <button
+                          style="border: none; font-family: inherit; min-height: 38px; padding: 0 16px; border-radius: 100px; cursor: pointer; font-size: 13px; font-weight: 800; background: ${(this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar') === inst ? moodColor : 'transparent'}; color: ${(this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar') === inst ? '#2E271F' : 'rgba(46,39,31,0.55)'}; transition: background 200ms var(--cv-ease), color 200ms ease;"
+                          @click=${() => { this.playInstrument = inst as PlayInstrument; }}
+                        >${inst}</button>
+                      `)}
+                    </div>
+                    <div style="font-size: 12.5px; line-height: 1.6; color: #8A7C6B; flex: 1; min-width: 200px;">Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.</div>
+                  </div>
+                  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 4px;">
+                    ${chords.map((ch, i) => this.renderFretCard(ch, i, this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar'))}
+                  </div>
+                </div>
+              `}
+            </div>
+
+            <!-- Transport Bar -->
+            <div class="transport-footer">
+              <button
+                class="play-circle-btn"
+                style="background: ${moodColor};"
+                @click=${() => this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }))}
+                aria-label="${this.playing ? 'Pause' : 'Play'}"
+              >
+                ${this.playing ? html`
+                  <svg width="15" height="17" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>
+                ` : html`
+                  <svg width="17" height="19" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>
+                `}
+              </button>
+
+              <div class="progress-line-track">
+                <div
+                  class="progress-line-fill ${this.snapProgress ? 'snap' : ''}"
+                  style="width: 100%; transform: scaleX(${this.playing && chords.length ? (this.progressStep + 1) / chords.length : 0}); background: ${moodColor}; --progress-duration: ${AUTOPLAY_INTERVAL_MS}ms;"
+                ></div>
+              </div>
+
+              <div class="stepper-wrap">
+                <button class="stepper-btn" @click=${() => this.onStepLength(-1)} aria-label="Fewer chords">−</button>
+                <div class="stepper-text">${chords.length} chords</div>
+                <button class="stepper-btn" @click=${() => this.onStepLength(1)} aria-label="More chords">+</button>
+              </div>
+
+              <button class="dice-reroll-btn" @click=${this.onReroll}>
+                <svg width="15" height="15" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
+                Try another
+              </button>
+            </div>
+          </main>
+
+          <!-- 3. RIGHT SIDEBAR -->
+          <aside class="sidebar-right">
+            <div class="right-header">
+              ${!this.isInspectorOpen ? html`
+                <div class="kicker-label">Harmonic Arc</div>
+                <div style="font-size: 18px; font-weight: 800; color: var(--cv-ink); letter-spacing: -0.015em; margin-top: 4px;">
+                  ${arcTitle}
+                </div>
+              ` : html`
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+                  <div>
+                    <div class="kicker-label">Swapping Bar ${(this.swapIndex || 0) + 1}</div>
+                    <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 4px;">
+                      <span style="font-size: 22px; font-weight: 800; color: var(--cv-ink);">${currentSwapChord?.name || ''}</span>
+                      ${this.showTheory && currentSwapChord?.roman ? html`
+                        <span style="font-size: 12px; font-weight: 800; color: var(--cv-label);">${currentSwapChord.roman}</span>
+                      ` : ''}
+                    </div>
+                  </div>
+                  <button
+                    class="round-btn"
+                    style="width: 36px; height: 36px; font-size: 18px;"
+                    @click=${() => {
+                      this.isInspectorOpen = false;
+                      this.swapIndex = null;
+                      this.abPick = null;
+                      this.requestUpdate();
+                    }}
+                    aria-label="Close chord inspector"
+                  >×</button>
+                </div>
+
+                <div class="ab-box">
+                  <div class="ab-compare-row">
+                    <button
+                      class="ab-card-half ${this.abSide === 'before' ? 'active-now' : ''}"
+                      style="background: ${this.abSide === 'before' ? '#5E5142' : '#F1E4D2'}; color: ${this.abSide === 'before' ? '#FBF3E6' : '#2E271F'};"
+                      @click=${() => this.setABSide('before')}
+                    >
+                      <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Now</div>
+                      <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px;">${currentSwapChord?.name || ''}</div>
                     </button>
                     <button
-                      class="voicing-badge"
-                      aria-label="View voicing for ${c.name}"
-                      @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                      @click=${(e: MouseEvent) => { e.stopPropagation(); this.emit('chord-voicing-tap', chordIndex); }}
+                      class="ab-card-half ${this.abSide === 'after' ? 'active-swap' : ''}"
+                      style="background: ${this.abPick ? (this.abSide === 'after' ? moodColor : '#F1E4D2') : 'transparent'}; color: #2E271F; border: ${this.abPick ? 'none' : '1.5px dashed rgba(46,39,31,0.22)'};"
+                      @click=${() => this.setABSide('after')}
+                      ?disabled=${!this.abPick}
                     >
-                      <div class="voicing-badge-inner">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.2 10-6.2 10 6.2 10 6.2-3.6 6.2-10 6.2-10-6.2-10-6.2z" /><circle cx="12" cy="12" r="2.6" /></svg>
+                      <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Swap to</div>
+                      <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.45)'};">
+                        ${this.abPick?.chord || 'Pick one below'}
                       </div>
                     </button>
                   </div>
-                `;
-              })}
-            </div>
-            </div>
-          </div>
 
-          <div class="theory-toggle-row" @click=${() => this.emit('theory-toggle')}>
-            <div class="theory-track ${this.showTheory ? 'on' : ''}"><div class="theory-knob ${this.showTheory ? 'on' : ''}"></div></div>
-            <div class="theory-label">Show music theory</div>
-          </div>
-          ${staff ? html`
-            <div class="theory-strip">
-              <div class="theory-key-label">${displayKeyName(p.key, p.scaleType)} ${p.scaleType.replace('_', ' ')} · ${sigLabel}</div>
-              <div class="theory-staff-scroll">
-                ${svg`
-                  <svg width="${staff.width}" height="${staff.height}" viewBox="0 0 ${staff.width} ${staff.height}">
-                    ${staff.lines.map(y => svg`<rect x="6" y="${y}" width="${staff.width - 12}" height="1.4" fill="rgba(46,39,31,0.35)" />`)}
-                    <text x="8" y="${staff.lines[3] + 14}" font-size="46" font-family="Georgia, 'Times New Roman', serif" fill="var(--cv-ink)">𝄞</text>
-                    ${staff.keySignature.map(sig => svg`<text x="${sig.x}" y="${sig.y + 6}" font-size="20" fill="var(--cv-ink)">${sig.sign === 'sharp' ? '♯' : '♭'}</text>`)}
-                    ${staff.chords.map(ch => svg`
-                      <text x="${ch.cx}" y="${ch.labelY}" font-size="11" font-weight="800" fill="var(--cv-ink)" text-anchor="middle">${ch.name}</text>
-                      ${ch.ledgers.map(lg => svg`<rect x="${lg.x}" y="${lg.y}" width="18" height="1.6" fill="rgba(46,39,31,0.5)" />`)}
-                      ${ch.notes.map(n => svg`<ellipse cx="${n.x}" cy="${n.y}" rx="6" ry="5.2" fill="var(--cv-ink)" />`)}
-                      <text x="${ch.cx}" y="${staff.height - 4}" font-size="12" font-weight="800" fill="${moodColor}" text-anchor="middle">${ch.roman}</text>
-                    `)}
-                  </svg>
-                `}
+                  <!-- Loop Progression Player Strip -->
+                  <div class="ab-loop-player-row">
+                    <button
+                      class="ab-play-toggle-btn"
+                      style="background: ${this.abPlaying ? moodColor : '#E8D9C2'};"
+                      @click=${this.toggleAB}
+                      aria-label="${this.abPlaying ? 'Pause loop' : 'Play loop with swap preview'}"
+                    >
+                      ${this.abPlaying ? html`
+                        <svg width="13" height="15" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>
+                      ` : html`
+                        <svg width="14" height="16" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>
+                      `}
+                    </button>
+                    <div class="ab-cells-track">
+                      ${chords.map((c, i) => {
+                        const isSwapBar = i === this.swapIndex;
+                        const cellLabel = isSwapBar && this.abSide === 'after' && this.abPick ? this.abPick.chord : c.name;
+                        const isCellActive = this.abPlaying && this.progressStep === i;
+                        return html`
+                          <button
+                            class="ab-cell-item ${isCellActive ? 'active-step' : ''}"
+                            style="background: ${isSwapBar && this.abSide === 'after' && this.abPick ? moodColor : '#F1E4D2'}; opacity: ${isSwapBar ? 1 : 0.65};"
+                            @click=${() => this.onAbCellClick(i)}
+                            aria-label="Preview ${cellLabel} in bar ${i + 1}"
+                          >
+                            ${cellLabel}
+                          </button>
+                        `;
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  class="accept-swap-btn"
+                  style="background: ${this.abPick ? moodColor : '#EDE0CC'}; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.4)'}; cursor: ${this.abPick ? 'pointer' : 'default'};"
+                  @click=${this.onConfirmSwap}
+                  ?disabled=${!this.abPick}
+                >
+                  ${this.abPick ? `Keep ${this.abPick.chord}` : 'Pick a swap to compare'}
+                </button>
+              `}
+            </div>
+
+            <div class="right-scroll">
+              ${!this.isInspectorOpen ? html`
+                <div class="arc-bars-box">
+                  ${chords.map((chord, idx) => {
+                    const r = roleForTension(chord.tension || 0.1);
+                    const h = Math.round(20 + (chord.tension || 0.1) * 75);
+                    return html`
+                      <button class="arc-bar-col" @click=${() => this.onChordSelect(idx)}>
+                        <div class="arc-bar-pillar" style="height: ${h}px; background: ${r.color};"></div>
+                        <div style="font-size: 11px; font-weight: 800; color: var(--cv-ink); margin-top: 6px;">${chord.name}</div>
+                        <div style="font-size: 9.5px; font-weight: 700; color: rgba(46, 39, 31, 0.45);">${ROLE_PLAIN[chord.functionLabel] || ''}</div>
+                      </button>
+                    `;
+                  })}
+                </div>
+                <div style="font-size: 11px; font-weight: 700; color: rgba(46, 39, 31, 0.42); margin-top: 8px;">Taller means more unresolved harmonic tension.</div>
+                <div style="font-size: 13.5px; line-height: 1.6; color: var(--cv-ink-muted); margin-top: 14px;">${arcSentence}</div>
+                <div style="display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; background: var(--cv-cream); border-radius: 14px; padding: 11px 13px; font-size: 12.5px; line-height: 1.5; color: var(--cv-ink-muted);">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${moodColor}" stroke-width="2.4" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
+                  Tap any chord block to swap it or explore substitutions.
+                </div>
+              ` : html`
+                <!-- Custom Geometric Substitution Family Tabs -->
+                <div class="swap-tab-nav">
+                  ${SWAP_FAMILIES.map(fam => {
+                    const on = this.activeSwapFamily === fam.key;
+                    const rr = roleForTension(fam.tension);
+                    const d = Math.round(rr.size * 0.34);
+                    const radius = Math.round(rr.radius * (d / rr.size));
+                    return html`
+                      <button
+                        class="swap-family-tab ${on ? 'active' : ''}"
+                        @click=${() => {
+                          this.activeSwapFamily = fam.key;
+                          this.requestUpdate();
+                        }}
+                      >
+                        ${fam.twoTone ? html`
+                          <span class="two-tone-swatch" style="box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};">
+                            <span style="width: 8px; height: 24px; border-radius: 3px; background: #9CC0EC;"></span>
+                            <span style="width: 8px; height: 24px; border-radius: 3px; background: #C9A9E0;"></span>
+                          </span>
+                        ` : html`
+                          <span
+                            class="family-shape"
+                            style="width: ${d}px; height: ${d}px; border-radius: ${radius}px; background: ${rr.color}; box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};"
+                          ></span>
+                        `}
+                        <span class="family-label ${on ? 'active' : ''}">${fam.label}</span>
+                      </button>
+                    `;
+                  })}
+                </div>
+
+                ${activeBand ? html`
+                  <div class="band-note-banner" style="background: ${activeBand.color}22;">
+                    <span>Sorted for ${activeBand.name} — their moves first</span>
+                  </div>
+                ` : ''}
+
+                ${familyNote ? html`
+                  <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-bottom: 12px; padding: 0 4px;">
+                    ${familyNote}
+                  </div>
+                ` : ''}
+
+                <div>
+                  ${familyRows.length ? familyRows.map(r => {
+                    const isSelected = this.abPick?.chord === r.name;
+                    const rRole = roleForTension(r.tension);
+                    const shapeSize = Math.max(28, Math.min(38, Math.round(rRole.size * 0.32)));
+                    const shapeRadius = Math.round(rRole.radius * (shapeSize / rRole.size));
+                    const isBandTagged = !!activeBand && activeBand.hoist.includes(r.name);
+
+                    return html`
+                      <div
+                        class="alt-item-row ${isSelected ? 'selected' : ''}"
+                        @click=${() => this.onAltAudition({
+                          name: r.name,
+                          chord: r.chord,
+                          sub: r.sub,
+                          functionCaption: r.sub,
+                        })}
+                      >
+                        <div style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                          <div
+                            style="width: ${shapeSize}px; height: ${shapeSize}px; border-radius: ${shapeRadius}px; background: ${rRole.color}; box-shadow: ${isSelected ? `0 0 0 2px ${moodColor}` : 'none'};"
+                          ></div>
+                        </div>
+
+                        <div style="flex: 1; min-width: 0;">
+                          <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
+                            <span style="font-size: 15px; font-weight: 800; color: var(--cv-ink);">${r.name}</span>
+                            ${this.showTheory && r.roman ? html`
+                              <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.8px; color: #7A5C88;">${r.roman}</span>
+                            ` : ''}
+                            ${isBandTagged ? html`
+                              <span class="band-move-tag" style="background: ${activeBand.color};">${activeBand.name} move</span>
+                            ` : ''}
+                          </div>
+                          <div style="font-size: 11.5px; color: var(--cv-ink-muted); margin-top: 2px;">${r.sub}</div>
+                          ${this.showTheory && r.notes && r.notes.length ? html`
+                            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; color: var(--cv-label); margin-top: 3px;">
+                              ${r.notes.join(' · ')}
+                            </div>
+                          ` : ''}
+                        </div>
+
+                        <button
+                          class="alt-play-btn"
+                          style="background: ${isSelected && this.abSide === 'after' ? moodColor : '#DCEAF9'};"
+                          aria-label="Audition ${r.name}"
+                        >
+                          ${isSelected && this.abSide === 'after' ? '❚❚' : '▶'}
+                        </button>
+                      </div>
+                    `;
+                  }) : html`
+                    <div style="padding: 14px 8px; font-size: 12.5px; color: var(--cv-ink-muted);">Loading substitutions...</div>
+                  `}
+                </div>
+              `}
+            </div>
+          </aside>
+
+        </div>
+      ` : html`
+        <!-- DEDICATED MOBILE LAYOUT -->
+        <div class="mobile-stage-wrap" style="--mood-color: ${moodColor};">
+          <!-- Collapsible Vibe Selector Drawer -->
+          <div style="padding: 12px 18px 0;">
+            <button class="mobile-vibe-bar" @click=${() => { this.vibeOpen = !this.vibeOpen; }}>
+              <div>
+                <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">The Vibe</div>
+                <div style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink); margin-top: 2px;">
+                  ${this.progression?.searchTerm ? html`
+                    ${this.renderStageTitle(moodColor)}
+                  ` : `${this.progression?.genre || 'Pop'} · ${this.progression?.mood || 'Warm'}`}
+                </div>
               </div>
-            </div>
-          ` : ''}
-
-          <div class="transport">
-            <button class="play-btn" style="background:${moodColor}" @click=${() => this.emit('toggle-play')}>
-              ${this.playing
-                ? html`<svg width="16" height="16" viewBox="0 0 20 20"><rect width="20" height="20" rx="3" fill="#2E271F" /></svg>`
-                : html`<svg width="20" height="22" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z" /></svg>`}
+              <span>${this.vibeOpen ? '⌃' : '⌄'}</span>
             </button>
-            <div class="progress-track">
-              <div
-                class="progress-fill ${this.snapProgress ? 'snap' : ''}"
-                style="width:${progressPct}%;background:${moodColor};--progress-duration:${AUTOPLAY_INTERVAL_MS}ms"
-              ></div>
-            </div>
-            <div class="dice-btn ${this.spinning ? 'spinning' : ''}" @click=${() => this.reroll()}>
-              <svg width="20" height="20" viewBox="0 0 24 24">
-                <rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}" />
-                <circle cx="8" cy="8" r="1.7" fill="#2E271F" />
-                <circle cx="16" cy="8" r="1.7" fill="#2E271F" />
-                <circle cx="12" cy="12" r="1.7" fill="#2E271F" />
-                <circle cx="8" cy="16" r="1.7" fill="#2E271F" />
-                <circle cx="16" cy="16" r="1.7" fill="#2E271F" />
-              </svg>
-            </div>
-            ${this.isAuthenticated ? html`
-              <div class="dice-btn" title="${this.isBookmarked ? 'Saved in sets' : 'Save set'}" @click=${() => { this.saveModalVisible = true; }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="${this.isBookmarked ? '#2E271F' : 'none'}" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                </svg>
+
+            ${this.vibeOpen ? html`
+              <div style="background: var(--cv-surface); border-radius: 20px; padding: 16px 15px; margin-top: 8px;">
+                <form class="vibe-input-row ${this.isGenerating ? 'generating' : ''}" @submit=${this.onVibeSubmit} style="margin-top: 0;">
+                  <input
+                    type="text"
+                    class="vibe-text-input"
+                    .value=${this.freeText}
+                    @input=${(e: Event) => { this.freeText = (e.target as HTMLInputElement).value; }}
+                    placeholder=${this.isGenerating ? 'Composing your chords...' : this.vibeExamples[this.vibePlaceholderIdx]}
+                    ?disabled=${this.isGenerating}
+                  />
+                  <button
+                    type="submit"
+                    class="vibe-submit-btn ${this.isGenerating ? 'generating' : ''}"
+                    style="background: ${moodColor};"
+                    aria-label="${this.isGenerating ? 'Composing chords' : 'Generate loop from vibe'}"
+                    ?disabled=${this.isGenerating || !this.freeText.trim()}
+                  >
+                    ${this.isGenerating ? html`
+                      <div class="vibe-spinner"></div>
+                    ` : html`
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+                    `}
+                  </button>
+                </form>
+                ${this.isGenerating ? html`
+                  <div class="vibe-generating-pill">
+                    <span class="vibe-spinner"></span>
+                    <span>Composing chords...</span>
+                  </div>
+                ` : ''}
+
+                <div class="kicker-label spaced">Genre</div>
+                <div class="pills-group">
+                  ${shownGenres.map(g => html`
+                    <button class="pill ${this.progression?.genre === g ? 'active' : ''}" @click=${() => this.onGenreClick(g)}>${g}</button>
+                  `)}
+                </div>
+
+                <div class="kicker-label spaced">Mood</div>
+                <div class="pills-group">
+                  ${MOOD_PRIMARY.map(m => html`
+                    <button class="pill ${this.progression?.mood === m ? 'active' : ''}" @click=${() => this.onMoodClick(m)}>${m}</button>
+                  `)}
+                </div>
+
+                <div class="kicker-label spaced">Band</div>
+                <div class="pills-group">
+                  ${BANDS.map(b => html`
+                    <button class="pill ${this.selectedBand === b.name ? 'active' : ''}" @click=${() => this.onBandClick(b.name)}>${b.name}</button>
+                  `)}
+                </div>
+
+                <button class="mobile-loops-toggle-btn" @click=${() => this.toggleLibrary(true)}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+                  <span style="flex: 1; text-align: left;">Your saved loops (${this.savedSets.length})</span>
+                  <span style="font-weight: 800;">→</span>
+                </button>
               </div>
             ` : ''}
-            <div class="control-icon-btn" aria-label="Instrument: ${effectiveInstrument}" @click=${() => { this.expandedInstrument = !this.expandedInstrument; this.expandedPlayStyle = false; }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-            </div>
-            <div class="control-icon-btn" aria-label="Play style: ${effectivePlayStyle}" @click=${() => { this.expandedPlayStyle = !this.expandedPlayStyle; this.expandedInstrument = false; }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h13M3 12h9M3 18h13" /></svg>
+          </div>
+
+          <!-- View Switcher Tabs: Chords | Song | Play it -->
+          <div style="padding: 12px 18px 0;">
+            <div class="view-tabs-bar" style="width: 100%; justify-content: center;">
+              <button class="view-tab ${this.activeView === 'loop' ? 'active' : ''}" @click=${() => { this.activeView = 'loop'; }}>Chords</button>
+              <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
+              <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
             </div>
           </div>
-          <div class="transport-meta">${displayKeyName(p.key, p.scaleType).toUpperCase()} ${p.scaleType.replace('_', ' ')} · ${p.bpm} BPM</div>
 
-          <div class="control-row">
-            <div class="control-chip" @click=${() => { this.expandedInstrument = !this.expandedInstrument; this.expandedPlayStyle = false; }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-              ${effectiveInstrument} <span class="control-chevron">${this.expandedInstrument ? '⌃' : '⌄'}</span>
-            </div>
-            <div class="control-chip" @click=${() => { this.expandedPlayStyle = !this.expandedPlayStyle; this.expandedInstrument = false; }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h13M3 12h9M3 18h13" /></svg>
-              ${effectivePlayStyle} <span class="control-chevron">${this.expandedPlayStyle ? '⌃' : '⌄'}</span>
-            </div>
+          <!-- Mobile Center View -->
+          <div style="padding: 14px 18px 24px; flex: 1;">
+            ${this.activeView === 'loop' ? html`
+              <div class="stage-panel" style="min-height: 200px; padding: 24px 12px;">
+                <svg class="drift-shape a" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
+                <svg class="drift-shape b" width="90" height="90" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
+
+                <div class="chords-flex-row" style="gap: 16px;">
+                  ${chords.map((chord, idx) => {
+                    const r = roleForTension(chord.tension || 0.1);
+                    const isLit = this.playing && idx === this.progressStep;
+                    const size = Math.max(76, Math.min(100, r.size * 0.8));
+                    const radius = Math.round(r.radius * (size / r.size));
+
+                    return html`
+                      <div class="chord-item-wrap" @click=${() => this.onChordSelect(idx)}>
+                        <div
+                          class="chord-block-shape ${isLit ? 'active-pulse' : ''}"
+                          style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color};"
+                        >
+                          ${this.showTheory && chord.roman ? html`
+                            <div class="roman-pill-badge">${chord.roman}</div>
+                          ` : ''}
+                          <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.76)}px;">${chord.name}</div>
+
+                          <!-- Quick Mobile Action Buttons -->
+                          <button class="quick-action-btn swap" @click=${(e: Event) => { e.stopPropagation(); this.onChordSelect(idx); }} aria-label="Swap chord">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
+                          </button>
+                        </div>
+                        <div class="chord-role-label">${ROLE_PLAIN[chord.functionLabel] || ''}</div>
+                      </div>
+                    `;
+                  })}
+                </div>
+              </div>
+
+              <!-- Quick Instrument & Play Style Chips -->
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px;">
+                <button class="pill" @click=${() => { this.soundOpen = !this.soundOpen; }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
+                  ${this.instrument || 'Piano'}
+                </button>
+                <button class="pill" @click=${() => { this.soundOpen = !this.soundOpen; }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
+                  ${this.playStyle || 'Block chords'}
+                </button>
+              </div>
+
+              ${this.soundOpen ? html`
+                <div class="sound-drawer">
+                  <div class="kicker-label">Instrument</div>
+                  <div class="sound-options-flex">
+                    ${['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad'].map(inst => html`
+                      <button class="pill ${(this.instrument || 'Piano') === inst ? 'active' : ''}" @click=${() => { this.instrument = inst; playbackEngine.setInstrument(inst); this.requestUpdate(); }}>${inst}</button>
+                    `)}
+                  </div>
+                </div>
+              ` : ''}
+
+              <!-- Music Theory & Harmonic Arc -->
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(46,39,31,0.09); cursor: pointer;" @click=${() => { this.showTheory = !this.showTheory; }}>
+                <div style="width: 36px; height: 20px; border-radius: 100px; background: ${this.showTheory ? moodColor : 'rgba(46,39,31,0.2)'}; padding: 2px; display: flex; align-items: center; transition: background 150ms ease;">
+                  <div style="width: 16px; height: 16px; border-radius: 50%; background: #FFF; transform: ${this.showTheory ? 'translateX(16px)' : 'translateX(0)'}; transition: transform 150ms ease;"></div>
+                </div>
+                <span style="font-size: 13px; font-weight: 700; color: var(--cv-ink-muted);">Show music theory & tension arc</span>
+              </div>
+
+              ${this.showTheory ? html`
+                <div style="margin-top: 14px; background: var(--cv-surface); border-radius: 18px; padding: 14px;">
+                  <div class="arc-bars-box" style="height: 100px;">
+                    ${chords.map((chord, idx) => {
+                      const r = roleForTension(chord.tension || 0.1);
+                      const h = Math.round(16 + (chord.tension || 0.1) * 50);
+                      return html`
+                        <div class="arc-bar-col" @click=${() => this.onChordSelect(idx)}>
+                          <div class="arc-bar-pillar" style="height: ${h}px; background: ${r.color};"></div>
+                          <div style="font-size: 10px; font-weight: 800; color: var(--cv-ink); margin-top: 4px;">${chord.name}</div>
+                        </div>
+                      `;
+                    })}
+                  </div>
+                  <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-top: 10px;">${arcSentence}</div>
+                </div>
+              ` : ''}
+            ` : this.activeView === 'song' ? html`
+              <div class="song-track-list">
+                ${this.sections.map((sec, i) => html`
+                  <div class="song-card ${this.activeSectionIdx === i ? 'active-sec' : ''}" @click=${() => { this.activeSectionIdx = i; this.requestUpdate(); }}>
+                    <div style="flex: 1;">
+                      <div style="font-size: 15px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
+                      <div style="font-size: 11.5px; color: var(--cv-ink-muted);">${sec.desc}</div>
+                    </div>
+                  </div>
+                `)}
+                <div class="add-sec-card" @click=${() => {
+                  if (this.progression) {
+                    const res = SongArranger.addSection(this.sections, this.progression);
+                    this.sections = res.sections;
+                    this.activeSectionIdx = res.activeIndex;
+                    this.requestUpdate();
+                  }
+                }}>
+                  + Add a related section
+                </div>
+              </div>
+            ` : html`
+              <div style="padding: 16px 4px 26px;">
+                <div style="background: var(--cv-surface); border-radius: 20px; padding: 15px 15px 17px;">
+                  <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.4px; color: var(--cv-label); text-transform: uppercase;">Instrument</div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px;">
+                    ${['Piano', 'Guitar', 'Ukulele'].map(inst => html`
+                      <button
+                        class="pill ${this.playInstrument === inst ? 'active' : ''}"
+                        style="background: ${this.playInstrument === inst ? moodColor : 'var(--cv-cream)'}; color: ${this.playInstrument === inst ? '#2E271F' : 'var(--cv-ink-muted)'}; border: none; min-height: 40px; padding: 0 18px; border-radius: 100px; font-size: 13px; font-weight: 800; cursor: pointer; transition: background 180ms ease, color 180ms ease;"
+                        @click=${() => { this.playInstrument = inst as PlayInstrument; }}
+                      >${inst}</button>
+                    `)}
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-top: 15px; padding-top: 14px; border-top: 1px solid rgba(46,39,31,0.09);" @click=${() => { this.showDegrees = !this.showDegrees; }}>
+                    <div style="width: 36px; height: 20px; border-radius: 100px; background: ${this.showDegrees ? moodColor : 'rgba(46,39,31,0.2)'}; padding: 2px; display: flex; align-items: center; transition: background 150ms ease;">
+                      <div style="width: 16px; height: 16px; border-radius: 50%; background: #FFF; transform: ${this.showDegrees ? 'translateX(16px)' : 'translateX(0)'}; transition: transform 150ms ease;"></div>
+                    </div>
+                    <div style="font-size: 13px; font-weight: 700; color: var(--cv-ink-muted);">Scale degrees</div>
+                  </div>
+                  <div style="font-size: 12px; line-height: 1.6; color: #8A7C6B; margin-top: 11px;">
+                    ${this.playInstrument === 'Piano'
+                      ? 'One voicing per chord, root position — the red dot is the root, play left to right.'
+                      : 'Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.'}
+                  </div>
+                </div>
+
+                ${this.playInstrument === 'Piano' ? html`
+                  <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 18px;">
+                    ${chords.map((ch, i) => this.renderPianoCard(ch, i))}
+                  </div>
+                ` : html`
+                  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 18px;">
+                    ${chords.map((ch, i) => this.renderFretCard(ch, i, this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar'))}
+                  </div>
+                `}
+              </div>
+            `}
           </div>
-          ${this.expandedInstrument ? html`
-            <div class="control-options">
-              ${shownInst.map(i => html`
-                <div class="control-option" @click=${() => { this.emit('set-instrument', i.name); this.expandedInstrument = false; }}>
-                  <span class="control-dot" style="background:${i.color}"></span>${i.name}
-                </div>
-              `)}
-              ${restInst.length ? html`
-                <div class="control-option toggle" @click=${() => { this.expandedAllInstruments = !this.expandedAllInstruments; }}>
-                  ${this.expandedAllInstruments ? 'Show less ⌃' : `+${restInst.length} more ⌄`}
-                </div>
-              ` : ''}
-            </div>
-          ` : ''}
-          ${this.expandedPlayStyle ? html`
-            <div class="control-options">
-              ${shownStyles.map(s => html`
-                <div class="control-option" @click=${() => { this.emit('set-play-style', s.name); this.expandedPlayStyle = false; }}>
-                  <span class="control-dot" style="background:${s.color}"></span>${s.name}
-                </div>
-              `)}
-              ${restStyles.length ? html`
-                <div class="control-option toggle" @click=${() => { this.expandedAllPlayStyles = !this.expandedAllPlayStyles; }}>
-                  ${this.expandedAllPlayStyles ? 'Show less ⌃' : `+${restStyles.length} more ⌄`}
-                </div>
-              ` : ''}
-            </div>
-          ` : ''}
 
-          <div class="cta-button-group">
-            <button class="build-song-btn" style="background:${moodColor}" @click=${() => this.emit('view-song')}>
-              Build the full song <span>→</span>
-            </button>
+          <!-- Bottom Mobile Transport Bar -->
+          <div class="transport-footer" style="padding: 10px 16px;">
             <button
-              class="play-along-cta-btn"
-              @click=${() => this.emit('view-play-along')}
-              aria-label="Practice chords with hands"
+              class="play-circle-btn"
+              style="background: ${moodColor}; width: 42px; height: 42px;"
+              @click=${() => this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }))}
+              aria-label="${this.playing ? 'Pause' : 'Play'}"
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2.5" y="7" width="19" height="10" rx="2"/>
-                <path d="M8 7v10M13 7v10M18 7v10"/>
-              </svg>
-              Play along
+              ${this.playing ? html`
+                <svg width="14" height="16" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>
+              ` : html`
+                <svg width="15" height="17" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>
+              `}
             </button>
+
+            <div class="progress-line-track">
+              <div
+                class="progress-line-fill ${this.snapProgress ? 'snap' : ''}"
+                style="width: 100%; transform: scaleX(${this.playing && chords.length ? (this.progressStep + 1) / chords.length : 0}); background: ${moodColor}; --progress-duration: ${AUTOPLAY_INTERVAL_MS}ms;"
+              ></div>
+            </div>
+
+            <button class="round-btn" style="width: 42px; height: 42px; flex-shrink: 0;" @click=${this.onReroll} aria-label="Try another progression">
+              <svg width="19" height="19" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
+            </button>
+            <button class="round-btn" style="width: 42px; height: 42px; flex-shrink: 0;" @click=${this.onBookmark} aria-label="Keep this loop">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+            </button>
+            <button class="mobile-loops-toggle-btn" style="background: ${this.libraryOpen ? moodColor : 'var(--cv-surface)'};" @click=${() => this.toggleLibrary()} aria-label="Your saved loops">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M19 4v10l-2.4-1.6L14.2 14V4z" fill="#2E271F" stroke="none"/></svg>
+            </button>
+            <button class="round-btn" style="width: 42px; height: 42px; flex-shrink: 0;" @click=${() => { this.shareOpen = true; }} aria-label="Share this loop">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
+            </button>
+
+            ${this.libraryOpen ? html`
+              <div class="library-popover-mobile">
+                ${this.renderLibraryPopoverContent(moodColor)}
+              </div>
+            ` : ''}
           </div>
-          <div class="back-to-seed-row">
-            <div class="back-to-seed-link" @click=${() => this.emit('back')}>← Back to seed</div>
-          </div>
+
+          <!-- Mobile Slide-Up Substitution Sheet -->
+          ${this.mobileSheetOpen && this.swapIndex !== null ? html`
+            <div class="sheet-scrim" @click=${() => { this.mobileSheetOpen = false; }}></div>
+            <div class="mobile-sheet">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                <div style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">Swap Bar ${this.swapIndex + 1} (${currentSwapChord?.name})</div>
+                <button class="round-btn" style="width: 32px; height: 32px;" @click=${() => { this.mobileSheetOpen = false; }}>×</button>
+              </div>
+
+              <div class="ab-box" style="margin-top: 0; margin-bottom: 14px;">
+                <div class="ab-compare-row">
+                  <button
+                    class="ab-card-half ${this.abSide === 'before' ? 'active-now' : ''}"
+                    style="background: ${this.abSide === 'before' ? '#5E5142' : '#F1E4D2'}; color: ${this.abSide === 'before' ? '#FBF3E6' : '#2E271F'};"
+                    @click=${() => this.setABSide('before')}
+                  >
+                    <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Now</div>
+                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px;">${currentSwapChord?.name || ''}</div>
+                  </button>
+                  <button
+                    class="ab-card-half ${this.abSide === 'after' ? 'active-swap' : ''}"
+                    style="background: ${this.abPick ? (this.abSide === 'after' ? moodColor : '#F1E4D2') : 'transparent'}; color: #2E271F; border: ${this.abPick ? 'none' : '1.5px dashed rgba(46,39,31,0.22)'};"
+                    @click=${() => this.setABSide('after')}
+                    ?disabled=${!this.abPick}
+                  >
+                    <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Swap to</div>
+                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.45)'};">
+                      ${this.abPick?.chord || 'Pick one below'}
+                    </div>
+                  </button>
+                </div>
+
+                <!-- Loop Progression Player Strip -->
+                <div class="ab-loop-player-row">
+                  <button
+                    class="ab-play-toggle-btn"
+                    style="background: ${this.abPlaying ? moodColor : '#E8D9C2'};"
+                    @click=${this.toggleAB}
+                    aria-label="${this.abPlaying ? 'Pause loop' : 'Play loop with swap preview'}"
+                  >
+                    ${this.abPlaying ? html`
+                      <svg width="13" height="15" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>
+                    ` : html`
+                      <svg width="14" height="16" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>
+                    `}
+                  </button>
+                  <div class="ab-cells-track">
+                    ${chords.map((c, i) => {
+                      const isSwapBar = i === this.swapIndex;
+                      const cellLabel = isSwapBar && this.abSide === 'after' && this.abPick ? this.abPick.chord : c.name;
+                      const isCellActive = this.abPlaying && this.progressStep === i;
+                      return html`
+                        <button
+                          class="ab-cell-item ${isCellActive ? 'active-step' : ''}"
+                          style="background: ${isSwapBar && this.abSide === 'after' && this.abPick ? moodColor : '#F1E4D2'}; opacity: ${isSwapBar ? 1 : 0.65};"
+                          @click=${() => this.onAbCellClick(i)}
+                          aria-label="Preview ${cellLabel} in bar ${i + 1}"
+                        >
+                          ${cellLabel}
+                        </button>
+                      `;
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Custom Geometric Substitution Family Tabs -->
+              <div class="swap-tab-nav">
+                ${SWAP_FAMILIES.map(fam => {
+                  const on = this.activeSwapFamily === fam.key;
+                  const rr = roleForTension(fam.tension);
+                  const d = Math.round(rr.size * 0.34);
+                  const radius = Math.round(rr.radius * (d / rr.size));
+                  return html`
+                    <button
+                      class="swap-family-tab ${on ? 'active' : ''}"
+                      @click=${() => {
+                        this.activeSwapFamily = fam.key;
+                        this.requestUpdate();
+                      }}
+                    >
+                      ${fam.twoTone ? html`
+                        <span class="two-tone-swatch" style="box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};">
+                          <span style="width: 8px; height: 24px; border-radius: 3px; background: #9CC0EC;"></span>
+                          <span style="width: 8px; height: 24px; border-radius: 3px; background: #C9A9E0;"></span>
+                        </span>
+                      ` : html`
+                        <span
+                          class="family-shape"
+                          style="width: ${d}px; height: ${d}px; border-radius: ${radius}px; background: ${rr.color}; box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};"
+                        ></span>
+                      `}
+                      <span class="family-label ${on ? 'active' : ''}">${fam.label}</span>
+                    </button>
+                  `;
+                })}
+              </div>
+
+              ${activeBand ? html`
+                <div class="band-note-banner" style="background: ${activeBand.color}22;">
+                  <span>Sorted for ${activeBand.name} — their moves first</span>
+                </div>
+              ` : ''}
+
+              ${familyNote ? html`
+                <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-bottom: 12px; padding: 0 4px;">
+                  ${familyNote}
+                </div>
+              ` : ''}
+
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                ${familyRows.length ? familyRows.map(r => {
+                  const isSelected = this.abPick?.chord === r.name;
+                  const rRole = roleForTension(r.tension);
+                  const shapeSize = Math.max(28, Math.min(38, Math.round(rRole.size * 0.32)));
+                  const shapeRadius = Math.round(rRole.radius * (shapeSize / rRole.size));
+                  const isBandTagged = !!activeBand && activeBand.hoist.includes(r.name);
+
+                  return html`
+                    <div
+                      class="alt-item-row ${isSelected ? 'selected' : ''}"
+                      @click=${() => this.onAltAudition({
+                        name: r.name,
+                        chord: r.chord,
+                        sub: r.sub,
+                        functionCaption: r.sub,
+                      })}
+                    >
+                      <div style="width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                        <div
+                          style="width: ${shapeSize}px; height: ${shapeSize}px; border-radius: ${shapeRadius}px; background: ${rRole.color}; box-shadow: ${isSelected ? `0 0 0 2px ${moodColor}` : 'none'};"
+                        ></div>
+                      </div>
+
+                      <div style="flex: 1; min-width: 0;">
+                        <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
+                          <span style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink);">${r.name}</span>
+                          ${this.showTheory && r.roman ? html`
+                            <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.8px; color: #7A5C88;">${r.roman}</span>
+                          ` : ''}
+                          ${isBandTagged ? html`
+                            <span class="band-move-tag" style="background: ${activeBand.color};">${activeBand.name} move</span>
+                          ` : ''}
+                        </div>
+                        <div style="font-size: 11px; color: var(--cv-ink-muted); margin-top: 2px;">${r.sub}</div>
+                        ${this.showTheory && r.notes && r.notes.length ? html`
+                          <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.4px; color: var(--cv-label); margin-top: 2px;">
+                            ${r.notes.join(' · ')}
+                          </div>
+                        ` : ''}
+                      </div>
+
+                      <button
+                        class="alt-play-btn"
+                        style="background: ${isSelected && this.abSide === 'after' ? moodColor : '#DCEAF9'}; width: 30px; height: 30px;"
+                        aria-label="Audition ${r.name}"
+                      >
+                        ${isSelected && this.abSide === 'after' ? '❚❚' : '▶'}
+                      </button>
+                    </div>
+                  `;
+                }) : html`
+                  <div style="padding: 12px; font-size: 12.5px; color: var(--cv-ink-muted);">Loading substitutions...</div>
+                `}
+              </div>
+
+              ${this.abPick ? html`
+                <button class="accept-swap-btn" style="background: ${moodColor}; margin-top: 14px;" @click=${this.onConfirmSwap}>
+                  Keep ${this.abPick.chord}
+                </button>
+              ` : ''}
+            </div>
+          ` : ''}
         </div>
+      `}
 
-        ${this.sheetMounted && this.swapChord ? html`
-          <swap-sheet
-            .chord=${this.swapChord}
-            .swapIndex=${this.swapIndex}
-            .progression=${this.progression}
-            .order=${this.order}
-            .alternatives=${this.alternatives}
-            .theoryGroups=${this.theoryGroups}
-            .borrowedChords=${this.borrowedChords}
-            .showTheory=${this.showTheory}
-            .mode=${this.sheetMode}
-            .moodColor=${moodColor}
-            .position=${(this.order.indexOf(this.swapIndex ?? 0) >= 0 ? this.order.indexOf(this.swapIndex ?? 0) : (this.swapIndex ?? 0)) + 1}
-            .total=${this.order.length}
-            .visible=${this.sheetVisible}
-            .resetKey=${this.swapIndex}
-            @close=${() => this.emit('close')}
-            @select-alternative=${(e: CustomEvent) => this.emit('select-alternative', e.detail)}
-            @audition-chord=${(e: CustomEvent) => this.emit('audition-chord', e.detail)}
-            @voicing-preview=${(e: CustomEvent) => this.emit('voicing-preview', e.detail)}
-            @voicing-change=${(e: CustomEvent) => this.emit('voicing-change', e.detail)}
-          ></swap-sheet>
-        ` : ''}
+      <!-- Share Modal -->
+      <share-modal
+        .open=${this.shareOpen}
+        .progression=${this.progression}
+        @close=${() => { this.shareOpen = false; }}
+      ></share-modal>
 
-        ${this.shareMounted ? html`
-          <share-modal
-            .visible=${this.shareVisible}
-            @close=${() => this.closeShare()}
-            @export=${(e: CustomEvent<{ device: ShareDevice; name: string }>) => this.exportDevice(e.detail.device, e.detail.name)}
-            @export-wav=${() => this.handleExportWav()}
-            @export-midi=${() => this.handleExportMidi()}
-          ></share-modal>
-        ` : ''}
-
-        <save-set-modal
-          .visible=${this.saveModalVisible}
-          .defaultName=${`${p.genre} · ${p.mood}`}
-          @close=${() => { this.saveModalVisible = false; }}
-          @save=${(e: CustomEvent<string>) => {
-            this.emit('save-set', e.detail);
-            this.saveModalVisible = false;
-          }}
-        ></save-set-modal>
-
-        ${this.toast ? html`<div class="toast">${this.toast.startsWith('Sent to') || this.toast.startsWith('Saved') || this.toast.startsWith('Rendering') || this.toast.startsWith('Failed') ? this.toast : `Sent to ${this.toast}`}</div>` : ''}
-      </div>
+      <!-- Upgraded Loops Drawer (Desktop slide-over & Mobile bottom sheet) -->
+      ${this.renderLoopsDrawer(moodColor)}
     `;
   }
 }

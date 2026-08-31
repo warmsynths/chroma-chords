@@ -13,20 +13,21 @@ import {
 import { USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
 import { NormalizedPrompt } from './services/freetext-schema';
 import { authService } from './services/auth-service';
+import './components/app-header';
 import './components/seed-screen';
 import './components/loop-screen';
 import './components/song-screen';
-import './components/sets-screen';
 import './components/play-along-screen';
 import './components/auth-modal';
 import { SongSection } from './components/song-screen';
 
-type Screen = 'seed' | 'loop' | 'song' | 'sets' | 'play-along';
+type Screen = 'seed' | 'loop' | 'song' | 'play-along';
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
-  @state() private screen: Screen = 'seed';
+  @state() private screen: Screen = 'loop';
+  @state() private libraryOpen = false;
   @state() private genre = 'Pop';
   @state() private mood = 'Dreamy';
   @state() private progression: Progression | null = null;
@@ -61,6 +62,7 @@ export class ChromaChordsApp extends LitElement {
 
   private currentProjectId: string | null = null;
   private activeSearchPrompt: string | null = null;
+  private previousScreenBeforeSets: Screen = 'loop';
   private unsubscribeAuth: (() => void) | null = null;
   private unsubscribeProjects: (() => void) | null = null;
   private unsubscribeSyncStatus: (() => void) | null = null;
@@ -78,41 +80,41 @@ export class ChromaChordsApp extends LitElement {
       --cv-ink: #2E271F;
       --cv-ink-muted: #6B5F50;
       --cv-label: #8A6B3F;
-      --cv-ink-04: rgba(46, 39, 31, 0.04);
-      --cv-ink-08: rgba(46, 39, 31, 0.08);
-      --cv-ink-10: rgba(46, 39, 31, 0.10);
-      --cv-ink-12: rgba(46, 39, 31, 0.12);
-      --cv-ink-14: rgba(46, 39, 31, 0.14);
-      --cv-ink-16: rgba(46, 39, 31, 0.16);
-      --cv-ink-20: rgba(46, 39, 31, 0.20);
-      --cv-ink-25: rgba(46, 39, 31, 0.25);
-      --cv-ink-35: rgba(46, 39, 31, 0.35);
-      --cv-ink-45: rgba(46, 39, 31, 0.45);
-      --cv-ink-55: rgba(46, 39, 31, 0.55);
       --cv-red: #F2A79B;
       --cv-red-deep: #F2735F;
-      --cv-red-deep-hover: #E85F49;
       --cv-blue: #9CC0EC;
       --cv-yellow: #F6D98B;
       --cv-purple: #C9A9E0;
       --cv-green: #B8CC9E;
-      --cv-peach: #F2C9A0;
       --cv-plum: #9B7CA8;
-      --cv-plum-hover: #84698F;
 
-      display: block;
-      min-height: 100%;
-      background: var(--cv-canvas);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100%;
+      background: var(--cv-cream, #FBF3E6);
       font-family: var(--cv-font);
       color: var(--cv-ink);
+      overflow: hidden;
+      box-sizing: border-box;
     }
+
+    .app-header-container {
+      border-bottom: 1px solid rgba(46, 39, 31, 0.08);
+      background: var(--cv-cream);
+      flex-shrink: 0;
+      z-index: 40;
+    }
+
     .screen-view {
-      display: block;
-      min-height: 100%;
-      opacity: 1;
-      transform: scale(1);
-      transition: opacity 200ms var(--cv-ease), transform 240ms var(--cv-ease);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
     }
+
     .save-toast {
       position: fixed;
       bottom: 24px;
@@ -158,12 +160,7 @@ export class ChromaChordsApp extends LitElement {
     .toast-btn.undo {
       color: #F2A79B;
     }
-    @starting-style {
-      .screen-view {
-        opacity: 0;
-        transform: scale(0.985);
-      }
-    }
+
     @media (prefers-reduced-motion: reduce) {
       .screen-view {
         transition: opacity 150ms ease;
@@ -218,6 +215,15 @@ export class ChromaChordsApp extends LitElement {
 
     loadChordData().then(data => {
       this.chordData = data;
+      if (!this.progression) {
+        this.progression = generateProgression(this.chordData, this.genre, this.mood, {
+          length: this.length,
+        });
+        this.order = Array.from({ length: this.length }, (_, i) => i);
+        playbackEngine.setProgression(this.progression, this.order);
+        this.sections = SongArranger.createInitialSong(this.progression, this.order);
+        this.screen = 'loop';
+      }
     }).catch(err => {
       console.error('Failed to load chord data:', err);
     });
@@ -256,31 +262,15 @@ export class ChromaChordsApp extends LitElement {
   private syncRouteFromHash() {
     const hash = window.location.hash.replace(/^#/, '').toLowerCase();
     if (hash === 'sets' || hash === '11a') {
-      if (this.screen !== 'sets') {
-        this.previousScreenBeforeSets = this.screen;
-      }
-      this.screen = 'sets';
+      this.libraryOpen = true;
+      this.screen = 'loop';
     } else if (hash === 'play-along' || hash === '12a') {
-      if (this.progression) {
-        this.screen = 'play-along';
-      } else {
-        this.screen = 'seed';
-      }
+      this.screen = 'play-along';
     } else if (hash === 'song' || hash === '5a') {
-      if (this.progression) {
-        this.screen = 'song';
-        playbackEngine.setSong(this.sections);
-      } else {
-        this.screen = 'seed';
-      }
-    } else if (hash === 'loop' || hash === '3a' || hash === '8a') {
-      if (this.progression) {
-        this.screen = 'loop';
-      } else {
-        this.screen = 'seed';
-      }
-    } else if (hash === 'seed' || hash === '2a' || !hash) {
-      this.screen = 'seed';
+      this.screen = 'song';
+      if (this.sections.length) playbackEngine.setSong(this.sections);
+    } else {
+      this.screen = 'loop';
     }
   }
 
@@ -303,22 +293,12 @@ export class ChromaChordsApp extends LitElement {
 
   private onGenreChange(e: CustomEvent<string>) {
     this.genre = e.detail;
-    this.pendingChordSuggestion = null;
-    this.activeSearchPrompt = null;
+    this.regenerate();
   }
 
   private onMoodChange(e: CustomEvent<string>) {
     this.mood = e.detail;
-    this.pendingChordSuggestion = null;
-    this.activeSearchPrompt = null;
-  }
-
-  private onFreetextSuggestionApplied(e: CustomEvent<NormalizedPrompt & { promptText?: string }>) {
-    const suggestion = e.detail;
-    this.pendingChordSuggestion = suggestion.chords?.length && suggestion.key && suggestion.scaleType ? suggestion : null;
-    if (e.detail.promptText) {
-      this.activeSearchPrompt = e.detail.promptText;
-    }
+    this.regenerate();
   }
 
   private async onGenerate(e?: CustomEvent<{ promptText?: string }>) {
@@ -367,8 +347,7 @@ export class ChromaChordsApp extends LitElement {
       this.activeSearchPrompt = null;
     } catch (err) {
       console.error('Failed to generate progression:', err);
-      this.toastMessage = 'Failed to generate progression. Please try again.';
-      setTimeout(() => { if (this.toastMessage) this.toastMessage = null; }, 3500);
+      this.showToast('Failed to generate progression. Please try again.');
     } finally {
       this.isGenerating = false;
     }
@@ -376,9 +355,11 @@ export class ChromaChordsApp extends LitElement {
 
   private onLengthChange(e: CustomEvent<number>) {
     this.length = e.detail;
+    this.regenerate();
   }
 
   private regenerate() {
+    if (!this.chordData.scales || Object.keys(this.chordData.scales).length === 0) return;
     const progression = generateProgression(this.chordData, this.genre, this.mood, {
       key: this.keyOverride ?? undefined,
       scaleType: this.scaleOverride ?? undefined,
@@ -391,117 +372,47 @@ export class ChromaChordsApp extends LitElement {
     
     playbackEngine.setProgression(progression, this.order);
 
-    this.syncActiveSection();
+    this.sections = SongArranger.createInitialSong(this.progression, this.order);
+    this.activeSectionIdx = 0;
 
     if (this.playing) {
       playbackEngine.startAutoplay();
       playbackEngine.playActiveChord();
     }
-  }
-
-  private syncActiveSection() {
-    if (!this.progression) return;
-    this.sections = SongArranger.syncActiveSection(this.sections, this.activeSectionIdx, this.progression, this.order);
-  }
-
-  private onSetKey(e: CustomEvent<string>) {
-    this.keyOverride = e.detail;
-    this.regenerate();
-  }
-
-  private onSetScale(e: CustomEvent<string>) {
-    this.scaleOverride = e.detail;
-    this.regenerate();
-  }
-
-  private onSetGenre(e: CustomEvent<string>) {
-    this.genre = e.detail;
-    this.regenerate();
-  }
-
-  private onSetMood(e: CustomEvent<string>) {
-    this.mood = e.detail;
-    this.regenerate();
-  }
-
-  private onSetLength(e: CustomEvent<number>) {
-    this.length = e.detail;
-    this.regenerate();
+    this.requestUpdate();
   }
 
   private onReroll() {
-    if (!this.progression) return;
     this.regenerate();
   }
 
-  private onReorder(e: CustomEvent<number[]>) {
-    if (!this.progression) return;
-    const activeChordIndex = this.order[this.activeIndex];
-    this.order = e.detail;
-    const newPos = this.order.indexOf(activeChordIndex);
-    this.activeIndex = newPos >= 0 ? newPos : 0;
+  private onLoadProject(e: CustomEvent<ProjectData>) {
+    const p = e.detail;
+    const chords: ChordBlock[] = [];
     
-    playbackEngine.setOrder(this.order, this.activeIndex);
-    this.syncActiveSection();
-  }
-
-  private onBack() {
-    playbackEngine.stopAutoplay();
-    this.playing = false;
-    this.setScreen('seed');
-    this.sheetOpen = false;
-    this.keyOverride = null;
-    this.scaleOverride = null;
-  }
-
-  private previousScreenBeforeSets: Screen = 'seed';
-
-  private onViewSets() {
-    playbackEngine.stopAutoplay();
-    this.playing = false;
-    this.previousScreenBeforeSets = this.screen === 'sets' ? 'seed' : this.screen;
-    this.setScreen('sets');
-  }
-
-  private onBackFromSets() {
-    playbackEngine.stopAutoplay();
-    this.playing = false;
-    if (this.progression) {
-      this.setScreen(this.previousScreenBeforeSets === 'song' ? 'song' : 'loop');
-    } else {
-      this.setScreen('seed');
-    }
-  }
-
-  private async onLoadProject(e: CustomEvent<string>) {
-    const id = e.detail;
-    const p = projectStorage.getProjects().find(proj => proj.id === id);
-    if (!p) return;
-    let chords = Array.isArray(p.chords) ? (p.chords as unknown as ChordBlock[]) : [];
-
-    if (chords.length === 0) {
-      try {
-        let data = this.chordData;
-        if (!data || !data.scales || Object.keys(data.scales).length === 0) {
-          data = await loadChordData();
-          this.chordData = data;
-        }
-        const generated = generateProgression(data, p.genre || 'Pop', p.mood || 'Neutral', {
-          key: p.key || 'C',
-          scaleType: p.scaleType || 'MAJOR',
-          length: 4,
-        });
-        chords = generated.chords;
-        p.chords = chords as unknown as ProjectChord[];
-        projectStorage.saveProject(p);
-      } catch (err) {
-        console.error(`Failed to auto-recover chords for project "${id}":`, err);
-        this.showToast('Unable to load set: empty chord data.');
-        return;
+    for (const c of p.chords) {
+      let notes = c.notes;
+      if (!notes || notes.length === 0) {
+        notes = notesForSymbol(c.name, preferFlatSpelling(p.key || 'C', p.scaleType || 'MAJOR'));
       }
+      chords.push({
+        name: c.name,
+        tag: c.tag || 'diatonic',
+        roman: c.roman || '',
+        color: c.color || '#9CC0EC',
+        functionLabel: c.functionLabel || '',
+        notes,
+        scaleLabel: c.scaleLabel || '',
+        desc: c.desc || '',
+        degree: c.degree || '',
+        scaleKey: c.scaleKey || '',
+        tension: c.tension || 0.1,
+      });
     }
 
     this.currentProjectId = p.id;
+    this.genre = p.genre || 'Pop';
+    this.mood = p.mood || 'Dreamy';
     this.progression = {
       genre: p.genre || 'Unknown',
       mood: p.mood || 'Neutral',
@@ -518,6 +429,7 @@ export class ChromaChordsApp extends LitElement {
     this.setScreen('loop');
     this.sections = SongArranger.createInitialSong(this.progression, this.order);
     this.activeSectionIdx = 0;
+    this.showToast(`Loaded "${p.name}"`);
   }
 
   private onDeleteProject(e: CustomEvent<string>) {
@@ -588,124 +500,37 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.playChordAtIndex(e.detail, 0.8);
   }
 
-  private onChordVoicingTap(e: CustomEvent<number>) {
-    if (!this.progression) return;
-    if (this.playing) {
-      playbackEngine.stopAutoplay();
-      this.playing = false;
-    }
-    playbackEngine.clearABOverride();
-    this.swapIndex = e.detail;
-    this.sheetMode = 'voicing';
-    this.alternatives = [];
-    this.theoryGroups = [];
-    this.borrowedChords = [];
-    this.sheetOpen = true;
-    playbackEngine.playChordAtIndex(e.detail, 0.8);
-  }
-
-  private onChordPreview(e: CustomEvent<number>) {
-    if (!this.progression) return;
-    if (this.playing) {
-      playbackEngine.stopAutoplay();
-      this.playing = false;
-    }
-    playbackEngine.playChordAtIndex(e.detail, 0.8);
-  }
-
   private onAuditionChord(e: CustomEvent<ChordBlock>) {
-    const chord = e.detail;
-    let notes = Array.isArray(chord.notes) ? chord.notes : [];
-    if (notes.length === 0 && chord.name && this.progression) {
-      notes = notesForSymbol(chord.name, preferFlatSpelling(this.progression.key, this.progression.scaleType));
-    }
-    playbackEngine.playChordNotes(notes, 0.8);
+    playbackEngine.auditionChord(e.detail, 0.8);
+  }
+
+  private onSelectAlternative(e: CustomEvent<Alternative>) {
+    if (!this.progression || this.swapIndex === null) return;
+    const alt = e.detail;
+    const oldChords = this.progression.chords;
+    const newChords = [...oldChords];
+    newChords[this.swapIndex] = alt.chord;
+
+    this.progression = {
+      ...this.progression,
+      chords: newChords,
+    };
+    playbackEngine.setProgression(this.progression, this.order);
+    this.sheetOpen = false;
+    this.swapIndex = null;
+    this.showToast(`Swapped in ${alt.chord.name}`);
   }
 
   private onSheetClose() {
-    playbackEngine.clearABOverride();
     this.sheetOpen = false;
     this.swapIndex = null;
-  }
-
-  private onSelectAlternative(e: CustomEvent<{ chord: ChordBlock } | Alternative>) {
-    if (!this.progression || this.swapIndex === null) return;
-    if (this.playing) {
-      playbackEngine.stopAutoplay();
-      this.playing = false;
-    }
     playbackEngine.clearABOverride();
-    const chord = (e.detail as any).chord ?? (e.detail as any);
-    const chords = [...this.progression.chords];
-    chords[this.swapIndex] = chord;
-    this.progression = { ...this.progression, chords };
+  }
+
+  private onProgressionChange(e: CustomEvent<Progression>) {
+    this.progression = e.detail;
     playbackEngine.setProgression(this.progression, this.order);
-    this.sheetOpen = false;
-    this.swapIndex = null;
-    this.syncActiveSection();
-    playbackEngine.playChordNotes(chord.notes, 0.8);
-  }
-
-  private onVoicingPreview(e: CustomEvent<string[]>) {
-    playbackEngine.playChordNotes(e.detail, 0.6);
-  }
-
-  private onVoicingChange(e: CustomEvent<{ quality: string; extension: string }>) {
-    if (!this.progression || this.swapIndex === null) return;
-    const chords = [...this.progression.chords];
-    chords[this.swapIndex] = applyVoicingToChord(chords[this.swapIndex], e.detail.quality, e.detail.extension);
-    this.progression = { ...this.progression, chords };
-    playbackEngine.setProgression(this.progression, this.order);
-    this.syncActiveSection();
-  }
-
-  private onBackToProgression() {
-    playbackEngine.stopAutoplay();
-    this.playing = false;
-    this.setScreen('loop');
-    if (this.progression) {
-      playbackEngine.setProgression(this.progression, this.order);
-    }
-  }
-
-  private onViewSong() {
-    playbackEngine.stopAutoplay();
-    this.playing = false;
-    this.sheetOpen = false;
-    this.setScreen('song');
-    playbackEngine.setSong(this.sections);
-  }
-
-  private onViewPlayAlong() {
-    playbackEngine.stopAutoplay();
-    this.playing = false;
-    this.sheetOpen = false;
-    this.setScreen('play-along');
-  }
-
-  private onBackFromPlayAlong() {
-    this.setScreen('loop');
-  }
-
-  private onSelectSection(e: CustomEvent<number>) {
-    const section = this.sections[e.detail];
-    if (!section) return;
-    this.activeSectionIdx = e.detail;
-    this.progression = section.progression;
-    this.order = section.order.slice();
-    this.activeIndex = 0;
-    this.progressStep = 0;
-    this.length = section.progression.chords.length;
-    this.keyOverride = section.progression.key;
-    this.scaleOverride = section.progression.scaleType;
-    this.sheetOpen = false;
-    this.setScreen('loop');
-
-    playbackEngine.setProgression(this.progression, this.order);
-    if (this.playing) {
-      playbackEngine.startAutoplay();
-      playbackEngine.playActiveChord();
-    }
+    this.requestUpdate();
   }
 
   private onAddSection() {
@@ -713,9 +538,10 @@ export class ChromaChordsApp extends LitElement {
     const res = SongArranger.addSection(this.sections, this.progression);
     this.sections = res.sections;
     this.activeSectionIdx = res.activeIndex;
-    if (this.screen === 'song') {
-      playbackEngine.setSong(this.sections);
-    }
+  }
+
+  private onSelectSection(e: CustomEvent<number>) {
+    this.activeSectionIdx = e.detail;
   }
 
   private showToast(msg: string, undoId?: string) {
@@ -725,7 +551,7 @@ export class ChromaChordsApp extends LitElement {
     this.toastDismissTimeout = setTimeout(() => {
       this.toastMessage = null;
       this.toastUndoId = null;
-    }, 4500);
+    }, 3200);
   }
 
   private onToastUndo() {
@@ -740,19 +566,13 @@ export class ChromaChordsApp extends LitElement {
     }
   }
 
-  private onToastView() {
-    this.toastMessage = null;
-    this.toastUndoId = null;
-    this.onViewSets();
-  }
-
   private saveProject(customName?: string) {
     if (!this.progression) return;
     const id = this.currentProjectId || Math.random().toString(36).slice(2, 11);
     this.currentProjectId = id;
     
     const existing = projectStorage.getProjects().find(p => p.id === id);
-    const name = customName || (existing ? existing.name : `${this.progression.genre} · ${this.progression.mood}`);
+    const name = customName || existing?.name || `Progression in ${this.progression.key} ${this.progression.scaleType}`;
 
     const project: ProjectData = {
       id,
@@ -775,148 +595,84 @@ export class ChromaChordsApp extends LitElement {
   }
 
   render() {
-    let screenContent;
     const isBookmarked = Boolean(this.currentProjectId && projectStorage.isProjectSaved(this.currentProjectId));
 
-    if (this.screen === 'sets') {
-      screenContent = html`
-        <sets-screen
-          .projects=${projectStorage.getProjects()}
-          .isAuthenticated=${this.isAuthenticated}
-          .userEmail=${this.userEmail}
-          .syncStatus=${this.syncStatus}
-          @back=${this.onBackFromSets}
-          @load-project=${this.onLoadProject}
-          @delete-project=${this.onDeleteProject}
-          @rename-project=${this.onRenameProject}
-          @sync-projects=${this.onSyncProjects}
-          @request-login=${this.onLoginRequest}
-          @request-logout=${this.onLogoutRequest}
-        ></sets-screen>
-      `;
-    } else if (this.screen === 'seed' || !this.progression) {
-      screenContent = html`
-        <seed-screen
-          .genre=${this.genre}
-          .mood=${this.mood}
-          .length=${this.length}
-          .isAuthenticated=${this.isAuthenticated}
-          .userEmail=${this.userEmail}
-          .isAdmin=${this.isAdmin}
-          .isGenerating=${this.isGenerating}
-          @genre-change=${this.onGenreChange}
-          @mood-change=${this.onMoodChange}
-          @length-change=${this.onLengthChange}
-          @freetext-suggestion-applied=${this.onFreetextSuggestionApplied}
-          @generate=${this.onGenerate}
-          @request-login=${this.onLoginRequest}
-          @request-logout=${this.onLogoutRequest}
-          @view-sets=${this.onViewSets}
-        ></seed-screen>
-      `;
-    } else if (this.screen === 'play-along' && this.progression) {
-      screenContent = html`
-        <play-along-screen
-          .progression=${this.progression}
-          .order=${this.order}
+    return html`
+      <div class="app-header-container">
+        <app-header
           .isAuthenticated=${this.isAuthenticated}
           .userEmail=${this.userEmail}
           .savedCount=${projectStorage.getProjects().length}
-          @back=${() => this.onBackFromPlayAlong()}
-          @chord-preview=${(e: CustomEvent<number>) => this.onChordPreview(e)}
-        ></play-along-screen>
-      `;
-    } else if (this.screen === 'song') {
-      screenContent = html`
-        <song-screen
-          .sections=${this.sections}
-          .activeSectionIdx=${this.activeSectionIdx}
-          .activePlayingSectionIdx=${this.activePlayingSectionIdx}
-          .canAddSection=${this.sections.length < SECTION_TEMPLATES.length}
-          .playing=${this.playing}
-          .progressStep=${this.progressStep}
-          .totalSteps=${this.totalSongSteps}
-          .instrument=${this.instrument}
-          .playStyle=${this.playStyle}
-          .isAuthenticated=${this.isAuthenticated}
-          .isBookmarked=${isBookmarked}
-          @select-section=${this.onSelectSection}
-          @add-section=${this.onAddSection}
-          @back-to-progression=${this.onBackToProgression}
-          @toggle-play-song=${this.onTogglePlaySong}
-          @set-instrument=${this.onSetInstrument}
-          @set-play-style=${this.onSetPlayStyle}
-          @save-set=${this.onSaveSet}
-          @view-sets=${this.onViewSets}
-        ></song-screen>
-      `;
-    } else {
-      const swapChord = this.swapIndex !== null ? this.progression.chords[this.swapIndex] : null;
-
-      screenContent = html`
-        <loop-screen
-          .progression=${this.progression}
-          .activeIndex=${this.activeIndex}
-          .progressStep=${this.progressStep}
-          .order=${this.order}
-          .playing=${this.playing}
-          .showTheory=${this.showTheory}
-          .instrument=${this.instrument}
-          .playStyle=${this.playStyle}
-          .isAuthenticated=${this.isAuthenticated}
-          .userEmail=${this.userEmail}
-          .isBookmarked=${isBookmarked}
-          .sheetOpen=${this.sheetOpen}
-          .sheetMode=${this.sheetMode}
-          .swapChord=${swapChord}
-          .swapIndex=${this.swapIndex}
-          .alternatives=${this.alternatives}
-          .theoryGroups=${this.theoryGroups}
-          .borrowedChords=${this.borrowedChords}
-          @back=${this.onBack}
-          @theory-toggle=${this.onTheoryToggle}
-          @set-instrument=${this.onSetInstrument}
-          @set-play-style=${this.onSetPlayStyle}
-          @toggle-play=${this.onTogglePlay}
-          @chord-tap=${this.onChordTap}
-          @chord-voicing-tap=${this.onChordVoicingTap}
-          @chord-preview=${this.onChordPreview}
-          @audition-chord=${this.onAuditionChord}
-          @close=${this.onSheetClose}
-          @select-alternative=${this.onSelectAlternative}
-          @voicing-preview=${this.onVoicingPreview}
-          @voicing-change=${this.onVoicingChange}
-          @set-key=${this.onSetKey}
-          @set-scale=${this.onSetScale}
-          @set-genre=${this.onSetGenre}
-          @set-mood=${this.onSetMood}
-          @reroll=${this.onReroll}
-          @reorder=${this.onReorder}
-          @set-length=${this.onSetLength}
-          @view-song=${this.onViewSong}
-          @view-play-along=${() => this.onViewPlayAlong()}
-          @save-set=${this.onSaveSet}
-          @view-sets=${this.onViewSets}
+          .syncStatus=${this.syncStatus}
           @request-login=${this.onLoginRequest}
           @request-logout=${this.onLogoutRequest}
-        ></loop-screen>
-      `;
-    }
+          @sync-projects=${this.onSyncProjects}
+          @view-sets=${() => { this.libraryOpen = true; }}
+          @brand-click=${() => { this.setScreen('loop'); }}
+        ></app-header>
+      </div>
 
-    return html`
       <div class="screen-view">
-        ${screenContent}
+        ${this.progression ? html`
+          <loop-screen
+            .chordData=${this.chordData}
+            .progression=${this.progression}
+            .activeIndex=${this.activeIndex}
+            .progressStep=${this.progressStep}
+            .order=${this.order}
+            .playing=${this.playing}
+            .showTheory=${this.showTheory}
+            .instrument=${this.instrument}
+            .playStyle=${this.playStyle}
+            .isAuthenticated=${this.isAuthenticated}
+            .userEmail=${this.userEmail}
+            .sections=${this.sections}
+            .activeSectionIdx=${this.activeSectionIdx}
+            .activePlayingSectionIdx=${this.activePlayingSectionIdx}
+            .totalSongSteps=${this.totalSongSteps}
+            .isGenerating=${this.isGenerating}
+            .libraryOpen=${this.libraryOpen}
+            @library-open-change=${(e: CustomEvent<boolean>) => { this.libraryOpen = e.detail; }}
+            @progression-change=${this.onProgressionChange}
+            @theory-toggle=${this.onTheoryToggle}
+            @set-instrument=${this.onSetInstrument}
+            @set-play-style=${this.onSetPlayStyle}
+            @toggle-play=${this.onTogglePlay}
+            @toggle-play-song=${this.onTogglePlaySong}
+            @set-genre=${this.onGenreChange}
+            @set-mood=${this.onMoodChange}
+            @set-length=${this.onLengthChange}
+            @freetext-generate=${this.onGenerate}
+            @reroll=${this.onReroll}
+            @add-section=${this.onAddSection}
+            @select-section=${this.onSelectSection}
+            @save-set=${this.onSaveSet}
+            @load-project=${this.onLoadProject}
+            @view-sets=${() => { this.libraryOpen = true; }}
+            @request-login=${this.onLoginRequest}
+            @request-logout=${this.onLogoutRequest}
+            @toast=${(e: CustomEvent<string>) => this.showToast(e.detail)}
+          ></loop-screen>
+        ` : html`
+          <div style="display: flex; align-items: center; justify-content: center; height: 100%; font-weight: 700; color: var(--cv-ink-muted);">
+            Loading studio workspace...
+          </div>
+        `}
+
         ${this.toastMessage ? html`
           <div class="save-toast">
             <span>${this.toastMessage}</span>
             <div class="toast-actions">
-              <button class="toast-btn" @click=${this.onToastView}>View</button>
               ${this.toastUndoId ? html`
+                <button class="toast-btn" @click=${() => { this.libraryOpen = true; this.toastMessage = null; }}>View</button>
                 <button class="toast-btn undo" @click=${this.onToastUndo}>Undo</button>
-              ` : ''}
+              ` : html`
+                <button class="toast-btn" @click=${() => { this.toastMessage = null; }} aria-label="Dismiss">✕</button>
+              `}
             </div>
           </div>
         ` : ''}
+
         <auth-modal
           .open=${this.authModalOpen}
           @close-modal=${() => { this.authModalOpen = false; }}

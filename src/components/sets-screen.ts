@@ -544,16 +544,6 @@ export class SetsScreen extends LitElement {
   render() {
     return html`
       <div class="frame">
-        <app-header
-          .isAuthenticated=${this.isAuthenticated}
-          .userEmail=${this.userEmail}
-          .savedCount=${this.projects.length}
-          .syncStatus=${this.syncStatus}
-          @request-login=${() => this.dispatchEvent(new CustomEvent('request-login', { bubbles: true, composed: true }))}
-          @request-logout=${() => this.dispatchEvent(new CustomEvent('request-logout', { bubbles: true, composed: true }))}
-          @sync-projects=${this.onSync}
-        ></app-header>
-        
         <div class="content" style="margin-top: 10px;">
           <button class="back-btn" @click=${this.onBack} style="margin-bottom: 20px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

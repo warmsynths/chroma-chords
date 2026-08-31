@@ -72,6 +72,7 @@ export class MascotParade extends LitElement {
       padding: 8px 16px;
       border-radius: 100px;
       white-space: nowrap;
+      pointer-events: none;
       animation: egg-caption-pop ${DISPLAY_MS}ms ease forwards;
     }
     .row {

@@ -31,6 +31,7 @@ const OLD_STORAGE_KEY = 'chord_voyager_projects';
 
 export class ProjectService {
   static getProjects(): ProjectData[] {
+    if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') return [];
     try {
       let data = localStorage.getItem(STORAGE_KEY);
       if (!data) {
@@ -67,6 +68,7 @@ export class ProjectService {
   }
 
   static setProjects(projects: ProjectData[]): void {
+    if (typeof localStorage === 'undefined' || typeof localStorage.setItem !== 'function') return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
     } catch (e) {

@@ -1,12 +1,15 @@
 :root {
   --cv-ease: cubic-bezier(0.23, 1, 0.32, 1);
-  --cv-font: 'Plus Jakarta Sans', sans-serif;
+  --cv-font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --cv-font-mono: 'Space Mono', monospace;
 
+  /* Surfaces */
   --cv-cream: #FBF3E6;
   --cv-surface: #F6EADB;
   --cv-surface-2: #F1E4CC;
   --cv-canvas: #EDE3D3;
 
+  /* Inks */
   --cv-ink: #2E271F;
   --cv-ink-muted: #6B5F50;
   --cv-label: #8A6B3F;
@@ -22,6 +25,7 @@
   --cv-ink-45: rgba(46, 39, 31, 0.45);
   --cv-ink-55: rgba(46, 39, 31, 0.55);
 
+  /* Accents & Mood Colors */
   --cv-red: #F2A79B;
   --cv-red-deep: #F2735F;
   --cv-red-deep-hover: #E85F49;
@@ -32,4 +36,6 @@
   --cv-peach: #F2C9A0;
   --cv-plum: #9B7CA8;
   --cv-plum-hover: #84698F;
+  --cv-action: #9B7CA8;
+  --cv-action-hover: #84698F;
 }

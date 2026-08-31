@@ -33,6 +33,7 @@ export class SongScreen extends LitElement {
   @property({ type: String }) playStyle: string | null = null;
   @property({ type: Boolean }) isAuthenticated = false;
   @property({ type: Boolean }) isBookmarked = false;
+  @property({ type: Boolean }) embedded = false;
 
   @state() private expandedInstrument = false;
   @state() private expandedPlayStyle = false;
@@ -428,22 +429,33 @@ export class SongScreen extends LitElement {
     const moodColor = currentPlayingSec ? getMoodColor(currentPlayingSec.progression.mood) : '#C9A9E0';
 
     return html`
-      <div class="frame">
-        <app-header
-          .isAuthenticated=${this.isAuthenticated}
-          @view-sets=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}
-          @wordmark-click=${() => this.onWordmarkClick()}
-        ></app-header>
+      <div class="frame" style="${this.embedded ? 'padding: 10px 0 30px;' : ''}">
+        ${!this.embedded ? html`
+          <app-header
+            .isAuthenticated=${this.isAuthenticated}
+            @view-sets=${() => this.dispatchEvent(new CustomEvent('view-sets', { bubbles: true, composed: true }))}
+            @wordmark-click=${() => this.onWordmarkClick()}
+          ></app-header>
+        ` : ''}
 
         <mascot-parade .trigger=${this.paradeTrigger}></mascot-parade>
 
         <div class="content">
-          <div class="hero">
-            <div class="back-pill" @click=${() => this.backToProgression()}>← Back to progression</div>
-            <h1>Build out the song.</h1>
-            <div class="subcopy">Each section reuses the loop, related but never identical.</div>
-          </div>
-
+          ${!this.embedded ? html`
+            <div class="hero">
+              <div class="back-pill" @click=${this.backToProgression}>
+                ← Back to progression
+              </div>
+              <h1>Arrange the whole song.</h1>
+              <div class="subcopy">
+                Each section reuses your loop — related, but never identical.
+              </div>
+            </div>
+          ` : html`
+            <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); margin-bottom: 16px;">
+              Each section reuses your loop with musical permutations (Verse, Chorus, Bridge). Press play in the transport bar to hear the full arrangement.
+            </div>
+          `}
           <div class="section-list">
             ${this.sections.map((sec, i) => {
               const active = this.playing ? i === this.activePlayingSectionIdx : i === this.activeSectionIdx;
