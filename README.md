@@ -32,6 +32,7 @@ Opening a DAW, loading heavy virtual instruments, configuring MIDI routings, and
 * **Natural Language Vibe Search:** Freeform prompt classifier powered by instant local keyword heuristics and cloud AI (Google Gemini, OpenRouter, and Claude Haiku via Cloudflare Worker) to translate mood phrases into matching progressions, tempos, instruments, and play styles.
 * **23+ Musical Genres:** Curated harmonic probability rules for Pop, Lo-fi/Chill, R&B/Soul, Indie/Folk, Synthwave, Jazz-ish, Gospel, Cinematic, Rock, House/Dance, Blues, Funk/Disco, Country/Bluegrass, Reggae/Dub, Ambient/Drone, Trap/Hip-Hop, Bossa Nova/Latin, EDM, and more.
 * **6 Distinct Moods & Custom Lengths:** Uplifting, Melancholy, Dreamy, Tense, Warm, and Nostalgic profiles with customizable progression lengths from 2 to 8 chords.
+* **🎸 Band DNA & Songwriting Trick Modes:** Built-in artist profiles (*Oasis, Radiohead, Nirvana, Steely Dan, Mac DeMarco*) that preserve iconic non-diatonic harmonic moves (e.g. borrowed major $\flat\text{III}$, chromatic mediants, mu major 9ths), hoist signature chord recommendations in the Swap Sheet, and display tailored plain/theory songwriting trick explanations. See [`BAND_MODES.md`](BAND_MODES.md) for full details.
 
 ### 🎹 Tactile Playback & Sound Engine
 * **Tone.js Synthesizers & Sound Engines:** High-quality built-in instruments including Rhodes, Acoustic Piano, Nylon Guitar, Lush String Pads, Juno Synth Pads, FM Electric Piano, Bells, Organs, and House Stabs.
