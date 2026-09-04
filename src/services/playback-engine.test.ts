@@ -14,7 +14,7 @@ vi.mock('tone', () => ({
   now: () => 0,
 }));
 
-import { PlaybackEngine } from './playback-engine';
+import { PlaybackEngine, quantiseHits } from './playback-engine';
 import { Progression } from './chord-engine';
 
 describe('PlaybackEngine Deep Module', () => {
@@ -135,5 +135,47 @@ describe('PlaybackEngine Deep Module', () => {
     engine.playActiveChord();
     expect(playNotesSpy).toHaveBeenCalledWith(['C', 'E', 'G'], 1.2);
   });
+
+  it('supports sub-bass accompaniment toggle for perform mode', () => {
+    expect(engine.isSubBassEnabled()).toBe(false);
+    engine.setSubBassEnabled(true);
+    expect(engine.isSubBassEnabled()).toBe(true);
+    engine.setSubBassEnabled(false);
+    expect(engine.isSubBassEnabled()).toBe(false);
+  });
+
+  it('quantizes recorded hit positions non-destructively', () => {
+    const rawHits = [
+      { pos: 0.04, vel: 90, bar: 0 },
+      { pos: 0.28, vel: 95, bar: 1 },
+      { pos: 0.52, vel: 85, bar: 2 },
+      { pos: 0.77, vel: 100, bar: 3 },
+    ];
+
+    // Off: retains original positions
+    const offResult = quantiseHits(rawHits, 'Off', 4);
+    expect(offResult[0].pos).toBe(0.04);
+    expect(offResult[1].pos).toBe(0.28);
+
+    // 1/16: snaps to 16th grid (0, 0.0625, 0.125, 0.1875, 0.25, 0.3125, etc.)
+    const sixteenth = quantiseHits(rawHits, '1/16', 4);
+    expect(sixteenth[0].pos).toBe(0.0625); // 0.04 * 16 = 0.64 -> 1/16 = 0.0625
+    expect(sixteenth[1].pos).toBe(0.25);   // 0.28 * 16 = 4.48 -> 4/16 = 0.25
+
+    // 1/8: snaps to 8th grid (0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875)
+    const eighth = quantiseHits(rawHits, '1/8', 4);
+    expect(eighth[0].pos).toBe(0); // 0.04 rounds to 0
+    expect(eighth[1].pos).toBe(0.25); // 0.28 rounds to 2/8 = 0.25
+    expect(eighth[2].pos).toBe(0.5); // 0.52 rounds to 4/8 = 0.5
+    expect(eighth[3].pos).toBe(0.75); // 0.77 rounds to 6/8 = 0.75
+
+    // Bar: snaps to bar boundary (0, 0.25, 0.5, 0.75 for 4 bars)
+    const barResult = quantiseHits(rawHits, 'Bar', 4);
+    expect(barResult[0].pos).toBe(0);
+    expect(barResult[1].pos).toBe(0.25);
+    expect(barResult[2].pos).toBe(0.5);
+    expect(barResult[3].pos).toBe(0.75);
+  });
 });
+
 

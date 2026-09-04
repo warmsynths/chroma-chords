@@ -407,3 +407,62 @@ function triggerDownload(blob: Blob, filename: string): void {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+export interface BounceLoopOptions {
+  progression: Progression;
+  setName?: string;
+  instrumentName?: string | null;
+  playStyleName?: string | null;
+  format?: 'wav' | 'midi';
+}
+
+/**
+ * Bounces the active loop into a named file with chords and sub-bass stem (with 2-bar tail).
+ */
+export async function bounceLoop(options: BounceLoopOptions): Promise<void> {
+  const { progression, setName, instrumentName, playStyleName, format = 'wav' } = options;
+  const bpm = progression.bpm || 84;
+  const key = progression.key || 'C';
+  const scale = (progression.scaleType || 'maj').toLowerCase().includes('min') ? 'min' : 'maj';
+  const rawName = setName || progression.mood || 'loop';
+  const slug = rawName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'loop';
+  const ext = format === 'midi' ? 'mid' : 'wav';
+  const filename = `${slug}_${bpm}bpm_${key}${scale}.${ext}`;
+
+  if (format === 'midi') {
+    const buffer = generateMidiBuffer(progression, undefined, playStyleName);
+    const blob = new Blob([buffer as unknown as BlobPart], { type: 'audio/midi' });
+    triggerDownload(blob, filename);
+    return;
+  }
+
+  // Render WAV with 2-bar tail
+  const events = generateScheduledEvents(progression, undefined, playStyleName);
+  const maxTime = events.reduce((max, e) => Math.max(max, e.startTime + e.duration), 0);
+  const totalDuration = Math.max(4, maxTime + 3.4); // 2-bar tail
+
+  const renderedBuffer = await Tone.Offline(async () => {
+    const voice = createOfflineVoice(instrumentName, progression.genre);
+    events.forEach(evt => {
+      (voice as any).triggerAttackRelease(evt.note, evt.duration, evt.startTime);
+    });
+
+    // Sub-bass layer
+    const subVoice = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.02, decay: 0.25, sustain: 0.85, release: 0.4 },
+      volume: -7,
+    }).toDestination();
+
+    const stepDuration = 1.7;
+    progression.chords.forEach((chord, i) => {
+      const root = (chord.notes && chord.notes[0]) || chord.name.match(/^[A-Ga-g][#b]?/)?.[0] || 'C';
+      const clean = root.replace(/\d+$/, '');
+      subVoice.triggerAttackRelease(`${clean}1`, stepDuration * 0.9, i * stepDuration);
+    });
+  }, totalDuration);
+
+  const wavBlob = audioBufferToWavBlob(renderedBuffer.get()!);
+  triggerDownload(wavBlob, filename);
+}
+

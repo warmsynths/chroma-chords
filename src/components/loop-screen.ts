@@ -6,11 +6,13 @@ import {
   generateProgression, generateAlternatives, generateTheoryGroups, generateBorrowedChords,
   RawChordData, AUTOPLAY_INTERVAL_MS, preferFlatSpelling, notesForSymbol,
 } from '../services/chord-engine';
-import { playbackEngine } from '../services/playback-engine';
+import { playbackEngine, quantiseHits } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
-import { ProjectData } from '../services/project-service';
+import { ProjectData, LoopLane, LoopLaneHit } from '../services/project-service';
 import { SongArranger } from '../services/song-arranger';
 import { SongSection } from './song-screen';
+import { startChordNotes, stopChordNotes, playMetronomeClick, USER_INSTRUMENTS } from '../services/audio-service';
+import { bounceLoop } from '../services/export-service';
 import './share-modal';
 
 export interface BandArchetype {
@@ -105,12 +107,12 @@ const MOOD_ICONS: Record<string, string> = {
 
 const ROLE_PLAIN: Record<string, string> = {
   Tonic: 'home',
-  Subdominant: 'moving away',
+  Submediant: 'drifting',
+  Subdominant: 'lifting',
+  Supertonic: 'stepping up',
+  Mediant: 'wistful',
   Dominant: 'pulling home',
-  'Dominant 7th': 'pulling hard',
-  Supertonic: 'stepping out',
-  Mediant: 'in between',
-  Submediant: 'soft home',
+  'Dominant 7th': 'pulling home',
 };
 
 const PC_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -286,6 +288,25 @@ export class LoopScreen extends LitElement {
   @state() private mobileSheetOpen = false;
   @state() private snapProgress = false;
   @state() private abPlaying = false;
+  @property({ type: Boolean }) performMode = false;
+  @state() armedLane = 'l1';
+  @state() private recording = false;
+  @state() private recStartStep = 0;
+  @state() private stepsRecorded = 0;
+  @state() private takeHits: LoopLaneHit[] = [];
+  @state() takeOffered: { laneId: string; hits: LoopLaneHit[] } | null = null;
+  @state() padFlash = -1;
+  @state() lastPad: { idx: number; voicing: string; vel: number } | null = null;
+  @property({ type: Array }) lanes: LoopLane[] = [
+    { id: 'l1', name: 'Rhodes · chords', color: '#F2A79B', quantise: 'Off', hits: [], kept: false, muted: false },
+    { id: 'l2', name: 'Sub · root notes', color: '#9CC0EC', quantise: 'Bar', hits: [], kept: true, muted: false },
+  ];
+  @property({ type: String }) countInSetting: 'Off' | '1 bar' | '2 bars' = '1 bar';
+  @state() isCountingIn = false;
+  @state() countInBeat = 0;
+  @state() countInTotalBeats = 0;
+  private countInInterval: ReturnType<typeof setInterval> | null = null;
+  private lastTickAt = Date.now();
 
   private vibeExamples = ['Rainy drive at 2am, first day of summer...', 'Portishead trip-hop', 'Bohemian Rhapsody', 'Tame Impala neo-psychedelia', 'Warm acoustic fireplace'];
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
@@ -937,14 +958,15 @@ export class LoopScreen extends LitElement {
     }
     .stage-panel {
       position: relative;
-      min-height: 240px;
+      min-height: 280px;
       background: var(--cv-surface);
       border-radius: 26px;
-      padding: 24px 16px;
+      padding: 26px 20px;
       overflow: hidden;
       display: flex;
-      align-items: center;
+      flex-direction: column;
       justify-content: center;
+      gap: 16px;
       flex: 1;
     }
     .drift-shape {
@@ -1565,6 +1587,526 @@ export class LoopScreen extends LitElement {
       animation: cvfv-sheet-up 220ms var(--cv-ease);
       overflow-y: auto;
     }
+
+    /* ------------------------------------------------------------------ */
+    /* Perform Mode Styles: Pads & Loop Deck                              */
+    /* ------------------------------------------------------------------ */
+    .mode-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 10px;
+      margin-bottom: 8px;
+    }
+    .perform-mode-btn {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+      padding: 10px 17px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: background 150ms var(--cv-ease, ease), color 150ms ease;
+    }
+    .perform-mode-btn:hover {
+      opacity: 0.92;
+    }
+    .perform-mode-btn.exit {
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-ink, #2E271F);
+    }
+    .mode-pills-bar {
+      display: inline-flex;
+      background: var(--cv-surface-2, #F1E4CC);
+      padding: 3px;
+      border-radius: 100px;
+      gap: 2px;
+    }
+    .mode-pill {
+      border: none;
+      background: transparent;
+      padding: 6px 14px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      color: var(--cv-ink-muted, #6B5F50);
+      transition: all 150ms var(--cv-ease, ease);
+      font-family: inherit;
+    }
+    .mode-pill.active {
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+    }
+    .perform-hint {
+      font-size: 11.5px;
+      font-weight: 700;
+      line-height: 1.45;
+      color: var(--cv-ink-muted, #6B5F50);
+      flex: 1;
+      min-width: 0;
+    }
+    .perform-banner {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+      padding: 0 4px;
+      position: relative;
+      z-index: 2;
+      width: 100%;
+    }
+    .perform-banner-kicker {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+    }
+    .perform-banner-now {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+    }
+    .perform-banner-sub {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+
+    .quick-chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .quick-chip-btn {
+      border: none;
+      font-family: inherit;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink, #2E271F);
+      border-radius: 100px;
+      padding: 9px 16px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: background 150ms var(--cv-ease, ease);
+    }
+    .quick-chip-btn:hover {
+      filter: brightness(0.97);
+    }
+
+    /* Pads Container - Desktop & Mobile */
+    .pad-cells-row {
+      position: relative;
+      z-index: 2;
+      flex: 1;
+      min-height: 240px;
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      min-width: 0;
+      width: 100%;
+    }
+    .pad-cell {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 18px 18px 20px;
+      border-radius: 20px;
+      cursor: pointer;
+      user-select: none;
+      touch-action: none;
+      min-height: 230px;
+      box-shadow: 0 14px 26px -18px rgba(46, 39, 31, 0.45);
+      transform: none;
+      transition: opacity 120ms ease, box-shadow 140ms ease, transform 120ms ease;
+      outline-offset: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+    .pad-cell:hover {
+      filter: brightness(1.02);
+    }
+    .pad-cell.pad-held {
+      box-shadow: inset 0 0 0 2.5px #2E271F !important;
+      transform: scale(0.985);
+    }
+    .pad-cell.pad-lit {
+      box-shadow: inset 0 0 0 2px rgba(46, 39, 31, 0.3);
+    }
+    .pad-key-label {
+      font-size: 11px;
+      font-weight: 800;
+      color: rgba(46, 39, 31, 0.5);
+      font-family: inherit;
+    }
+    .pad-name {
+      font-size: 19px;
+      font-weight: 800;
+      color: #2E271F;
+      letter-spacing: -0.01em;
+      line-height: 1.1;
+    }
+    .pad-meta {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: rgba(46, 39, 31, 0.6);
+      margin-top: 3px;
+      line-height: 1.2;
+    }
+    .pad-cells-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Loop Deck Container */
+    .loop-deck {
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 20px;
+      padding: 14px 16px 16px;
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border: 1px solid rgba(46, 39, 31, 0.08);
+      animation: cvfv-sheet-up 200ms var(--cv-ease);
+    }
+    .deck-top-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .rec-btn {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: var(--cv-surface-2, #F1E4CC);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      border: none;
+      transition: background 150ms ease, box-shadow 150ms ease;
+    }
+    .rec-btn.is-recording {
+      background: #F2735F;
+      box-shadow: 0 8px 18px -10px rgba(242, 115, 95, 0.9);
+    }
+    .rec-btn.is-counting-in {
+      background: var(--cv-yellow, #F6D98B);
+      box-shadow: 0 0 0 3px rgba(246, 217, 139, 0.5);
+      animation: cvfv-count-pulse 500ms infinite alternate;
+    }
+    @keyframes cvfv-count-pulse {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.06); }
+    }
+    .count-in-number {
+      font-size: 19px;
+      font-weight: 900;
+      color: #2E271F;
+      font-family: inherit;
+    }
+    .rec-glyph {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #F2735F;
+      transition: all 150ms ease;
+    }
+    .rec-btn.is-recording .rec-glyph {
+      width: 15px;
+      height: 15px;
+      border-radius: 4px;
+      background: #FBF3E6;
+      animation: cvfv-rec-pulse 1s infinite alternate;
+    }
+    @keyframes cvfv-rec-pulse {
+      0% { opacity: 1; }
+      100% { opacity: 0.35; }
+    }
+    .deck-meta-col {
+      flex: 1;
+      min-width: 0;
+    }
+    .deck-rec-title {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+    }
+    .deck-rec-sub {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-top: 2px;
+    }
+    .deck-count-in-wrap {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .deck-count-in-label {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--cv-ink-muted, #6B5F50);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .deck-count-in-pills {
+      display: inline-flex;
+      background: var(--cv-surface-2, #F1E4CC);
+      padding: 2px;
+      border-radius: 8px;
+      gap: 2px;
+    }
+    .deck-count-pill {
+      border: none;
+      font-family: inherit;
+      background: transparent;
+      color: var(--cv-ink-muted, #6B5F50);
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 4px 9px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    .deck-count-pill.active {
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+    }
+    .deck-timeline {
+      display: flex;
+      gap: 2px;
+      height: 10px;
+      align-items: stretch;
+      margin-top: 13px;
+    }
+    .timeline-bar-seg {
+      flex: 1;
+      background: rgba(46, 39, 31, 0.09);
+      border-radius: 3px;
+      transition: background 120ms ease;
+    }
+    .timeline-bar-seg.active-step {
+      background: var(--cv-ink, #2E271F);
+    }
+    .timeline-bar-seg.count-step {
+      background: var(--cv-yellow, #F6D98B) !important;
+    }
+    .deck-lanes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-top: 9px;
+    }
+    .deck-lane-row {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 12px;
+      padding: 9px 12px;
+      cursor: pointer;
+      box-shadow: none;
+      transition: box-shadow 150ms ease;
+    }
+    .deck-lane-row.is-armed {
+      box-shadow: inset 0 0 0 2px rgba(46, 39, 31, 0.28);
+    }
+    .deck-lane-row.is-recording-lane {
+      box-shadow: inset 0 0 0 2px #F2735F;
+    }
+    .deck-lane-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .deck-lane-name {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      width: 128px;
+      flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .deck-hit-bars-track {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      gap: 2px;
+      height: 24px;
+      align-items: flex-end;
+    }
+    .deck-hit-slot {
+      flex: 1;
+      min-width: 0;
+      border-radius: 2px;
+    }
+    .deck-hit-slot.empty {
+      height: 3px !important;
+      background: rgba(46, 39, 31, 0.13) !important;
+    }
+    .deck-lane-status {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      width: 50px;
+      text-align: right;
+    }
+    .deck-lane-quant-pills {
+      display: flex;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+    .deck-quant-pill {
+      padding: 5px 8px;
+      border-radius: 8px;
+      font-size: 10.5px;
+      font-weight: 800;
+      cursor: pointer;
+      border: none;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-ink-muted, #6B5F50);
+      transition: all 120ms ease;
+      font-family: inherit;
+    }
+    .deck-quant-pill.active {
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+    }
+    .deck-mute-btn {
+      display: none;
+    }
+
+    /* Take Review Drawer */
+    .take-review-card {
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 16px;
+      padding: 13px 15px 14px;
+      border: 1.5px solid rgba(46, 39, 31, 0.12);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: cvfv-sheet-up 180ms var(--cv-ease);
+    }
+    .take-review-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .take-review-title {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+    }
+    .take-review-actions {
+      display: flex;
+      gap: 7px;
+    }
+    .take-btn-try-again {
+      border: none;
+      font-family: inherit;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-ink, #2E271F);
+      border-radius: 100px;
+      padding: 8px 15px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .take-btn-keep {
+      border: none;
+      font-family: inherit;
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+      border-radius: 100px;
+      padding: 8px 15px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .take-note {
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+
+    /* Bounce Bar */
+    .bounce-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+      border-radius: 14px;
+      padding: 10px 14px;
+      margin-top: 4px;
+    }
+    .bounce-meta {
+      flex: 1;
+      min-width: 0;
+    }
+    .bounce-title {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: var(--cv-cream, #FBF3E6);
+    }
+    .bounce-filename {
+      font-family: 'Space Mono', monospace;
+      font-size: 10.5px;
+      color: rgba(251, 243, 230, 0.6);
+      margin-top: 2px;
+    }
+    .bounce-btn {
+      border: none;
+      font-family: inherit;
+      padding: 6px 12px;
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      background: var(--cv-yellow, #F6D98B);
+      color: #2E271F;
+      transition: opacity 120ms ease;
+    }
+    .bounce-btn.sec {
+      background: rgba(251, 243, 230, 0.14);
+      color: rgba(251, 243, 230, 0.85);
+    }
   `;
 
   willUpdate(changedProperties: PropertyValues) {
@@ -1580,6 +2122,23 @@ export class LoopScreen extends LitElement {
       }
     }
     if (changedProperties.has('progressStep')) {
+      this.lastTickAt = Date.now();
+      if (this.recording) {
+        this.stepsRecorded++;
+        const loopBars = this.progression?.chords?.length || 4;
+        if (this.stepsRecorded >= loopBars) {
+          this.recording = false;
+          this.takeOffered = {
+            laneId: this.armedLane,
+            hits: [...this.takeHits],
+          };
+          this.dispatchEvent(new CustomEvent('toast', {
+            detail: `Captured take with ${this.takeHits.length} chords`,
+            bubbles: true,
+            composed: true,
+          }));
+        }
+      }
       const prev = changedProperties.get('progressStep') as number;
       if (this.progressStep === 0 && prev !== undefined && prev > 0) {
         this.snapProgress = true;
@@ -1589,13 +2148,19 @@ export class LoopScreen extends LitElement {
         });
       }
     }
+    if (changedProperties.has('progression') || changedProperties.has('instrument')) {
+      this.syncSubLaneHits();
+    }
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
     this.refreshSavedSets();
+    this.syncSubLaneHits();
     window.addEventListener('resize', this.onResizeHandler);
+    window.addEventListener('keydown', this.onKeyHandler);
+    window.addEventListener('keyup', this.onKeyUpHandler);
     this.unsubscribeProjects = projectStorage.subscribeProjects(() => {
       this.refreshSavedSets();
     });
@@ -1607,6 +2172,9 @@ export class LoopScreen extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener('resize', this.onResizeHandler);
+    window.removeEventListener('keydown', this.onKeyHandler);
+    window.removeEventListener('keyup', this.onKeyUpHandler);
+    this.cancelCountIn();
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
     if (this.previewTimer) clearTimeout(this.previewTimer);
     if (this.unsubscribeProjects) this.unsubscribeProjects();
@@ -1615,6 +2183,428 @@ export class LoopScreen extends LitElement {
   private refreshSavedSets() {
     this.savedSets = projectStorage.getProjects();
     this.requestUpdate();
+  }
+
+  private syncSubLaneHits() {
+    const chords = this.progression?.chords || [];
+    const len = chords.length || 4;
+    const subHits: LoopLaneHit[] = chords.map((chord, i) => ({
+      pos: Math.round((i / len) * 100) / 100,
+      vel: 104,
+      bar: i,
+      voicing: 'sub root',
+    }));
+    this.lanes = this.lanes.map(l => {
+      if (l.id === 'l2') {
+        return { ...l, hits: subHits };
+      }
+      if (l.id === 'l1') {
+        return { ...l, name: `${this.instrument || 'Rhodes'} · chords` };
+      }
+      return l;
+    });
+  }
+
+  private togglePerform(on: boolean) {
+    this.performMode = on;
+    this.isInspectorOpen = false;
+    this.swapIndex = null;
+    this.cancelCountIn();
+    this.recording = false;
+    this.takeOffered = null;
+    this.padFlash = -1;
+    const subLane = this.lanes.find(l => l.id === 'l2');
+    playbackEngine.setSubBassEnabled(on && !subLane?.muted);
+    this.requestUpdate();
+  }
+
+  public setCountIn(setting: 'Off' | '1 bar' | '2 bars') {
+    this.countInSetting = setting;
+    this.cancelCountIn();
+    this.requestUpdate();
+  }
+
+  private startCountIn() {
+    this.cancelCountIn();
+    const bars = this.countInSetting === '2 bars' ? 2 : 1;
+    const totalBeats = bars * 4;
+    this.countInTotalBeats = totalBeats;
+    this.countInBeat = 1;
+    this.isCountingIn = true;
+    this.recording = false;
+    this.takeOffered = null;
+    this.takeHits = [];
+
+    const bpm = this.progression?.bpm || 84;
+    const beatDurationMs = Math.round(60000 / bpm);
+
+    playMetronomeClick(true);
+    this.requestUpdate();
+
+    this.countInInterval = setInterval(() => {
+      if (!this.isCountingIn) {
+        if (this.countInInterval) clearInterval(this.countInInterval);
+        return;
+      }
+      this.countInBeat++;
+      if (this.countInBeat <= this.countInTotalBeats) {
+        const isAccent = (this.countInBeat - 1) % 4 === 0;
+        playMetronomeClick(isAccent);
+        this.requestUpdate();
+      } else {
+        if (this.countInInterval) clearInterval(this.countInInterval);
+        this.countInInterval = null;
+        this.isCountingIn = false;
+        playMetronomeClick(true);
+        this.startActualRecording();
+      }
+    }, beatDurationMs);
+  }
+
+  private cancelCountIn() {
+    if (this.countInInterval) {
+      clearInterval(this.countInInterval);
+      this.countInInterval = null;
+    }
+    this.isCountingIn = false;
+    this.countInBeat = 0;
+  }
+
+  private startActualRecording() {
+    this.recording = true;
+    this.takeHits = [];
+    this.takeOffered = null;
+    this.recStartStep = this.progressStep;
+    this.stepsRecorded = 0;
+    if (!this.playing) {
+      playbackEngine.startAutoplay();
+    }
+    this.requestUpdate();
+  }
+
+  private armLane(id: string) {
+    this.armedLane = id;
+    this.requestUpdate();
+  }
+
+  private setLaneQuantise(id: string, q: 'Off' | '1/16' | '1/8' | 'Bar') {
+    const loopBars = this.progression?.chords?.length || 4;
+    this.lanes = this.lanes.map(l => {
+      if (l.id === id) {
+        const hits = l.kept && l.hits.length ? quantiseHits(l.hits, q, loopBars) : l.hits;
+        return { ...l, quantise: q, hits };
+      }
+      return l;
+    });
+    this.requestUpdate();
+  }
+
+  private toggleLaneMute(id: string) {
+    this.lanes = this.lanes.map(l => {
+      if (l.id === id) {
+        const muted = !l.muted;
+        if (id === 'l2') {
+          playbackEngine.setSubBassEnabled(this.performMode && !muted);
+        }
+        return { ...l, muted };
+      }
+      return l;
+    });
+    this.requestUpdate();
+  }
+
+  private toggleRecord() {
+    if (this.recording) {
+      this.recording = false;
+      if (this.takeHits.length > 0) {
+        this.takeOffered = { laneId: this.armedLane, hits: [...this.takeHits] };
+      }
+      this.requestUpdate();
+      return;
+    }
+    if (this.isCountingIn) {
+      this.cancelCountIn();
+      this.requestUpdate();
+      return;
+    }
+    if (this.countInSetting === 'Off') {
+      this.startActualRecording();
+    } else {
+      this.startCountIn();
+    }
+  }
+
+  private keepTake() {
+    if (!this.takeOffered) return;
+    const { laneId, hits } = this.takeOffered;
+    const loopBars = this.progression?.chords?.length || 4;
+    this.lanes = this.lanes.map(l => {
+      if (l.id === laneId) {
+        const quantized = quantiseHits(hits, l.quantise, loopBars);
+        return { ...l, kept: true, hits: quantized };
+      }
+      return l;
+    });
+    const targetLane = this.lanes.find(l => l.id === laneId);
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: `Take saved to ${targetLane?.name || 'lane'}`,
+      bubbles: true,
+      composed: true,
+    }));
+    this.takeOffered = null;
+    this.takeHits = [];
+    this.requestUpdate();
+  }
+
+  private discardTake() {
+    this.takeOffered = null;
+    this.takeHits = [];
+    this.requestUpdate();
+  }
+
+  private getInstrumentId(): any {
+    const found = USER_INSTRUMENTS.find(i => i.name.toLowerCase() === (this.instrument || '').toLowerCase());
+    return found?.instrument ?? 'rhodes';
+  }
+
+  private onPadDown(idx: number, e?: MouseEvent | TouchEvent) {
+    const chords = this.progression?.chords || [];
+    if (idx < 0 || idx >= chords.length) return;
+    const chord = chords[idx];
+    let voicing = 'low, root position';
+
+    if (e && e.currentTarget && typeof (e.currentTarget as HTMLElement).getBoundingClientRect === 'function') {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const clientY = (e as TouchEvent).touches && (e as TouchEvent).touches.length > 0
+        ? (e as TouchEvent).touches[0].clientY
+        : (e as MouseEvent).clientY;
+      if (typeof clientY === 'number') {
+        const y = (clientY - rect.top) / (rect.height || 1);
+        voicing = y < 0.34 ? 'up an octave' : (y < 0.67 ? '1st inversion' : 'low, root position');
+      }
+    }
+
+    const vel = 88 + (idx % 3) * 8;
+    this.padFlash = idx;
+    this.lastPad = { idx, voicing, vel };
+
+    let notes = Array.isArray(chord.notes) ? chord.notes : [];
+    if (notes.length === 0 || !notes.every(n => typeof n === 'string' && n.trim().length > 0)) {
+      const safeName = chord.name || 'CMAJ';
+      const key = this.progression?.key || 'C';
+      const scaleType = this.progression?.scaleType || 'MAJOR';
+      notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
+    }
+
+    startChordNotes(notes, voicing, vel, this.getInstrumentId());
+
+    if (this.recording) {
+      const loopLen = this.progression?.chords?.length || 4;
+      const frac = Math.min(0.96, Math.max(0, (Date.now() - this.lastTickAt) / AUTOPLAY_INTERVAL_MS));
+      const pos = Math.min(0.99, Math.max(0, (this.progressStep + frac) / loopLen));
+      this.takeHits = [...this.takeHits, { pos, vel, bar: idx, voicing }];
+    }
+    this.requestUpdate();
+  }
+
+  private onPadUp(idx: number) {
+    stopChordNotes();
+    setTimeout(() => {
+      if (this.padFlash === idx) {
+        this.padFlash = -1;
+        this.requestUpdate();
+      }
+    }, 120);
+  }
+
+  private onKeyHandler = (e: KeyboardEvent) => {
+    if (!this.performMode || this.activeView !== 'loop') return;
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+
+    if (e.key === ' ' && !e.repeat) {
+      e.preventDefault();
+      playbackEngine.togglePlay();
+      return;
+    }
+    if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
+      e.preventDefault();
+      this.toggleRecord();
+      return;
+    }
+    const n = parseInt(e.key, 10);
+    const loopLen = this.progression?.chords?.length || 4;
+    if (n >= 1 && n <= loopLen && !e.repeat) {
+      e.preventDefault();
+      this.onPadDown(n - 1);
+    }
+  };
+
+  private onKeyUpHandler = (e: KeyboardEvent) => {
+    if (!this.performMode || this.activeView !== 'loop') return;
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+    const n = parseInt(e.key, 10);
+    const loopLen = this.progression?.chords?.length || 4;
+    if (n >= 1 && n <= loopLen) {
+      e.preventDefault();
+      this.onPadUp(n - 1);
+    }
+  };
+
+  private async onBounce(format: 'wav' | 'midi') {
+    if (!this.progression) return;
+    try {
+      this.dispatchEvent(new CustomEvent('toast', {
+        detail: `Exporting loop as ${format.toUpperCase()}...`,
+        bubbles: true,
+        composed: true,
+      }));
+      await bounceLoop({
+        progression: this.progression,
+        setName: this.progression.mood,
+        instrumentName: this.instrument,
+        playStyleName: this.playStyle,
+        format,
+      });
+      this.dispatchEvent(new CustomEvent('toast', {
+        detail: `Loop exported successfully (${format.toUpperCase()})`,
+        bubbles: true,
+        composed: true,
+      }));
+    } catch (e) {
+      console.error('Bounce export failed:', e);
+      this.dispatchEvent(new CustomEvent('toast', {
+        detail: 'Export failed, please try again',
+        bubbles: true,
+        composed: true,
+      }));
+    }
+  }
+
+  private renderHitBars(hits: LoopLaneHit[], color: string) {
+    const slots = 16;
+    const bars = [];
+    for (let s = 0; s < slots; s++) {
+      const slotHits = (hits || []).filter(x => x.pos >= s / slots && x.pos < (s + 1) / slots);
+      const h = slotHits[0];
+      if (h) {
+        const height = Math.round(9 + ((h.vel || 100) / 127) * 15);
+        bars.push(html`<div class="deck-hit-slot" style="height: ${height}px; background: ${color};"></div>`);
+      } else {
+        bars.push(html`<div class="deck-hit-slot empty" style="height: 3px; background: rgba(46, 39, 31, 0.13);"></div>`);
+      }
+    }
+    return bars;
+  }
+
+  private renderLoopDeck(loopBars: number) {
+    const armedLaneObj = this.lanes.find(l => l.id === this.armedLane);
+    const armedName = armedLaneObj ? armedLaneObj.name.split(' · ')[0] : 'a lane';
+    const targetLane = this.takeOffered ? this.lanes.find(l => l.id === this.takeOffered!.laneId) : null;
+
+    return html`
+      <div class="loop-deck">
+        <div class="deck-top-row">
+          <button
+            class="rec-btn ${this.recording ? 'is-recording' : ''} ${this.isCountingIn ? 'is-counting-in' : ''}"
+            @click=${() => this.toggleRecord()}
+            aria-label="${this.recording ? 'Stop recording' : (this.isCountingIn ? 'Cancel count-in' : `Record into ${armedName}`)}"
+          >
+            ${this.isCountingIn ? html`
+              <div class="count-in-number">${this.countInBeat}</div>
+            ` : html`
+              <div class="rec-glyph"></div>
+            `}
+          </button>
+          <div class="deck-meta-col">
+            <div class="deck-rec-title">
+              ${this.isCountingIn
+                ? `Counting in... ${this.countInBeat}`
+                : (this.recording ? `Recording into ${armedName}` : `Record into ${armedName}`)}
+            </div>
+            <div class="deck-rec-sub">
+              ${this.isCountingIn
+                ? 'Get ready — recording starts on downbeat'
+                : (this.recording ? `Play the pads — stops itself after ${loopBars} bars` : 'Tap a lane to arm it, R to record. Other lanes keep playing.')}
+            </div>
+          </div>
+          <div class="deck-count-in-wrap">
+            <span class="deck-count-in-label">Count-in</span>
+            <div class="deck-count-in-pills">
+              ${(['Off', '1 bar', '2 bars'] as const).map(opt => html`
+                <button
+                  class="deck-count-pill ${this.countInSetting === opt ? 'active' : ''}"
+                  @click=${() => this.setCountIn(opt)}
+                >${opt}</button>
+              `)}
+            </div>
+          </div>
+        </div>
+
+        <div class="deck-timeline">
+          ${Array.from({ length: loopBars }, (_, i) => html`
+            <div class="timeline-bar-seg ${this.isCountingIn ? (i === 0 ? 'count-step' : '') : (this.playing && this.progressStep === i ? 'active-step' : '')}"></div>
+          `)}
+        </div>
+
+        <div class="deck-lanes-list">
+          ${this.lanes.map(l => {
+            const isArmed = l.id === this.armedLane;
+            const liveHits = isArmed && this.recording ? this.takeHits : l.hits;
+            const status = isArmed && this.recording ? 'Writing' : (l.kept && l.hits.length ? 'Kept' : (isArmed ? 'Armed' : 'Empty'));
+            return html`
+              <div
+                class="deck-lane-row ${isArmed ? 'is-armed' : ''} ${isArmed && this.recording ? 'is-recording-lane' : ''}"
+                @click=${() => this.armLane(l.id)}
+              >
+                <div class="deck-lane-dot" style="background: ${l.color};"></div>
+                <div class="deck-lane-name">${l.name}</div>
+                <div class="deck-hit-bars-track">
+                  ${this.renderHitBars(liveHits, l.color)}
+                </div>
+                <div class="deck-lane-status" style="color: ${isArmed && this.recording ? '#F2735F' : 'var(--cv-ink-muted)'};">
+                  ${status}
+                </div>
+                <div class="deck-lane-quant-pills" @click=${(e: Event) => e.stopPropagation()}>
+                  ${(['Off', '1/16', '1/8', 'Bar'] as const).map(q => html`
+                    <button
+                      class="deck-quant-pill ${l.quantise === q ? 'active' : ''}"
+                      @click=${() => this.setLaneQuantise(l.id, q)}
+                    >${q}</button>
+                  `)}
+                </div>
+                <button
+                  class="deck-mute-btn ${l.muted ? 'muted' : ''}"
+                  @click=${(e: Event) => { e.stopPropagation(); this.toggleLaneMute(l.id); }}
+                  aria-label="${l.muted ? 'Unmute' : 'Mute'} lane"
+                >${l.muted ? 'Muted' : 'Mute'}</button>
+              </div>
+            `;
+          })}
+        </div>
+
+        ${this.takeOffered ? html`
+          <div class="take-review-card">
+            <div class="take-review-header">
+              <div class="take-review-title">${this.takeOffered.hits.length} chords played — keep this take?</div>
+              <div class="take-review-actions">
+                <button class="take-btn-try-again" @click=${() => this.discardTake()}>Try again</button>
+                <button class="take-btn-keep" @click=${() => this.keepTake()}>Keep take</button>
+              </div>
+            </div>
+            <div class="deck-hit-bars-track" style="height: 28px;">
+              ${this.renderHitBars(this.takeOffered.hits, '#F2735F')}
+            </div>
+            <div class="take-note">
+              ${targetLane && targetLane.quantise === 'Off'
+                ? 'Quantise is Off, so this is your timing exactly. The raw take is kept either way.'
+                : 'Snapped to this lane\u2019s grid. The raw timing is kept, so you can change it after.'}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `;
   }
 
   private renderStageTitle(moodColor: string) {
@@ -2428,6 +3418,27 @@ export class LoopScreen extends LitElement {
                 <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
                 <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
               </div>
+
+              ${this.activeView === 'loop' ? html`
+                <div class="mode-toggle-row">
+                  <button
+                    class="perform-mode-btn ${this.performMode ? 'exit' : ''}"
+                    @click=${() => this.togglePerform(!this.performMode)}
+                    aria-label="${this.performMode ? 'Exit perform' : 'Perform'}"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;">
+                      <rect x="3" y="3" width="8" height="8" rx="2.4"/>
+                      <rect x="13" y="3" width="8" height="8" rx="2.4"/>
+                      <rect x="3" y="13" width="8" height="8" rx="2.4"/>
+                      <rect x="13" y="13" width="8" height="8" rx="2.4"/>
+                    </svg>
+                    ${this.performMode ? 'Exit perform' : 'Perform'}
+                  </button>
+                  <div class="perform-hint">
+                    ${this.performMode ? 'Press a pad — higher on the pad, higher the voicing. Keys 1–4 and R to record.' : 'Build the progression here, then Perform plays it in.'}
+                  </div>
+                </div>
+              ` : ''}
             </div>
 
             <!-- Canvas -->
@@ -2437,37 +3448,98 @@ export class LoopScreen extends LitElement {
                   <svg class="drift-shape a" width="128" height="128" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
                   <svg class="drift-shape b" width="112" height="112" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
 
-                  <div class="chords-flex-row">
-                    ${chords.map((chord, idx) => {
-                      const r = roleForTension(chord.tension || 0.1);
-                      const isLit = this.playing && idx === this.progressStep;
-                      const isInspected = this.isInspectorOpen && idx === this.swapIndex;
-                      const isPreview = idx === this.previewIndex;
-                      const size = Math.max(84, Math.min(130, r.size));
-                      const radius = Math.round(r.radius * (size / r.size));
+                  ${this.performMode ? html`
+                    <div class="pad-cells-row">
+                      ${chords.map((chord, idx) => {
+                        const r = roleForTension(chord.tension || 0.1);
+                        const isHeld = this.padFlash === idx;
+                        const isLit = this.playing && idx === this.progressStep;
+                        const keyLabel = String(idx + 1);
+                        const meta = isHeld && this.lastPad ? this.lastPad.voicing : (ROLE_PLAIN[chord.functionLabel] || chord.functionLabel || '');
 
-                      return html`
-                        <div
-                          class="chord-item-wrap"
-                          @click=${() => this.onChordSelect(idx)}
-                          tabindex="0"
-                          role="button"
-                          aria-label="${chord.name}, ${chord.functionLabel || 'Chord'}"
-                        >
+                        return html`
                           <div
-                            class="chord-block-shape ${isLit ? 'active-pulse' : ''} ${isInspected ? 'selected-inspector' : ''}"
-                            style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color}; transform: ${isPreview ? 'scale(0.94)' : 'none'};"
+                            class="pad-cell ${isHeld ? 'pad-held' : ''} ${isLit ? 'pad-lit' : ''}"
+                            style="background: ${r.color};"
+                            @mousedown=${(e: MouseEvent) => this.onPadDown(idx, e)}
+                            @mouseup=${() => this.onPadUp(idx)}
+                            @touchstart=${(e: TouchEvent) => { e.preventDefault(); this.onPadDown(idx, e); }}
+                            @touchend=${(e: TouchEvent) => { e.preventDefault(); this.onPadUp(idx); }}
+                            tabindex="0"
+                            role="button"
+                            aria-label="Play ${chord.name}"
                           >
-                            ${this.showTheory && chord.roman ? html`
-                              <div class="roman-pill-badge">${chord.roman}</div>
-                            ` : ''}
-                            <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.92)}px;">${chord.name}</div>
+                            <div class="pad-key-label">${keyLabel}</div>
+                            <div>
+                              <div class="pad-name">${chord.name}</div>
+                              <div class="pad-meta">${meta}</div>
+                            </div>
                           </div>
-                          <div class="chord-role-label">${ROLE_PLAIN[chord.functionLabel] || chord.functionLabel || ''}</div>
-                        </div>
-                      `;
-                    })}
-                  </div>
+                        `;
+                      })}
+                    </div>
+                    <div class="perform-banner">
+                      <span class="perform-banner-kicker">Playing now</span>
+                      <span class="perform-banner-now">${this.lastPad ? chords[Math.min(this.lastPad.idx, chords.length - 1)]?.name : '—'}</span>
+                      <span class="perform-banner-sub">${this.lastPad ? `${this.lastPad.voicing} · velocity ${this.lastPad.vel}` : 'Press a pad, or hit 1–4'}</span>
+                    </div>
+                  ` : html`
+                    <div class="chords-flex-row">
+                      ${chords.map((chord, idx) => {
+                        const r = roleForTension(chord.tension || 0.1);
+                        const isLit = this.playing && idx === this.progressStep;
+                        const isInspected = this.isInspectorOpen && idx === this.swapIndex;
+                        const isPreview = idx === this.previewIndex;
+                        const size = Math.max(84, Math.min(130, r.size));
+                        const radius = Math.round(r.radius * (size / r.size));
+
+                        return html`
+                          <div
+                            class="chord-item-wrap"
+                            @click=${() => this.onChordSelect(idx)}
+                            tabindex="0"
+                            role="button"
+                            aria-label="${chord.name}, ${chord.functionLabel || 'Chord'}"
+                          >
+                            <div
+                              class="chord-block-shape ${isLit ? 'active-pulse' : ''} ${isInspected ? 'selected-inspector' : ''}"
+                              style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color}; transform: ${isPreview ? 'scale(0.94)' : 'none'};"
+                            >
+                              ${this.showTheory && chord.roman ? html`
+                                <div class="roman-pill-badge">${chord.roman}</div>
+                              ` : ''}
+                              <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.92)}px;">${chord.name}</div>
+                            </div>
+                            <div class="chord-role-label">${ROLE_PLAIN[chord.functionLabel] || chord.functionLabel || ''}</div>
+                          </div>
+                        `;
+                      })}
+                    </div>
+                  `}
+                </div>
+
+                <div class="quick-chips-row">
+                  <button
+                    class="quick-chip-btn"
+                    @click=${() => { this.soundOpen = !this.soundOpen; }}
+                    aria-label="Change instrument"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                      <rect x="2.5" y="7" width="19" height="10" rx="2"/>
+                      <path d="M8 7v10M13 7v10M18 7v10"/>
+                    </svg>
+                    ${this.instrument || 'Nylon Guitar'} <span style="opacity:0.6;">${this.soundOpen ? '▴' : '▾'}</span>
+                  </button>
+                  <button
+                    class="quick-chip-btn"
+                    @click=${() => { this.soundOpen = !this.soundOpen; }}
+                    aria-label="Change playing style"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                      <path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/>
+                    </svg>
+                    ${this.playStyle || 'Block chords'} <span style="opacity:0.6;">${this.soundOpen ? '▴' : '▾'}</span>
+                  </button>
                 </div>
 
                 ${this.soundOpen ? html`
@@ -2500,6 +3572,8 @@ export class LoopScreen extends LitElement {
                     </div>
                   </div>
                 ` : ''}
+
+                ${this.performMode ? this.renderLoopDeck(chords.length) : ''}
               ` : this.activeView === 'song' ? html`
                 <div class="song-track-list">
                   <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); margin-bottom: 8px;">
@@ -2927,54 +4001,114 @@ export class LoopScreen extends LitElement {
               <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
               <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
             </div>
+
+            ${this.activeView === 'loop' ? html`
+              <div class="mode-toggle-row" style="justify-content: center; margin: 10px 0 6px;">
+                <button
+                  class="perform-mode-btn ${this.performMode ? 'exit' : ''}"
+                  @click=${() => this.togglePerform(!this.performMode)}
+                  aria-label="${this.performMode ? 'Exit perform' : 'Perform'}"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;">
+                    <rect x="3" y="3" width="8" height="8" rx="2.4"/>
+                    <rect x="13" y="3" width="8" height="8" rx="2.4"/>
+                    <rect x="3" y="13" width="8" height="8" rx="2.4"/>
+                    <rect x="13" y="13" width="8" height="8" rx="2.4"/>
+                  </svg>
+                  ${this.performMode ? 'Exit perform' : 'Perform'}
+                </button>
+              </div>
+            ` : ''}
           </div>
 
           <!-- Mobile Center View -->
           <div style="padding: 14px 18px 24px; flex: 1;">
             ${this.activeView === 'loop' ? html`
-              <div class="stage-panel" style="min-height: 200px; padding: 24px 12px;">
-                <svg class="drift-shape a" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
-                <svg class="drift-shape b" width="90" height="90" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
+              ${this.performMode ? html`
+                <div class="stage-panel" style="min-height: 220px; padding: 18px 12px; display: flex; flex-direction: column;">
+                  <svg class="drift-shape a" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
+                  <svg class="drift-shape b" width="90" height="90" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
 
-                <div class="chords-flex-row" style="gap: 16px;">
-                  ${chords.map((chord, idx) => {
-                    const r = roleForTension(chord.tension || 0.1);
-                    const isLit = this.playing && idx === this.progressStep;
-                    const size = Math.max(76, Math.min(100, r.size * 0.8));
-                    const radius = Math.round(r.radius * (size / r.size));
+                  <div class="pad-cells-grid">
+                    ${chords.map((chord, idx) => {
+                      const r = roleForTension(chord.tension || 0.1);
+                      const isHeld = this.padFlash === idx;
+                      const isLit = this.playing && idx === this.progressStep;
+                      const keyLabel = String(idx + 1);
+                      const meta = isHeld && this.lastPad ? this.lastPad.voicing : (ROLE_PLAIN[chord.functionLabel] || chord.functionLabel || '');
 
-                    return html`
-                      <div class="chord-item-wrap" @click=${() => this.onChordSelect(idx)}>
+                      return html`
                         <div
-                          class="chord-block-shape ${isLit ? 'active-pulse' : ''}"
-                          style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color};"
+                          class="pad-cell ${isHeld ? 'pad-held' : ''} ${isLit ? 'pad-lit' : ''}"
+                          style="background: ${r.color}; min-height: 108px;"
+                          @mousedown=${(e: MouseEvent) => this.onPadDown(idx, e)}
+                          @mouseup=${() => this.onPadUp(idx)}
+                          @touchstart=${(e: TouchEvent) => { e.preventDefault(); this.onPadDown(idx, e); }}
+                          @touchend=${(e: TouchEvent) => { e.preventDefault(); this.onPadUp(idx); }}
+                          tabindex="0"
+                          role="button"
+                          aria-label="Play ${chord.name}"
                         >
-                          ${this.showTheory && chord.roman ? html`
-                            <div class="roman-pill-badge">${chord.roman}</div>
-                          ` : ''}
-                          <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.76)}px;">${chord.name}</div>
-
-                          <!-- Quick Mobile Action Buttons -->
-                          <button class="quick-action-btn swap" @click=${(e: Event) => { e.stopPropagation(); this.onChordSelect(idx); }} aria-label="Swap chord">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
-                          </button>
+                          <div class="pad-key-label">${keyLabel}</div>
+                          <div>
+                            <div class="pad-name" style="font-size: 18px;">${chord.name}</div>
+                            <div class="pad-meta">${meta}</div>
+                          </div>
                         </div>
-                        <div class="chord-role-label">${ROLE_PLAIN[chord.functionLabel] || ''}</div>
-                      </div>
-                    `;
-                  })}
+                      `;
+                    })}
+                  </div>
+                  <div class="perform-banner" style="margin-top: 10px;">
+                    <span class="perform-banner-kicker">Playing now</span>
+                    <span class="perform-banner-now" style="font-size: 14px;">${this.lastPad ? chords[Math.min(this.lastPad.idx, chords.length - 1)]?.name : '—'}</span>
+                    <span class="perform-banner-sub" style="font-size: 11px;">${this.lastPad ? `${this.lastPad.voicing} · velocity ${this.lastPad.vel}` : 'Tap a pad to play'}</span>
+                  </div>
                 </div>
-              </div>
+              ` : html`
+                <div class="stage-panel" style="min-height: 200px; padding: 24px 12px;">
+                  <svg class="drift-shape a" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
+                  <svg class="drift-shape b" width="90" height="90" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
+
+                  <div class="chords-flex-row" style="gap: 16px;">
+                    ${chords.map((chord, idx) => {
+                      const r = roleForTension(chord.tension || 0.1);
+                      const isLit = this.playing && idx === this.progressStep;
+                      const size = Math.max(76, Math.min(100, r.size * 0.8));
+                      const radius = Math.round(r.radius * (size / r.size));
+
+                      return html`
+                        <div class="chord-item-wrap" @click=${() => this.onChordSelect(idx)}>
+                          <div
+                            class="chord-block-shape ${isLit ? 'active-pulse' : ''}"
+                            style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color};"
+                          >
+                            ${this.showTheory && chord.roman ? html`
+                              <div class="roman-pill-badge">${chord.roman}</div>
+                            ` : ''}
+                            <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.76)}px;">${chord.name}</div>
+
+                            <!-- Quick Mobile Action Buttons -->
+                            <button class="quick-action-btn swap" @click=${(e: Event) => { e.stopPropagation(); this.onChordSelect(idx); }} aria-label="Swap chord">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
+                            </button>
+                          </div>
+                          <div class="chord-role-label">${ROLE_PLAIN[chord.functionLabel] || ''}</div>
+                        </div>
+                      `;
+                    })}
+                  </div>
+                </div>
+              `}
 
               <!-- Quick Instrument & Play Style Chips -->
-              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px;">
-                <button class="pill" @click=${() => { this.soundOpen = !this.soundOpen; }}>
+              <div class="quick-chips-row" style="margin-top: 14px;">
+                <button class="quick-chip-btn" @click=${() => { this.soundOpen = !this.soundOpen; }} aria-label="Change instrument">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                  ${this.instrument || 'Piano'}
+                  ${this.instrument || 'Nylon Guitar'} <span style="opacity:0.6;">${this.soundOpen ? '▴' : '▾'}</span>
                 </button>
-                <button class="pill" @click=${() => { this.soundOpen = !this.soundOpen; }}>
+                <button class="quick-chip-btn" @click=${() => { this.soundOpen = !this.soundOpen; }} aria-label="Change playing style">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
-                  ${this.playStyle || 'Block chords'}
+                  ${this.playStyle || 'Block chords'} <span style="opacity:0.6;">${this.soundOpen ? '▴' : '▾'}</span>
                 </button>
               </div>
 
@@ -2982,12 +4116,20 @@ export class LoopScreen extends LitElement {
                 <div class="sound-drawer">
                   <div class="kicker-label">Instrument</div>
                   <div class="sound-options-flex">
-                    ${['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad'].map(inst => html`
+                    ${['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad', 'Synth Bell'].map(inst => html`
                       <button class="pill ${(this.instrument || 'Piano') === inst ? 'active' : ''}" @click=${() => { this.instrument = inst; playbackEngine.setInstrument(inst); this.requestUpdate(); }}>${inst}</button>
+                    `)}
+                  </div>
+                  <div class="kicker-label spaced">Playing Style</div>
+                  <div class="sound-options-flex">
+                    ${['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)', 'Half-time'].map(st => html`
+                      <button class="pill ${(this.playStyle || 'Block chords') === st ? 'active' : ''}" @click=${() => { this.playStyle = st; playbackEngine.setPlayStyle(st); this.requestUpdate(); }}>${st}</button>
                     `)}
                   </div>
                 </div>
               ` : ''}
+
+              ${this.performMode ? this.renderLoopDeck(chords.length) : ''}
 
               <!-- Music Theory & Harmonic Arc -->
               <div style="display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(46,39,31,0.09); cursor: pointer;" @click=${() => { this.showTheory = !this.showTheory; }}>

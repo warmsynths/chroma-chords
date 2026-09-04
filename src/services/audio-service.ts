@@ -891,3 +891,188 @@ export function unloadAudioTrack(): void {
     audioTrackPlayer = null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Perform Mode: Sub-Bass Synthesis & Real-Time Performance Pad Voicing
+// ---------------------------------------------------------------------------
+
+let subBass: Tone.Synth | null = null;
+let activeHeldChordNotes: string[] = [];
+let activeHeldVoice: Tone.Sampler | Tone.PolySynth | null = null;
+
+export function getSubBassSynth(): Tone.Synth {
+  if (!subBass) {
+    const l = getLimiter();
+    subBass = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.02, decay: 0.25, sustain: 0.85, release: 0.4 },
+      volume: -7,
+    }).connect(l);
+  }
+  return subBass;
+}
+
+/**
+ * Plays a deep sub-bass root note (octave 1/2) for a given duration.
+ */
+export function playSubNote(rootNote: string, duration = 0.8, time?: number, velocity = 0.85): void {
+  try {
+    Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
+      const synth = getSubBassSynth();
+      const clean = rootNote.replace(/\d+$/, '');
+      const subPitch = `${clean}1`;
+      const atTime = typeof time === 'number' ? time : Tone.now();
+      synth.triggerAttackRelease(subPitch, duration, atTime, velocity);
+    }).catch((e) => console.warn("Sub bass audio failed:", e));
+  } catch (e) {
+    console.warn("Sub bass audio failed:", e);
+  }
+}
+
+/**
+ * Starts playing a sub-bass note (hold-to-sustain).
+ */
+export function startSubNote(rootNote: string, velocity = 0.85): void {
+  try {
+    Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
+      const synth = getSubBassSynth();
+      const clean = rootNote.replace(/\d+$/, '');
+      const subPitch = `${clean}1`;
+      synth.triggerAttack(subPitch, undefined, velocity);
+    }).catch((e) => console.warn("Sub note start failed:", e));
+  } catch (e) {
+    console.warn("Sub note start failed:", e);
+  }
+}
+
+/**
+ * Releases any held sub-bass note.
+ */
+export function stopSubNote(): void {
+  try {
+    if (subBass) {
+      subBass.triggerRelease();
+    }
+  } catch (e) {
+    console.warn("Sub note stop failed:", e);
+  }
+}
+
+/**
+ * Transforms an array of note strings into voiced pitches according to pad voicing selection.
+ * e.g. 'up an octave', '1st inversion', 'low, root position'.
+ */
+export function applyVoicingToNotes(notes: string[], voicing = 'root position'): string[] {
+  const noteToPc: Record<string, number> = {
+    'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5,
+    'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
+  };
+  const baseOctave = 4;
+  const clean = (Array.isArray(notes) ? notes : [])
+    .filter(n => typeof n === 'string' && n.trim().length > 0)
+    .map(n => n.replace(/\d+$/, ''));
+
+  if (clean.length === 0) return ['C4', 'E4', 'G4'];
+
+  let currentOct = baseOctave;
+  let lastPc = noteToPc[clean[0]] ?? 0;
+  const pitched: Array<{ name: string; oct: number }> = [];
+
+  clean.forEach((n, idx) => {
+    const pc = noteToPc[n] ?? 0;
+    if (idx > 0 && pc <= lastPc) {
+      currentOct++;
+    }
+    pitched.push({ name: n, oct: currentOct });
+    lastPc = pc;
+  });
+
+  const vNorm = (voicing || '').toLowerCase();
+  if (vNorm.includes('octave') || vNorm.includes('high')) {
+    return pitched.map(p => `${p.name}${p.oct + 1}`);
+  } else if (vNorm.includes('inversion') || vNorm.includes('1st')) {
+    if (pitched.length > 1) {
+      const [lowest, ...rest] = pitched;
+      return [...rest.map(p => `${p.name}${p.oct}`), `${lowest.name}${lowest.oct + 1}`];
+    }
+    return pitched.map(p => `${p.name}${p.oct}`);
+  } else {
+    // 'low, root position' or default
+    return pitched.map(p => `${p.name}${p.oct}`);
+  }
+}
+
+/**
+ * Starts playing a chord on performance pads with real-time hold-to-sustain.
+ */
+export function startChordNotes(
+  notes: string[],
+  voicing = 'root position',
+  velocity = 96,
+  instrument: InstrumentId = 'rhodes'
+): void {
+  try {
+    Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
+      const voice = getVoice(instrument);
+      if (activeHeldVoice && activeHeldChordNotes.length > 0) {
+        try { activeHeldVoice.triggerRelease(activeHeldChordNotes); } catch {}
+      }
+      const pitched = applyVoicingToNotes(notes, voicing);
+      const velNorm = Math.min(1, Math.max(0.1, velocity / 127));
+      if (typeof (voice as any)?.triggerAttack === 'function') {
+        (voice as any).triggerAttack(pitched, Tone.now(), velNorm);
+      }
+      activeHeldChordNotes = pitched;
+      activeHeldVoice = voice;
+    }).catch((e) => console.warn("Start chord notes failed:", e));
+  } catch (e) {
+    console.warn("Start chord notes failed:", e);
+  }
+}
+
+/**
+ * Releases currently held performance pad chord notes.
+ */
+export function stopChordNotes(): void {
+  try {
+    if (activeHeldVoice && activeHeldChordNotes.length > 0) {
+      if (typeof (activeHeldVoice as any)?.triggerRelease === 'function') {
+        (activeHeldVoice as any).triggerRelease(activeHeldChordNotes);
+      }
+      activeHeldChordNotes = [];
+      activeHeldVoice = null;
+    }
+  } catch (e) {
+    console.warn("Stop chord notes failed:", e);
+  }
+}
+
+let metronomeVoice: Tone.Synth | null = null;
+function getMetronomeVoice(): Tone.Synth {
+  if (!metronomeVoice) {
+    metronomeVoice = new Tone.Synth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.02 },
+      volume: -4,
+    }).toDestination();
+  }
+  return metronomeVoice;
+}
+
+/**
+ * Plays a metronome click tone for count-in.
+ * High frequency (1200Hz) on accent / beat 1, lower (800Hz) on other beats.
+ */
+export function playMetronomeClick(accent = false): void {
+  try {
+    Tone.start().then(() => {
+      const voice = getMetronomeVoice();
+      const freq = accent ? 1200 : 800;
+      if (typeof (voice as any)?.triggerAttackRelease === 'function') {
+        (voice as any).triggerAttackRelease(freq, 0.035, Tone.now(), accent ? 0.95 : 0.7);
+      }
+    }).catch(() => {});
+  } catch {}
+}
+
+

@@ -1,4 +1,4 @@
-import { playChordForGenre } from './audio-service';
+import { playChordForGenre, playSubNote } from './audio-service';
 import { Progression, ChordBlock, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
 import type { SongSection } from '../components/song-screen';
 
@@ -55,6 +55,15 @@ export class PlaybackEngine {
   private autoplayTimer: ReturnType<typeof setInterval> | null = null;
   private tickCallbacks = new Set<PlaybackTickCallback>();
   private abOverride: { index: number; chord: ChordBlock | null; side: 'before' | 'after' } | null = null;
+  private subBassEnabled = false;
+
+  public setSubBassEnabled(enabled: boolean): void {
+    this.subBassEnabled = enabled;
+  }
+
+  public isSubBassEnabled(): boolean {
+    return this.subBassEnabled;
+  }
 
   public setProgression(progression: Progression | null, order?: number[]): void {
     this.mode = 'single';
@@ -256,6 +265,9 @@ export class PlaybackEngine {
           notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
         }
         this.playChordNotes(notes, 1.2);
+        if (this.subBassEnabled && notes.length > 0) {
+          playSubNote(notes[0], 1.4);
+        }
       }
     }
   }
@@ -323,4 +335,20 @@ export class PlaybackEngine {
 }
 
 export const playbackEngine = new PlaybackEngine();
+
+/**
+ * Non-destructive quantize utility for recorded loop hits.
+ */
+export function quantiseHits(
+  hits: Array<{ pos: number; vel: number; bar?: number; voicing?: string }>,
+  quantise: 'Off' | '1/16' | '1/8' | 'Bar',
+  loopBars = 4
+): Array<{ pos: number; vel: number; bar?: number; voicing?: string }> {
+  const grid = quantise === '1/16' ? 16 : quantise === '1/8' ? 8 : quantise === 'Bar' ? loopBars : 0;
+  if (!grid) return hits;
+  return hits.map(h => ({
+    ...h,
+    pos: Math.min(0.99, Math.round(h.pos * grid) / grid),
+  }));
+}
 
