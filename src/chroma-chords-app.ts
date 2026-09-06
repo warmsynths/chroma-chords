@@ -530,6 +530,9 @@ export class ChromaChordsApp extends LitElement {
   private onProgressionChange(e: CustomEvent<Progression>) {
     this.progression = e.detail;
     playbackEngine.setProgression(this.progression, this.order);
+    if (this.sections.length > 0) {
+      this.sections = SongArranger.syncActiveSection(this.sections, this.activeSectionIdx, this.progression, this.order);
+    }
     this.requestUpdate();
   }
 
@@ -538,10 +541,17 @@ export class ChromaChordsApp extends LitElement {
     const res = SongArranger.addSection(this.sections, this.progression);
     this.sections = res.sections;
     this.activeSectionIdx = res.activeIndex;
+    this.requestUpdate();
   }
 
   private onSelectSection(e: CustomEvent<number>) {
     this.activeSectionIdx = e.detail;
+    const sec = this.sections[e.detail];
+    if (sec) {
+      this.order = sec.order.slice();
+      playbackEngine.setOrder(this.order);
+    }
+    this.requestUpdate();
   }
 
   private showToast(msg: string, undoId?: string) {

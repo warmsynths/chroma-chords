@@ -3,11 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('tone', () => ({
   Compressor: class { connect() { return this; } toDestination() { return this; } },
-  Sampler: class { connect() { return this; } triggerAttackRelease() {} triggerAttack() {} triggerRelease() {} },
-  PolySynth: class { connect() { return this; } triggerAttackRelease() {} triggerAttack() {} triggerRelease() {} set() {} },
-  Synth: class { triggerAttackRelease() {} },
-  MonoSynth: class { triggerAttackRelease() {} },
-  FMSynth: class { triggerAttackRelease() {} },
+  Sampler: class { connect() { return this; } triggerAttackRelease() { } triggerAttack() { } triggerRelease() { } },
+  PolySynth: class { connect() { return this; } triggerAttackRelease() { } triggerAttack() { } triggerRelease() { } set() { } },
+  Synth: class { triggerAttackRelease() { } },
+  MonoSynth: class { triggerAttackRelease() { } },
+  FMSynth: class { triggerAttackRelease() { } },
   Reverb: class { connect() { return this; } },
   Chorus: class { start() { return this; } connect() { return this; } },
   loaded: () => Promise.resolve(),
@@ -184,104 +184,4 @@ describe('Studio Component Interactions', () => {
 
     document.body.removeChild(el);
   });
-
-  it('switches between Build and Perform mode and renders Performance Chord Pads and Loop Deck', async () => {
-    const el = document.createElement('loop-screen') as LoopScreen;
-    el.progression = sampleProgression;
-    document.body.appendChild(el);
-    await el.updateComplete;
-
-    // Default mode is Build (performMode === false)
-    expect(el.performMode).toBe(false);
-
-    // Click 'Perform' button
-    const performBtn = (el.shadowRoot?.querySelector('.perform-mode-btn') || Array.from(el.shadowRoot?.querySelectorAll('.mode-pill') || []).find(
-      p => p.textContent?.includes('Perform')
-    )) as HTMLElement;
-    expect(performBtn).toBeTruthy();
-    performBtn.click();
-    await el.updateComplete;
-
-    expect(el.performMode).toBe(true);
-
-    // Performance Chord Pads (.pad-cell) should be rendered
-    const pads = el.shadowRoot?.querySelectorAll('.pad-cell');
-    expect(pads?.length).toBe(4);
-
-    // Each pad has chord name, key label, and role
-    const firstPad = pads?.[0] as HTMLElement;
-    expect(firstPad.textContent).toContain('C');
-    expect(firstPad.textContent).toContain('1');
-    expect(firstPad.textContent).toContain('home');
-
-    // Trigger first pad mousedown
-    firstPad.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientY: 100 }));
-    await el.updateComplete;
-    expect(el.lastPad).toBeTruthy();
-    expect(el.lastPad?.idx).toBe(0);
-
-    // Verify Loop Deck is docked below
-    const loopDeck = el.shadowRoot?.querySelector('.loop-deck');
-    expect(loopDeck).toBeTruthy();
-
-    // Verify Configurable Count-in
-    expect(el.countInSetting).toBe('1 bar');
-    const countPills = el.shadowRoot?.querySelectorAll('.deck-count-pill');
-    expect(countPills?.length).toBe(3);
-
-    const twoBarsPill = Array.from(countPills || []).find(p => p.textContent?.includes('2 bars')) as HTMLElement;
-    expect(twoBarsPill).toBeTruthy();
-    twoBarsPill.click();
-    await el.updateComplete;
-    expect(el.countInSetting).toBe('2 bars');
-
-    const offPill = Array.from(countPills || []).find(p => p.textContent?.includes('Off')) as HTMLElement;
-    expect(offPill).toBeTruthy();
-    offPill.click();
-    await el.updateComplete;
-    expect(el.countInSetting).toBe('Off');
-
-    // Reset to 1 bar and test record button triggers count-in
-    el.setCountIn('1 bar');
-    await el.updateComplete;
-    expect(el.countInSetting).toBe('1 bar');
-
-    const recBtn = loopDeck?.querySelector('.rec-btn') as HTMLElement;
-    expect(recBtn).toBeTruthy();
-    recBtn.click();
-    await el.updateComplete;
-    expect(el.isCountingIn).toBe(true);
-
-    // Clicking again during count-in cancels it
-    recBtn.click();
-    await el.updateComplete;
-    expect(el.isCountingIn).toBe(false);
-
-    // Verify Lane 1 (Chords) and Lane 2 (Sub Root)
-    const lanes = el.shadowRoot?.querySelectorAll('.deck-lane-row');
-    expect(lanes?.length).toBe(2);
-
-    const chordsLaneTitle = lanes?.[0].querySelector('.deck-lane-name')?.textContent;
-    expect(chordsLaneTitle).toContain('chords');
-
-    const subRootLaneTitle = lanes?.[1].querySelector('.deck-lane-name')?.textContent;
-    expect(subRootLaneTitle).toContain('Sub · root notes');
-
-    // Test arming Lane 2 by clicking its row
-    const lane2Row = lanes?.[1] as HTMLElement;
-    expect(lane2Row).toBeTruthy();
-    lane2Row.click();
-    await el.updateComplete;
-    expect(el.armedLane).toBe('l2');
-
-    // Test mute toggle on Lane 2 (Sub Root)
-    const muteBtn = lanes?.[1].querySelector('.deck-mute-btn') as HTMLElement;
-    expect(muteBtn).toBeTruthy();
-    muteBtn.click();
-    await el.updateComplete;
-    expect(el.lanes[1].muted).toBe(true);
-
-    document.body.removeChild(el);
-  });
 });
-

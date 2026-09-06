@@ -762,11 +762,22 @@ function walkMarkovGraph(
 
 
 
+export function preferChordFlatSpelling(root: string, quality: string, scalePreferFlat: boolean): boolean {
+  if (root.includes('b') || root === 'F' || root === 'Bb' || root === 'Eb' || root === 'Ab' || root === 'Db' || root === 'Gb') {
+    return true;
+  }
+  if (root.includes('#')) {
+    return false;
+  }
+  return scalePreferFlat;
+}
+
 export function notesForSymbol(symbol: string, preferFlat: boolean): string[] {
   const { root, quality } = parseChordSymbol(symbol);
   const rootPc = PITCH_CLASS[root] ?? 0;
-  const intervals = QUALITY_INTERVALS[quality];
-  return intervals.map(iv => noteName(rootPc + iv, preferFlat));
+  const intervals = QUALITY_INTERVALS[quality] || QUALITY_INTERVALS.maj;
+  const effectivePreferFlat = preferChordFlatSpelling(root, quality, preferFlat);
+  return intervals.map(iv => noteName(rootPc + iv, effectivePreferFlat));
 }
 
 export async function loadChordData(): Promise<RawChordData> {
@@ -1030,19 +1041,227 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
   return { genre, mood, key: root, scaleType, bpm: bpmForGenreMood(genre, mood), chords };
 }
 
+const DEGREE_ROMAN_MAP: Record<string, { upper: string; lower: string }> = {
+  TONIC: { upper: 'I', lower: 'i' },
+  SUPERTONIC: { upper: 'II', lower: 'ii' },
+  MEDIANT: { upper: 'III', lower: 'iii' },
+  SUBDOMINANT: { upper: 'IV', lower: 'iv' },
+  DOMINANT: { upper: 'V', lower: 'v' },
+  SUBMEDIANT: { upper: 'VI', lower: 'vi' },
+  'LEADING-TONE': { upper: 'VII', lower: 'vii' },
+  SUBTONIC: { upper: '♭VII', lower: '♭vii' },
+};
+
+const SEMITONE_ACCIDENTAL_ROMAN: Record<number, { upper: string; lower: string }> = {
+  0: { upper: 'I', lower: 'i' },
+  1: { upper: '♭II', lower: '♭ii' },
+  2: { upper: 'II', lower: 'ii' },
+  3: { upper: '♭III', lower: '♭iii' },
+  4: { upper: 'III', lower: 'iii' },
+  5: { upper: 'IV', lower: 'iv' },
+  6: { upper: '♯IV', lower: '♯iv' },
+  7: { upper: 'V', lower: 'v' },
+  8: { upper: '♭VI', lower: '♭vi' },
+  9: { upper: 'VI', lower: 'vi' },
+  10: { upper: '♭VII', lower: '♭vii' },
+  11: { upper: 'VII', lower: 'vii' },
+};
+
+export function normalizeQualityKey(quality: string): keyof typeof QUALITY_INTERVALS {
+  if (QUALITY_INTERVALS[quality as keyof typeof QUALITY_INTERVALS]) {
+    return quality as keyof typeof QUALITY_INTERVALS;
+  }
+  const parsed = parseChordSymbol(`C${quality || ''}`);
+  return parsed.quality;
+}
+
+function formatQualityRoman(baseRoman: string, quality: keyof typeof QUALITY_INTERVALS): string {
+  if (quality === 'dom7') return `${baseRoman}7`;
+  if (quality === 'maj7') return `${baseRoman}maj7`;
+  if (quality === 'min7') return `${baseRoman}7`;
+  if (quality === 'dim') return `${baseRoman}°`;
+  if (quality === 'dim7') return `${baseRoman}°7`;
+  if (quality === 'aug') return `${baseRoman}+`;
+  if (quality === 'sus4') return `${baseRoman}sus4`;
+  if (quality === 'sus2') return `${baseRoman}sus2`;
+  if (quality === 'dom9') return `${baseRoman}9`;
+  if (quality === 'maj9') return `${baseRoman}maj9`;
+  if (quality === 'min9') return `${baseRoman}m9`;
+  return baseRoman;
+}
+
+export function formatDegreeRoman(degree: string, quality: keyof typeof QUALITY_INTERVALS): string {
+  const base = DEGREE_ROMAN_MAP[degree] || { upper: 'I', lower: 'i' };
+  const isMinorLike = quality === 'min' || quality === 'min7' || quality === 'dim' || quality === 'dim7' || quality === 'min9';
+  const romanBase = isMinorLike ? base.lower : base.upper;
+  return formatQualityRoman(romanBase, quality);
+}
+
+export function formatBorrowedRoman(semitones: number, quality: keyof typeof QUALITY_INTERVALS): string {
+  const base = SEMITONE_ACCIDENTAL_ROMAN[((semitones % 12) + 12) % 12] || { upper: '?', lower: '?' };
+  const isMinorLike = quality === 'min' || quality === 'min7' || quality === 'dim' || quality === 'dim7' || quality === 'min9';
+  const romanBase = isMinorLike ? base.lower : base.upper;
+  return formatQualityRoman(romanBase, quality);
+}
+
+function getChromaticDegreeInfo(
+  degree: string,
+  quality: keyof typeof QUALITY_INTERVALS,
+  chordName: string,
+  scale: ScaleProfile
+): { functionLabel: string; tag: string; tension: number; desc: string } {
+  const isMajorDom = quality === 'maj' || quality === 'dom7' || quality === 'dom9';
+  const isMinorLike = quality === 'min' || quality === 'min7' || quality === 'min9';
+
+  if (degree === 'MEDIANT' && isMajorDom) {
+    return {
+      functionLabel: 'Secondary Dominant',
+      tag: 'glow',
+      tension: 0.58,
+      desc: `${chordName} acts as a secondary dominant (III) adding bright chromatic tension and pull.`,
+    };
+  }
+  if (degree === 'SUPERTONIC' && isMajorDom) {
+    return {
+      functionLabel: 'Secondary Dominant',
+      tag: 'lift',
+      tension: 0.62,
+      desc: `${chordName} acts as a secondary dominant (II), driving momentum toward the dominant.`,
+    };
+  }
+  if (degree === 'SUBMEDIANT' && isMajorDom) {
+    return {
+      functionLabel: 'Secondary Dominant',
+      tag: 'lift',
+      tension: 0.55,
+      desc: `${chordName} acts as a secondary dominant (VI), energizing the progression.`,
+    };
+  }
+  if (degree === 'TONIC' && quality === 'dom7') {
+    return {
+      functionLabel: 'Secondary Dominant',
+      tag: 'reach',
+      tension: 0.52,
+      desc: `${chordName} acts as a secondary dominant (I7), pulling strongly toward the subdominant.`,
+    };
+  }
+  if (degree === 'SUBDOMINANT' && isMinorLike) {
+    return {
+      functionLabel: 'Borrowed (Minor iv)',
+      tag: 'drift',
+      tension: 0.48,
+      desc: `${chordName} borrows the poignant minor iv cadence from the parallel minor mode.`,
+    };
+  }
+
+  const baseTension = DEGREE_TENSION[degree] ?? 0.4;
+  return {
+    functionLabel: 'Chromatic Alteration',
+    tag: 'color',
+    tension: Math.min(0.85, baseTension + 0.15),
+    desc: `${chordName} adds chromatic color to the ${scale.root} ${SCALE_LABEL[scale.type] || scale.type} progression.`,
+  };
+}
+
+function getBorrowedInfo(
+  semitones: number,
+  quality: keyof typeof QUALITY_INTERVALS,
+  key: string,
+  preferFlat: boolean
+): { functionLabel: string; tag: string; tension: number; desc: string } {
+  const norm = ((semitones % 12) + 12) % 12;
+  const rootPc = (PITCH_CLASS[key] ?? 0) + norm;
+  const chordRoot = noteName(rootPc, preferFlat);
+  const name = `${chordRoot}${CHORD_SUFFIX[quality] ?? quality}`;
+
+  if (norm === 10) {
+    return {
+      functionLabel: 'Borrowed (Subtonic ♭VII)',
+      tag: 'drift',
+      tension: 0.45,
+      desc: `${name} is the borrowed Mixolydian ♭VII chord, adding a classic rock/pop lift.`,
+    };
+  }
+  if (norm === 8) {
+    return {
+      functionLabel: 'Borrowed (Submediant ♭VI)',
+      tag: 'glow',
+      tension: 0.50,
+      desc: `${name} is the borrowed Aeolian ♭VI chord, introducing epic modal depth.`,
+    };
+  }
+  if (norm === 3) {
+    return {
+      functionLabel: 'Borrowed (Mediant ♭III)',
+      tag: 'glow',
+      tension: 0.52,
+      desc: `${name} is the borrowed ♭III chord, providing chromatic punch and modal color.`,
+    };
+  }
+  if (norm === 1) {
+    return {
+      functionLabel: 'Neapolitan (♭II)',
+      tag: 'edge',
+      tension: 0.65,
+      desc: `${name} is the Neapolitan ♭II chord, providing dramatic half-step motion.`,
+    };
+  }
+
+  return {
+    functionLabel: 'Borrowed',
+    tag: 'drift',
+    tension: 0.42,
+    desc: `${name} borrows its color from outside the current key.`,
+  };
+}
+
+export function buildChromaticDegreeBlock(
+  scaleKey: string,
+  degree: string,
+  scale: ScaleProfile,
+  requestedQuality: keyof typeof QUALITY_INTERVALS,
+  preferFlat: boolean
+): ChordBlock {
+  const degProfile = scale.degrees[degree];
+  const { root: degRoot } = parseChordSymbol(degProfile.chord_name);
+  const pc = PITCH_CLASS[degRoot] ?? 0;
+  const chordRoot = noteName(pc, preferFlat);
+  const name = `${chordRoot}${CHORD_SUFFIX[requestedQuality] ?? requestedQuality}`;
+  const chordPreferFlat = preferChordFlatSpelling(chordRoot, requestedQuality, preferFlat);
+  const notes = QUALITY_INTERVALS[requestedQuality]
+    ? QUALITY_INTERVALS[requestedQuality].map(iv => noteName(pc + iv, chordPreferFlat))
+    : notesForSymbol(degProfile.chord_name, preferFlat);
+
+  const roman = formatDegreeRoman(degree, requestedQuality);
+  const info = getChromaticDegreeInfo(degree, requestedQuality, name, scale);
+
+  return {
+    name,
+    tag: info.tag,
+    roman,
+    color: colorForTension(info.tension),
+    functionLabel: info.functionLabel,
+    notes,
+    scaleLabel: `${scale.root} ${SCALE_LABEL[scale.type] || scale.type}`,
+    desc: info.desc,
+    degree,
+    scaleKey,
+    tension: info.tension,
+  };
+}
+
 export interface RequestedChord {
   root: string;
   quality: string;
 }
 
 // Turns a real chord list (e.g. from the freetext LLM classifier) into an actual Progression,
-// built from this app's existing per-key chord data rather than anything the caller invented.
+// built from this app's existing per-key chord data while preserving intentional chromatic
+// variations (such as secondary dominants E7 in C, minor iv Fm in C, or borrowed bVII).
 // Each requested chord is matched to whichever scale degree owns that root's pitch class in the
 // given key — so the resulting ChordBlocks carry real roman numerals, tension, and
-// next_chord_options, identical to a manually-generated progression. A root that doesn't belong
-// to the given key becomes a synthesized "borrowed" chord (the same mechanism the "Darker" swap
-// suggestion already uses) rather than being dropped, so the shape of the requested progression
-// is preserved even when it isn't fully diatonic in that key.
+// next_chord_options. A root that doesn't belong to the given key becomes a synthesized
+// "borrowed" chord with accurate accidental roman numerals (e.g. ♭VII, ♭VI, ♭III).
 export function alignChordsToScale(
   data: RawChordData,
   key: string,
@@ -1068,11 +1287,23 @@ export function alignChordsToScale(
   const blocks = chords.slice(0, MAX_PROGRESSION_LENGTH).map(({ root, quality }) => {
     const pc = PITCH_CLASS[root] ?? keyPc;
     const degree = pitchClassToDegree[pc];
-    if (degree) return buildChordBlock(scaleKey, degree, scale, preferFlat);
+    const safeQuality = normalizeQualityKey(quality);
+
+    if (degree) {
+      const degProfile = scale.degrees[degree];
+      const { quality: degQuality } = parseChordSymbol(degProfile.chord_name);
+      // Diatonic match if requested quality matches scale degree chord quality
+      if (safeQuality === degQuality || (!quality && degQuality)) {
+        return buildChordBlock(scaleKey, degree, scale, preferFlat);
+      }
+      // Non-diatonic / chromatic modification on a diatonic scale root
+      return buildChromaticDegreeBlock(scaleKey, degree, scale, safeQuality, preferFlat);
+    }
 
     const semitones = ((pc - keyPc) + 12) % 12;
-    const safeQuality = (QUALITY_INTERVALS[quality] ? quality : 'maj') as keyof typeof QUALITY_INTERVALS;
-    return synthBorrowedBlock(key, semitones, safeQuality, 'Borrowed', '?', 'drift', preferFlat);
+    const info = getBorrowedInfo(semitones, safeQuality, key, preferFlat);
+    const roman = formatBorrowedRoman(semitones, safeQuality);
+    return synthBorrowedBlock(key, semitones, safeQuality, info.functionLabel, roman, info.tag, preferFlat);
   });
 
   if (blocks.length < MIN_PROGRESSION_LENGTH) return null;
@@ -1100,18 +1331,20 @@ const CHORD_SUFFIX: Record<string, string> = {
   maj: '', min: 'm', dim: 'dim', aug: 'aug', dom7: '7', min7: 'm7', maj7: 'maj7', dim7: 'dim7', sus4: 'sus4',
 };
 
-// The source data only has NATURAL_MINOR scales for a handful of keys (no flat-major keys),
-// so borrowing a real parallel-mode chord isn't always possible. Synthesize a plausible
-// borrowed chord directly by transposition instead of leaving "Darker" with no option.
+// Synthesize a plausible borrowed chord directly by transposition with accurate Roman numerals.
 export function synthBorrowedBlock(root: string, semitones: number, quality: keyof typeof QUALITY_INTERVALS, functionLabel: string, roman: string, tag: string, preferFlat: boolean): ChordBlock {
   const rootPc = (PITCH_CLASS[root] ?? 0) + semitones;
   const chordRoot = noteName(rootPc, preferFlat);
-  const name = `${chordRoot}${CHORD_SUFFIX[quality]}`;
-  const notes = QUALITY_INTERVALS[quality].map(iv => noteName(rootPc + iv, preferFlat));
-  const tension = 0.3;
+  const safeQuality = normalizeQualityKey(quality);
+  const name = `${chordRoot}${CHORD_SUFFIX[safeQuality] ?? safeQuality}`;
+  const chordPreferFlat = preferChordFlatSpelling(chordRoot, safeQuality, preferFlat);
+  const notes = (QUALITY_INTERVALS[safeQuality] || QUALITY_INTERVALS.maj).map(iv => noteName(rootPc + iv, chordPreferFlat));
+  const romanResolved = roman === '?' ? formatBorrowedRoman(semitones, safeQuality) : roman;
+  const tension = 0.42;
   return {
-    name, tag, roman, color: colorForTension(tension),
-    functionLabel, notes, scaleLabel: 'Borrowed',
+    name, tag, roman: romanResolved, color: colorForTension(tension),
+    functionLabel: functionLabel === 'Borrowed' ? (getBorrowedInfo(semitones, safeQuality, root, preferFlat).functionLabel) : functionLabel,
+    notes, scaleLabel: 'Borrowed',
     desc: `${name} borrows its color from outside the current key.`,
     degree: 'BORROWED', scaleKey: '', tension,
   };

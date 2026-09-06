@@ -8,6 +8,7 @@ import {
   generateTheoryGroups,
   generateBorrowedChords,
   injectModes,
+  alignChordsToScale,
   RawChordData,
   Progression,
 } from './chord-engine';
@@ -134,5 +135,151 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
       expect(minorBorrowed[0].roman).toBe('I');
     });
   });
+
+  describe('alignChordsToScale: Diatonic Quality Preservation & Chromatic Modes (T1)', () => {
+    it('preserves diatonic chords when qualities match the scale', () => {
+      const prog = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj' },
+          { root: 'D', quality: 'min' },
+          { root: 'E', quality: 'min' },
+          { root: 'F', quality: 'maj' },
+        ],
+        'Pop',
+        'Uplifting'
+      );
+
+      expect(prog).not.toBeNull();
+      expect(prog!.chords[0].name).toBe('C');
+      expect(prog!.chords[0].roman).toBe('I');
+      expect(prog!.chords[1].name).toBe('Dm');
+      expect(prog!.chords[1].roman).toBe('ii');
+      expect(prog!.chords[2].name).toBe('Em');
+      expect(prog!.chords[2].roman).toBe('iii');
+      expect(prog!.chords[3].name).toBe('F');
+      expect(prog!.chords[3].roman).toBe('IV');
+    });
+
+    it('preserves Major III and III7 in Major key (Oasis / Radiohead trick) without snapping to iii minor', () => {
+      const prog = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+          { root: 'A', quality: 'min' },
+          { root: 'E', quality: 'dom7' }, // requested E7 instead of Em
+          { root: 'F', quality: 'maj' },
+        ],
+        'Rock',
+        'Uplifting'
+      );
+
+      expect(prog).not.toBeNull();
+      const e7Chord = prog!.chords[3];
+      expect(e7Chord.name).toBe('E7');
+      expect(e7Chord.roman).toBe('III7');
+      expect(e7Chord.notes).toContain('G#');
+      expect(e7Chord.functionLabel).toBe('Secondary Dominant');
+    });
+
+    it('preserves minor iv in Major key (Beatles trick) without snapping to IV major', () => {
+      const prog = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj' },
+          { root: 'F', quality: 'maj' },
+          { root: 'F', quality: 'min' }, // requested Fm instead of F
+          { root: 'C', quality: 'maj' },
+        ],
+        'Pop',
+        'Melancholy'
+      );
+
+      expect(prog).not.toBeNull();
+      const fmChord = prog!.chords[2];
+      expect(fmChord.name).toBe('Fm');
+      expect(fmChord.roman).toBe('iv');
+      expect(fmChord.notes).toContain('Ab');
+      expect(fmChord.functionLabel).toBe('Borrowed (Minor iv)');
+    });
+
+    it('preserves secondary dominant II7 in Major key (Beatles trick)', () => {
+      const prog = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj' },
+          { root: 'D', quality: 'dom7' }, // requested D7 instead of Dm
+          { root: 'G', quality: 'dom7' },
+          { root: 'C', quality: 'maj' },
+        ],
+        'Rock',
+        'Energetic'
+      );
+
+      expect(prog).not.toBeNull();
+      const d7Chord = prog!.chords[1];
+      expect(d7Chord.name).toBe('D7');
+      expect(d7Chord.roman).toBe('II7');
+      expect(d7Chord.notes).toContain('F#');
+      expect(d7Chord.functionLabel).toBe('Secondary Dominant');
+    });
+
+    it('computes accurate modal accidental Roman numerals for borrowed chords', () => {
+      const prog = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'Bb', quality: 'maj' }, // ♭VII
+          { root: 'Ab', quality: 'maj' }, // ♭VI
+          { root: 'Eb', quality: 'maj' }, // ♭III
+          { root: 'Db', quality: 'maj' }, // ♭II
+        ],
+        'Rock',
+        'Energetic'
+      );
+
+      expect(prog).not.toBeNull();
+      expect(prog!.chords[0].roman).toBe('♭VII');
+      expect(prog!.chords[0].functionLabel).toBe('Borrowed (Subtonic ♭VII)');
+
+      expect(prog!.chords[1].roman).toBe('♭VI');
+      expect(prog!.chords[1].functionLabel).toBe('Borrowed (Submediant ♭VI)');
+
+      expect(prog!.chords[2].roman).toBe('♭III');
+      expect(prog!.chords[2].functionLabel).toBe('Borrowed (Mediant ♭III)');
+
+      expect(prog!.chords[3].roman).toBe('♭II');
+      expect(prog!.chords[3].functionLabel).toBe('Neapolitan (♭II)');
+    });
+
+    it('accurately aligns full 8-chord Oasis signature progression (Don\'t Look Back In Anger)', () => {
+      const oasisChords = [
+        { root: 'C', quality: 'maj' },
+        { root: 'G', quality: 'maj' },
+        { root: 'A', quality: 'min' },
+        { root: 'E', quality: 'dom7' },
+        { root: 'F', quality: 'maj' },
+        { root: 'G', quality: 'maj' },
+        { root: 'C', quality: 'maj' },
+        { root: 'C', quality: 'maj' },
+      ];
+
+      const prog = alignChordsToScale(chordData, 'C', 'MAJOR', oasisChords, 'Rock', 'Uplifting');
+      expect(prog).not.toBeNull();
+      expect(prog!.chords.map(c => c.name)).toEqual(['C', 'G', 'Am', 'E7', 'F', 'G', 'C', 'C']);
+      expect(prog!.chords.map(c => c.roman)).toEqual(['I', 'V', 'vi', 'III7', 'IV', 'V', 'I', 'I']);
+    });
+  });
 });
+
 

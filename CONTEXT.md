@@ -14,7 +14,7 @@ An individual chord element within a progression containing root pitch, quality 
 A structural section of a song (e.g. Verse, Chorus, Bridge) derived from a base progression via a section permutation template.
 
 ### Band DNA Profile (`BandProfile`)
-An archetype configuration defining artist-specific harmonic substitution tendencies (e.g., Major $III$, minor $iv$), Markov progression weights, Tone.js sound presets, and guitar/keyboard voicing patterns.
+An archetype configuration defining artist-specific songwriting tricks and harmonic tendencies (Oasis, Radiohead, Nirvana, Steely Dan, Mac DeMarco). Encapsulates non-diatonic scale degree preservation (e.g. Major $III$, minor $iv$, chromatic mediants, mu major 9ths), hoisted signature chord lists, custom UI typography/color tokens, and plain-language vs. music-theory explanations. See [`BAND_MODES.md`](BAND_MODES.md) for full specification.
 
 ## Architectural Seams & Modules
 
@@ -31,4 +31,4 @@ A deep module that resolves freeform natural language text prompts into structur
 A deep module encapsulating song section template reordering algorithms and active progression section synchronization.
 
 ### Band Registry (`BandRegistry`)
-A typed registry and heuristic transformer that provides offline chord substitutions, prompt keyword extraction, and sound profile presets for artist DNA modes.
+A typed registry (`BANDS` in [`src/components/loop-screen.ts`](src/components/loop-screen.ts#L31)) and heuristic engine integration (`alignChordsToScale` in [`src/services/chord-engine.ts`](src/services/chord-engine.ts#L1265)) that provides non-diatonic chord preservation, signature chord hoisting in the Swap Sheet, prompt keyword extraction, and styled UI banner feedback.

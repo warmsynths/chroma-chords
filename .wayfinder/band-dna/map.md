@@ -15,18 +15,18 @@ Ship "Band DNA / Songwriting Trick Profiles" in Chroma Chords: enable users to c
 
 ## Decisions so far
 
-- [T2: Band DNA Harmonic & Sonic Taxonomy Specification](file:///c:/reyn/Projects/chroma-chords/.wayfinder/band-dna/tickets/002-band-dna-taxonomy-spec.md) — Specified exact harmonic rules, few-shot progressions, Tone.js instrument params, and strum patterns for Oasis, Beatles, Radiohead, Nirvana, Steely Dan, and Mac DeMarco.
+- [T1: Fix Diatonic Snap-Back in alignChordsToScale](file:///e:/work/chroma-chords/.wayfinder/band-dna/tickets/001-fix-diatonic-snap-back.md) — Preserved requested chromatic qualities on diatonic roots ($III$, $III^7$, $II^7$, $iv$, $iv^7$, $\flat VII$, $\flat VI$, $\flat III$, $\flat II$) with accurate Roman numerals, notes, tension, and function labels.
+- [T2: Band DNA Harmonic & Sonic Taxonomy Specification](file:///e:/work/chroma-chords/.wayfinder/band-dna/tickets/002-band-dna-taxonomy-spec.md) — Specified exact harmonic rules, few-shot progressions, Tone.js instrument params, and strum patterns for Oasis, Beatles, Radiohead, Nirvana, Steely Dan, and Mac DeMarco.
 
 ## Frontier (Open & Unblocked Tickets)
 
-- [T1: Fix Diatonic Snap-Back in alignChordsToScale](file:///c:/reyn/Projects/chroma-chords/.wayfinder/band-dna/tickets/001-fix-diatonic-snap-back.md) (`wayfinder:task`)
-- [T3: Band Logos & Visual Icon Assets](file:///c:/reyn/Projects/chroma-chords/.wayfinder/band-dna/tickets/003-band-logos-assets.md) (`wayfinder:task`)
+- [T3: Band Logos & Visual Icon Assets](file:///e:/work/chroma-chords/.wayfinder/band-dna/tickets/003-band-logos-assets.md) (`wayfinder:task`)
+- [T4: Worker & LLM Prompt Injection for Band Modes](file:///e:/work/chroma-chords/.wayfinder/band-dna/tickets/004-worker-llm-band-prompt.md) (`wayfinder:task`)
+- [T5: Offline Engine Band Transforms & Voicing Bias](file:///e:/work/chroma-chords/.wayfinder/band-dna/tickets/005-offline-engine-band-transforms.md) (`wayfinder:task`)
 
 ## Blocked Tickets
 
-- [T4: Worker & LLM Prompt Injection for Band Modes](file:///c:/reyn/Projects/chroma-chords/.wayfinder/band-dna/tickets/004-worker-llm-band-prompt.md) (`wayfinder:task`, blocked by T1)
-- [T5: Offline Engine Band Transforms & Voicing Bias](file:///c:/reyn/Projects/chroma-chords/.wayfinder/band-dna/tickets/005-offline-engine-band-transforms.md) (`wayfinder:task`, blocked by T1)
-- [T6: Band DNA UI Selector & Quick-Pills Component](file:///c:/reyn/Projects/chroma-chords/.wayfinder/band-dna/tickets/006-band-dna-ui-selector.md) (`wayfinder:prototype`, blocked by T3, T5)
+- [T6: Band DNA UI Selector & Quick-Pills Component](file:///e:/work/chroma-chords/.wayfinder/band-dna/tickets/006-band-dna-ui-selector.md) (`wayfinder:prototype`, blocked by T3, T5)
 
 ## Not yet specified
 
