@@ -1,4 +1,4 @@
-import { playChordForGenre, playSubNote } from './audio-service';
+import { playChordForGenre, playSubNote, applyVoicingToNotes } from './audio-service';
 import { Progression, ChordBlock, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
 import type { SongSection } from '../components/song-screen';
 
@@ -112,6 +112,12 @@ export class PlaybackEngine {
 
   public setPlayStyle(playStyle: string | null): void {
     this.playStyle = playStyle;
+  }
+
+  public setBpm(bpm: number): void {
+    if (this.progression) {
+      this.progression.bpm = bpm;
+    }
   }
 
   public isPlaying(): boolean {
@@ -284,7 +290,7 @@ export class PlaybackEngine {
     this.playChordNotes(notes, duration);
   }
 
-  public playChordAtIndex(index: number, duration = 0.8): void {
+  public playChordAtIndex(index: number, duration = 0.8, voicing?: string, velocity?: number): void {
     if (!this.progression || !this.progression.chords[index]) return;
     const chord = this.progression.chords[index];
     
@@ -296,22 +302,25 @@ export class PlaybackEngine {
       notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
     }
     
-    this.playChordNotes(notes, duration);
+    this.playChordNotes(notes, duration, voicing, velocity);
   }
 
-  public playChordNotes(notes: string[], duration?: number): void {
+  public playChordNotes(notes: string[], duration?: number, voicing?: string, velocity?: number): void {
     if (!this.progression) return;
     
     const validNotes = Array.isArray(notes) ? notes.filter(n => typeof n === 'string' && n.trim().length > 0) : [];
     if (validNotes.length === 0) return;
 
-    const pitchedNotes = pitchNotesAscending(validNotes, 4);
+    const pitchedNotes = voicing
+      ? applyVoicingToNotes(validNotes, voicing)
+      : pitchNotesAscending(validNotes, 4);
 
     playChordForGenre(pitchedNotes, this.progression.genre || 'Unknown', {
       bpm: this.progression.bpm || 120,
       duration: duration || 0.8,
       instrument: this.instrument ?? undefined,
       playStyle: this.playStyle ?? undefined,
+      velocity,
     });
   }
 
@@ -319,6 +328,16 @@ export class PlaybackEngine {
     if (!this.progression || this.order.length <= 0) return;
     this.activeIndex = step % this.order.length;
     this.progressStep = step % this.order.length;
+    this.playActiveChord();
+    this.notifyTick();
+  }
+
+  public playFromBar(bar: number): void {
+    if (!this.progression || this.order.length <= 0) return;
+    this.activeIndex = bar % this.order.length;
+    this.progressStep = bar % this.order.length;
+    this.playing = true;
+    this.startAutoplay();
     this.playActiveChord();
     this.notifyTick();
   }

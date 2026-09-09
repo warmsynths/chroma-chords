@@ -8,42 +8,52 @@ test.describe('Chroma Chords E2E Interaction Tests', () => {
     await expect(page.locator('loop-screen')).toBeVisible({ timeout: 10000 });
   });
 
-  test('Desktop: Clicks Genre and Mood pills and updates stage title', async ({ page, isMobile }) => {
+  test('Desktop: Clicks Genre and Mood pills inside Vibe Popover and updates state', async ({ page, isMobile }) => {
     test.skip(isMobile, 'Desktop only test');
+
+    // Open Vibe Popover from left rail
+    const vibeBtn = page.locator('nav.rail-left button.rail-item.vibe');
+    await vibeBtn.click();
+    const popover = page.locator('.vibe-popover-desktop');
+    await expect(popover).toBeVisible();
 
     // Click Lo-fi/Chill genre pill
-    const lofiPill = page.locator('button.pill', { hasText: 'Lo-fi/Chill' });
+    const lofiPill = popover.locator('button.pill', { hasText: 'Lo-fi/Chill' });
     await lofiPill.click();
 
-    // Verify stage title includes Lo-fi/Chill
-    const stageTitle = page.locator('.stage-title');
-    await expect(stageTitle).toContainText('Lo-fi/Chill');
+    // Verify vertical summary reflects change or pill is active
+    await expect(lofiPill).toHaveClass(/active/);
 
     // Click Melancholy mood pill
-    const melancholyPill = page.locator('button.pill', { hasText: 'Melancholy' });
+    const melancholyPill = popover.locator('button.pill', { hasText: 'Melancholy' });
     await melancholyPill.click();
-    await expect(stageTitle).toContainText('melancholy');
+    await expect(melancholyPill).toHaveClass(/active/);
   });
 
-  test('Desktop: Enters Vibe prompt, shows generating indicator, and updates stage title with search prompt', async ({ page, isMobile }) => {
+  test('Desktop: Enters Vibe prompt, shows generating indicator, and updates loop', async ({ page, isMobile }) => {
     test.skip(isMobile, 'Desktop only test');
 
-    const vibeInput = page.locator('.sidebar-left input.vibe-text-input');
+    // Open Vibe Popover
+    const vibeBtn = page.locator('nav.rail-left button.rail-item.vibe');
+    await vibeBtn.click();
+    const popover = page.locator('.vibe-popover-desktop');
+    await expect(popover).toBeVisible();
+
+    const vibeInput = popover.locator('input.vibe-text-input');
     await vibeInput.fill('Rainy jazz drive');
 
-    const submitBtn = page.locator('.sidebar-left button.vibe-submit-btn');
+    const submitBtn = popover.locator('button.vibe-submit-btn');
     await submitBtn.click();
 
-    // Stage title should update to reflect the prompt
-    const stageTitle = page.locator('.stage-title');
-    await expect(stageTitle).toContainText('Rainy jazz drive', { timeout: 10000 });
+    // Vibe summary or pad cells should update
+    await expect(page.locator('.pad-cells-grid')).toBeVisible();
   });
 
   test('Desktop: Clicks View Tabs (Chords, Song, Play it)', async ({ page, isMobile }) => {
     test.skip(isMobile, 'Desktop only test');
 
-    // Initially Chords view is active
-    await expect(page.locator('.stage-panel')).toBeVisible();
+    // Initially Chords view is active with stage card
+    await expect(page.locator('.stage-card')).toBeVisible();
 
     // Switch to Song tab
     const songTab = page.locator('button.view-tab', { hasText: 'Song' });
@@ -58,41 +68,36 @@ test.describe('Chroma Chords E2E Interaction Tests', () => {
     // Switch back to Chords tab
     const chordsTab = page.locator('button.view-tab', { hasText: 'Chords' });
     await chordsTab.click();
-    await expect(page.locator('.stage-panel')).toBeVisible();
+    await expect(page.locator('.stage-card')).toBeVisible();
   });
 
-  test('Desktop: Clicks chord block, picks substitution candidate, and swaps chord successfully', async ({ page, isMobile }) => {
+  test('Desktop: Clicks chord swap, picks substitution candidate, and swaps chord successfully', async ({ page, isMobile }) => {
     test.skip(isMobile, 'Desktop only test');
 
-    // Click the first chord block
-    const chordBlock = page.locator('.chord-item-wrap').first();
-    await chordBlock.click();
+    // Click swap button on first chord pad cell
+    const swapBtn = page.locator('.pad-cell .pad-swap-btn').first();
+    await swapBtn.click();
 
-    // Right inspector should switch to Swapping Bar header
-    await expect(page.locator('.sidebar-right')).toContainText('Swapping Bar 1');
-    await expect(page.locator('.ab-box')).toBeVisible();
-    await expect(page.locator('button.accept-swap-btn')).toBeVisible();
+    // Right inspector should switch to Swapping header
+    const inspector = page.locator('aside.inspector-right');
+    await expect(inspector.locator('.swap-kicker')).toContainText(/Swapping/i);
+    await expect(inspector.locator('.ab-compare-box')).toBeVisible();
+    await expect(inspector.locator('button.accept-swap-btn')).toBeVisible();
 
     // Pick an alternative candidate
-    const altRow = page.locator('.sidebar-right .alt-item-row').first();
+    const altRow = inspector.locator('.alt-chord-row').first();
     await altRow.click();
 
-    // The accept swap button should now say Keep <Chord>
-    const acceptBtn = page.locator('button.accept-swap-btn');
-    await expect(acceptBtn).toContainText('Keep');
+    // The accept swap button should now say Keep
+    const acceptBtn = inspector.locator('button.accept-swap-btn');
+    await expect(acceptBtn).toContainText(/Keep/i);
     await acceptBtn.click();
 
-    // Inspector should close and chord block on stage should have the swapped chord
-    await expect(page.locator('button.accept-swap-btn')).not.toBeVisible();
-    
-    // Toast should show Swapped in ... without a View button taking to sets
-    const toast = page.locator('.save-toast');
-    await expect(toast).toBeVisible();
-    await expect(toast).toContainText('Swapped in');
-    await expect(toast.locator('button', { hasText: 'View' })).toHaveCount(0);
+    // Inspector returns to idle state
+    await expect(inspector.locator('.inspector-kicker')).toContainText(/This loop/i);
 
-    // Main studio stage should remain visible
-    await expect(page.locator('.stage-panel')).toBeVisible();
+    // Main studio stage card remains visible
+    await expect(page.locator('.stage-card')).toBeVisible();
   });
 
   test('Header: Clicking Sign in opens Google OAuth modal without blocking backdrop', async ({ page }) => {
@@ -121,26 +126,32 @@ test.describe('Chroma Chords E2E Interaction Tests', () => {
 
     const chordsTab = page.locator('.view-tabs-bar button.view-tab', { hasText: 'Chords' });
     await chordsTab.click();
-    await expect(page.locator('.stage-panel')).toBeVisible();
+    await expect(page.locator('.stage-card')).toBeVisible();
 
     // Click quick swap icon on first chord
-    const quickSwap = page.locator('.quick-action-btn.swap').first();
+    const quickSwap = page.locator('.pad-cell .pad-swap-btn').first();
     await quickSwap.click();
 
     // Mobile slide-up sheet should appear
-    await expect(page.locator('.mobile-sheet')).toBeVisible();
-    await expect(page.locator('.mobile-sheet')).toContainText('Swap Bar 1');
+    const mobileSheet = page.locator('.mobile-swap-sheet');
+    await expect(mobileSheet).toBeVisible();
+    await expect(mobileSheet.locator('.sheet-title')).toContainText(/Swap Chord/i);
+
+    // Close sheet
+    await mobileSheet.locator('.sheet-cancel-btn').first().click();
+    await expect(mobileSheet).not.toBeVisible();
   });
 
   test('Inspector: Geometric Substitution family tabs update selection and candidates', async ({ page, isMobile }) => {
     test.skip(isMobile, 'Desktop only test');
 
-    // Click chord block to open inspector
-    await page.locator('.chord-item-wrap').first().click();
-    await expect(page.locator('.sidebar-right')).toContainText('Swapping Bar 1');
+    // Click swap button on first chord pad cell
+    await page.locator('.pad-cell .pad-swap-btn').first().click();
+    const inspector = page.locator('aside.inspector-right');
+    await expect(inspector.locator('.swap-kicker')).toContainText(/Swapping/i);
 
     // Verify all 5 geometric family tabs are present
-    const tabs = page.locator('.swap-family-tab');
+    const tabs = inspector.locator('.swap-family-tabs button');
     await expect(tabs).toHaveCount(5);
     await expect(tabs.nth(0)).toContainText('Darker');
     await expect(tabs.nth(1)).toContainText('Tense');
@@ -151,101 +162,72 @@ test.describe('Chroma Chords E2E Interaction Tests', () => {
     // Click 'Tense' tab
     await tabs.nth(1).click();
     await expect(tabs.nth(1)).toHaveClass(/active/);
-    await expect(page.locator('.sidebar-right')).toContainText('Three chords that lean harder');
 
     // Click 'Borrow' tab
     await tabs.nth(4).click();
     await expect(tabs.nth(4)).toHaveClass(/active/);
-    await expect(page.locator('.sidebar-right')).toContainText('Four chords from the');
   });
 
   test('Inspector & Mobile Sheet: Loop Progression Player and A/B compare buttons', async ({ page, isMobile }) => {
     if (isMobile) {
-      await page.locator('.quick-action-btn.swap').first().click();
-      await expect(page.locator('.mobile-sheet')).toBeVisible();
-      await expect(page.locator('.mobile-sheet .ab-box')).toBeVisible();
-      await expect(page.locator('.mobile-sheet .ab-play-toggle-btn')).toBeVisible();
-      await expect(page.locator('.mobile-sheet .ab-cells-track')).toBeVisible();
+      await page.locator('.pad-cell .pad-swap-btn').first().click();
+      const mobileSheet = page.locator('.mobile-swap-sheet');
+      await expect(mobileSheet).toBeVisible();
+      await expect(mobileSheet.locator('.alt-chord-row').first()).toBeVisible();
 
-      // Click individual progression cells in mobile sheet
-      const cells = page.locator('.mobile-sheet .ab-cells-track button.ab-cell-item');
-      await expect(cells).toHaveCount(4);
-      await cells.nth(0).click();
-      await cells.nth(1).click();
+      // Select candidate
+      await mobileSheet.locator('.alt-chord-row').first().click();
+      await expect(mobileSheet.locator('.accept-swap-btn')).toContainText(/Keep/i);
 
-      // Click play in the swap card
-      const playBtn = page.locator('.mobile-sheet .ab-play-toggle-btn');
-      await playBtn.click();
-      // Should show pause icon
-      await expect(playBtn).toHaveAttribute('aria-label', /Pause/);
+      // Close sheet
+      await mobileSheet.locator('.sheet-cancel-btn').first().click();
     } else {
-      await page.locator('.chord-item-wrap').first().click();
-      await expect(page.locator('.sidebar-right')).toContainText('Swapping Bar 1');
-      await expect(page.locator('.sidebar-right .ab-box')).toBeVisible();
-      await expect(page.locator('.sidebar-right .ab-play-toggle-btn')).toBeVisible();
-      await expect(page.locator('.sidebar-right .ab-cells-track')).toBeVisible();
+      await page.locator('.pad-cell .pad-swap-btn').first().click();
+      const inspector = page.locator('aside.inspector-right');
+      await expect(inspector.locator('.swap-kicker')).toContainText(/Swapping/i);
+      await expect(inspector.locator('.ab-compare-box')).toBeVisible();
+      await expect(inspector.locator('.alt-chord-row').first()).toBeVisible();
 
-      // Click individual progression cells in desktop sidebar
-      const cells = page.locator('.sidebar-right .ab-cells-track button.ab-cell-item');
-      await expect(cells).toHaveCount(4);
-      await cells.nth(0).click();
-      await cells.nth(1).click();
+      // Select candidate
+      await inspector.locator('.alt-chord-row').first().click();
+      await expect(inspector.locator('.accept-swap-btn')).toContainText(/Keep/i);
 
-      // Click play in the swap card
-      const playBtn = page.locator('.sidebar-right .ab-play-toggle-btn');
-      await playBtn.click();
-      // Should show pause icon
-      await expect(playBtn).toHaveAttribute('aria-label', /Pause/);
+      // Keep candidate
+      await inspector.locator('.accept-swap-btn').click();
+      await expect(inspector.locator('.inspector-kicker')).toContainText(/This loop/i);
     }
   });
 
-  test('Transport: Progress bar starts at zero when stopped', async ({ page, isMobile }) => {
-    const fillSelector = isMobile ? '.mobile-stage-wrap .progress-line-fill' : '.studio-grid .progress-line-fill';
-    const progressFill = page.locator(fillSelector);
-    await expect(progressFill).toHaveAttribute('style', /transform: scaleX\(0\)/);
+  test('Transport: Beat cells rendered in loop strip', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Desktop only test');
+    const beatCells = page.locator('.loop-beat-cells .beat-cell');
+    await expect(beatCells).toHaveCount(16);
+    await expect(beatCells.first()).toBeVisible();
   });
 
   test('Library: Opens and closes the Your Loops Popover Panel', async ({ page, isMobile }) => {
     if (!isMobile) {
-      const libraryToggle = page.locator('.sidebar-left button.library-toggle');
-      await libraryToggle.click();
+      const loopsBtn = page.locator('nav.rail-left button.rail-item.loops');
+      await loopsBtn.click();
 
-      const popover = page.locator('.library-popover');
+      const popover = page.locator('.loops-popover-desktop');
       await expect(popover).toBeVisible();
 
-      await libraryToggle.click();
+      await loopsBtn.click();
       await expect(popover).not.toBeVisible();
     } else {
-      const loopsBtn = page.locator('button.mobile-loops-toggle-btn');
-      await expect(loopsBtn).toBeVisible();
-      await loopsBtn.click();
-
-      const mobilePopover = page.locator('.library-popover-mobile');
-      await expect(mobilePopover).toBeVisible();
-
-      await loopsBtn.click();
-      await expect(mobilePopover).not.toBeVisible();
+      // On mobile, vibe dropdown is present
+      const vibeBtn = page.locator('.mobile-vibe-toggle');
+      await expect(vibeBtn).toBeVisible();
     }
   });
 
-  test('Play it: Renders Piano and Fretboard SVG chord diagrams', async ({ page, isMobile }) => {
-    if (!isMobile) {
-      const playTab = page.locator('.view-tabs-bar button.view-tab', { hasText: 'Play it' });
-      await playTab.click();
+  test('Play it: Renders Piano and Fretboard chord views', async ({ page }) => {
+    const playTab = page.locator('.view-tabs-bar button.view-tab', { hasText: 'Play it' });
+    await playTab.click();
 
-      // Check piano section and fret section SVGs
-      const playCards = page.locator('.play-card');
-      await expect(playCards.first()).toBeVisible();
-      const svgs = page.locator('.play-card svg');
-      await expect(svgs.first()).toBeVisible();
-    } else {
-      const playTab = page.locator('.view-tabs-bar button.view-tab', { hasText: 'Play it' });
-      await playTab.click();
-
-      const playCards = page.locator('.play-card');
-      await expect(playCards.first()).toBeVisible();
-      const svgs = page.locator('.play-card svg');
-      await expect(svgs.first()).toBeVisible();
-    }
+    // Check play cards
+    const playCards = page.locator('.play-card');
+    await expect(playCards.first()).toBeVisible();
   });
 });

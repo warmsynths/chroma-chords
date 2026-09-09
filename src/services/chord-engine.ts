@@ -1591,10 +1591,50 @@ export function buildProgressionStaff(chords: ChordBlock[], key: string, scaleTy
 export function applyVoicingToChord(chord: ChordBlock, quality: string, extension: string): ChordBlock {
   const root = rootOfChordName(chord.name);
   const preferFlat = root.includes('b');
+  const name = voicingChordName(root, quality, extension);
+  const notes = buildVoicingNotes(root, quality, extension, preferFlat);
+
+  let roman = chord.roman || '';
+  if (roman) {
+    const romanMatch = roman.match(/^([♭♯b#]*)([ivxIVX]+)/);
+    if (romanMatch) {
+      const acc = romanMatch[1];
+      const num = romanMatch[2];
+      const isMinorLike = quality === 'Minor' || quality === 'Diminished';
+      const baseNum = isMinorLike ? num.toLowerCase() : num.toUpperCase();
+      let extSuffix = '';
+      if (quality === 'Diminished') {
+        extSuffix = extension === '7th (dom / m7)' ? '°7' : '°';
+      } else if (quality === 'Suspended (sus)') {
+        extSuffix = 'sus4';
+      } else if (extension === '6th') {
+        extSuffix = '6';
+      } else if (extension === '7th (dom / m7)') {
+        extSuffix = '7';
+      } else if (extension === 'Major 7th (M7)') {
+        extSuffix = isMinorLike ? 'm(maj7)' : 'maj7';
+      } else if (extension === '9th') {
+        extSuffix = isMinorLike ? 'm9' : 'maj9';
+      }
+      roman = `${acc}${baseNum}${extSuffix}`;
+    }
+  }
+
+  let tension = chord.tension ?? 1;
+  if (quality === 'Diminished') tension = Math.max(tension, 3);
+  else if (quality === 'Suspended (sus)') tension = Math.max(tension, 2);
+  else if (extension === '7th (dom / m7)') tension = Math.max(tension, 2.5);
+  else if (extension === '9th' || extension === 'Major 7th (M7)') tension = Math.max(tension, 2);
+
+  const color = colorForTension(tension);
+
   return {
     ...chord,
-    name: voicingChordName(root, quality, extension),
-    notes: buildVoicingNotes(root, quality, extension, preferFlat),
+    name,
+    notes,
+    roman,
+    tension,
+    color,
   };
 }
 

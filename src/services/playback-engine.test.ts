@@ -92,13 +92,22 @@ describe('PlaybackEngine Deep Module', () => {
     expect(tickSpy).toHaveBeenCalledWith(expect.any(Number), 2, 1, 4, true);
   });
 
-  it('auditions individual chords directly without requiring continuous autoplay', () => {
+  it('auditions individual chords directly with voicing and velocity without requiring continuous autoplay', () => {
     engine.setProgression(sampleProgression);
     expect(engine.isPlaying()).toBe(false);
 
-    // Can audition specific chord index or specific chord notes directly
-    engine.playChordAtIndex(0, 0.8);
-    engine.playChordNotes(['C4', 'E4', 'G4'], 0.8);
+    const playNotesSpy = vi.spyOn(engine, 'playChordNotes');
+
+    engine.playChordAtIndex(0, 0.8, 'up an octave', 96);
+    expect(playNotesSpy).toHaveBeenCalledWith(['C', 'E', 'G'], 0.8, 'up an octave', 96);
+
+    engine.playChordAtIndex(1, 0.85, '1st inversion', 88);
+    expect(playNotesSpy).toHaveBeenCalledWith(['G', 'B', 'D'], 0.85, '1st inversion', 88);
+
+    engine.playChordAtIndex(0, 0.85, 'low, root position', 100);
+    expect(playNotesSpy).toHaveBeenCalledWith(['C', 'E', 'G'], 0.85, 'low, root position', 100);
+
+    engine.playChordNotes(['C4', 'E4', 'G4'], 0.8, 'up an octave', 96);
     expect(engine.isPlaying()).toBe(false);
   });
 

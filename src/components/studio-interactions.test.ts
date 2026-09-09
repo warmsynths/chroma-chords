@@ -42,6 +42,7 @@ describe('Studio Component Interactions', () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;
     document.body.appendChild(el);
+    el.vibeOpen = true;
     await el.updateComplete;
 
     const setGenreSpy = vi.fn();
@@ -63,6 +64,7 @@ describe('Studio Component Interactions', () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;
     document.body.appendChild(el);
+    el.vibeOpen = true;
     await el.updateComplete;
 
     const setMoodSpy = vi.fn();
@@ -138,7 +140,6 @@ describe('Studio Component Interactions', () => {
 
   it('app-header dispatches request-login on Sign in click', async () => {
     const header = document.createElement('app-header') as AppHeader;
-    header.isAuthenticated = false;
     document.body.appendChild(header);
     await header.updateComplete;
 
@@ -147,7 +148,7 @@ describe('Studio Component Interactions', () => {
 
     const signInBtn = header.shadowRoot?.querySelector('.sign-in-btn') as HTMLElement;
     expect(signInBtn).toBeTruthy();
-    signInBtn?.click();
+    signInBtn.click();
 
     expect(loginSpy).toHaveBeenCalled();
     document.body.removeChild(header);
@@ -159,9 +160,14 @@ describe('Studio Component Interactions', () => {
     document.body.appendChild(modal);
     await modal.updateComplete;
 
-    const dialog = modal.shadowRoot?.querySelector('.modal');
-    expect(dialog).toBeTruthy();
-    expect(modal.shadowRoot?.querySelector('.modal-title')?.textContent).toContain('Chroma Chords');
+    const modalBox = modal.shadowRoot?.querySelector('.modal.visible');
+    expect(modalBox).toBeTruthy();
+
+    const closeBtn = modal.shadowRoot?.querySelector('.close-btn') as HTMLElement;
+    const closeSpy = vi.fn();
+    modal.addEventListener('close', closeSpy);
+    closeBtn?.click();
+    expect(closeSpy).toHaveBeenCalled();
 
     document.body.removeChild(modal);
   });
@@ -173,14 +179,146 @@ describe('Studio Component Interactions', () => {
     document.body.appendChild(el);
     await el.updateComplete;
 
-    const popover = el.shadowRoot?.querySelector('.library-popover, .library-popover-mobile');
+    const popover = el.shadowRoot?.querySelector('.library-popover');
     expect(popover).toBeTruthy();
 
-    const toggleBtn = el.shadowRoot?.querySelector('.library-toggle') as HTMLElement;
-    expect(toggleBtn).toBeTruthy();
-    toggleBtn.click();
+    const searchInput = popover?.querySelector('input') as HTMLInputElement;
+    expect(searchInput).toBeTruthy();
+    expect(searchInput.placeholder).toContain('Search');
+
+    document.body.removeChild(el);
+  });
+
+  it('renders interactive progression pads and triggers pad hold/play', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
     await el.updateComplete;
-    expect(el.libraryOpen).toBe(false);
+
+    const pads = el.shadowRoot?.querySelectorAll('.pad-cells-row .pad-cell');
+    expect(pads?.length).toBe(4);
+
+    const firstPad = pads![0] as HTMLElement;
+    expect(firstPad.textContent).toContain('C');
+
+    // Simulate pointerdown
+    firstPad.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await el.updateComplete;
+
+    expect(el.padFlash).toBe(0);
+    expect(firstPad.classList.contains('pad-held')).toBe(true);
+
+    // Simulate pointerup
+    firstPad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    await el.updateComplete;
+
+    expect(el.padFlash).toBe(-1);
+    expect(firstPad.classList.contains('pad-held')).toBe(false);
+
+    document.body.removeChild(el);
+  });
+
+  it('renders honest loop strip with bar jump chips and triggers jump', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const strip = el.shadowRoot?.querySelector('.loop-strip-header');
+    expect(strip).toBeTruthy();
+
+    const cells = strip?.querySelectorAll('.strip-cell');
+    expect(cells?.length).toBe(16);
+
+    const jumpChips = strip?.querySelectorAll('.strip-jump-chip');
+    expect(jumpChips?.length).toBe(4);
+
+    // Click bar 3 jump chip
+    const bar3Chip = jumpChips![2] as HTMLElement;
+    expect(bar3Chip.textContent?.trim()).toBe('3');
+    bar3Chip.click();
+    await el.updateComplete;
+
+    expect(el.progressStep).toBe(8);
+
+    document.body.removeChild(el);
+  });
+
+  it('quick settings bar controls tempo, feel, theory, and bounce modal', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const quickBar = el.shadowRoot?.querySelector('.stage-quick-controls');
+    expect(quickBar).toBeTruthy();
+
+    // Key & Tempo chip
+    const tempoChip = quickBar?.querySelector('.tempo-chip') as HTMLElement;
+    expect(tempoChip).toBeTruthy();
+    tempoChip.click();
+    await el.updateComplete;
+    expect(el.tempoOpen).toBe(true);
+
+    // Feel chip
+    const feelChip = quickBar?.querySelector('.feel-chip') as HTMLElement;
+    expect(feelChip).toBeTruthy();
+    feelChip.click();
+    await el.updateComplete;
+    expect(el.feelOpen).toBe(true);
+
+    // Theory toggle button in inspector
+    const theoryToggle = el.shadowRoot?.querySelector('.theory-toggle-btn') as HTMLElement;
+    expect(theoryToggle).toBeTruthy();
+    expect(el.showTheory).toBe(false);
+    theoryToggle.click();
+    await el.updateComplete;
+    expect(el.showTheory).toBe(true);
+
+    // Bounce button opens bounce modal
+    const bounceBtn = quickBar?.querySelector('.bounce-btn') as HTMLElement;
+    expect(bounceBtn).toBeTruthy();
+    bounceBtn.click();
+    await el.updateComplete;
+    expect(el.bounceOpen).toBe(true);
+
+    document.body.removeChild(el);
+  });
+
+  it('pad info button opens typographic Chord Info inspector without piano diagram', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const pads = el.shadowRoot?.querySelectorAll('.pad-cells-row .pad-cell');
+    const firstPad = pads![0] as HTMLElement;
+
+    // Click detail button on chord C
+    const infoBtn = firstPad.querySelector('.pad-detail-btn') as HTMLElement;
+    expect(infoBtn).toBeTruthy();
+    infoBtn.click();
+    await el.updateComplete;
+
+    const inspector = el.shadowRoot?.querySelector('aside.inspector-right');
+    expect(inspector).toBeTruthy();
+    expect(inspector?.textContent).toContain('Chord');
+    expect(inspector?.textContent).toContain('Notes');
+
+    // Note pills
+    const pills = inspector?.querySelectorAll('.note-pill');
+    expect(pills && pills.length >= 3).toBe(true);
+
+    // Quality and Extension boxes
+    expect(inspector?.querySelector('.detail-quality-box')).toBeTruthy();
+    expect(inspector?.querySelector('.detail-extension-box')).toBeTruthy();
+
+    // Verify NO piano keyboard graphic is rendered in chord info inspector
+    expect(inspector?.querySelector('piano-card, .piano-card, svg rect[height="100"]')).toBeFalsy();
+
+    // Close button
+    const closeBtn = inspector?.querySelector('.close-detail-btn') as HTMLElement;
+    expect(closeBtn).toBeTruthy();
 
     document.body.removeChild(el);
   });

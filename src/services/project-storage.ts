@@ -168,6 +168,10 @@ export class ProjectStorageManager {
     return () => this.projectsChangeCallbacks.delete(cb);
   }
 
+  public subscribe(cb: ProjectsChangeCallback): () => void {
+    return this.subscribeProjects(cb);
+  }
+
   private notifyProjectsChanged() {
     const projects = this.getProjects();
     this.projectsChangeCallbacks.forEach((cb) => {

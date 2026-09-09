@@ -245,6 +245,7 @@ export class AuthModal extends LitElement {
 
   private close() {
     this.errorMessage = null;
+    this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
     this.dispatchEvent(new CustomEvent('close-modal', { bubbles: true, composed: true }));
   }
 

@@ -735,8 +735,10 @@ export function playChord(
         if (humanState) {
           const { minVelocity, maxVelocity, spread, microTiming, humanVariance, duration: hDuration } = humanState;
 
-          // Random velocity between minVelocity and maxVelocity (0 to 127) scaled to 0-1 range
-          const rawVel = (minVelocity + Math.random() * (maxVelocity - minVelocity)) / 127;
+          // Random velocity between minVelocity and maxVelocity (0 to 127) scaled to 0-1 range, or explicit velocity
+          const rawVel = typeof humanState.velocity === 'number'
+            ? Math.min(1, Math.max(0.1, humanState.velocity / 127))
+            : (minVelocity + Math.random() * (maxVelocity - minVelocity)) / 127;
           vel = rawVel * densityScaling;
 
           // Spread/microtiming/variance offset in seconds
@@ -767,7 +769,7 @@ export function playChord(
 export function playChordForGenre(
   noteNames: string[],
   genre: string,
-  opts?: { bpm?: number; duration?: number; instrument?: string; playStyle?: string; customConfig?: Record<string, unknown> }
+  opts?: { bpm?: number; duration?: number; instrument?: string; playStyle?: string; customConfig?: Record<string, unknown>; velocity?: number }
 ): void {
   const safeGenre = (genre === 'Unknown' || !genre) ? 'Pop' : genre;
   // User overrides (from the Instrument/Play style pickers) win over the genre's defaults —
@@ -778,7 +780,12 @@ export function playChordForGenre(
   const instrument = userInstrument?.instrument ?? GENRE_INSTRUMENT[safeGenre] ?? 'rhodes';
   const profile = GENRE_HUMANIZE[safeGenre] || {};
   const stylePatch = (userPlayStyle?.patch ?? {}) as { durationMultiplier?: number; [k: string]: unknown };
-  const humanState = { ...profile, ...stylePatch, bpm: opts?.bpm ?? profile.bpm ?? 90 };
+  const humanState = {
+    ...profile,
+    ...stylePatch,
+    bpm: opts?.bpm ?? profile.bpm ?? 90,
+    ...(typeof opts?.velocity === 'number' ? { velocity: opts.velocity } : {}),
+  };
 
   const baseDuration = opts?.duration ?? profile.duration ?? 0.9;
   const duration = stylePatch.durationMultiplier ? baseDuration * stylePatch.durationMultiplier : baseDuration;

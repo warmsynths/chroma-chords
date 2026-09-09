@@ -3,15 +3,15 @@ import { customElement, property, state } from 'lit/decorators.js';
 import {
   Progression, ChordBlock, Alternative, TheoryGroup, BorrowedChordRow,
   MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension,
-  generateProgression, generateAlternatives, generateTheoryGroups, generateBorrowedChords,
-  RawChordData, AUTOPLAY_INTERVAL_MS, preferFlatSpelling, notesForSymbol,
+  RawChordData, AUTOPLAY_INTERVAL_MS, preferFlatSpelling, notesForSymbol, parseChordSymbol,
+  generateTheoryGroups, generateBorrowedChords, applyVoicingToChord,
 } from '../services/chord-engine';
-import { playbackEngine, quantiseHits } from '../services/playback-engine';
+import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
-import { ProjectData, LoopLane, LoopLaneHit } from '../services/project-service';
+import { ProjectData } from '../services/project-service';
 import { SongArranger } from '../services/song-arranger';
 import { SongSection } from './song-screen';
-import { startChordNotes, stopChordNotes, playMetronomeClick, USER_INSTRUMENTS, USER_PLAY_STYLES } from '../services/audio-service';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES } from '../services/audio-service';
 import { bounceLoop } from '../services/export-service';
 import './share-modal';
 
@@ -115,6 +115,26 @@ const ROLE_PLAIN: Record<string, string> = {
   Dominant: 'pulling home',
   'Dominant 7th': 'pulling home',
 };
+
+const ROLE_SHORT: Record<string, string> = ROLE_PLAIN;
+
+const PAD_KEYS = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K'];
+const ZONE_NAMES = ['Octave up', '1st inversion', 'Low root'];
+
+export const CHORD_QUALITIES = [
+  { label: 'Major', sub: 'bright' },
+  { label: 'Minor', sub: 'warm' },
+  { label: 'Suspended (sus)', sub: 'floating' },
+  { label: 'Diminished', sub: 'unstable' },
+];
+
+export const CHORD_EXTENSIONS = [
+  { label: 'None', sub: 'triad only' },
+  { label: '6th', sub: 'soft lift' },
+  { label: '7th (dom / m7)', sub: 'classic tension' },
+  { label: 'Major 7th (M7)', sub: 'lush, jazzy' },
+  { label: '9th', sub: 'wide, colorful' },
+];
 
 const PC_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const PC: Record<string, number> = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4, F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8, A: 9, 'A#': 10, Bb: 10, B: 11 };
@@ -262,11 +282,9 @@ export class LoopScreen extends LitElement {
   @property({ type: Boolean }) isGenerating = false;
   @property({ type: Boolean }) libraryOpen = false;
 
-  @state() private isMobile = window.innerWidth < 900;
+  @state() private isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
   @state() private activeView: ViewTab = 'loop';
-  @state() private activeSoundDrawer: 'instrument' | 'playstyle' | null = null;
-  @state() private shareOpen = false;
-  @state() private vibeOpen = false;
+  @state() vibeOpen = false;
   @state() private selectedBand: string | null = null;
   @state() private freeText = '';
   @state() private vibePlaceholderIdx = 0;
@@ -275,8 +293,11 @@ export class LoopScreen extends LitElement {
   @state() private activeSwapFamily = 'Darker';
   @state() private swapIndex: number | null = null;
   @state() private isInspectorOpen = false;
-  @state() private abPick: { label: string; tension: number; chord: string; roman: string; fn: string } | null = null;
+  @state() private detailOpen = false;
+  @state() private detailIndex = 0;
+  @state() private abPick: { chord: string; tension: number; roman: string; fn: string; label?: string } | null = null;
   @state() private abSide: 'before' | 'after' = 'before';
+  @state() private abPlaying = false;
   @state() private savedSets: ProjectData[] = [];
   @state() private renamingId: string | null = null;
   @state() private draftName = '';
@@ -284,53 +305,22 @@ export class LoopScreen extends LitElement {
   @state() private librarySearch = '';
   @state() private librarySelectMode = false;
   @state() private librarySelected: string[] = [];
-  @state() private previewIndex = -1;
   @state() private playInstrument: PlayInstrument = 'Piano';
   @state() private showDegrees = false;
   @state() private mobileSheetOpen = false;
-  @state() private snapProgress = false;
-  @state() private abPlaying = false;
-  @property({ type: Boolean }) performMode = false;
-  @state() armedLane = 'l1';
-  @state() private recording = false;
-  @state() private recStartStep = 0;
-  @state() private stepsRecorded = 0;
-  @state() private takeHits: LoopLaneHit[] = [];
-  @state() takeOffered: { laneId: string; hits: LoopLaneHit[] } | null = null;
+  @state() private mobileDetailSheetOpen = false;
   @state() padFlash = -1;
-  @state() lastPad: { idx: number; voicing: string; vel: number } | null = null;
-  @property({ type: Array }) lanes: LoopLane[] = [
-    { id: 'l1', name: 'Rhodes · chords', color: '#F2A79B', quantise: 'Off', hits: [], kept: false, muted: false },
-    { id: 'l2', name: 'Sub · root notes', color: '#9CC0EC', quantise: 'Bar', hits: [], kept: true, muted: false },
-  ];
-  @property({ type: String }) countInSetting: 'Off' | '1 bar' | '2 bars' = '1 bar';
-  @state() isCountingIn = false;
-  @state() countInBeat = 0;
-  @state() countInTotalBeats = 0;
-  private countInInterval: ReturnType<typeof setInterval> | null = null;
-  private lastTickAt = Date.now();
-  @state() private dragState: {
-    dragIndex: number;
-    targetIndex: number;
-    startX: number;
-    startY: number;
-    currentX: number;
-    currentY: number;
-    offsetX: number;
-    offsetY: number;
-    velocityX: number;
-    velocityY: number;
-    lastTime: number;
-    lastX: number;
-    lastY: number;
-    isDragging: boolean;
-    itemBounds: { center: { x: number; y: number }; width: number; height: number }[];
-    pendingTapFn: (() => void) | null;
-  } | null = null;
+  @state() lastPad: { idx: number; voicing: string; vel: number; zone: number } | null = null;
+  @state() tempoOpen = false;
+  @state() feelOpen = false;
+  @state() bounceOpen = false;
+  @state() bounceFormat: 'wav' | 'midi' | 'stems' = 'wav';
+  @state() shareOpen = false;
+  @state() private expandedInstrument = false;
+  @state() private expandedPlayStyle = false;
 
   private vibeExamples = ['Rainy drive at 2am, first day of summer...', 'Portishead trip-hop', 'Bohemian Rhapsody', 'Tame Impala neo-psychedelia', 'Warm acoustic fireplace'];
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
-  private previewTimer: ReturnType<typeof setTimeout> | null = null;
   private unsubscribeProjects: (() => void) | null = null;
   private onResizeHandler = () => {
     this.isMobile = window.innerWidth < 900;
@@ -358,6 +348,15 @@ export class LoopScreen extends LitElement {
       display: none;
     }
 
+    button {
+      font-family: inherit;
+    }
+
+    @keyframes cvfv-sheet-up {
+      from { transform: translateY(14px); opacity: 0.6; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
     /* Top Band DNA Banner */
     .band-bar {
       display: flex;
@@ -366,7 +365,7 @@ export class LoopScreen extends LitElement {
       padding: 10px 24px;
       border-bottom: 1px solid rgba(46, 39, 31, 0.08);
       flex-shrink: 0;
-      animation: cvfv-sheet-up 180ms var(--cv-ease);
+      animation: cvfv-sheet-up 180ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
     }
     .band-bar-content {
       display: flex;
@@ -384,12 +383,12 @@ export class LoopScreen extends LitElement {
     .band-bar-name {
       font-size: 14px;
       font-weight: 800;
-      color: var(--cv-ink);
+      color: var(--cv-ink, #2E271F);
     }
     .band-bar-trick {
       font-size: 12.5px;
       font-weight: 600;
-      color: var(--cv-ink-muted);
+      color: var(--cv-ink-muted, #6B5F50);
     }
     .band-bar-close {
       border: none;
@@ -403,69 +402,176 @@ export class LoopScreen extends LitElement {
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      color: var(--cv-ink);
+      color: var(--cv-ink, #2E271F);
       transition: background 150ms ease;
     }
     .band-bar-close:hover {
-      background: var(--cv-cream);
+      background: var(--cv-cream, #FBF3E6);
     }
 
-    /* Desktop 3-Column Grid */
-    .studio-grid {
+    /* Studio Shell */
+    .studio-container {
+      display: flex;
+      align-items: stretch;
       flex: 1;
       min-height: 0;
+      min-width: 0;
       width: 100%;
-      display: grid;
-      grid-template-columns: clamp(238px, 19vw, 296px) minmax(0, 1fr) clamp(304px, 26vw, 384px);
+      height: 100%;
+      overflow: hidden;
+      position: relative;
     }
 
-    /* Left Sidebar */
-    .sidebar-left {
+    /* 1. Left Narrow Rail (62px) */
+    .rail-left {
+      width: 62px;
+      min-width: 62px;
+      max-width: 62px;
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: minmax(0, 1fr) auto;
       border-right: 1px solid rgba(46, 39, 31, 0.09);
       background: var(--cv-cream, #FBF3E6);
-      min-height: 0;
+      box-sizing: border-box;
+      z-index: 10;
+    }
+    .rail-top {
       min-width: 0;
+      overflow: hidden;
+      padding: 18px 8px 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
     }
-    .sidebar-scroll {
+    .rail-bottom {
+      position: relative;
+      padding: 0 8px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .vibe-rail-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 13px;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 8px 16px -10px rgba(46,39,31,0.6);
+      transition: transform 140ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), box-shadow 140ms ease;
+    }
+    .vibe-rail-btn:hover {
+      transform: scale(1.04);
+    }
+    .vibe-rail-btn.active {
+      box-shadow: inset 0 0 0 2.5px #2E271F;
+    }
+    .loops-rail-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 150ms ease;
+    }
+    .loops-rail-btn:hover {
+      background: var(--cv-surface, #F6EADB);
+    }
+    .rail-label {
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+      text-align: center;
+      line-height: 1.3;
+    }
+    .rail-divider {
+      width: 26px;
+      height: 1px;
+      background: rgba(46, 39, 31, 0.12);
+      margin: 2px 0;
+    }
+    .vibe-summary-vertical {
+      writing-mode: vertical-rl;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--cv-ink-muted, #6B5F50);
+      letter-spacing: 0.4px;
+      max-height: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Floating Vibe Popover (Desktop) */
+    .vibe-popover-desktop {
+      position: fixed;
+      left: 70px;
+      top: 64px;
+      width: 322px;
+      z-index: 45;
+      max-height: calc(100vh - 96px);
       overflow-y: auto;
-      padding: 20px 18px 24px;
+      background: var(--cv-cream, #FBF3E6);
+      border: 1px solid rgba(46, 39, 31, 0.12);
+      border-radius: 20px;
+      padding: 16px 18px 20px;
+      box-shadow: 0 28px 54px -22px rgba(46, 39, 31, 0.55);
+      animation: cvfv-sheet-up 180ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      box-sizing: border-box;
     }
-    .kicker-label {
+    .popover-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .popover-kicker {
       font-size: 10.5px;
       font-weight: 800;
       letter-spacing: 1.4px;
       color: var(--cv-label, #8A6B3F);
       text-transform: uppercase;
+      flex: 1;
+      min-width: 0;
+    }
+    .popover-kicker.spaced {
+      margin-top: 20px;
       margin-bottom: 9px;
     }
-    .kicker-label.spaced {
-      margin-top: 22px;
+    .close-popover-btn {
+      border: none;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink-muted, #6B5F50);
+      width: 28px;
+      height: 28px;
+      border-radius: 100px;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      flex-shrink: 0;
     }
-
-    .vibe-input-row {
+    .popover-input-row {
       display: flex;
       align-items: center;
       gap: 6px;
-      background: var(--cv-cream);
+      background: var(--cv-surface, #F6EADB);
       border: 1.5px solid rgba(46, 39, 31, 0.12);
       border-radius: 16px;
       padding: 5px 5px 5px 12px;
       margin-top: 9px;
-      transition: border-color 180ms ease, box-shadow 180ms ease;
     }
-    .vibe-input-row.generating {
-      border-color: rgba(46, 39, 31, 0.35);
-      background: rgba(251, 243, 230, 0.75);
-      animation: cvfv-vibe-pulse 1.2s ease-in-out infinite alternate;
-    }
-    @keyframes cvfv-vibe-pulse {
-      0% { box-shadow: 0 0 0 0 rgba(46, 39, 31, 0); }
-      100% { box-shadow: 0 0 0 3px rgba(46, 39, 31, 0.1); }
-    }
-    .vibe-text-input {
+    .cv-vibe-input {
       flex: 1;
       min-width: 0;
       border: none;
@@ -474,12 +580,11 @@ export class LoopScreen extends LitElement {
       font-family: inherit;
       font-size: 13.5px;
       font-weight: 600;
-      color: var(--cv-ink);
-      padding: 8px 0;
+      color: var(--cv-ink, #2E271F);
+      padding: 9px 0;
     }
-    .vibe-text-input:disabled {
-      opacity: 0.7;
-      cursor: not-allowed;
+    .cv-vibe-input::placeholder {
+      color: rgba(46, 39, 31, 0.52);
     }
     .vibe-submit-btn {
       width: 34px;
@@ -491,80 +596,62 @@ export class LoopScreen extends LitElement {
       justify-content: center;
       flex-shrink: 0;
       cursor: pointer;
-      transition: transform 120ms ease, opacity 150ms ease;
-    }
-    .vibe-submit-btn:disabled {
-      opacity: 0.75;
-      cursor: not-allowed;
+      transition: transform 120ms ease;
     }
     .vibe-submit-btn:active {
-      transform: scale(0.94);
-    }
-    .vibe-generating-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      margin-top: 7px;
-      padding: 4px 10px;
-      background: rgba(46, 39, 31, 0.06);
-      border-radius: 999px;
-      font-size: 11.5px;
-      font-weight: 700;
-      color: var(--cv-ink-muted, #5B5145);
-      animation: cv-toast-in 200ms ease;
-    }
-    .vibe-spinner {
-      width: 14px;
-      height: 14px;
-      border: 2px solid rgba(46, 39, 31, 0.25);
-      border-top-color: var(--cv-ink, #2E271F);
-      border-radius: 50%;
-      animation: cv-spin 0.7s linear infinite;
-    }
-    @keyframes cv-spin {
-      to { transform: rotate(360deg); }
+      transform: scale(0.95);
     }
 
+    /* Floating Loops Popover (Desktop) */
+    .loops-popover-desktop {
+      position: absolute;
+      left: 8px;
+      width: 300px;
+      bottom: 62px;
+      z-index: 30;
+      max-height: calc(100vh - 150px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      background: var(--cv-cream, #FBF3E6);
+      border: 1px solid rgba(46, 39, 31, 0.1);
+      border-radius: 16px;
+      padding: 10px;
+      box-shadow: 0 22px 44px -20px rgba(46, 39, 31, 0.5);
+      animation: cvfv-sheet-up 180ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      box-sizing: border-box;
+    }
+
+    /* Pills Groups */
     .pills-group {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      margin-top: 9px;
     }
     .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
       border: none;
+      font-family: inherit;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink-muted, #6B5F50);
       border-radius: 100px;
-      padding: 8px 16px;
+      padding: 7px 12px;
       font-size: 12.5px;
       font-weight: 700;
-      font-family: inherit;
-      background: var(--cv-surface-2, #F1E4CC);
-      color: var(--cv-ink-muted, #5B5145);
       cursor: pointer;
-      transition: background 150ms ease, transform 100ms ease, color 150ms ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 150ms ease, color 150ms ease, transform 100ms ease;
     }
     .pill:hover {
-      background: var(--cv-surface, #F6EADB);
-    }
-    .pill:active {
-      transform: scale(0.96);
-    }
-    .pill.active {
-      background: var(--mood-color, #F6D98B);
+      background: var(--cv-surface-2, #F1E4CC);
       color: var(--cv-ink, #2E271F);
     }
-    .pill.more-toggle {
-      border: 1.5px dashed rgba(46, 39, 31, 0.3);
-      background: transparent;
-      color: var(--cv-label);
+    .pill.active {
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
     }
-    .pill.mood-pill {
-      padding: 6px 12px 6px 6px;
-      gap: 6px;
-      font-size: 12.5px;
+    .mood-pill {
+      padding: 5px 12px 5px 6px;
     }
     .mood-badge {
       width: 22px;
@@ -573,420 +660,63 @@ export class LoopScreen extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      flex-shrink: 0;
-      transition: background 150ms ease;
     }
 
-    .band-trick-text {
-      font-size: 12px;
-      line-height: 1.5;
-      color: var(--cv-ink-muted);
-      margin-top: 10px;
-      padding: 10px 12px;
-      background: var(--cv-surface);
-      border-radius: 12px;
-      border-left: 3px solid var(--cv-plum);
-      animation: cvfv-sheet-up 180ms var(--cv-ease);
-    }
-
-    .sidebar-footer {
-      position: relative;
-      border-top: 1px solid rgba(46, 39, 31, 0.09);
-      height: 68px;
-      padding: 0 12px;
-      display: flex;
-      align-items: center;
-      background: var(--cv-cream);
-    }
-    .library-toggle {
-      width: 100%;
-      border: none;
-      font-family: inherit;
-      background: transparent;
-      color: var(--cv-ink);
-      min-height: 44px;
-      padding: 0 12px;
-      border-radius: 12px;
-      font-size: 12.5px;
-      font-weight: 800;
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      cursor: pointer;
-      transition: background 150ms ease;
-    }
-    .library-toggle.open {
-      background: var(--cv-surface);
-    }
-    .library-toggle:hover {
-      background: var(--cv-surface);
-    }
-
-    /* Library Popover Panel (Desktop) */
-    .library-popover {
-      position: absolute;
-      left: 8px;
-      width: 300px;
-      bottom: calc(100% + 6px);
-      z-index: 30;
-      max-height: calc(100vh - 150px);
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      background: var(--cv-cream, #FBF3E6);
-      border: 1px solid rgba(46, 39, 31, 0.1);
-      border-radius: 16px;
-      padding: 10px 10px 12px;
-      box-shadow: 0 22px 44px -20px rgba(46, 39, 31, 0.5);
-      animation: cvfv-sheet-up 180ms var(--cv-ease);
-    }
-
-    /* Library Popover Panel (Mobile) */
-    .library-popover-mobile {
-      position: absolute;
-      left: 14px;
-      right: 14px;
-      bottom: 82px;
-      z-index: 101;
-      max-height: calc(100vh - 190px);
-      overflow-y: auto;
-      overscroll-behavior: contain;
-      background: var(--cv-cream, #FBF3E6);
-      border: 1px solid rgba(46, 39, 31, 0.12);
-      border-radius: 18px;
-      padding: 12px 12px 14px;
-      box-shadow: 0 22px 44px -18px rgba(46, 39, 31, 0.55);
-      animation: cvfv-sheet-up 180ms var(--cv-ease);
-    }
-
-    /* Library Popover Header */
-    .lib-pop-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 2px 6px 8px;
-    }
-    .lib-pop-title {
-      font-size: 10.5px;
-      font-weight: 800;
-      letter-spacing: 1.3px;
-      color: var(--cv-label, #8A6B3F);
-      text-transform: uppercase;
-      flex: 1;
-      min-width: 0;
-    }
-    .lib-pop-select-btn {
-      border: none;
-      font-family: inherit;
-      background: transparent;
-      color: var(--cv-ink-muted, #6B5F50);
-      font-size: 11.5px;
-      font-weight: 800;
-      padding: 6px 11px;
-      border-radius: 100px;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
-    /* Library Search */
-    .lib-pop-search {
-      width: 100%;
-      box-sizing: border-box;
-      border: none;
-      background: var(--cv-surface, #F6EADB);
-      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.1);
-      border-radius: 12px;
-      outline: none;
-      font-family: inherit;
-      font-size: 12.5px;
-      font-weight: 600;
-      color: var(--cv-ink, #2E271F);
-      padding: 9px 12px;
-    }
-    .lib-pop-search::placeholder {
-      color: rgba(46, 39, 31, 0.52);
-    }
-
-    /* Library Row Items */
-    .lib-rows {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .lib-row {
-      width: 100%;
-      box-sizing: border-box;
-      background: transparent;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 0 7px 6px;
-      border-radius: 14px;
-      min-height: 44px;
-      transition: background 140ms ease;
-      cursor: pointer;
-    }
-    .lib-row:hover {
-      background: var(--cv-surface, #F6EADB);
-    }
-    .lib-row.active {
-      background: var(--cv-surface-2, #F1E4CC);
-    }
-    .lib-row.checked {
-      background: var(--cv-surface, #F6EADB);
-    }
-    .lib-row-info {
-      flex: 1;
-      min-width: 0;
-    }
-    .lib-row-name-line {
-      display: flex;
-      gap: 7px;
-      align-items: center;
-      min-width: 0;
-    }
-    .lib-row-dots {
-      display: flex;
-      gap: 3px;
-      align-items: center;
-      flex-shrink: 0;
-    }
-    .lib-row-name {
-      flex: 1;
-      min-width: 0;
-      font-size: 13.5px;
-      font-weight: 800;
-      color: var(--cv-ink, #2E271F);
-      line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .lib-row-meta {
-      display: block;
-      font-size: 11.5px;
-      color: var(--cv-ink-muted, #6B5F50);
-      line-height: 1.35;
-      margin-top: 3px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .lib-row-actions {
-      display: flex;
-      gap: 1px;
-      flex-shrink: 0;
-    }
-    .lib-icon-btn {
-      border: none;
-      font-family: inherit;
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      background: transparent;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: background 140ms ease;
-    }
-    .lib-icon-btn:hover {
-      background: var(--cv-cream, #FBF3E6);
-    }
-    .lib-confirm-actions {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      flex-shrink: 0;
-    }
-    .lib-confirm-delete-btn {
-      border: none;
-      font-family: inherit;
-      background: #D8624C;
-      color: #FBF3E6;
-      font-size: 11.5px;
-      font-weight: 800;
-      padding: 7px 11px;
-      border-radius: 100px;
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-    .lib-rename-input {
-      width: 100%;
-      box-sizing: border-box;
-      border: none;
-      background: var(--cv-cream, #FBF3E6);
-      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.16);
-      border-radius: 11px;
-      outline: none;
-      font-family: inherit;
-      font-size: 13.5px;
-      font-weight: 800;
-      color: var(--cv-ink, #2E271F);
-      padding: 9px 11px;
-    }
-    .lib-check {
-      width: 22px;
-      height: 22px;
-      border-radius: 7px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      font-weight: 800;
-      color: #2E271F;
-      cursor: pointer;
-      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.22);
-    }
-    .lib-check.checked {
-      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.14);
-    }
-    .lib-no-match {
-      font-size: 12.5px;
-      color: var(--cv-ink-muted, #6B5F50);
-      padding: 10px 6px;
-    }
-    .lib-empty-text {
-      font-size: 12.5px;
-      line-height: 1.6;
-      color: var(--cv-ink-muted, #6B5F50);
-      padding: 8px 6px;
-      text-wrap: pretty;
-    }
-    .lib-batch-delete-btn {
-      border: none;
-      font-family: inherit;
-      width: 100%;
-      font-size: 12.5px;
-      font-weight: 800;
-      min-height: 40px;
-      border-radius: 100px;
-      cursor: pointer;
-      margin-top: 8px;
-    }
-
-    .mobile-loops-toggle-btn {
-      width: 42px;
-      height: 42px;
-      flex-shrink: 0;
-      border: none;
-      border-radius: 50%;
-      background: var(--cv-surface, #F6EADB);
-      color: var(--cv-ink);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: background 150ms ease, transform 100ms ease;
-    }
-    .mobile-loops-toggle-btn:hover {
-      background: var(--cv-surface-2, #F1E4CC);
-    }
-    .mobile-loops-toggle-btn:active {
-      transform: scale(0.96);
-    }
-    .mobile-loops-toggle-btn.active {
-      background: var(--mood-color, #F6D98B);
-    }
-
-    /* Center Main Stage */
+    /* 2. Center Stage (<main>) */
     .stage-main {
+      flex: 1;
       min-width: 0;
       min-height: 0;
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr) auto;
-      background: var(--cv-cream);
+      background: var(--cv-cream, #FBF3E6);
     }
-    .stage-header {
+    .stage-top-bar {
+      padding: 6px 22px 8px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
       min-width: 0;
-      padding: 14px 24px 10px;
     }
-    .stage-title-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-    .stage-title {
-      font-size: 19px;
-      font-weight: 800;
-      letter-spacing: -0.015em;
-      color: var(--cv-ink);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .stage-action-btns {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-shrink: 0;
-    }
-    .round-btn {
-      border: none;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: var(--cv-surface);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: background 150ms ease, transform 100ms ease;
-    }
-    .round-btn:hover {
-      background: var(--cv-surface-2);
-    }
-    .round-btn:active {
-      transform: scale(0.96);
-    }
-    .round-btn.active {
-      background: var(--mood-color, #F6D98B);
-    }
-
-    /* View Switcher Tabs: Chords | Song | Play it */
     .view-tabs-bar {
       display: flex;
       gap: 2px;
-      background: var(--cv-surface);
+      background: var(--cv-surface, #F6EADB);
       border-radius: 100px;
       padding: 4px;
-      margin-top: 10px;
       width: fit-content;
+      flex-shrink: 0;
     }
     .view-tab {
       border: none;
-      min-height: 38px;
-      padding: 0 18px;
+      font-family: inherit;
+      min-height: 40px;
+      padding: 0 16px;
       border-radius: 100px;
       font-size: 12.5px;
       font-weight: 800;
-      font-family: inherit;
       white-space: nowrap;
       cursor: pointer;
       background: transparent;
-      color: var(--cv-ink-muted);
+      color: var(--cv-ink-muted, #6B5F50);
       transition: background 160ms ease, color 160ms ease;
     }
     .view-tab.active {
       background: #2E271F;
       color: #FBF3E6;
     }
-
-    /* Stage Canvas Area */
-    .stage-canvas {
+    .stage-scroll-canvas {
       min-width: 0;
+      min-height: 0;
       overflow-y: auto;
-      padding: 6px 26px 26px;
-      display: flex;
-      flex-direction: column;
+      overflow-x: hidden;
+      padding: 12px 22px 20px;
     }
-    .stage-panel {
+    .stage-card {
       position: relative;
       min-height: 280px;
-      background: var(--cv-surface);
+      background: var(--cv-surface, #F6EADB);
       border-radius: 26px;
       padding: 26px 20px;
       overflow: hidden;
@@ -994,251 +724,381 @@ export class LoopScreen extends LitElement {
       flex-direction: column;
       justify-content: center;
       gap: 16px;
-      flex: 1;
-    }
-    .drift-shape {
-      position: absolute;
-      pointer-events: none;
-      opacity: 0.45;
-    }
-    .drift-shape.a {
-      left: -64px;
-      top: -64px;
-      animation: cvfv-bg-drift-a 11s ease-in-out infinite;
-    }
-    .drift-shape.b {
-      right: -58px;
-      bottom: -58px;
-      animation: cvfv-bg-drift-b 13s ease-in-out infinite;
+      box-sizing: border-box;
     }
 
-    /* Geometric Chord Cards Grid */
-    .chords-flex-row {
+    /* Loop Strip at top of card */
+    .loop-strip-header {
       position: relative;
       z-index: 2;
       display: flex;
-      align-items: flex-end;
-      justify-content: center;
-      gap: 14px;
+      align-items: center;
+      gap: 12px;
       flex-wrap: wrap;
-      width: 100%;
+      flex-shrink: 0;
     }
-    .chord-item-wrap {
-      display: flex;
-      flex-direction: column;
+    .loop-play-btn {
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
-      cursor: grab;
-      transition: transform 160ms var(--cv-ease);
-      outline: none;
-      position: relative;
-      touch-action: none;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    .chord-item-wrap:hover {
-      transform: translateY(-3px);
-    }
-    .chord-item-wrap:focus-visible {
-      outline: 2px solid var(--cv-plum);
-      outline-offset: 4px;
-      border-radius: 16px;
-    }
-    .drag-grip-indicator {
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      opacity: 0.35;
-      color: #2E271F;
-      pointer-events: none;
-      transition: opacity 160ms ease, transform 160ms ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .chord-item-wrap:hover .drag-grip-indicator,
-    .chord-item-wrap:focus-visible .drag-grip-indicator {
-      opacity: 0.85;
-      transform: scale(1.1);
-    }
-    .chord-item-wrap.is-dragging .drag-grip-indicator {
-      opacity: 1;
-      transform: scale(1.2);
-    }
-    .chord-block-shape {
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: box-shadow 200ms ease, transform 160ms var(--cv-ease);
-    }
-    .chord-block-shape.active-pulse {
-      box-shadow: 0 0 0 5px var(--mood-color, #F6D98B), 0 18px 32px -14px rgba(46, 39, 31, 0.32);
-    }
-    .chord-block-shape.selected-inspector {
-      box-shadow: 0 0 0 3.5px var(--cv-plum), 0 16px 28px -12px rgba(46, 39, 31, 0.4);
-    }
-    .roman-pill-badge {
-      position: absolute;
-      top: -9px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #2E271F;
-      color: #FBF3E6;
-      font-size: 10.5px;
-      font-weight: 800;
-      padding: 2px 9px;
+      min-height: 44px;
+      padding: 0 18px;
+      border: none;
+      font-family: inherit;
       border-radius: 100px;
-      white-space: nowrap;
-    }
-    .chord-title-text {
+      font-size: 13px;
       font-weight: 800;
-      color: #2E271F;
-      line-height: 1;
+      cursor: pointer;
       white-space: nowrap;
+      transition: background 150ms ease, color 150ms ease;
     }
-    .chord-role-label {
-      font-size: 10.5px;
-      font-weight: 700;
-      letter-spacing: 0.1px;
-      color: rgba(46, 39, 31, 0.55);
-      text-align: center;
+    .strip-timeline-wrap {
+      flex: 1;
+      min-width: 180px;
     }
-
-    /* Sound Settings Drawer */
-    .sound-drawer {
-      margin-top: 14px;
-      padding: 14px 18px;
-      background: var(--cv-surface, #F6EADB);
-      border-radius: 20px;
-      animation: cvfv-sheet-up 180ms var(--cv-ease);
-    }
-    .sound-options-flex {
+    .strip-cells-bar {
       display: flex;
-      flex-wrap: wrap;
+      gap: 2px;
+      align-items: flex-end;
+      height: 20px;
+    }
+    .strip-cell {
+      flex: 1;
+      min-width: 0;
+      border-radius: 2px;
+      transition: height 90ms linear, background 90ms linear;
+    }
+    .strip-labels-row {
+      display: flex;
+      align-items: baseline;
       gap: 8px;
-      margin-top: 9px;
+      margin-top: 7px;
+      flex-wrap: wrap;
     }
-
-    /* Song View inside Stage */
-    .song-track-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      max-width: 640px;
-      width: 100%;
+    .strip-status-label {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
     }
-    .song-card {
+    .strip-space-hint {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+    .loop-bar-chips-group {
       display: flex;
       align-items: center;
-      gap: 16px;
-      background: var(--cv-surface);
-      border-radius: 18px;
-      padding: 18px 20px;
-      cursor: pointer;
-      transition: transform 150ms var(--cv-ease);
+      gap: 6px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
     }
-    .song-card:hover {
+    .from-bar-label {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+    }
+    .loop-bar-chips {
+      display: flex;
+      gap: 4px;
+    }
+    .strip-jump-chip {
+      border: none;
+      font-family: inherit;
+      min-width: 34px;
+      min-height: 34px;
+      padding: 0 10px;
+      border-radius: 11px;
+      font-size: 11.5px;
+      font-weight: 800;
+      cursor: pointer;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: #2E271F;
+      transition: background 150ms ease;
+    }
+
+    /* Pad Cells Grid */
+    .pad-cells-grid {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      min-width: 0;
+    }
+    .pad-cell {
+      position: relative;
+      overflow: hidden;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      min-height: 118px;
+      outline-offset: 4px;
+      touch-action: none;
+      transition: box-shadow 140ms ease, transform 120ms ease;
+      box-shadow: 0 14px 26px -18px rgba(46, 39, 31, 0.45);
+    }
+    .pad-cell:hover {
       transform: translateY(-1px);
     }
-    .song-card.active-sec {
-      box-shadow: inset 0 0 0 2px var(--mood-color, #F6D98B);
+    .pad-cell.pad-held {
+      transform: scale(0.985);
+      box-shadow: inset 0 0 0 2.5px #2E271F;
     }
-    .add-sec-card {
-      border-radius: 16px;
-      border: 1.5px dashed rgba(46, 39, 31, 0.25);
-      padding: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      color: #8A6B3F;
-      font-weight: 700;
-      font-size: 14px;
-      cursor: pointer;
-      transition: transform 150ms var(--cv-ease);
+    .pad-cell.selected {
+      box-shadow: inset 0 0 0 2.5px #2E271F, 0 14px 26px -18px rgba(46, 39, 31, 0.45);
     }
-    .add-sec-card:hover {
-      background: rgba(46, 39, 31, 0.04);
+    .pad-cell.pad-lit {
+      box-shadow: inset 0 0 0 2px rgba(46, 39, 31, 0.3);
     }
-
-    /* Play It View inside Stage */
-    .play-it-wrap {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      width: 100%;
-      max-width: 720px;
+    .zone-line-a {
+      position: absolute;
+      left: 9px;
+      right: 9px;
+      top: 34%;
+      height: 1px;
+      border-radius: 2px;
+      background: rgba(46, 39, 31, 0.075);
+      pointer-events: none;
+      transition: background 180ms ease, height 180ms ease;
     }
-    .play-cards-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
+    .zone-line-a.active {
+      height: 2px;
+      background: rgba(46, 39, 31, 0.34);
     }
-    @media (max-width: 640px) {
-      .play-cards-grid {
-        grid-template-columns: minmax(0, 1fr);
-      }
+    .zone-line-b {
+      position: absolute;
+      left: 9px;
+      right: 9px;
+      top: 67%;
+      height: 1px;
+      border-radius: 2px;
+      background: rgba(46, 39, 31, 0.075);
+      pointer-events: none;
+      transition: background 180ms ease, height 180ms ease;
+    }
+    .zone-line-b.active {
+      height: 2px;
+      background: rgba(46, 39, 31, 0.34);
     }
     .play-card {
-      background: var(--cv-surface);
+      background: var(--cv-surface, #F1E4CC);
       border-radius: 20px;
-      padding: 18px 20px;
+      padding: 20px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
       cursor: pointer;
+      position: relative;
+      overflow: hidden;
       transition: transform 150ms var(--cv-ease);
     }
-    .play-card:hover {
-      transform: translateY(-2px);
+    .play-card:active {
+      transform: scale(0.99);
     }
-
-    /* Bottom Transport Bar */
-    .transport-footer {
-      min-width: 0;
-      border-top: 1px solid rgba(46, 39, 31, 0.09);
-      background: var(--cv-cream);
-      height: 68px;
-      padding: 0 22px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .play-circle-btn {
-      width: 46px;
-      height: 46px;
-      border-radius: 50%;
+    .pad-swap-btn {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      width: 28px;
+      height: 28px;
       border: none;
+      border-radius: 50%;
+      background: rgba(251, 243, 230, 0.82);
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      flex-shrink: 0;
-      transition: transform 150ms ease;
+      padding: 0;
+      z-index: 3;
+      transition: background 150ms ease, transform 120ms ease;
     }
-    .play-circle-btn:active {
-      transform: scale(0.96);
+    .pad-swap-btn:hover {
+      background: #FBF3E6;
+      transform: scale(1.06);
     }
-    .progress-line-track {
-      flex: 1;
-      height: 9px;
-      border-radius: 6px;
-      background: var(--cv-surface-2, #F1E4CC);
-      overflow: hidden;
+    .pad-detail-btn {
+      position: absolute;
+      top: 9px;
+      right: 43px;
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 50%;
+      background: rgba(251, 243, 230, 0.82);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      z-index: 3;
+      transition: background 150ms ease, transform 120ms ease;
+    }
+    .pad-detail-btn:hover {
+      background: #FBF3E6;
+      transform: scale(1.06);
+    }
+    .pad-top-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      padding-right: 64px;
+    }
+    .pad-key-badge {
+      font-size: 11px;
+      font-weight: 800;
+      color: rgba(46, 39, 31, 0.5);
+    }
+    .pad-roman-badge {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+      color: rgba(46, 39, 31, 0.55);
+    }
+    .pad-bottom-info {
       position: relative;
     }
-    .progress-line-fill {
-      height: 100%;
-      transform-origin: left;
-      border-radius: 6px;
-      transition: transform var(--progress-duration, 1700ms) linear, background 0.4s ease;
-      will-change: transform;
+    .pad-role-label {
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      color: rgba(46, 39, 31, 0.45);
     }
-    .progress-line-fill.snap {
-      transition: none !important;
+    .pad-chord-name {
+      font-size: clamp(20px, 2.1vw, 30px);
+      font-weight: 800;
+      color: #2E271F;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+      overflow-wrap: anywhere;
     }
-    .stepper-wrap {
+    .pad-meta-voicing {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: rgba(46, 39, 31, 0.62);
+      margin-top: 5px;
+      height: 13px;
+    }
+
+    /* Playing now strip */
+    .playing-now-row {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: baseline;
+      gap: 11px;
+      flex-wrap: wrap;
+      padding-top: 15px;
+      border-top: 1px solid rgba(46, 39, 31, 0.08);
+    }
+    .playing-now-kicker {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+    }
+    .playing-now-chord {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      letter-spacing: -0.01em;
+    }
+    .playing-now-desc {
+      flex: 1 1 200px;
+      min-width: 0;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.45;
+      color: var(--cv-ink-muted, #6B5F50);
+      text-wrap: pretty;
+    }
+
+    /* Quick controls below card */
+    .stage-quick-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 8px;
+      row-gap: 10px;
+      margin-top: 16px;
+    }
+    .instrument-chip, .play-style-chip, .tempo-chip, .feel-chip {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: #5B5145;
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .instrument-chip:hover, .play-style-chip:hover, .tempo-chip:hover, .feel-chip:hover {
+      background: var(--cv-surface, #F6EADB);
+    }
+    .quick-divider {
+      width: 1px;
+      align-self: stretch;
+      min-height: 28px;
+      background: rgba(46, 39, 31, 0.12);
+      margin: 0 4px;
+    }
+    .bounce-btn {
+      margin-left: auto;
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+      border-radius: 100px;
+      min-height: 38px;
+      padding: 0 18px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: transform 120ms ease;
+    }
+    .bounce-btn:active {
+      transform: scale(0.97);
+    }
+
+    /* Bottom Bar (Row 3) */
+    .stage-bottom-bar {
+      min-width: 0;
+      background: var(--cv-cream, #FBF3E6);
+      padding: 4px 22px 14px;
+      display: flex;
+      align-items: center;
+      flex-wrap: nowrap;
+      gap: 8px;
+    }
+    .length-stepper {
       display: flex;
       align-items: center;
       gap: 4px;
@@ -1250,33 +1110,35 @@ export class LoopScreen extends LitElement {
       width: 30px;
       height: 30px;
       border-radius: 50%;
-      background: var(--cv-surface);
-      color: var(--cv-ink);
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink, #2E271F);
       font-size: 15px;
       line-height: 1;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      transition: background 150ms ease;
     }
     .stepper-btn:hover {
-      background: var(--cv-surface-2);
+      background: var(--cv-surface-2, #F1E4CC);
     }
-    .stepper-text {
+    .stepper-count {
       font-size: 12px;
       font-weight: 800;
-      color: var(--cv-ink-muted);
+      color: var(--cv-ink-muted, #6B5F50);
+      white-space: nowrap;
       min-width: 58px;
       text-align: center;
     }
-    .dice-reroll-btn {
+    .try-another-btn {
       border: none;
       font-family: inherit;
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      background: var(--cv-surface);
-      color: var(--cv-ink);
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink, #2E271F);
       min-height: 36px;
       padding: 0 14px;
       border-radius: 100px;
@@ -1287,41 +1149,94 @@ export class LoopScreen extends LitElement {
       white-space: nowrap;
       transition: background 150ms ease;
     }
-    .dice-reroll-btn:hover {
-      background: var(--cv-surface-2);
+    .try-another-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
     }
 
-    /* Right Sidebar (Desktop only) */
-    .sidebar-right {
+    /* 3. Right Inspector (<aside>) */
+    .inspector-right {
+      width: clamp(304px, 26vw, 384px);
       min-width: 0;
       min-height: 0;
       display: grid;
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto;
       border-left: 1px solid rgba(46, 39, 31, 0.09);
       background: var(--cv-surface, #F6EADB);
+      box-sizing: border-box;
     }
-    .right-header {
+    .inspector-header {
       padding: 18px 22px 14px;
       border-bottom: 1px solid rgba(46, 39, 31, 0.08);
     }
-    .right-scroll {
+    .inspector-body {
       min-width: 0;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 16px 22px 22px;
     }
-
-    /* Tension Arc */
-    .arc-bars-box {
+    .inspector-kicker, .detail-kicker, .swap-kicker {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      color: var(--cv-label, #8A6B3F);
+      text-transform: uppercase;
+    }
+    .arc-title-text {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      margin-top: 5px;
+      letter-spacing: -0.015em;
+      text-wrap: pretty;
+    }
+    .theory-toggle-btn {
+      border: none;
+      font-family: inherit;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 2px 0;
+      flex-shrink: 0;
+    }
+    .toggle-track {
+      width: 34px;
+      height: 18px;
+      border-radius: 100px;
+      background: rgba(46, 39, 31, 0.18);
+      position: relative;
+      transition: background 200ms ease;
+    }
+    .toggle-track.active {
+      background: var(--mood-color, #9B7CA8);
+    }
+    .toggle-knob {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #FBF3E6;
+      transition: transform 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+    }
+    .toggle-track.active .toggle-knob {
+      transform: translateX(16px);
+    }
+    .arc-bars-row {
       display: flex;
       align-items: flex-end;
       gap: 6px;
-      height: 148px;
+      height: 152px;
       padding: 0 2px;
     }
     .arc-bar-col {
-      flex: 1;
+      flex: 1 1 0;
+      min-width: 0;
       border: none;
+      font-family: inherit;
       background: transparent;
       display: flex;
       flex-direction: column;
@@ -1334,26 +1249,268 @@ export class LoopScreen extends LitElement {
       transition: background 150ms ease;
     }
     .arc-bar-col:hover {
-      background: var(--cv-cream);
+      background: var(--cv-cream, #FBF3E6);
     }
-    .arc-bar-pillar {
+    .arc-bar-fill-wrap {
+      height: 80px;
+      flex-shrink: 0;
+      width: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .arc-bar-fill {
       width: 100%;
       max-width: 34px;
+      border-radius: 4px;
+      transition: height 320ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), background 320ms ease;
+    }
+    .arc-bar-name {
+      font-size: 11.5px;
+      font-weight: 800;
+      line-height: 1.25;
+      color: var(--cv-ink, #2E271F);
+      flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+      margin-top: 6px;
+    }
+    .arc-bar-feel {
+      font-size: 9.5px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: rgba(46, 39, 31, 0.45);
+      text-align: center;
+      flex-shrink: 0;
+      max-width: 100%;
+    }
+    .arc-caption {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      color: rgba(46, 39, 31, 0.42);
+      margin-top: 8px;
+    }
+    .arc-sentence-text {
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-top: 14px;
+      text-wrap: pretty;
+    }
+    .arc-theory-note {
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(46, 39, 31, 0.08);
+      text-wrap: pretty;
+    }
+    .inspector-tip-box {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      margin-top: 16px;
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 14px;
+      padding: 11px 13px;
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--cv-ink-muted, #6B5F50);
+      text-wrap: pretty;
+    }
+
+    /* Chord Detail Inspector */
+    .chord-shape-badge {
+      width: 34px;
+      height: 34px;
       border-radius: 8px;
-      transition: height 280ms var(--cv-ease), background 280ms ease;
+      flex-shrink: 0;
+    }
+    .detail-chord-name {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-top: 4px;
+    }
+    .detail-chord-function {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-top: 3px;
+    }
+    .close-detail-btn {
+      border: none;
+      font-family: inherit;
+      width: 44px;
+      height: 44px;
+      margin: -8px -10px 0 0;
+      border-radius: 50%;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      color: rgba(46, 39, 31, 0.55);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 150ms ease;
+    }
+    .close-detail-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .detail-notes-pills {
+      display: flex;
+      gap: 7px;
+      margin-top: 9px;
+      flex-wrap: wrap;
+    }
+    .note-pill {
+      background: var(--cv-surface-2, #F1E4CC);
+      border-radius: 100px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--cv-label, #8A6B3F);
+    }
+    .detail-quality-box, .detail-extension-box {
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+      background: var(--cv-surface-2, #F1E4CC);
+      border-radius: 14px;
+      padding: 11px 14px;
+      margin-top: 9px;
+    }
+    .quality-label {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+    }
+    .quality-sub {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+    .quality-chips-grid, .ext-chips-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .chord-mod-chip {
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: none;
+      font-family: inherit;
+      cursor: pointer;
+      background: var(--cv-surface, #F1E4CC);
+      text-align: left;
+      transition: transform 140ms ease, background 140ms ease, box-shadow 140ms ease;
+    }
+    .chord-mod-chip:hover {
+      transform: scale(0.99);
+    }
+    .chord-mod-chip.selected,
+    .chord-mod-chip.active {
+      background: var(--cv-mood-color, #F6D98B);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.2);
+    }
+    .chord-mod-chip .chip-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #2E271F;
+    }
+    .chord-mod-chip .chip-desc {
+      font-size: 11px;
+      color: rgba(46, 39, 31, 0.6);
+      margin-top: 2px;
+    }
+    .detail-mini-keyboard {
+      position: relative;
+      margin-top: 10px;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1.5px solid rgba(46, 39, 31, 0.1);
+      background: var(--cv-cream, #FBF3E6);
+    }
+    .detail-mini-keyboard .white-key {
+      flex: 1;
+      height: 72px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(46, 39, 31, 0.35);
+      background: #FBF3E6;
+      border-right: 1px solid rgba(46, 39, 31, 0.08);
+      transition: background 150ms ease, color 150ms ease;
+    }
+    .detail-mini-keyboard .white-key:last-child {
+      border-right: none;
+    }
+    .detail-mini-keyboard .white-key.active {
+      color: #2E271F;
+      background: var(--cv-mood-color, #F6D98B);
+      font-weight: 800;
+    }
+    .detail-mini-keyboard .black-key {
+      position: absolute;
+      top: 0;
+      width: calc(100% / 7 * 0.58);
+      height: 44px;
+      background: var(--cv-plum, #2E271F);
+      border-radius: 0 0 5px 5px;
+      z-index: 2;
+      transition: background 150ms ease;
+    }
+    .detail-mini-keyboard .black-key.active {
+      background: #F2735F;
     }
 
-    /* A/B Compare Box & Loop Progression Player */
-    @keyframes cvfv-abcell {
-      0%, 24% {
-        box-shadow: inset 0 0 0 2px #2E271F;
-      }
-      25%, 100% {
-        box-shadow: inset 0 0 0 0 rgba(0, 0, 0, 0);
-      }
+    /* Swap Inspector */
+    .swap-chord-name {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      letter-spacing: -0.02em;
+      line-height: 1;
     }
-
-    .ab-box {
+    .swap-roman {
+      font-size: 11.5px;
+      font-weight: 800;
+      color: var(--cv-label, #8A6B3F);
+      letter-spacing: 0.5px;
+    }
+    .swap-role {
+      font-size: 12px;
+      font-weight: 700;
+      color: rgba(46, 39, 31, 0.45);
+    }
+    .close-swap-btn {
+      border: none;
+      font-family: inherit;
+      width: 44px;
+      height: 44px;
+      margin: -8px -10px 0 0;
+      border-radius: 50%;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      color: rgba(46, 39, 31, 0.55);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .ab-compare-box, .ab-box {
       background: var(--cv-surface, #F6EADB);
       border-radius: 16px;
       padding: 12px 13px;
@@ -1426,11 +1583,6 @@ export class LoopScreen extends LitElement {
       color: #2E271F;
       cursor: pointer;
       user-select: none;
-      transition: background 160ms ease, opacity 160ms ease, transform 100ms ease, box-shadow 160ms ease;
-    }
-    .ab-cell-item:hover {
-      opacity: 1 !important;
-      filter: brightness(0.96);
     }
     .ab-cell-item:active {
       transform: scale(0.94);
@@ -1438,26 +1590,52 @@ export class LoopScreen extends LitElement {
     .ab-cell-item.active-step {
       box-shadow: inset 0 0 0 2px #2E271F;
     }
-
-    .accept-swap-btn {
-      border: none;
+    /* legacy names kept for compat */
+    .ab-now-card, .ab-swap-card {
+      flex: 1;
+      padding: 7px 10px;
+      border-radius: 10px;
       cursor: pointer;
-      width: 100%;
-      padding: 13px 16px;
+      transition: background 150ms ease;
+    }
+    .ab-now-card.active, .ab-swap-card.active {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .ab-side-label {
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      opacity: 0.65;
+    }
+    .ab-side-chord {
       font-size: 14px;
       font-weight: 800;
-      border-radius: 100px;
-      margin-top: 10px;
-      transition: opacity 150ms ease, transform 100ms ease;
+      margin-top: 1px;
     }
-    .accept-swap-btn:hover {
-      opacity: 0.92;
+    .accept-swap-btn {
+      border: none;
+      font-family: inherit;
+      cursor: pointer;
+      width: 100%;
+      padding: 11px 14px;
+      font-size: 13px;
+      font-weight: 800;
+      border-radius: 100px;
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+      margin-top: 8px;
+      transition: transform 120ms ease;
     }
     .accept-swap-btn:active {
       transform: scale(0.98);
     }
-
-    .swap-tab-nav {
+    .accept-swap-btn:disabled {
+      background: var(--cv-surface-2, #F1E4CC);
+      color: rgba(46, 39, 31, 0.35);
+      cursor: default;
+    }
+    .swap-family-tabs, .swap-tab-nav {
       display: flex;
       align-items: flex-end;
       gap: 2px;
@@ -1484,7 +1662,7 @@ export class LoopScreen extends LitElement {
       transition: background 150ms ease;
     }
     .swap-family-tab:hover {
-      background: var(--cv-cream);
+      background: var(--cv-cream, #FBF3E6);
     }
     .swap-family-tab.active {
       background: rgba(255, 255, 255, 0.45);
@@ -1506,14 +1684,11 @@ export class LoopScreen extends LitElement {
       letter-spacing: 0.2px;
       text-transform: uppercase;
       color: rgba(46, 39, 31, 0.45);
-      white-space: normal;
-      line-height: 1.1;
-      text-align: center;
       max-width: 100%;
       transition: color 150ms ease;
     }
-    .family-label.active {
-      color: var(--cv-ink);
+    .swap-family-tab.active .family-label {
+      color: var(--cv-ink, #2E271F);
     }
     .band-note-banner {
       display: flex;
@@ -1535,1371 +1710,295 @@ export class LoopScreen extends LitElement {
       color: #2E271F;
       border-radius: 100px;
       padding: 3px 8px;
-      flex-shrink: 0;
     }
-    .alt-item-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      background: var(--cv-cream);
-      margin-bottom: 7px;
-      cursor: pointer;
-      transition: transform 120ms ease, box-shadow 120ms ease, background 140ms ease;
-    }
-    .alt-item-row:hover {
-      background: #FFFBF5;
-      transform: translateY(-1px);
-    }
-    .alt-item-row.selected {
-      box-shadow: inset 0 0 0 2px var(--cv-plum);
-      background: #FDF9F2;
-    }
-    .alt-play-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      color: #2E271F;
-      transition: background 150ms var(--cv-ease), transform 120ms ease;
-    }
-    .alt-play-btn:active {
-      transform: scale(0.92);
-    }
-
-    /* Dedicated Mobile Layout */
-    .mobile-stage-wrap {
-      flex: 1;
-      overflow-y: auto;
-      overflow-x: hidden;
+    .alt-candidates-list {
       display: flex;
       flex-direction: column;
-      min-height: 0;
+      gap: 6px;
     }
-    .mobile-vibe-bar {
+    .alt-chord-row {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 9px 12px;
+      border-radius: 12px;
+      background: var(--cv-cream, #FBF3E6);
+      cursor: pointer;
+      transition: background 140ms ease;
+    }
+    .alt-chord-row:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .alt-chord-row.selected {
+      box-shadow: inset 0 0 0 2px var(--cv-ink, #2E271F);
+    }
+    .alt-shape {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    .alt-play-chip {
+      border: none;
+      font-family: inherit;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-ink, #2E271F);
+      border-radius: 100px;
+      padding: 5px 10px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* Mobile Dedicated Styles */
+    .mobile-stage-wrap {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      background: var(--cv-cream, #FBF3E6);
+    }
+    .mobile-vibe-toggle {
       width: 100%;
       border: none;
       background: var(--cv-surface, #F6EADB);
-      border-radius: 18px;
-      padding: 12px 16px;
+      border-radius: 16px;
+      padding: 12px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       cursor: pointer;
-      text-align: left;
     }
-    .quick-action-btn {
-      position: absolute;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: 1.5px solid rgba(46, 39, 31, 0.14);
-      background: var(--cv-cream);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      box-shadow: 0 2px 6px rgba(46, 39, 31, 0.15);
-      transition: transform 100ms ease;
-    }
-    .quick-action-btn:active {
-      transform: scale(0.92);
-    }
-    .quick-action-btn.swap {
-      top: -10px;
-      right: -10px;
-    }
-    .quick-action-btn.detail {
-      bottom: -10px;
-      left: -10px;
-    }
-
-    /* Mobile Slide-Up Sheet Modal */
-    .sheet-scrim {
-      position: fixed;
-      inset: 0;
-      background: rgba(46, 39, 31, 0.4);
-      z-index: 100;
-      backdrop-filter: blur(4px);
-      animation: cvfv-sheet-up 180ms ease;
-    }
-    .mobile-sheet {
+    .mobile-swap-sheet {
       position: fixed;
       left: 0;
       right: 0;
       bottom: 0;
-      max-height: 80vh;
-      background: var(--cv-surface, #F6EADB);
-      border-radius: 24px 24px 0 0;
-      z-index: 101;
+      max-height: 84%;
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 26px 26px 0 0;
+      box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.5);
+      z-index: 100;
       display: flex;
       flex-direction: column;
-      padding: 20px 20px 30px;
-      box-shadow: 0 -12px 32px rgba(46, 39, 31, 0.25);
-      animation: cvfv-sheet-up 220ms var(--cv-ease);
+      animation: cvfv-sheet-up 260ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      box-sizing: border-box;
+      padding: 16px 20px 24px;
       overflow-y: auto;
     }
-
-    /* ------------------------------------------------------------------ */
-    /* Perform Mode Styles: Pads & Loop Deck                              */
-    /* ------------------------------------------------------------------ */
-    .mode-toggle-row {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      margin-top: 10px;
-      margin-bottom: 8px;
+    .sheet-handle {
+      width: 38px;
+      height: 4px;
+      border-radius: 100px;
+      background: rgba(46, 39, 31, 0.18);
+      margin: 0 auto 14px;
+      flex-shrink: 0;
     }
-    .perform-mode-btn {
+    .sheet-cancel-btn {
       border: none;
       font-family: inherit;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--cv-ink, #2E271F);
-      color: var(--cv-cream, #FBF3E6);
-      padding: 10px 17px;
+      text-align: center;
       border-radius: 100px;
-      font-size: 12.5px;
-      font-weight: 800;
-      cursor: pointer;
-      flex-shrink: 0;
-      white-space: nowrap;
-      transition: background 150ms var(--cv-ease, ease), color 150ms ease;
-    }
-    .perform-mode-btn:hover {
-      opacity: 0.92;
-    }
-    .perform-mode-btn.exit {
-      background: var(--cv-surface-2, #F1E4CC);
-      color: var(--cv-ink, #2E271F);
-    }
-    .mode-pills-bar {
-      display: inline-flex;
-      background: var(--cv-surface-2, #F1E4CC);
-      padding: 3px;
-      border-radius: 100px;
-      gap: 2px;
-    }
-    .mode-pill {
-      border: none;
+      padding: 12px 18px;
       background: transparent;
-      padding: 6px 14px;
-      border-radius: 100px;
-      font-size: 12px;
-      font-weight: 800;
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.18);
+      color: var(--cv-ink-muted, #6B5F50);
+      font-size: 13px;
+      font-weight: 700;
       cursor: pointer;
-      color: var(--cv-ink-muted, #6B5F50);
-      transition: all 150ms var(--cv-ease, ease);
-      font-family: inherit;
     }
-    .mode-pill.active {
-      background: var(--cv-ink, #2E271F);
-      color: var(--cv-cream, #FBF3E6);
+    .sheet-scrim {
+      position: fixed;
+      inset: 0;
+      background: rgba(46, 39, 31, 0.44);
+      z-index: 95;
     }
-    .perform-hint {
-      font-size: 11.5px;
-      font-weight: 700;
-      line-height: 1.45;
-      color: var(--cv-ink-muted, #6B5F50);
-      flex: 1;
-      min-width: 0;
-    }
-    .perform-banner {
+    .mobile-bottom-transport-bar {
+      position: sticky;
+      bottom: 0;
+      flex-shrink: 0;
+      border-top: 1px solid rgba(46, 39, 31, 0.09);
+      background: var(--cv-cream, #FBF3E6);
+      padding: 11px 14px 26px;
       display: flex;
-      align-items: baseline;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 4px;
-      padding: 0 4px;
-      position: relative;
-      z-index: 2;
-      width: 100%;
-    }
-    .perform-banner-kicker {
-      font-size: 10.5px;
-      font-weight: 800;
-      letter-spacing: 1.3px;
-      text-transform: uppercase;
-      color: var(--cv-label, #8A6B3F);
-    }
-    .perform-banner-now {
-      font-size: 15px;
-      font-weight: 800;
-      color: var(--cv-ink, #2E271F);
-    }
-    .perform-banner-sub {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--cv-ink-muted, #6B5F50);
-    }
-
-    .quick-chips-row {
-      display: flex;
-      flex-wrap: wrap;
       align-items: center;
       gap: 8px;
-      margin-top: 16px;
+      z-index: 50;
     }
-    .quick-chip-btn {
+    .mobile-circle-btn {
       border: none;
       font-family: inherit;
-      background: var(--cv-surface, #F6EADB);
-      color: var(--cv-ink, #2E271F);
-      border-radius: 100px;
-      padding: 9px 16px;
-      font-size: 12.5px;
-      font-weight: 800;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      flex-shrink: 0;
-      white-space: nowrap;
-      transition: background 150ms var(--cv-ease, ease);
-    }
-    .quick-chip-btn:hover {
-      filter: brightness(0.97);
-    }
-
-    /* Pads Container - Desktop & Mobile */
-    .pad-cells-row {
-      position: relative;
-      z-index: 2;
-      flex: 1;
-      min-height: 240px;
-      display: flex;
-      align-items: stretch;
-      gap: 12px;
-      min-width: 0;
-      width: 100%;
-    }
-    .pad-cell {
-      flex: 1 1 0;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      padding: 18px 18px 20px;
-      border-radius: 20px;
-      cursor: pointer;
-      user-select: none;
-      touch-action: none;
-      min-height: 230px;
-      box-shadow: 0 14px 26px -18px rgba(46, 39, 31, 0.45);
-      transform: none;
-      transition: opacity 120ms ease, box-shadow 140ms ease, transform 120ms ease;
-      outline-offset: 4px;
-      position: relative;
-      overflow: hidden;
-    }
-    .pad-cell:hover {
-      filter: brightness(1.02);
-    }
-    .pad-cell.pad-held {
-      box-shadow: inset 0 0 0 2.5px #2E271F !important;
-      transform: scale(0.985);
-    }
-    .pad-cell.pad-lit {
-      box-shadow: inset 0 0 0 2px rgba(46, 39, 31, 0.3);
-    }
-    .pad-key-label {
-      font-size: 11px;
-      font-weight: 800;
-      color: rgba(46, 39, 31, 0.5);
-      font-family: inherit;
-    }
-    .pad-name {
-      font-size: 19px;
-      font-weight: 800;
-      color: #2E271F;
-      letter-spacing: -0.01em;
-      line-height: 1.1;
-    }
-    .pad-meta {
-      font-size: 11.5px;
-      font-weight: 700;
-      color: rgba(46, 39, 31, 0.6);
-      margin-top: 3px;
-      line-height: 1.2;
-    }
-    .pad-cells-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      width: 100%;
-      flex: 1;
-      min-height: 0;
-      position: relative;
-      z-index: 2;
-    }
-
-    /* Loop Deck Container */
-    .loop-deck {
-      background: var(--cv-surface, #F6EADB);
-      border-radius: 20px;
-      padding: 14px 16px 16px;
-      margin-top: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      animation: cvfv-sheet-up 200ms var(--cv-ease);
-    }
-    .deck-top-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .rec-btn {
-      width: 46px;
-      height: 46px;
+      width: 42px;
+      height: 42px;
       border-radius: 50%;
-      background: var(--cv-surface-2, #F1E4CC);
+      background: var(--cv-surface, #F6EADB);
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       flex-shrink: 0;
-      border: none;
-      transition: background 150ms ease, box-shadow 150ms ease;
+      transition: background 150ms ease, transform 120ms ease;
     }
-    .rec-btn.is-recording {
-      background: #F2735F;
-      box-shadow: 0 8px 18px -10px rgba(242, 115, 95, 0.9);
-    }
-    .rec-btn.is-counting-in {
-      background: var(--cv-yellow, #F6D98B);
-      box-shadow: 0 0 0 3px rgba(246, 217, 139, 0.5);
-      animation: cvfv-count-pulse 500ms infinite alternate;
-    }
-    @keyframes cvfv-count-pulse {
-      0% { transform: scale(1); }
-      100% { transform: scale(1.06); }
-    }
-    .count-in-number {
-      font-size: 19px;
-      font-weight: 900;
-      color: #2E271F;
-      font-family: inherit;
-    }
-    .rec-glyph {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: #F2735F;
-      transition: all 150ms ease;
-    }
-    .rec-btn.is-recording .rec-glyph {
-      width: 15px;
-      height: 15px;
-      border-radius: 4px;
-      background: #FBF3E6;
-      animation: cvfv-rec-pulse 1s infinite alternate;
-    }
-    @keyframes cvfv-rec-pulse {
-      0% { opacity: 1; }
-      100% { opacity: 0.35; }
-    }
-    .deck-meta-col {
-      flex: 1;
-      min-width: 0;
-    }
-    .deck-rec-title {
-      font-size: 13.5px;
-      font-weight: 800;
-      color: var(--cv-ink, #2E271F);
-    }
-    .deck-rec-sub {
-      font-size: 11.5px;
-      font-weight: 700;
-      color: var(--cv-ink-muted, #6B5F50);
-      margin-top: 2px;
-    }
-    .deck-count-in-wrap {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      margin-left: auto;
-      flex-shrink: 0;
-    }
-    .deck-count-in-label {
-      font-size: 11px;
-      font-weight: 800;
-      color: var(--cv-ink-muted, #6B5F50);
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-    }
-    .deck-count-in-pills {
-      display: inline-flex;
+    .mobile-circle-btn:hover {
       background: var(--cv-surface-2, #F1E4CC);
-      padding: 2px;
-      border-radius: 8px;
-      gap: 2px;
     }
-    .deck-count-pill {
+    .mobile-circle-btn:active {
+      transform: scale(0.96);
+    }
+    .mobile-chip-btn {
       border: none;
       font-family: inherit;
-      background: transparent;
-      color: var(--cv-ink-muted, #6B5F50);
-      font-size: 10.5px;
-      font-weight: 800;
-      padding: 4px 9px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 120ms ease;
-    }
-    .deck-count-pill.active {
-      background: var(--cv-ink, #2E271F);
-      color: var(--cv-cream, #FBF3E6);
-    }
-    .deck-timeline {
-      display: flex;
-      gap: 2px;
-      height: 10px;
-      align-items: stretch;
-      margin-top: 13px;
-    }
-    .timeline-bar-seg {
       flex: 1;
-      background: rgba(46, 39, 31, 0.09);
-      border-radius: 3px;
-      transition: background 120ms ease;
-    }
-    .timeline-bar-seg.active-step {
-      background: var(--cv-ink, #2E271F);
-    }
-    .timeline-bar-seg.count-step {
-      background: var(--cv-yellow, #F6D98B) !important;
-    }
-    .deck-lanes-list {
-      display: flex;
-      flex-direction: column;
-      gap: 7px;
-      margin-top: 9px;
-    }
-    .deck-lane-row {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      background: var(--cv-cream, #FBF3E6);
-      border-radius: 12px;
-      padding: 9px 12px;
-      cursor: pointer;
-      box-shadow: none;
-      transition: box-shadow 150ms ease;
-    }
-    .deck-lane-row.is-armed {
-      box-shadow: inset 0 0 0 2px rgba(46, 39, 31, 0.28);
-    }
-    .deck-lane-row.is-recording-lane {
-      box-shadow: inset 0 0 0 2px #F2735F;
-    }
-    .deck-lane-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .deck-lane-name {
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink, #2E271F);
+      border-radius: 14px;
+      min-height: 46px;
+      padding: 0 10px;
       font-size: 12.5px;
       font-weight: 800;
-      color: var(--cv-ink, #2E271F);
-      width: 128px;
-      flex-shrink: 0;
+      cursor: pointer;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      transition: background 150ms ease;
     }
-    .deck-hit-bars-track {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      gap: 2px;
-      height: 24px;
-      align-items: flex-end;
-    }
-    .deck-hit-slot {
-      flex: 1;
-      min-width: 0;
-      border-radius: 2px;
-    }
-    .deck-hit-slot.empty {
-      height: 3px !important;
-      background: rgba(46, 39, 31, 0.13) !important;
-    }
-    .deck-lane-status {
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.8px;
-      text-transform: uppercase;
-      flex-shrink: 0;
-      width: 50px;
-      text-align: right;
-    }
-    .deck-lane-quant-pills {
-      display: flex;
-      gap: 3px;
-      flex-shrink: 0;
-    }
-    .deck-quant-pill {
-      padding: 5px 8px;
-      border-radius: 8px;
-      font-size: 10.5px;
-      font-weight: 800;
-      cursor: pointer;
-      border: none;
+    .mobile-chip-btn:hover {
       background: var(--cv-surface-2, #F1E4CC);
-      color: var(--cv-ink-muted, #6B5F50);
-      transition: all 120ms ease;
-      font-family: inherit;
     }
-    .deck-quant-pill.active {
-      background: var(--cv-ink, #2E271F);
-      color: var(--cv-cream, #FBF3E6);
-    }
-    .deck-mute-btn {
-      display: none;
-    }
-
-    /* Take Review Drawer */
-    .take-review-card {
-      background: var(--cv-cream, #FBF3E6);
-      border-radius: 16px;
-      padding: 13px 15px 14px;
-      border: 1.5px solid rgba(46, 39, 31, 0.12);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      animation: cvfv-sheet-up 180ms var(--cv-ease);
-    }
-    .take-review-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .take-review-title {
-      font-size: 13.5px;
-      font-weight: 800;
-      color: var(--cv-ink, #2E271F);
-    }
-    .take-review-actions {
-      display: flex;
-      gap: 7px;
-    }
-    .take-btn-try-again {
+    .mobile-bounce-btn {
       border: none;
       font-family: inherit;
-      background: var(--cv-surface-2, #F1E4CC);
-      color: var(--cv-ink, #2E271F);
-      border-radius: 100px;
-      padding: 8px 15px;
-      font-size: 12px;
-      font-weight: 800;
-      cursor: pointer;
-    }
-    .take-btn-keep {
-      border: none;
-      font-family: inherit;
-      background: var(--cv-ink, #2E271F);
-      color: var(--cv-cream, #FBF3E6);
-      border-radius: 100px;
-      padding: 8px 15px;
-      font-size: 12px;
-      font-weight: 800;
-      cursor: pointer;
-    }
-    .take-note {
-      font-size: 11.5px;
-      line-height: 1.5;
-      color: var(--cv-ink-muted, #6B5F50);
-    }
-
-    /* Bounce Bar */
-    .bounce-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      flex: 0.9;
       background: var(--cv-ink, #2E271F);
       color: var(--cv-cream, #FBF3E6);
       border-radius: 14px;
-      padding: 10px 14px;
-      margin-top: 4px;
-    }
-    .bounce-meta {
-      flex: 1;
-      min-width: 0;
-    }
-    .bounce-title {
+      min-height: 46px;
       font-size: 12.5px;
       font-weight: 800;
-      color: var(--cv-cream, #FBF3E6);
-    }
-    .bounce-filename {
-      font-family: 'Space Mono', monospace;
-      font-size: 10.5px;
-      color: rgba(251, 243, 230, 0.6);
-      margin-top: 2px;
-    }
-    .bounce-btn {
-      border: none;
-      font-family: inherit;
-      padding: 6px 12px;
-      border-radius: 100px;
-      font-size: 11px;
-      font-weight: 800;
       cursor: pointer;
-      background: var(--cv-yellow, #F6D98B);
-      color: #2E271F;
-      transition: opacity 120ms ease;
+      transition: opacity 150ms ease;
     }
-    .bounce-btn.sec {
-      background: rgba(251, 243, 230, 0.14);
-      color: rgba(251, 243, 230, 0.85);
+    .mobile-bounce-btn:hover {
+      opacity: 0.92;
+    }
+    .mobile-theory-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(46, 39, 31, 0.09);
+      cursor: pointer;
+    }
+    .mobile-theory-panel {
+      margin-top: 20px;
     }
   `;
 
-  willUpdate(changedProperties: PropertyValues) {
-    if (changedProperties.has('playing')) {
-      if (!this.playing) {
-        this.snapProgress = true;
-      } else {
-        this.snapProgress = true;
-        requestAnimationFrame(() => {
-          this.snapProgress = false;
-          this.requestUpdate();
-        });
-      }
-    }
-    if (changedProperties.has('progressStep')) {
-      this.lastTickAt = Date.now();
-      if (this.recording) {
-        this.stepsRecorded++;
-        const loopBars = this.progression?.chords?.length || 4;
-        if (this.stepsRecorded >= loopBars) {
-          this.recording = false;
-          this.takeOffered = {
-            laneId: this.armedLane,
-            hits: [...this.takeHits],
-          };
-          this.dispatchEvent(new CustomEvent('toast', {
-            detail: `Captured take with ${this.takeHits.length} chords`,
-            bubbles: true,
-            composed: true,
-          }));
-        }
-      }
-      const prev = changedProperties.get('progressStep') as number;
-      if (this.progressStep === 0 && prev !== undefined && prev > 0) {
-        this.snapProgress = true;
-        requestAnimationFrame(() => {
-          this.snapProgress = false;
-          this.requestUpdate();
-        });
-      }
-    }
-    if (changedProperties.has('progression') || changedProperties.has('instrument')) {
-      this.syncSubLaneHits();
-    }
-  }
-
   connectedCallback() {
     super.connectedCallback();
-    this.isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
-    this.refreshSavedSets();
-    this.syncSubLaneHits();
     window.addEventListener('resize', this.onResizeHandler);
-    window.addEventListener('keydown', this.onKeyHandler);
-    window.addEventListener('keyup', this.onKeyUpHandler);
-    this.unsubscribeProjects = projectStorage.subscribeProjects(() => {
-      this.refreshSavedSets();
-    });
+    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('keyup', this.handleKeyUp);
     this.placeholderTimer = setInterval(() => {
       this.vibePlaceholderIdx = (this.vibePlaceholderIdx + 1) % this.vibeExamples.length;
-    }, 3200);
+    }, 2800);
+    this.savedSets = projectStorage.getProjects();
+    this.unsubscribeProjects = typeof projectStorage.subscribeProjects === 'function'
+      ? projectStorage.subscribeProjects(() => {
+          this.savedSets = projectStorage.getProjects();
+          this.requestUpdate();
+        })
+      : typeof (projectStorage as any).subscribe === 'function'
+        ? (projectStorage as any).subscribe(() => {
+            this.savedSets = projectStorage.getProjects();
+            this.requestUpdate();
+          })
+        : null;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener('resize', this.onResizeHandler);
-    window.removeEventListener('keydown', this.onKeyHandler);
-    window.removeEventListener('keyup', this.onKeyUpHandler);
-    this.cancelCountIn();
-    window.removeEventListener('pointermove', this.onWindowPointerMove);
-    window.removeEventListener('pointerup', this.onWindowPointerUp);
-    window.removeEventListener('pointercancel', this.onWindowPointerUp);
+    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keyup', this.handleKeyUp);
     if (this.placeholderTimer) clearInterval(this.placeholderTimer);
-    if (this.previewTimer) clearTimeout(this.previewTimer);
     if (this.unsubscribeProjects) this.unsubscribeProjects();
   }
 
-  private onChordPointerDown = (idx: number, e: PointerEvent, tapFn: () => void) => {
-    if (e.button !== 0) return;
-
-    const stageContainer = this.shadowRoot?.querySelector('.chords-flex-row');
-    const itemEls = stageContainer ? Array.from(stageContainer.querySelectorAll('.chord-item-wrap')) : [];
-    const itemBounds = itemEls.map((el) => {
-      const rect = el.getBoundingClientRect();
-      return {
-        center: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
-        width: rect.width,
-        height: rect.height,
-      };
-    });
-
-    this.dragState = {
-      dragIndex: idx,
-      targetIndex: idx,
-      startX: e.clientX,
-      startY: e.clientY,
-      currentX: e.clientX,
-      currentY: e.clientY,
-      offsetX: 0,
-      offsetY: 0,
-      velocityX: 0,
-      velocityY: 0,
-      lastTime: performance.now(),
-      lastX: e.clientX,
-      lastY: e.clientY,
-      isDragging: false,
-      itemBounds,
-      pendingTapFn: tapFn,
-    };
-
-    window.addEventListener('pointermove', this.onWindowPointerMove);
-    window.addEventListener('pointerup', this.onWindowPointerUp);
-    window.addEventListener('pointercancel', this.onWindowPointerUp);
-  };
-
-  private onWindowPointerMove = (e: PointerEvent) => {
-    if (!this.dragState) return;
-    const state = this.dragState;
-    const dx = e.clientX - state.startX;
-    const dy = e.clientY - state.startY;
-    const dist = Math.hypot(dx, dy);
-
-    if (!state.isDragging) {
-      if (dist > 6) {
-        state.isDragging = true;
-        document.body.style.cursor = 'grabbing';
-        if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10);
-      } else {
-        return;
-      }
-    }
-
-    if (e.cancelable) e.preventDefault();
-
-    const now = performance.now();
-    const dt = Math.max(1, now - state.lastTime);
-    state.velocityX = (e.clientX - state.lastX) / dt;
-    state.velocityY = (e.clientY - state.lastY) / dt;
-    state.lastX = e.clientX;
-    state.lastY = e.clientY;
-    state.lastTime = now;
-    state.currentX = e.clientX;
-    state.currentY = e.clientY;
-    state.offsetX = dx;
-    state.offsetY = dy;
-
-    if (state.itemBounds.length > 0) {
-      const origCenter = state.itemBounds[state.dragIndex]?.center || { x: state.startX, y: state.startY };
-      const currentCenterX = origCenter.x + dx;
-      const currentCenterY = origCenter.y + dy;
-
-      let closestIdx = state.dragIndex;
-      let minDist = Infinity;
-
-      state.itemBounds.forEach((b, i) => {
-        const d = Math.hypot(currentCenterX - b.center.x, currentCenterY - b.center.y);
-        if (d < minDist) {
-          minDist = d;
-          closestIdx = i;
-        }
-      });
-      state.targetIndex = closestIdx;
-    }
-
-    this.requestUpdate();
-  };
-
-  private onWindowPointerUp = () => {
-    if (!this.dragState) return;
-    window.removeEventListener('pointermove', this.onWindowPointerMove);
-    window.removeEventListener('pointerup', this.onWindowPointerUp);
-    window.removeEventListener('pointercancel', this.onWindowPointerUp);
-    document.body.style.cursor = '';
-
-    const { dragIndex, targetIndex, isDragging, pendingTapFn } = this.dragState;
-    this.dragState = null;
-
-    if (!isDragging) {
-      if (pendingTapFn) pendingTapFn();
-      this.requestUpdate();
-      return;
-    }
-
-    if (targetIndex !== dragIndex && this.progression?.chords) {
-      const newChords = [...this.progression.chords];
-      const [moved] = newChords.splice(dragIndex, 1);
-      newChords.splice(targetIndex, 0, moved);
-
-      if (this.swapIndex === dragIndex) {
-        this.swapIndex = targetIndex;
-      } else if (this.swapIndex !== null) {
-        if (dragIndex < targetIndex && this.swapIndex > dragIndex && this.swapIndex <= targetIndex) {
-          this.swapIndex--;
-        } else if (dragIndex > targetIndex && this.swapIndex >= targetIndex && this.swapIndex < dragIndex) {
-          this.swapIndex++;
-        }
-      }
-
-      this.progression = {
-        ...this.progression,
-        chords: newChords,
-      };
-
-      playbackEngine.setProgression(this.progression, this.order);
-      this.dispatchEvent(new CustomEvent('progression-change', { detail: this.progression, bubbles: true, composed: true }));
-      this.dispatchEvent(new CustomEvent('toast', { detail: 'Reordered chords', bubbles: true, composed: true }));
-      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(18);
-    }
-
-    this.requestUpdate();
-  };
-
-  private getChordDragStyle(idx: number): string {
-    if (!this.dragState || !this.dragState.isDragging) {
-      return 'cursor: grab; transition: transform 0.25s var(--cv-ease), box-shadow 0.25s ease;';
-    }
-
-    const { dragIndex, targetIndex, offsetX, offsetY, velocityX, itemBounds } = this.dragState;
-
-    if (idx === dragIndex) {
-      const tilt = Math.max(-8, Math.min(8, offsetX * 0.04 + velocityX * 8));
-      return `transform: translate3d(${offsetX}px, ${offsetY}px, 0) scale(1.08) rotate(${tilt.toFixed(2)}deg); z-index: 50; cursor: grabbing; box-shadow: 0 20px 40px -8px rgba(46, 39, 31, 0.35), 0 8px 16px -4px rgba(0, 0, 0, 0.2); transition: none; pointer-events: none; opacity: 0.96;`;
-    }
-
-    let shiftDirection = 0;
-    if (dragIndex < targetIndex && idx > dragIndex && idx <= targetIndex) {
-      shiftDirection = -1;
-    } else if (dragIndex > targetIndex && idx >= targetIndex && idx < dragIndex) {
-      shiftDirection = 1;
-    }
-
-    let shiftDist = 0;
-    if (shiftDirection !== 0 && itemBounds.length > 0) {
-      const bCurrent = itemBounds[idx];
-      const bTarget = itemBounds[idx + shiftDirection];
-      if (bCurrent && bTarget) {
-        shiftDist = bTarget.center.x - bCurrent.center.x;
-      } else {
-        shiftDist = shiftDirection * 110;
-      }
-    }
-
-    return `transform: translate3d(${shiftDist}px, 0, 0) scale(0.96); transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease; opacity: 0.84;`;
-  }
-
-  private onChordKeyDown(idx: number, e: KeyboardEvent) {
-    if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-      e.preventDefault();
-      const targetIndex = e.key === 'ArrowLeft' ? Math.max(0, idx - 1) : Math.min(this.progression.chords.length - 1, idx + 1);
-      if (targetIndex !== idx && this.progression?.chords) {
-        const newChords = [...this.progression.chords];
-        const [moved] = newChords.splice(idx, 1);
-        newChords.splice(targetIndex, 0, moved);
-
-        if (this.swapIndex === idx) {
-          this.swapIndex = targetIndex;
-        }
-
-        this.progression = {
-          ...this.progression,
-          chords: newChords,
-        };
-
-        playbackEngine.setProgression(this.progression, this.order);
-        this.dispatchEvent(new CustomEvent('progression-change', { detail: this.progression, bubbles: true, composed: true }));
-        this.dispatchEvent(new CustomEvent('toast', { detail: 'Reordered chords', bubbles: true, composed: true }));
-
-        this.updateComplete.then(() => {
-          const items = this.shadowRoot?.querySelectorAll('.chord-item-wrap');
-          (items?.[targetIndex] as HTMLElement)?.focus();
-        });
-      }
-    }
-  }
-
-  private refreshSavedSets() {
-    this.savedSets = projectStorage.getProjects();
-    this.requestUpdate();
-  }
-
-  private syncSubLaneHits() {
-    const chords = this.progression?.chords || [];
-    const len = chords.length || 4;
-    const subHits: LoopLaneHit[] = chords.map((chord, i) => ({
-      pos: Math.round((i / len) * 100) / 100,
-      vel: 104,
-      bar: i,
-      voicing: 'sub root',
-    }));
-    this.lanes = this.lanes.map(l => {
-      if (l.id === 'l2') {
-        return { ...l, hits: subHits };
-      }
-      if (l.id === 'l1') {
-        return { ...l, name: `${this.instrument || 'Rhodes'} · chords` };
-      }
-      return l;
-    });
-  }
-
-  private togglePerform(on: boolean) {
-    this.performMode = on;
-    this.isInspectorOpen = false;
-    this.swapIndex = null;
-    this.cancelCountIn();
-    this.recording = false;
-    this.takeOffered = null;
-    this.padFlash = -1;
-    const subLane = this.lanes.find(l => l.id === 'l2');
-    playbackEngine.setSubBassEnabled(on && !subLane?.muted);
-    this.requestUpdate();
-  }
-
-  public setCountIn(setting: 'Off' | '1 bar' | '2 bars') {
-    this.countInSetting = setting;
-    this.cancelCountIn();
-    this.requestUpdate();
-  }
-
-  private startCountIn() {
-    this.cancelCountIn();
-    const bars = this.countInSetting === '2 bars' ? 2 : 1;
-    const totalBeats = bars * 4;
-    this.countInTotalBeats = totalBeats;
-    this.countInBeat = 1;
-    this.isCountingIn = true;
-    this.recording = false;
-    this.takeOffered = null;
-    this.takeHits = [];
-
-    const bpm = this.progression?.bpm || 84;
-    const beatDurationMs = Math.round(60000 / bpm);
-
-    playMetronomeClick(true);
-    this.requestUpdate();
-
-    this.countInInterval = setInterval(() => {
-      if (!this.isCountingIn) {
-        if (this.countInInterval) clearInterval(this.countInInterval);
-        return;
-      }
-      this.countInBeat++;
-      if (this.countInBeat <= this.countInTotalBeats) {
-        const isAccent = (this.countInBeat - 1) % 4 === 0;
-        playMetronomeClick(isAccent);
-        this.requestUpdate();
-      } else {
-        if (this.countInInterval) clearInterval(this.countInInterval);
-        this.countInInterval = null;
-        this.isCountingIn = false;
-        playMetronomeClick(true);
-        this.startActualRecording();
-      }
-    }, beatDurationMs);
-  }
-
-  private cancelCountIn() {
-    if (this.countInInterval) {
-      clearInterval(this.countInInterval);
-      this.countInInterval = null;
-    }
-    this.isCountingIn = false;
-    this.countInBeat = 0;
-  }
-
-  private startActualRecording() {
-    this.recording = true;
-    this.takeHits = [];
-    this.takeOffered = null;
-    this.recStartStep = this.progressStep;
-    this.stepsRecorded = 0;
-    if (!this.playing) {
-      playbackEngine.startAutoplay();
-    }
-    this.requestUpdate();
-  }
-
-  private armLane(id: string) {
-    this.armedLane = id;
-    this.requestUpdate();
-  }
-
-  private setLaneQuantise(id: string, q: 'Off' | '1/16' | '1/8' | 'Bar') {
-    const loopBars = this.progression?.chords?.length || 4;
-    this.lanes = this.lanes.map(l => {
-      if (l.id === id) {
-        const hits = l.kept && l.hits.length ? quantiseHits(l.hits, q, loopBars) : l.hits;
-        return { ...l, quantise: q, hits };
-      }
-      return l;
-    });
-    this.requestUpdate();
-  }
-
-  private toggleLaneMute(id: string) {
-    this.lanes = this.lanes.map(l => {
-      if (l.id === id) {
-        const muted = !l.muted;
-        if (id === 'l2') {
-          playbackEngine.setSubBassEnabled(this.performMode && !muted);
-        }
-        return { ...l, muted };
-      }
-      return l;
-    });
-    this.requestUpdate();
-  }
-
-  private toggleRecord() {
-    if (this.recording) {
-      this.recording = false;
-      if (this.takeHits.length > 0) {
-        this.takeOffered = { laneId: this.armedLane, hits: [...this.takeHits] };
-      }
-      this.requestUpdate();
-      return;
-    }
-    if (this.isCountingIn) {
-      this.cancelCountIn();
-      this.requestUpdate();
-      return;
-    }
-    if (this.countInSetting === 'Off') {
-      this.startActualRecording();
-    } else {
-      this.startCountIn();
-    }
-  }
-
-  private keepTake() {
-    if (!this.takeOffered) return;
-    const { laneId, hits } = this.takeOffered;
-    const loopBars = this.progression?.chords?.length || 4;
-    this.lanes = this.lanes.map(l => {
-      if (l.id === laneId) {
-        const quantized = quantiseHits(hits, l.quantise, loopBars);
-        return { ...l, kept: true, hits: quantized };
-      }
-      return l;
-    });
-    const targetLane = this.lanes.find(l => l.id === laneId);
-    this.dispatchEvent(new CustomEvent('toast', {
-      detail: `Take saved to ${targetLane?.name || 'lane'}`,
-      bubbles: true,
-      composed: true,
-    }));
-    this.takeOffered = null;
-    this.takeHits = [];
-    this.requestUpdate();
-  }
-
-  private discardTake() {
-    this.takeOffered = null;
-    this.takeHits = [];
-    this.requestUpdate();
-  }
-
-  private getInstrumentId(): any {
-    const found = USER_INSTRUMENTS.find(i => i.name.toLowerCase() === (this.instrument || '').toLowerCase());
-    return found?.instrument ?? 'rhodes';
-  }
-
-  private onPadDown(idx: number, e?: MouseEvent | TouchEvent) {
-    const chords = this.progression?.chords || [];
-    if (idx < 0 || idx >= chords.length) return;
-    const chord = chords[idx];
-    let voicing = 'low, root position';
-
-    if (e && e.currentTarget && typeof (e.currentTarget as HTMLElement).getBoundingClientRect === 'function') {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const clientY = (e as TouchEvent).touches && (e as TouchEvent).touches.length > 0
-        ? (e as TouchEvent).touches[0].clientY
-        : (e as MouseEvent).clientY;
-      if (typeof clientY === 'number') {
-        const y = (clientY - rect.top) / (rect.height || 1);
-        voicing = y < 0.34 ? 'up an octave' : (y < 0.67 ? '1st inversion' : 'low, root position');
-      }
-    }
-
-    const vel = 88 + (idx % 3) * 8;
-    this.padFlash = idx;
-    this.lastPad = { idx, voicing, vel };
-
-    let notes = Array.isArray(chord.notes) ? chord.notes : [];
-    if (notes.length === 0 || !notes.every(n => typeof n === 'string' && n.trim().length > 0)) {
-      const safeName = chord.name || 'CMAJ';
-      const key = this.progression?.key || 'C';
-      const scaleType = this.progression?.scaleType || 'MAJOR';
-      notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
-    }
-
-    startChordNotes(notes, voicing, vel, this.getInstrumentId());
-
-    if (this.recording) {
-      const loopLen = this.progression?.chords?.length || 4;
-      const frac = Math.min(0.96, Math.max(0, (Date.now() - this.lastTickAt) / AUTOPLAY_INTERVAL_MS));
-      const pos = Math.min(0.99, Math.max(0, (this.progressStep + frac) / loopLen));
-      this.takeHits = [...this.takeHits, { pos, vel, bar: idx, voicing }];
-    }
-    this.requestUpdate();
-  }
-
-  private onPadUp(idx: number) {
-    stopChordNotes();
-    setTimeout(() => {
-      if (this.padFlash === idx) {
-        this.padFlash = -1;
-        this.requestUpdate();
-      }
-    }, 120);
-  }
-
-  private onKeyHandler = (e: KeyboardEvent) => {
-    if (!this.performMode || this.activeView !== 'loop') return;
+  private handleKeyDown = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
-
-    if (e.key === ' ' && !e.repeat) {
+    if (e.key === ' ' || e.code === 'Space') {
       e.preventDefault();
-      playbackEngine.togglePlay();
+      this.togglePlay();
       return;
     }
-    if ((e.key === 'r' || e.key === 'R') && !e.repeat) {
+    if (e.key === 'Escape') {
       e.preventDefault();
-      this.toggleRecord();
+      if (this.tempoOpen || this.feelOpen || this.bounceOpen) {
+        this.tempoOpen = false;
+        this.feelOpen = false;
+        this.bounceOpen = false;
+        this.requestUpdate();
+      }
       return;
     }
-    const n = parseInt(e.key, 10);
-    const loopLen = this.progression?.chords?.length || 4;
-    if (n >= 1 && n <= loopLen && !e.repeat) {
+    const idx = PAD_KEYS.map(k => k.toLowerCase()).indexOf((e.key || '').toLowerCase());
+    const chords = this.progression?.chords || [];
+    if (idx >= 0 && idx < chords.length) {
       e.preventDefault();
-      this.onPadDown(n - 1);
+      const vel = 88 + (idx % 3) * 6;
+      this.padFlash = idx;
+      this.lastPad = { idx, voicing: '1st inversion', vel, zone: 1 };
+      playbackEngine.playChordAtIndex(idx, 0.85, '1st inversion', vel);
+      this.requestUpdate();
     }
   };
 
-  private onKeyUpHandler = (e: KeyboardEvent) => {
-    if (!this.performMode || this.activeView !== 'loop') return;
-    const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
-    const n = parseInt(e.key, 10);
-    const loopLen = this.progression?.chords?.length || 4;
-    if (n >= 1 && n <= loopLen) {
-      e.preventDefault();
-      this.onPadUp(n - 1);
+  private handleKeyUp = (e: KeyboardEvent) => {
+    const idx = PAD_KEYS.map(k => k.toLowerCase()).indexOf((e.key || '').toLowerCase());
+    if (idx >= 0) {
+      this.padFlash = -1;
+      this.requestUpdate();
     }
   };
 
-  private async onBounce(format: 'wav' | 'midi') {
-    if (!this.progression) return;
-    try {
-      this.dispatchEvent(new CustomEvent('toast', {
-        detail: `Exporting loop as ${format.toUpperCase()}...`,
-        bubbles: true,
-        composed: true,
-      }));
-      await bounceLoop({
-        progression: this.progression,
-        setName: this.progression.mood,
-        instrumentName: this.instrument,
-        playStyleName: this.playStyle,
-        format,
-      });
-      this.dispatchEvent(new CustomEvent('toast', {
-        detail: `Loop exported successfully (${format.toUpperCase()})`,
-        bubbles: true,
-        composed: true,
-      }));
-    } catch (e) {
-      console.error('Bounce export failed:', e);
-      this.dispatchEvent(new CustomEvent('toast', {
-        detail: 'Export failed, please try again',
-        bubbles: true,
-        composed: true,
-      }));
-    }
-  }
+  private toggleVibe = () => {
+    this.vibeOpen = !this.vibeOpen;
+    this.requestUpdate();
+  };
 
-  private renderHitBars(hits: LoopLaneHit[], color: string) {
-    const slots = 16;
-    const bars = [];
-    for (let s = 0; s < slots; s++) {
-      const slotHits = (hits || []).filter(x => x.pos >= s / slots && x.pos < (s + 1) / slots);
-      const h = slotHits[0];
-      if (h) {
-        const height = Math.round(9 + ((h.vel || 100) / 127) * 15);
-        bars.push(html`<div class="deck-hit-slot" style="height: ${height}px; background: ${color};"></div>`);
-      } else {
-        bars.push(html`<div class="deck-hit-slot empty" style="height: 3px; background: rgba(46, 39, 31, 0.13);"></div>`);
-      }
-    }
-    return bars;
-  }
+  private toggleLibrary = () => {
+    this.libraryOpen = !this.libraryOpen;
+    this.dispatchEvent(new CustomEvent('library-open-change', { detail: this.libraryOpen, bubbles: true, composed: true }));
+    this.requestUpdate();
+  };
 
-  private renderLoopDeck(loopBars: number) {
-    const armedLaneObj = this.lanes.find(l => l.id === this.armedLane);
-    const armedName = armedLaneObj ? armedLaneObj.name.split(' · ')[0] : 'a lane';
-    const targetLane = this.takeOffered ? this.lanes.find(l => l.id === this.takeOffered!.laneId) : null;
-
-    return html`
-      <div class="loop-deck">
-        <div class="deck-top-row">
-          <button
-            class="rec-btn ${this.recording ? 'is-recording' : ''} ${this.isCountingIn ? 'is-counting-in' : ''}"
-            @click=${() => this.toggleRecord()}
-            aria-label="${this.recording ? 'Stop recording' : (this.isCountingIn ? 'Cancel count-in' : `Record into ${armedName}`)}"
-          >
-            ${this.isCountingIn ? html`
-              <div class="count-in-number">${this.countInBeat}</div>
-            ` : html`
-              <div class="rec-glyph"></div>
-            `}
-          </button>
-          <div class="deck-meta-col">
-            <div class="deck-rec-title">
-              ${this.isCountingIn
-                ? `Counting in... ${this.countInBeat}`
-                : (this.recording ? `Recording into ${armedName}` : `Record into ${armedName}`)}
-            </div>
-            <div class="deck-rec-sub">
-              ${this.isCountingIn
-                ? 'Get ready — recording starts on downbeat'
-                : (this.recording ? `Play the pads — stops itself after ${loopBars} bars` : 'Tap a lane to arm it, R to record. Other lanes keep playing.')}
-            </div>
-          </div>
-          <div class="deck-count-in-wrap">
-            <span class="deck-count-in-label">Count-in</span>
-            <div class="deck-count-in-pills">
-              ${(['Off', '1 bar', '2 bars'] as const).map(opt => html`
-                <button
-                  class="deck-count-pill ${this.countInSetting === opt ? 'active' : ''}"
-                  @click=${() => this.setCountIn(opt)}
-                >${opt}</button>
-              `)}
-            </div>
-          </div>
-        </div>
-
-        <div class="deck-timeline">
-          ${Array.from({ length: loopBars }, (_, i) => html`
-            <div class="timeline-bar-seg ${this.isCountingIn ? (i === 0 ? 'count-step' : '') : (this.playing && this.progressStep === i ? 'active-step' : '')}"></div>
-          `)}
-        </div>
-
-        <div class="deck-lanes-list">
-          ${this.lanes.map(l => {
-            const isArmed = l.id === this.armedLane;
-            const liveHits = isArmed && this.recording ? this.takeHits : l.hits;
-            const status = isArmed && this.recording ? 'Writing' : (l.kept && l.hits.length ? 'Kept' : (isArmed ? 'Armed' : 'Empty'));
-            return html`
-              <div
-                class="deck-lane-row ${isArmed ? 'is-armed' : ''} ${isArmed && this.recording ? 'is-recording-lane' : ''}"
-                @click=${() => this.armLane(l.id)}
-              >
-                <div class="deck-lane-dot" style="background: ${l.color};"></div>
-                <div class="deck-lane-name">${l.name}</div>
-                <div class="deck-hit-bars-track">
-                  ${this.renderHitBars(liveHits, l.color)}
-                </div>
-                <div class="deck-lane-status" style="color: ${isArmed && this.recording ? '#F2735F' : 'var(--cv-ink-muted)'};">
-                  ${status}
-                </div>
-                <div class="deck-lane-quant-pills" @click=${(e: Event) => e.stopPropagation()}>
-                  ${(['Off', '1/16', '1/8', 'Bar'] as const).map(q => html`
-                    <button
-                      class="deck-quant-pill ${l.quantise === q ? 'active' : ''}"
-                      @click=${() => this.setLaneQuantise(l.id, q)}
-                    >${q}</button>
-                  `)}
-                </div>
-                <button
-                  class="deck-mute-btn ${l.muted ? 'muted' : ''}"
-                  @click=${(e: Event) => { e.stopPropagation(); this.toggleLaneMute(l.id); }}
-                  aria-label="${l.muted ? 'Unmute' : 'Mute'} lane"
-                >${l.muted ? 'Muted' : 'Mute'}</button>
-              </div>
-            `;
-          })}
-        </div>
-
-        ${this.takeOffered ? html`
-          <div class="take-review-card">
-            <div class="take-review-header">
-              <div class="take-review-title">${this.takeOffered.hits.length} chords played — keep this take?</div>
-              <div class="take-review-actions">
-                <button class="take-btn-try-again" @click=${() => this.discardTake()}>Try again</button>
-                <button class="take-btn-keep" @click=${() => this.keepTake()}>Keep take</button>
-              </div>
-            </div>
-            <div class="deck-hit-bars-track" style="height: 28px;">
-              ${this.renderHitBars(this.takeOffered.hits, '#F2735F')}
-            </div>
-            <div class="take-note">
-              ${targetLane && targetLane.quantise === 'Off'
-                ? 'Quantise is Off, so this is your timing exactly. The raw take is kept either way.'
-                : 'Snapped to this lane\u2019s grid. The raw timing is kept, so you can change it after.'}
-            </div>
-          </div>
-        ` : ''}
-      </div>
-    `;
-  }
-
-  private renderStageTitle(moodColor: string) {
-    if (this.progression?.searchTerm) {
-      const raw = this.progression.searchTerm.trim();
-      const cleaned = raw.endsWith('.') ? raw.slice(0, -1) : raw;
-      const words = cleaned.split(/\s+/);
-      if (words.length === 1) {
-        return html`<span style="color: ${moodColor}">${words[0]}.</span>`;
-      }
-      const leading = words.slice(0, -1).join(' ');
-      const lastWord = words[words.length - 1];
-      return html`${leading} <span style="color: ${moodColor}">${lastWord}.</span>`;
-    }
-    return html`${this.progression?.genre || 'Pop'}, <span style="color: ${moodColor}">${(this.progression?.mood || 'Warm').toLowerCase()}.</span>`;
-  }
-
-  private onVibeSubmit(e: Event) {
-    e.preventDefault();
-    if (this.isGenerating || !this.freeText.trim()) return;
-    this.dispatchEvent(new CustomEvent('freetext-generate', {
-      detail: { promptText: this.freeText.trim() },
-      bubbles: true,
-      composed: true,
-    }));
+  private getVibeSummary(): string {
+    const parts = [this.progression?.genre || 'Pop', (this.progression?.mood || 'Warm').toLowerCase()];
+    if (this.selectedBand) parts.push(this.selectedBand);
+    return parts.join(' · ');
   }
 
   private onGenreClick(genre: string) {
     this.dispatchEvent(new CustomEvent('set-genre', { detail: genre, bubbles: true, composed: true }));
+    this.requestUpdate();
   }
 
   private onMoodClick(mood: string) {
     this.dispatchEvent(new CustomEvent('set-mood', { detail: mood, bubbles: true, composed: true }));
+    this.requestUpdate();
   }
 
   private onBandClick(bandName: string) {
-    this.selectedBand = this.selectedBand === bandName ? null : bandName;
+    if (this.selectedBand === bandName) {
+      this.selectedBand = null;
+    } else {
+      this.selectedBand = bandName;
+    }
     const band = BANDS.find(b => b.name === this.selectedBand);
     if (band) {
       this.dispatchEvent(new CustomEvent('toast', { detail: `Active artist DNA: ${band.name}`, bubbles: true, composed: true }));
@@ -2907,46 +2006,187 @@ export class LoopScreen extends LitElement {
     this.requestUpdate();
   }
 
-  private onChordPreview(index: number) {
-    this.previewIndex = index;
-    if (this.previewTimer) clearTimeout(this.previewTimer);
-    this.previewTimer = setTimeout(() => { this.previewIndex = -1; }, 500);
+  private onVibeSubmit(e: Event) {
+    e.preventDefault();
+    const prompt = this.freeText.trim();
+    if (!prompt) return;
+    this.dispatchEvent(new CustomEvent('freetext-generate', { detail: prompt, bubbles: true, composed: true }));
+    this.vibeOpen = false;
+    this.requestUpdate();
+  }
 
-    if (this.progression) {
-      playbackEngine.playChordAtIndex(index, 0.8);
+  private togglePlay = () => {
+    this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
+  };
+
+  private onJumpBar(index: number) {
+    this.progressStep = index * 4;
+    playbackEngine.playFromBar(index);
+    if (!this.playing) {
+      this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
     }
     this.requestUpdate();
   }
 
-  private onChordSelect(index: number) {
-    this.onChordPreview(index);
+  private handlePadPointerDown(e: PointerEvent, index: number) {
+    let voicing = '1st inversion';
+    let zone = 1;
+    if (e.currentTarget && typeof (e.currentTarget as HTMLElement).getBoundingClientRect === 'function') {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const ratio = (e.clientY - rect.top) / (rect.height || 1);
+      if (ratio < 0.34) {
+        zone = 0;
+        voicing = 'up an octave';
+      } else if (ratio > 0.67) {
+        zone = 2;
+        voicing = 'low, root position';
+      } else {
+        zone = 1;
+        voicing = '1st inversion';
+      }
+    }
+    const vel = 88 + (index % 3) * 6;
+    this.padFlash = index;
+    this.lastPad = { idx: index, voicing, vel, zone };
+    playbackEngine.playChordAtIndex(index, 0.85, voicing, vel);
+    this.requestUpdate();
+  }
 
+  private handlePadPointerUp() {
+    this.padFlash = -1;
+    this.requestUpdate();
+  }
+
+  private openSwap(index: number) {
     this.swapIndex = index;
+    this.detailOpen = false;
     this.isInspectorOpen = true;
     this.abPick = null;
     this.abSide = 'before';
     this.abPlaying = false;
     playbackEngine.setABOverride(null);
-
-    this.isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
     if (this.isMobile) {
       this.mobileSheetOpen = true;
     }
     this.requestUpdate();
   }
 
+  private openDetail(index: number) {
+    this.detailIndex = index;
+    this.detailOpen = true;
+    this.swapIndex = null;
+    this.isInspectorOpen = false;
+    if (this.isMobile) {
+      this.mobileDetailSheetOpen = true;
+    }
+    this.requestUpdate();
+  }
+
+  private clearSelection = () => {
+    this.swapIndex = null;
+    this.isInspectorOpen = false;
+    this.detailOpen = false;
+    this.abPick = null;
+    this.abPlaying = false;
+    playbackEngine.setABOverride(null);
+    this.requestUpdate();
+  };
+
+  private selectAlternative(row: { name: string; tension: number; roman?: string; sub: string; chord: ChordBlock }) {
+    const preferFlat = this.progression ? preferFlatSpelling(this.progression.key, this.progression.scaleType) : false;
+    const chordNotes = (row.chord.notes && row.chord.notes.length > 0)
+      ? row.chord.notes
+      : notesForSymbol(row.chord.name, preferFlat);
+
+    this.abPick = {
+      chord: row.name,
+      tension: row.tension,
+      roman: row.roman || '',
+      fn: row.sub,
+      label: row.name,
+    };
+    this.abSide = 'after';
+
+    if (this.swapIndex !== null && this.progression) {
+      playbackEngine.setABOverride({
+        index: this.swapIndex,
+        side: 'after',
+        chord: {
+          ...this.progression.chords[this.swapIndex],
+          name: row.name,
+          roman: row.roman || '',
+          tension: row.tension,
+          notes: chordNotes,
+        },
+      });
+    }
+    playbackEngine.auditionChord({ ...row.chord, notes: chordNotes }, 0.8);
+    this.requestUpdate();
+  }
+
+  private previewAlternative(name: string) {
+    if (!this.progression) return;
+    const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+    const notes = notesForSymbol(name, preferFlat);
+    playbackEngine.auditionChord({
+      name,
+      notes,
+      tag: '',
+      color: '#F2A79B',
+      functionLabel: '',
+      desc: '',
+      degree: '',
+      scaleKey: this.progression.key,
+      roman: '',
+      scaleLabel: '',
+      tension: 0.2,
+    }, 0.8);
+  }
+
+  private toggleABPlayback = () => {
+    if (!this.progression || this.swapIndex === null) return;
+    this.abPlaying = !this.abPlaying;
+    if (this.abPlaying) {
+      const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+      const targetChord = (this.abSide === 'after' && this.abPick)
+        ? {
+          ...this.progression.chords[this.swapIndex],
+          name: this.abPick.chord,
+          roman: this.abPick.roman,
+          tension: this.abPick.tension,
+          notes: notesForSymbol(this.abPick.chord, preferFlat),
+        }
+        : this.progression.chords[this.swapIndex];
+
+      playbackEngine.setABOverride({
+        index: this.swapIndex,
+        side: this.abSide,
+        chord: targetChord,
+      });
+      if (!this.playing) {
+        this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
+      }
+    } else {
+      if (this.playing) {
+        this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
+      }
+      playbackEngine.setABOverride(null);
+    }
+    this.requestUpdate();
+  };
+
   private setABSide(side: 'before' | 'after') {
     this.abSide = side;
     if (this.swapIndex !== null && this.progression) {
+      const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
       if (side === 'before') {
         playbackEngine.setABOverride({
           index: this.swapIndex,
           side: 'before',
           chord: this.progression.chords[this.swapIndex],
         });
-        playbackEngine.playChordAtIndex(this.swapIndex, 0.8);
+        playbackEngine.auditionChord(this.progression.chords[this.swapIndex], 0.8);
       } else if (this.abPick) {
-        const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
         const candidateNotes = notesForSymbol(this.abPick.chord, preferFlat);
         const pickedChord: ChordBlock = {
           ...this.progression.chords[this.swapIndex],
@@ -2955,11 +2195,7 @@ export class LoopScreen extends LitElement {
           tension: this.abPick.tension,
           notes: candidateNotes,
         };
-        playbackEngine.setABOverride({
-          index: this.swapIndex,
-          side: 'after',
-          chord: pickedChord,
-        });
+        playbackEngine.setABOverride({ index: this.swapIndex, side: 'after', chord: pickedChord });
         playbackEngine.auditionChord(pickedChord, 0.8);
       }
     }
@@ -2971,13 +2207,12 @@ export class LoopScreen extends LitElement {
     const isSwapBar = index === this.swapIndex;
     if (isSwapBar && this.abSide === 'after' && this.abPick) {
       const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
-      const candidateNotes = notesForSymbol(this.abPick.chord, preferFlat);
       const pickedChord: ChordBlock = {
         ...this.progression.chords[index],
         name: this.abPick.chord,
         roman: this.abPick.roman,
         tension: this.abPick.tension,
-        notes: candidateNotes,
+        notes: notesForSymbol(this.abPick.chord, preferFlat),
       };
       playbackEngine.auditionChord(pickedChord, 0.8);
     } else {
@@ -2985,351 +2220,250 @@ export class LoopScreen extends LitElement {
     }
   }
 
-  private toggleAB() {
-    if (!this.progression) return;
-    this.abPlaying = !this.abPlaying;
-    if (this.abPlaying) {
-      if (this.swapIndex !== null) {
-        const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
-        const candidateNotes = (this.abSide === 'after' && this.abPick)
-          ? notesForSymbol(this.abPick.chord, preferFlat)
-          : (this.progression.chords[this.swapIndex]?.notes || []);
-        const chordOverride: ChordBlock = (this.abSide === 'after' && this.abPick) ? {
-          ...this.progression.chords[this.swapIndex],
-          name: this.abPick.chord,
-          roman: this.abPick.roman,
-          tension: this.abPick.tension,
-          notes: candidateNotes,
-        } : this.progression.chords[this.swapIndex];
-        playbackEngine.setABOverride({
-          index: this.swapIndex,
-          side: this.abSide,
-          chord: chordOverride,
-        });
-      }
-      if (!this.playing) {
-        this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
-      }
-    } else {
-      if (this.playing) {
-        this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
-      }
-      playbackEngine.setABOverride(null);
-    }
-    this.requestUpdate();
-  }
-
-  private onAltAudition(alt: Alternative | { name: string; chord: ChordBlock; sub?: string; functionCaption?: string }) {
-    const chordBlock = 'chord' in alt ? alt.chord : alt;
-    const preferFlat = this.progression ? preferFlatSpelling(this.progression.key, this.progression.scaleType) : false;
-    const chordNotes = (chordBlock.notes && chordBlock.notes.length > 0)
-      ? chordBlock.notes
-      : notesForSymbol(chordBlock.name, preferFlat);
-
-    this.abPick = {
-      label: 'label' in alt ? alt.label : alt.name,
-      tension: chordBlock.tension || 0.5,
-      chord: chordBlock.name,
-      roman: chordBlock.roman || '',
-      fn: 'functionCaption' in alt && alt.functionCaption ? alt.functionCaption : 'Swapped chord',
-    };
-    this.abSide = 'after';
-    if (this.swapIndex !== null && this.progression) {
-      playbackEngine.setABOverride({
-        index: this.swapIndex,
-        side: 'after',
-        chord: {
-          ...this.progression.chords[this.swapIndex],
-          name: this.abPick.chord,
-          roman: this.abPick.roman,
-          tension: this.abPick.tension,
-          notes: chordNotes,
-        },
-      });
-    }
-    playbackEngine.auditionChord({ ...chordBlock, notes: chordNotes }, 0.8);
-    this.requestUpdate();
-  }
-
-  private onConfirmSwap() {
-    if (!this.abPick || this.swapIndex === null || !this.progression) return;
-    const oldChords = this.progression.chords;
-    const newChords = [...oldChords];
-    const original = oldChords[this.swapIndex];
+  private confirmSwap = () => {
+    if (this.swapIndex === null || !this.abPick || !this.progression) return;
     const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+    const newNotes = notesForSymbol(this.abPick.chord, preferFlat);
 
-    newChords[this.swapIndex] = {
-      ...original,
+    const updatedChords = [...this.progression.chords];
+    updatedChords[this.swapIndex] = {
+      ...updatedChords[this.swapIndex],
       name: this.abPick.chord,
-      roman: this.abPick.roman || original.roman,
+      roman: this.abPick.roman,
       tension: this.abPick.tension,
-      notes: notesForSymbol(this.abPick.chord, preferFlat),
+      notes: newNotes,
     };
 
-    const swappedName = this.abPick.chord;
-    this.progression = {
-      ...this.progression,
-      chords: newChords,
-    };
-    playbackEngine.setProgression(this.progression, this.order);
+    const newProg = { ...this.progression, chords: updatedChords };
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: newProg, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('toast', { detail: `Swapped in ${this.abPick.chord}`, bubbles: true, composed: true }));
+
     playbackEngine.setABOverride(null);
+    this.abPlaying = false;
+    this.swapIndex = null;
     this.isInspectorOpen = false;
     this.mobileSheetOpen = false;
-    this.swapIndex = null;
     this.abPick = null;
-    this.abPlaying = false;
-    this.dispatchEvent(new CustomEvent('progression-change', { detail: this.progression, bubbles: true, composed: true }));
-    this.dispatchEvent(new CustomEvent('toast', { detail: `Swapped in ${swappedName}`, bubbles: true, composed: true }));
     this.requestUpdate();
-  }
+  };
 
-  private onStepLength(delta: number) {
-    if (!this.progression) return;
-    const nextLen = Math.max(MIN_PROGRESSION_LENGTH, Math.min(MAX_PROGRESSION_LENGTH, this.progression.chords.length + delta));
-    this.dispatchEvent(new CustomEvent('set-length', { detail: nextLen, bubbles: true, composed: true }));
-  }
+  private onDecLength = () => {
+    const curLen = this.progression?.chords.length || 4;
+    if (curLen > MIN_PROGRESSION_LENGTH) {
+      this.dispatchEvent(new CustomEvent('set-length', { detail: curLen - 1, bubbles: true, composed: true }));
+    }
+  };
 
-  private onReroll() {
+  private onIncLength = () => {
+    const curLen = this.progression?.chords.length || 4;
+    if (curLen < MAX_PROGRESSION_LENGTH) {
+      this.dispatchEvent(new CustomEvent('set-length', { detail: curLen + 1, bubbles: true, composed: true }));
+    }
+  };
+
+  private onReroll = () => {
     this.dispatchEvent(new CustomEvent('reroll', { bubbles: true, composed: true }));
+  };
+
+  private onTheoryToggle = () => {
+    this.showTheory = !this.showTheory;
+    this.dispatchEvent(new CustomEvent('theory-toggle', { detail: this.showTheory, bubbles: true, composed: true }));
+    this.requestUpdate();
+  };
+
+  private toggleInstrumentExpand = () => {
+    this.expandedInstrument = !this.expandedInstrument;
+    this.expandedPlayStyle = false;
+    this.requestUpdate();
+  };
+
+  private togglePlayStyleExpand = () => {
+    this.expandedPlayStyle = !this.expandedPlayStyle;
+    this.expandedInstrument = false;
+    this.requestUpdate();
+  };
+
+  private getChordQualityLabel(name?: string): string {
+    if (!name) return 'Major';
+    const c = parseChordSymbol(name);
+    const q = c.quality || '';
+    if (/sus/i.test(q)) return 'Suspended (sus)';
+    if (/(dim|°)/i.test(q)) return 'Diminished';
+    if (/^(m|min)(?!aj)/.test(q)) return 'Minor';
+    return 'Major';
   }
 
-  private onBookmark() {
+  private getChordQualitySub(name?: string): string {
+    const q = this.getChordQualityLabel(name);
+    switch (q) {
+      case 'Minor': return 'warm';
+      case 'Suspended (sus)': return 'floating';
+      case 'Diminished': return 'unstable';
+      default: return 'bright';
+    }
+  }
+
+  private getChordExtensionLabel(name?: string): string {
+    if (!name) return 'None';
+    const c = parseChordSymbol(name);
+    const q = c.quality || '';
+    if (/9/.test(q)) return '9th';
+    if (/(maj7|M7|Δ)/.test(q)) return 'Major 7th (M7)';
+    if (/6/.test(q)) return '6th';
+    if (/(7|11|13)/.test(q)) return '7th (dom / m7)';
+    return 'None';
+  }
+
+  private getChordExtensionSub(name?: string): string {
+    const ext = this.getChordExtensionLabel(name);
+    switch (ext) {
+      case '6th': return 'soft lift';
+      case '7th (dom / m7)': return 'classic tension';
+      case 'Major 7th (M7)': return 'lush, jazzy';
+      case '9th': return 'wide, colorful';
+      default: return 'triad only';
+    }
+  }
+
+  private changeChordQuality(newQuality: string) {
     if (!this.progression) return;
-    this.dispatchEvent(new CustomEvent('save-set', {
-      detail: `${this.progression.genre} · ${this.progression.mood}`,
-      bubbles: true,
-      composed: true,
-    }));
-  }
+    const chords = [...this.progression.chords];
+    const currentChord = chords[this.detailIndex];
+    if (!currentChord) return;
 
-  private toggleLibrary(open?: boolean) {
-    this.libraryOpen = open !== undefined ? open : !this.libraryOpen;
-    this.librarySelectMode = false;
-    this.librarySelected = [];
-    this.renamingId = null;
-    this.confirmDeleteId = null;
-    this.dispatchEvent(new CustomEvent('library-open-change', {
-      detail: this.libraryOpen,
-      bubbles: true,
-      composed: true,
-    }));
+    const curExt = this.getChordExtensionLabel(currentChord.name);
+    const updated = applyVoicingToChord(currentChord, newQuality, curExt);
+    chords[this.detailIndex] = updated;
+
+    const newProg = { ...this.progression, chords };
+    this.progression = newProg;
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: newProg, bubbles: true, composed: true }));
+    playbackEngine.auditionChord(updated, 0.8);
+    this.dispatchEvent(new CustomEvent('toast', { detail: `Changed chord to ${updated.name}`, bubbles: true, composed: true }));
     this.requestUpdate();
   }
 
-  private startRename(e: Event, id: string, name: string) {
-    e.stopPropagation();
-    this.renamingId = id;
-    this.draftName = name;
-    this.confirmDeleteId = null;
+  private changeChordExtension(newExt: string) {
+    if (!this.progression) return;
+    const chords = [...this.progression.chords];
+    const currentChord = chords[this.detailIndex];
+    if (!currentChord) return;
+
+    const curQual = this.getChordQualityLabel(currentChord.name);
+    const updated = applyVoicingToChord(currentChord, curQual, newExt);
+    chords[this.detailIndex] = updated;
+
+    const newProg = { ...this.progression, chords };
+    this.progression = newProg;
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: newProg, bubbles: true, composed: true }));
+    playbackEngine.auditionChord(updated, 0.8);
+    this.dispatchEvent(new CustomEvent('toast', { detail: `Changed chord to ${updated.name}`, bubbles: true, composed: true }));
+    this.requestUpdate();
   }
 
-  private onDraftChange(e: Event) {
-    this.draftName = (e.target as HTMLInputElement).value;
-  }
-
-  private commitRename(id: string) {
-    const trimmed = this.draftName.trim();
-    if (!trimmed) {
-      this.cancelRename();
-      return;
-    }
-    const projects = projectStorage.getProjects();
-    const existing = projects.find(p => p.id === id);
-    if (existing) {
-      const updated: ProjectData = {
-        ...existing,
-        name: trimmed,
-        lastModified: Date.now(),
-      };
-      projectStorage.saveProject(updated);
-      this.refreshSavedSets();
-      this.dispatchEvent(new CustomEvent('toast', {
-        detail: `Renamed to "${trimmed}"`,
-        bubbles: true,
-        composed: true,
-      }));
-    }
-    this.renamingId = null;
-    this.draftName = '';
-  }
-
-  private cancelRename() {
-    this.renamingId = null;
-    this.draftName = '';
-  }
-
-  private askDelete(e: Event, id: string) {
-    e.stopPropagation();
-    this.confirmDeleteId = id;
-    this.renamingId = null;
-  }
-
-  private confirmDelete(id: string) {
-    projectStorage.deleteProject(id);
-    this.confirmDeleteId = null;
-    this.refreshSavedSets();
-    this.dispatchEvent(new CustomEvent('toast', {
-      detail: 'Deleted loop from library',
-      bubbles: true,
-      composed: true,
-    }));
-  }
-
-  private cancelDelete() {
-    this.confirmDeleteId = null;
-  }
-
-  private onLoadSavedProject(p: ProjectData) {
-    this.dispatchEvent(new CustomEvent('load-project', {
-      detail: p,
-      bubbles: true,
-      composed: true,
-    }));
-    this.toggleLibrary(false);
-    this.dispatchEvent(new CustomEvent('toast', {
-      detail: `Loaded "${p.name}"`,
-      bubbles: true,
-      composed: true,
-    }));
-  }
-
-  private renderLibraryPopoverContent(moodColor: string) {
-    const libQ = this.librarySearch.trim().toLowerCase();
-    const allSaved = this.savedSets;
-    const libVisible = allSaved.filter(s => {
-      if (!libQ) return true;
-      const searchable = `${s.name} ${s.genre} ${s.mood} ${(s.chords || []).map(c => typeof c === 'object' ? c.name : c).join(' ')}`.toLowerCase();
-      return searchable.indexOf(libQ) >= 0;
-    });
-    const hasMany = allSaved.length > 2;
-    const selectMode = this.librarySelectMode;
-    const selected = this.librarySelected;
-    const toggleLabel = allSaved.length ? `Your loops · ${allSaved.length}` : 'Your loops';
-
-    if (allSaved.length === 0) {
-      return html`<div class="lib-empty-text">Nothing kept yet. Use the bookmark to keep a loop here.</div>`;
-    }
+  private renderDetailKeyboard(notes: string[] = []) {
+    const ENHARMONIC_PC: Record<string, number> = {
+      'C': 0, 'B#': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'Fb': 4,
+      'F': 5, 'E#': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11, 'Cb': 11,
+    };
+    const highlightPcs = new Set(notes.map(n => ENHARMONIC_PC[n.replace(/\d+$/, '')] ?? -1));
+    const whiteKeys = [
+      { note: 'C', pc: 0 }, { note: 'D', pc: 2 }, { note: 'E', pc: 4 },
+      { note: 'F', pc: 5 }, { note: 'G', pc: 7 }, { note: 'A', pc: 9 }, { note: 'B', pc: 11 },
+    ];
+    const whitePct = 100 / 7;
+    const blackPct = whitePct * 0.58;
+    const blackKeys = [
+      { note: 'C#', pc: 1, after: 0 },
+      { note: 'D#', pc: 3, after: 1 },
+      { note: 'F#', pc: 6, after: 3 },
+      { note: 'G#', pc: 8, after: 4 },
+      { note: 'A#', pc: 10, after: 5 },
+    ];
 
     return html`
-      <div class="lib-pop-header">
-        <div class="lib-pop-title">${toggleLabel}</div>
-        <button class="lib-pop-select-btn" style="background: ${selectMode ? moodColor : 'transparent'};" @click=${() => { this.librarySelectMode = !this.librarySelectMode; this.librarySelected = []; this.confirmDeleteId = null; this.renamingId = null; }}>${selectMode ? 'Done' : 'Select'}</button>
-      </div>
-      ${hasMany ? html`
-        <div style="padding: 0 4px 9px;">
-          <input type="text" class="lib-pop-search" placeholder="Search loops" .value=${this.librarySearch} @input=${(e: Event) => { this.librarySearch = (e.target as HTMLInputElement).value; }} />
+      <div class="detail-mini-keyboard">
+        <div style="display: flex;">
+          ${whiteKeys.map(k => {
+            const on = highlightPcs.has(k.pc);
+            return html`<div class="white-key ${on ? 'active' : ''}">${k.note}</div>`;
+          })}
         </div>
-      ` : ''}
-      <div class="lib-rows">
-        ${libVisible.map(p => {
-          const isRenaming = this.renamingId === p.id;
-          const isConfirming = this.confirmDeleteId === p.id;
-          const checked = selected.indexOf(p.id) >= 0;
-          const chordsList = p.chords || [];
-          const cardMoodColor = getMoodColor(p.mood || 'Warm');
-
-          return html`
-            <div class="lib-row ${checked ? 'checked' : ''}" @click=${() => selectMode ? this.toggleLibrarySelected(p.id) : this.onLoadSavedProject(p)}>
-              ${selectMode ? html`
-                <div class="lib-check ${checked ? 'checked' : ''}" style="background: ${checked ? moodColor : 'transparent'};" @click=${(e: Event) => { e.stopPropagation(); this.toggleLibrarySelected(p.id); }}>${checked ? '✓' : ''}</div>
-              ` : ''}
-              <div class="lib-row-info" style="cursor: pointer;">
-                ${isRenaming ? html`
-                  <input
-                    type="text"
-                    class="lib-rename-input"
-                    .value=${this.draftName}
-                    @input=${this.onDraftChange}
-                    @keydown=${(e: KeyboardEvent) => { if (e.key === 'Enter') this.commitRename(p.id); if (e.key === 'Escape') this.cancelRename(); }}
-                    @blur=${() => this.commitRename(p.id)}
-                    @click=${(e: Event) => e.stopPropagation()}
-                    autofocus
-                  />
-                ` : html`
-                  <div>
-                    <span class="lib-row-name-line">
-                      <span class="lib-row-dots">
-                        ${chordsList.map((c, i) => {
-                          const tension = typeof c === 'object' && c !== null ? (c.tension ?? 0.1) : 0.1;
-                          const role = roleForTension(tension);
-                          const d = 7;
-                          const radius = i % 2 ? '2px' : '50%';
-                          return html`<span style="width:${d}px;height:${d}px;border-radius:${radius};background:${cardMoodColor};"></span>`;
-                        })}
-                      </span>
-                      <span class="lib-row-name">${p.name || 'Untitled Loop'}</span>
-                    </span>
-                    <span class="lib-row-meta">${p.genre || 'Pop'} · ${p.mood || 'Warm'}</span>
-                  </div>
-                `}
-              </div>
-              ${!selectMode && !isConfirming && !isRenaming ? html`
-                <div class="lib-row-actions">
-                  <button class="lib-icon-btn" @click=${(e: Event) => { e.stopPropagation(); this.startRename(e, p.id, p.name || 'Untitled Loop'); }} aria-label="Rename loop">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-                  </button>
-                  <button class="lib-icon-btn" @click=${(e: Event) => { e.stopPropagation(); this.askDelete(e, p.id); }} aria-label="Delete loop">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-                  </button>
-                </div>
-              ` : ''}
-              ${isConfirming ? html`
-                <div class="lib-confirm-actions">
-                  <button class="lib-confirm-delete-btn" @click=${(e: Event) => { e.stopPropagation(); this.confirmDelete(p.id); }}>Delete</button>
-                  <button class="lib-icon-btn" @click=${(e: Event) => { e.stopPropagation(); this.cancelDelete(); }} aria-label="Cancel">×</button>
-                </div>
-              ` : ''}
-            </div>
-          `;
+        ${blackKeys.map(bk => {
+          const left = (bk.after + 1) * whitePct - blackPct / 2;
+          const on = highlightPcs.has(bk.pc);
+          return html`<div class="black-key ${on ? 'active' : ''}" style="left: ${left}%;"></div>`;
         })}
       </div>
-      ${allSaved.length > 0 && libVisible.length === 0 ? html`
-        <div class="lib-no-match">No loops match that.</div>
-      ` : ''}
-      ${selectMode ? html`
-        <button class="lib-batch-delete-btn" style="background: ${selected.length ? '#D8624C' : 'var(--cv-surface)'}; color: ${selected.length ? '#FBF3E6' : 'rgba(46,39,31,0.35)'}; cursor: ${selected.length ? 'pointer' : 'default'};" @click=${() => this.deleteLibrarySelected()}>Delete ${selected.length} loop${selected.length === 1 ? '' : 's'}</button>
-      ` : ''}
     `;
   }
 
-  private toggleLibrarySelected(id: string) {
-    const idx = this.librarySelected.indexOf(id);
-    if (idx >= 0) {
-      this.librarySelected = this.librarySelected.filter(x => x !== id);
-    } else {
-      this.librarySelected = [...this.librarySelected, id];
-    }
-  }
+  private renderChordDetailContent(chords: ChordBlock[]) {
+    const chord = chords[this.detailIndex];
+    const curQuality = this.getChordQualityLabel(chord?.name);
+    const curExt = this.getChordExtensionLabel(chord?.name);
 
-  private deleteLibrarySelected() {
-    if (this.librarySelected.length === 0) return;
-    const toDelete = new Set(this.librarySelected);
-    for (const id of toDelete) {
-      projectStorage.deleteProject(id);
-    }
-    this.refreshSavedSets();
-    this.librarySelected = [];
-    this.librarySelectMode = false;
-  }
+    return html`
+      <div class="detail-kicker">Notes</div>
+      <div class="detail-notes-pills">
+        ${(chord?.notes || []).map(n => html`
+          <div class="note-pill">${n.replace(/\d+$/, '')}</div>
+        `)}
+      </div>
 
-  private renderLoopsDrawer(moodColor: string) {
-    // The library is now rendered inline as a popover in the sidebar footer (desktop)
-    // and inside the mobile toolbar area (mobile). This method is kept for the
-    // global floating render call but is now a no-op since the popover is rendered
-    // inside the sidebar-footer and mobile-toolbar containers directly.
-    return '';
-  }
+      <div class="detail-kicker" style="margin-top: 18px;">Voicing on keys</div>
+      ${this.renderDetailKeyboard(chord?.notes)}
 
-  private parseChord(name: string) {
-    const m = /^([A-G][b#]?)(.*)$/.exec(name || 'C');
-    const root = m ? m[1] : 'C';
-    const q = m ? m[2] : '';
-    const intervals = QUAL[q] || QUAL[QFALL[q] || 'maj'] || [0, 4, 7];
-    return { root, rootPc: PC[root] === undefined ? 0 : PC[root], q, intervals };
+      <div class="detail-kicker" style="margin-top: 20px;">Quality</div>
+      <div class="detail-quality-box">
+        <div class="quality-label">${curQuality}</div>
+        <div class="quality-sub">${this.getChordQualitySub(chord?.name)}</div>
+      </div>
+      <div class="quality-chips-grid">
+        ${CHORD_QUALITIES.map(q => {
+          const isSel = q.label === curQuality;
+          return html`
+            <button
+              class="chord-mod-chip quality-chip ${isSel ? 'selected active' : ''}"
+              @click=${() => this.changeChordQuality(q.label)}
+              aria-pressed="${isSel}"
+              aria-label="Change quality to ${q.label}"
+            >
+              <div class="chip-title">${q.label}</div>
+              <div class="chip-desc">${q.sub}</div>
+            </button>
+          `;
+        })}
+      </div>
+
+      <div class="detail-kicker" style="margin-top: 20px;">Extension</div>
+      <div class="detail-extension-box">
+        <div class="quality-label">${curExt}</div>
+        <div class="quality-sub">${this.getChordExtensionSub(chord?.name)}</div>
+      </div>
+      <div class="ext-chips-grid">
+        ${CHORD_EXTENSIONS.map(e => {
+          const isSel = e.label === curExt;
+          return html`
+            <button
+              class="chord-mod-chip extension-chip ${isSel ? 'selected active' : ''}"
+              @click=${() => this.changeChordExtension(e.label)}
+              aria-pressed="${isSel}"
+              aria-label="Change extension to ${e.label}"
+            >
+              <div class="chip-title">${e.label}</div>
+              <div class="chip-desc">${e.sub}</div>
+            </button>
+          `;
+        })}
+      </div>
+    `;
   }
 
   private renderPianoCard(ch: ChordBlock, i: number) {
-    const c = this.parseChord(ch.name);
+    const c = parseChordSymbol(ch.name);
+    const rootPc = PC[c.root] ?? 0;
+    const intervals = QUAL[c.quality] || QUAL[QFALL[c.quality] || 'maj'] || [0, 4, 7];
     const W = 22, PH = 86, BH = 52, WHITE_ORDER = [0, 2, 4, 5, 7, 9, 11];
     const whites: { x: number; w: number; h: number }[] = [];
     const blacks: { x: number; w: number; h: number }[] = [];
@@ -3347,8 +2481,8 @@ export class LoopScreen extends LitElement {
       });
     }
 
-    c.intervals.forEach(iv => {
-      const semi = c.rootPc + iv;
+    intervals.forEach(iv => {
+      const semi = rootPc + iv;
       const oct = Math.floor(semi / 12);
       const pc = semi % 12;
       const wk = WHITE_ORDER.indexOf(pc);
@@ -3369,14 +2503,23 @@ export class LoopScreen extends LitElement {
     });
 
     const pw = 14 * W;
-    const notesLine = c.intervals.map(iv => {
-      const nm = PC_NAMES[(c.rootPc + iv) % 12];
+    const notesLine = intervals.map(iv => {
+      const nm = PC_NAMES[(rootPc + iv) % 12];
       return this.showDegrees ? `${nm} (${DEG[iv % 12]})` : nm;
     }).join(' · ');
 
     return html`
-      <div class="play-card" @click=${() => playbackEngine.playChordAtIndex(i, 0.8)} role="button" tabindex="0">
-        <div style="display: flex; align-items: baseline; gap: 9px;">
+      <div
+        class="play-card"
+        @pointerdown=${(e: PointerEvent) => this.handlePadPointerDown(e, i)}
+        @pointerup=${() => this.handlePadPointerUp()}
+        role="button"
+        tabindex="0"
+        aria-label="${ch.name} — press nearer the top for a higher voicing"
+      >
+        <div class="zone-line-a ${this.lastPad?.idx === i && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
+        <div class="zone-line-b ${this.lastPad?.idx === i && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
+        <div style="display: flex; align-items: baseline; gap: 9px; position: relative; z-index: 2;">
           <div style="font-size: 17px; font-weight: 800; color: #2E271F;">${ch.name}</div>
           ${this.showTheory && ch.roman ? html`
             <div style="font-size: 11.5px; font-weight: 800; color: var(--cv-label); letter-spacing: 0.5px;">${ch.roman}</div>
@@ -3403,13 +2546,17 @@ export class LoopScreen extends LitElement {
     `;
   }
 
-  private renderFretCard(ch: ChordBlock, i: number, instrument: 'Guitar' | 'Ukulele') {
-    const c = this.parseChord(ch.name);
+  private renderFretCard(ch: ChordBlock, i: number, inst: 'Guitar' | 'Ukulele') {
+    const c = parseChordSymbol(ch.name);
+    const rootPc = PC[c.root] ?? 0;
+    const intervals = QUAL[c.quality] || QUAL[QFALL[c.quality] || 'maj'] || [0, 4, 7];
     const GUITAR_OPEN = [4, 9, 2, 7, 11, 4];
     const UKE_OPEN = [7, 0, 4, 9];
-    const isUke = instrument === 'Ukulele';
+    const isUke = inst === 'Ukulele';
     const openPcs = isUke ? UKE_OPEN : GUITAR_OPEN;
-    const frets = isUke ? ukeVoicing(c) || [null, null, null, null] : guitarVoicing(c) || [null, null, null, null, null, null];
+    const frets = isUke
+      ? ukeVoicing({ root: c.root, rootPc, q: c.quality, intervals }) || [null, null, null, null]
+      : guitarVoicing({ root: c.root, rootPc, q: c.quality, intervals }) || [null, null, null, null, null, null];
 
     const SP = 18, FR = 24, ROWS = 4, TOP = 16;
     const n = openPcs.length;
@@ -3427,12 +2574,12 @@ export class LoopScreen extends LitElement {
       const x = s * SP;
       if (f === null) { mutes.push({ x }); return; }
       if (f === 0) { opens.push({ x }); return; }
-      const iv = ((openPcs[s] + f - c.rootPc) % 12 + 12) % 12;
+      const iv = ((openPcs[s] + f - rootPc) % 12 + 12) % 12;
       dots.push({
         cx: x,
         cy: TOP + (f - base - 0.5) * FR,
         fill: iv === 0 ? '#F2735F' : '#2E271F',
-        label: this.showDegrees ? DEG[((openPcs[s] + f - c.rootPc) % 12 + 12) % 12] : '',
+        label: this.showDegrees ? DEG[((openPcs[s] + f - rootPc) % 12 + 12) % 12] : '',
       });
     });
     const w = (n - 1) * SP;
@@ -3441,14 +2588,23 @@ export class LoopScreen extends LitElement {
     const posLabel = base > 0 ? `${base + 1}fr` : '';
     const showPos = base > 0;
 
-    const notesLine = c.intervals.map(iv => {
-      const nm = PC_NAMES[(c.rootPc + iv) % 12];
+    const notesLine = intervals.map(iv => {
+      const nm = PC_NAMES[(rootPc + iv) % 12];
       return this.showDegrees ? `${nm} (${DEG[iv % 12]})` : nm;
     }).join(' · ');
 
     return html`
-      <div class="play-card" @click=${() => playbackEngine.playChordAtIndex(i, 0.8)} role="button" tabindex="0">
-        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
+      <div
+        class="play-card"
+        @pointerdown=${(e: PointerEvent) => this.handlePadPointerDown(e, i)}
+        @pointerup=${() => this.handlePadPointerUp()}
+        role="button"
+        tabindex="0"
+        aria-label="${ch.name} — press nearer the top for a higher voicing"
+      >
+        <div class="zone-line-a ${this.lastPad?.idx === i && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
+        <div class="zone-line-b ${this.lastPad?.idx === i && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; position: relative; z-index: 2;">
           <div style="display: flex; align-items: baseline; gap: 7px;">
             <div style="font-size: 17px; font-weight: 800; color: #2E271F;">${ch.name}</div>
             ${this.showTheory && ch.roman ? html`
@@ -3486,18 +2642,66 @@ export class LoopScreen extends LitElement {
     `;
   }
 
+  private renderLibraryPopoverContent(moodColor: string) {
+    const q = this.librarySearch.trim().toLowerCase();
+    const visible = this.savedSets.filter(s => !q || (s.name + ' ' + s.genre + ' ' + s.mood).toLowerCase().includes(q));
+
+    return html`
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 6px 8px;">
+        <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">
+          Your loops (${this.savedSets.length})
+        </div>
+        <button
+          style="border: none; background: transparent; font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted); cursor: pointer;"
+          @click=${() => { this.librarySelectMode = !this.librarySelectMode; this.requestUpdate(); }}
+        >
+          ${this.librarySelectMode ? 'Done' : 'Select'}
+        </button>
+      </div>
+
+      <div style="padding: 0 4px 9px;">
+        <input
+          type="text"
+          class="cv-vibe-input"
+          style="width: 100%; border: none; background: var(--cv-surface); border-radius: 12px; padding: 9px 12px; font-size: 12.5px; outline: none;"
+          .value=${this.librarySearch}
+          @input=${(e: Event) => { this.librarySearch = (e.target as HTMLInputElement).value; }}
+          placeholder="Search loops"
+        />
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        ${visible.map(set => html`
+          <div
+            style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; cursor: pointer; background: var(--cv-surface);"
+            @click=${() => {
+              this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
+              this.libraryOpen = false;
+            }}
+          >
+            <div style="display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
+              ${(set.chords || []).map((c: any) => {
+                const role = roleForTension(c.tension ?? 0);
+                return html`<span style="display:inline-block;width:7px;height:7px;border-radius:${Math.round(role.radius * 0.25)}px;background:${role.color};flex-shrink:0;"></span>`;
+              })}
+            </div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="font-size: 13.5px; font-weight: 800; color: var(--cv-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${set.name}</div>
+              <div style="font-size: 11px; color: var(--cv-ink-muted);">${set.genre} · ${set.mood}</div>
+            </div>
+          </div>
+        `)}
+        ${!visible.length ? html`
+          <div style="padding: 12px; font-size: 12px; color: var(--cv-ink-muted); text-align: center;">No loops match that.</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
   render() {
     const chords = this.progression?.chords || [];
     const moodColor = getMoodColor(this.progression?.mood || 'Warm');
     const activeBand = BANDS.find(b => b.name === this.selectedBand);
-    const shownGenres = this.expandedGenre ? GENRE_ALL : GENRE_PRIMARY;
-    const currentMood = this.progression?.mood || 'Warm';
-    let primaryMoodNames = ['Uplifting', 'Melancholy', 'Dreamy'];
-    if (!primaryMoodNames.includes(currentMood)) {
-      primaryMoodNames = ['Uplifting', 'Melancholy', currentMood];
-    }
-    const restMoodNames = MOOD_ALL.filter(n => !primaryMoodNames.includes(n));
-    const shownMoods = this.expandedMood ? MOOD_ALL : primaryMoodNames;
 
     // Harmonic Arc computation
     const tensions = chords.map(c => c.tension || 0.1);
@@ -3512,13 +2716,13 @@ export class LoopScreen extends LitElement {
 
     const arcSentence = `Opens ${ROLE_PLAIN[chords[0]?.functionLabel] || 'home'} and ${
       (maxTension - minTension) < 0.28
-        ? 'never strays far — every chord sits in about the same harmonic neighborhood.'
+        ? 'never strays far — every chord sits in about the same place, so the loop feels calm and repeatable.'
         : isRising
-        ? `tightens bar by bar, reaching peak tension on ${chords[peakIdx]?.name || 'the peak'}.`
-        : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before resolving back down.`
+        ? `tightens chord by chord, peaking on ${chords[peakIdx]?.name || 'the peak'}. Looping back does the resolving.`
+        : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before easing back down home.`
     }`;
 
-    // Theory groups & substitutions for the active chord
+    // Alternative substitution candidate rows
     let familyRows: { name: string; roman?: string; notes?: string[]; sub: string; chord: ChordBlock; tension: number }[] = [];
     let familyNote = '';
     const isMinor = this.progression?.scaleType?.includes('MINOR') ?? false;
@@ -3526,9 +2730,7 @@ export class LoopScreen extends LitElement {
     if (this.swapIndex !== null && this.progression && this.chordData.scales) {
       if (this.activeSwapFamily === 'Borrowed') {
         familyRows = generateBorrowedChords(this.chordData, this.progression, this.swapIndex);
-        familyNote = this.showTheory
-          ? `Modal interchange — four chords from the parallel ${isMinor ? 'major' : 'minor'}, each matched to the chord it can stand in for.`
-          : `Four chords from the ${isMinor ? 'major' : 'minor'} version of this key. Each one swaps in for a chord you already have.`;
+        familyNote = `Four chords from the ${isMinor ? 'major' : 'minor'} version of this key.`;
       } else {
         const groups = generateTheoryGroups(this.chordData, this.progression, this.swapIndex);
         const matchedGroup = groups.find(g => g.name === this.activeSwapFamily) || groups[0];
@@ -3542,991 +2744,235 @@ export class LoopScreen extends LitElement {
         familyRows = [...hoisted, ...rest];
       }
     }
+
     const currentSwapChord = this.swapIndex !== null ? chords[this.swapIndex] : null;
 
-    return html`
-      <!-- Top Band DNA Banner -->
-      ${activeBand ? html`
-        <div class="band-bar" style="background: ${activeBand.color}33;">
-          <div class="band-bar-content">
-            <span class="band-bar-kicker">Following Artist DNA</span>
-            <span class="band-bar-name" style="font-family: ${activeBand.font}; font-weight: ${activeBand.weight || 800}; font-style: ${activeBand.italic ? 'italic' : 'normal'}; letter-spacing: ${activeBand.pillTrack};">
-              ${activeBand.name}
-            </span>
-            <span class="band-bar-trick">— ${this.showTheory ? activeBand.theory : activeBand.plain}</span>
-          </div>
-          <button class="band-bar-close" @click=${() => this.onBandClick(activeBand.name)} aria-label="Dismiss band DNA">×</button>
-        </div>
-      ` : ''}
-
-      ${!this.isMobile ? html`
-        <!-- DESKTOP 3-COLUMN STUDIO LAYOUT -->
-        <div class="studio-grid" style="--mood-color: ${moodColor};">
-
-          <!-- 1. LEFT SIDEBAR -->
-          <aside class="sidebar-left">
-            <div class="sidebar-scroll">
-              <div class="kicker-label">The Vibe</div>
-              <form class="vibe-input-row ${this.isGenerating ? 'generating' : ''}" @submit=${this.onVibeSubmit}>
-                <input
-                  type="text"
-                  class="vibe-text-input"
-                  .value=${this.freeText}
-                  @input=${(e: Event) => { this.freeText = (e.target as HTMLInputElement).value; }}
-                  placeholder=${this.isGenerating ? 'Composing your chords...' : this.vibeExamples[this.vibePlaceholderIdx]}
-                  ?disabled=${this.isGenerating}
-                />
-                <button
-                  type="submit"
-                  class="vibe-submit-btn ${this.isGenerating ? 'generating' : ''}"
-                  style="background: ${moodColor};"
-                  aria-label="${this.isGenerating ? 'Composing chords' : 'Generate loop from vibe'}"
-                  ?disabled=${this.isGenerating || !this.freeText.trim()}
-                >
-                  ${this.isGenerating ? html`
-                    <div class="vibe-spinner"></div>
-                  ` : html`
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
-                  `}
-                </button>
-              </form>
-              ${this.isGenerating ? html`
-                <div class="vibe-generating-pill">
-                  <span class="vibe-spinner"></span>
-                  <span>Composing chords...</span>
-                </div>
-              ` : ''}
-
-              <div class="kicker-label spaced">Genre</div>
-              <div class="pills-group">
-                ${shownGenres.map(g => html`
-                  <button
-                    class="pill ${this.progression?.genre === g ? 'active' : ''}"
-                    @click=${() => this.onGenreClick(g)}
-                  >${g}</button>
-                `)}
-                <button class="pill more-toggle" @click=${() => { this.expandedGenre = !this.expandedGenre; }}>
-                  ${this.expandedGenre ? 'Show less ⌃' : '+more ⌄'}
-                </button>
-              </div>
-
-              <div class="kicker-label spaced">Mood</div>
-              <div class="pills-group">
-                ${shownMoods.map(m => {
-                  const mCol = getMoodColor(m);
-                  const isActive = this.progression?.mood === m;
-                  return html`
-                    <button
-                      class="pill mood-pill ${isActive ? 'active' : ''}"
-                      style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}"
-                      @click=${() => this.onMoodClick(m)}
-                    >
-                      <span class="mood-badge" style="background: ${isActive ? 'rgba(46, 39, 31, 0.12)' : mCol + '33'};">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round">
-                          <path d="${MOOD_ICONS[m] || 'M12 4 a6.5 6.5 0 1 0 6.5 6.5'}"/>
-                        </svg>
-                      </span>
-                      ${m}
-                    </button>
-                  `;
-                })}
-                ${restMoodNames.length ? html`
-                  <button class="pill more-toggle" @click=${() => { this.expandedMood = !this.expandedMood; }}>
-                    ${this.expandedMood ? 'Show less ⌃' : `+${restMoodNames.length} more ⌄`}
-                  </button>
-                ` : ''}
-              </div>
-
-              <div class="kicker-label spaced" style="display: flex; align-items: baseline; gap: 6px;">
-                <span>Band</span>
-                <span style="font-size: 10px; font-weight: 700; color: rgba(46, 39, 31, 0.4); text-transform: lowercase;">optional</span>
-              </div>
-              <div class="pills-group">
-                ${BANDS.map(b => html`
-                  <button
-                    class="pill ${this.selectedBand === b.name ? 'active' : ''}"
-                    style="font-family: ${b.font}; font-weight: ${b.weight || 800}; font-style: ${b.italic ? 'italic' : 'normal'}; letter-spacing: ${b.pillTrack};"
-                    @click=${() => this.onBandClick(b.name)}
-                  >${b.name}</button>
-                `)}
-              </div>
-              ${activeBand ? html`
-                <div class="band-trick-text">
-                  ${this.showTheory ? activeBand.theory : activeBand.plain}
-                </div>
-              ` : ''}
-            </div>
-
-            <div class="sidebar-footer">
-              <button class="library-toggle ${this.libraryOpen ? 'open' : ''}" @click=${() => this.toggleLibrary()}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
-                <span style="flex: 1; min-width: 0; text-align: left;">${this.savedSets.length ? `Your loops · ${this.savedSets.length}` : 'Your loops'}</span>
-                <span style="opacity: 0.55;">${this.libraryOpen ? '⌄' : '⌃'}</span>
-              </button>
-              ${this.libraryOpen ? html`
-                <div class="library-popover">
-                  ${this.renderLibraryPopoverContent(moodColor)}
-                </div>
-              ` : ''}
-            </div>
-          </aside>
-
-          <!-- 2. CENTER STAGE -->
-          <main class="stage-main">
-            <div class="stage-header">
-              <div class="stage-title-row">
-                <div class="stage-title">${this.renderStageTitle(moodColor)}</div>
-                <div class="stage-action-btns">
-                  <button class="round-btn" @click=${this.onBookmark} aria-label="Bookmark loop">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
-                  </button>
-                  <button class="round-btn" @click=${() => { this.shareOpen = true; }} aria-label="Share loop">
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 12v7a1 1 0 0 1 1 1h14a1 1 0 0 1 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
-                  </button>
-                </div>
-              </div>
-
-              <!-- VIEW TABS: Chords | Song | Play it -->
-              <div class="view-tabs-bar">
-                <button class="view-tab ${this.activeView === 'loop' ? 'active' : ''}" @click=${() => { this.activeView = 'loop'; }}>Chords</button>
-                <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
-                <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
-              </div>
-
-              ${this.activeView === 'loop' ? html`
-                <div class="mode-toggle-row">
-                  <button
-                    class="perform-mode-btn ${this.performMode ? 'exit' : ''}"
-                    @click=${() => this.togglePerform(!this.performMode)}
-                    aria-label="${this.performMode ? 'Exit perform' : 'Perform'}"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;">
-                      <rect x="3" y="3" width="8" height="8" rx="2.4"/>
-                      <rect x="13" y="3" width="8" height="8" rx="2.4"/>
-                      <rect x="3" y="13" width="8" height="8" rx="2.4"/>
-                      <rect x="13" y="13" width="8" height="8" rx="2.4"/>
-                    </svg>
-                    ${this.performMode ? 'Exit perform' : 'Perform'}
-                  </button>
-                  <div class="perform-hint">
-                    ${this.performMode ? 'Press a pad — higher on the pad, higher the voicing. Keys 1–4 and R to record.' : 'Build the progression here, then Perform plays it in.'}
-                  </div>
-                </div>
-              ` : ''}
-            </div>
-
-            <!-- Canvas -->
-            <div class="stage-canvas">
-              ${this.activeView === 'loop' ? html`
-                <div class="stage-panel">
-                  <svg class="drift-shape a" width="128" height="128" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
-                  <svg class="drift-shape b" width="112" height="112" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
-
-                  ${this.performMode ? html`
-                    <div class="pad-cells-row">
-                      ${chords.map((chord, idx) => {
-                        const r = roleForTension(chord.tension || 0.1);
-                        const isHeld = this.padFlash === idx;
-                        const isLit = this.playing && idx === this.progressStep;
-                        const keyLabel = String(idx + 1);
-                        const meta = isHeld && this.lastPad ? this.lastPad.voicing : (ROLE_PLAIN[chord.functionLabel] || chord.functionLabel || '');
-
-                        return html`
-                          <div
-                            class="pad-cell ${isHeld ? 'pad-held' : ''} ${isLit ? 'pad-lit' : ''}"
-                            style="background: ${r.color};"
-                            @mousedown=${(e: MouseEvent) => this.onPadDown(idx, e)}
-                            @mouseup=${() => this.onPadUp(idx)}
-                            @touchstart=${(e: TouchEvent) => { e.preventDefault(); this.onPadDown(idx, e); }}
-                            @touchend=${(e: TouchEvent) => { e.preventDefault(); this.onPadUp(idx); }}
-                            tabindex="0"
-                            role="button"
-                            aria-label="Play ${chord.name}"
-                          >
-                            <div class="pad-key-label">${keyLabel}</div>
-                            <div>
-                              <div class="pad-name">${chord.name}</div>
-                              <div class="pad-meta">${meta}</div>
-                            </div>
-                          </div>
-                        `;
-                      })}
-                    </div>
-                    <div class="perform-banner">
-                      <span class="perform-banner-kicker">Playing now</span>
-                      <span class="perform-banner-now">${this.lastPad ? chords[Math.min(this.lastPad.idx, chords.length - 1)]?.name : '—'}</span>
-                      <span class="perform-banner-sub">${this.lastPad ? `${this.lastPad.voicing} · velocity ${this.lastPad.vel}` : 'Press a pad, or hit 1–4'}</span>
-                    </div>
-                  ` : html`
-                    <div class="chords-flex-row">
-                      ${chords.map((chord, idx) => {
-                        const r = roleForTension(chord.tension || 0.1);
-                        const isLit = this.playing && idx === this.progressStep;
-                        const isInspected = this.isInspectorOpen && idx === this.swapIndex;
-                        const isPreview = idx === this.previewIndex;
-                        const size = Math.max(84, Math.min(130, r.size));
-                        const radius = Math.round(r.radius * (size / r.size));
-
-                        return html`
-                          <div
-                            class="chord-item-wrap ${this.dragState?.dragIndex === idx ? 'is-dragging' : ''}"
-                            style="${this.getChordDragStyle(idx)}"
-                            @pointerdown=${(e: PointerEvent) => this.onChordPointerDown(idx, e, () => this.onChordSelect(idx))}
-                            @keydown=${(e: KeyboardEvent) => this.onChordKeyDown(idx, e)}
-                            tabindex="0"
-                            role="button"
-                            aria-label="${chord.name}, ${chord.functionLabel || 'Chord'}. Grab and drag to reorder."
-                          >
-                            <div
-                              class="chord-block-shape ${isLit ? 'active-pulse' : ''} ${isInspected ? 'selected-inspector' : ''}"
-                              style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color}; transform: ${isPreview ? 'scale(0.94)' : 'none'};"
-                            >
-                              <div class="drag-grip-indicator" title="Drag to reorder">
-                                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="4" r="1.4"/><circle cx="12" cy="4" r="1.4"/><circle cx="4" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/></svg>
-                              </div>
-                              ${this.showTheory && chord.roman ? html`
-                                <div class="roman-pill-badge">${chord.roman}</div>
-                              ` : ''}
-                              <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.92)}px;">${chord.name}</div>
-                            </div>
-                            <div class="chord-role-label">${ROLE_PLAIN[chord.functionLabel] || chord.functionLabel || ''}</div>
-                          </div>
-                        `;
-                      })}
-                    </div>
-                  `}
-                </div>
-
-                <!-- Quick Instrument & Play Style Chips (Desktop) -->
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px;">
-                  <button
-                    class="pill ${this.activeSoundDrawer === 'instrument' ? 'active' : ''}"
-                    style="${this.activeSoundDrawer === 'instrument' ? `background: ${moodColor}; color: #2E271F; font-weight: 800;` : ''}"
-                    @click=${() => { this.activeSoundDrawer = this.activeSoundDrawer === 'instrument' ? null : 'instrument'; }}
-                    aria-label="Change instrument"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${this.activeSoundDrawer === 'instrument' ? '#2E271F' : '#5B5145'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                    ${this.instrument || 'Piano'} <span style="opacity: 0.6;">${this.activeSoundDrawer === 'instrument' ? '⌃' : '⌄'}</span>
-                  </button>
-                  <button
-                    class="pill ${this.activeSoundDrawer === 'playstyle' ? 'active' : ''}"
-                    style="${this.activeSoundDrawer === 'playstyle' ? `background: ${moodColor}; color: #2E271F; font-weight: 800;` : ''}"
-                    @click=${() => { this.activeSoundDrawer = this.activeSoundDrawer === 'playstyle' ? null : 'playstyle'; }}
-                    aria-label="Change playing style"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${this.activeSoundDrawer === 'playstyle' ? '#2E271F' : '#5B5145'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
-                    ${this.playStyle || 'Block chords'} <span style="opacity: 0.6;">${this.activeSoundDrawer === 'playstyle' ? '⌃' : '⌄'}</span>
-                  </button>
-                </div>
-
-                ${this.activeSoundDrawer ? html`
-                  <div class="sound-drawer" style="margin-top: 12px; padding: 14px 18px; background: var(--cv-surface); border-radius: 18px;">
-                    ${this.activeSoundDrawer === 'instrument' ? html`
-                      <div class="kicker-label" style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase; margin-bottom: 8px;">Instrument</div>
-                      <div class="sound-options-flex">
-                        ${USER_INSTRUMENTS.map(i => html`
-                          <button
-                            class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
-                            style="${(this.instrument || 'Piano') === i.name ? `background: ${moodColor}; color: #2E271F; font-weight: 800;` : 'background: var(--cv-surface-2); color: #5B5145; font-weight: 700;'}"
-                            @click=${() => {
-                              this.instrument = i.name;
-                              playbackEngine.setInstrument(i.name);
-                              this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
-                              this.activeSoundDrawer = null;
-                              this.requestUpdate();
-                            }}
-                          >
-                            <span class="control-dot" style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex-shrink: 0;"></span>${i.name}
-                          </button>
-                        `)}
-                      </div>
-                    ` : html`
-                      <div class="kicker-label" style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase; margin-bottom: 8px;">Play Style</div>
-                      <div class="sound-options-flex">
-                        ${USER_PLAY_STYLES.map(s => html`
-                          <button
-                            class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
-                            style="${(this.playStyle || 'Block chords') === s.name ? `background: ${moodColor}; color: #2E271F; font-weight: 800;` : 'background: var(--cv-surface-2); color: #5B5145; font-weight: 700;'}"
-                            @click=${() => {
-                              this.playStyle = s.name;
-                              playbackEngine.setPlayStyle(s.name);
-                              this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
-                              this.activeSoundDrawer = null;
-                              this.requestUpdate();
-                            }}
-                          >
-                            <span class="control-dot" style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex-shrink: 0;"></span>${s.name}
-                          </button>
-                        `)}
-                      </div>
-                    `}
-                  </div>
-                ` : ''}
-
-                ${this.performMode ? this.renderLoopDeck(chords.length) : ''}
-              ` : this.activeView === 'song' ? html`
-                <div class="song-track-list">
-                  <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); margin-bottom: 8px;">
-                    Each section reuses the loop, related but never identical. Press play in the transport bar to hear the whole thing.
-                  </div>
-                  ${this.sections.map((sec, i) => html`
-                    <div
-                      class="song-card ${this.activeSectionIdx === i ? 'active-sec' : ''}"
-                      @click=${() => {
-                        this.activeSectionIdx = i;
-                        this.activeView = 'loop';
-                        this.dispatchEvent(new CustomEvent('select-section', { detail: i, bubbles: true, composed: true }));
-                        this.requestUpdate();
-                      }}
-                    >
-                      <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">
-                        Section ${i + 1}
-                      </div>
-                      <div style="flex: 1; min-width: 0;">
-                        <div style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
-                        <div style="font-size: 12px; color: var(--cv-ink-muted); margin-top: 2px;">${sec.desc}</div>
-                      </div>
-                      <div style="display: flex; gap: 4px;">
-                        ${sec.order.map(idx => {
-                          const c = sec.progression.chords[idx];
-                          if (!c) return '';
-                          const r = roleForTension(c.tension || 0.1);
-                          return html`<span style="width: 14px; height: 14px; border-radius: 4px; background: ${r.color};" title="${c.name}"></span>`;
-                        })}
-                      </div>
-                    </div>
-                  `)}
-                  <div
-                    class="add-sec-card"
-                    @click=${() => {
-                      if (this.progression) {
-                        const res = SongArranger.addSection(this.sections, this.progression);
-                        this.sections = res.sections;
-                        this.activeSectionIdx = res.activeIndex;
-                        this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }));
-                        this.requestUpdate();
-                      }
-                    }}
-                  >
-                    <span style="font-size: 20px; line-height: 1;">+</span>
-                    <span>Add a related section</span>
-                  </div>
-                </div>
-              ` : html`
-                <div class="play-it-wrap">
-                  <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 10px; cursor: pointer;" @click=${() => { this.showDegrees = !this.showDegrees; }}>
-                      <div style="width: 36px; height: 20px; border-radius: 100px; background: ${this.showDegrees ? moodColor : 'rgba(46,39,31,0.2)'}; padding: 2px; display: flex; align-items: center; transition: background 150ms ease;">
-                        <div style="width: 16px; height: 16px; border-radius: 50%; background: #FFF; transform: ${this.showDegrees ? 'translateX(16px)' : 'translateX(0)'}; transition: transform 150ms ease;"></div>
-                      </div>
-                      <div style="font-size: 13.5px; font-weight: 700; color: var(--cv-ink-muted);">Scale degrees</div>
-                    </div>
-                  </div>
-
-                  <div style="display: flex; align-items: baseline; gap: 14px; margin-top: 10px; flex-wrap: wrap;">
-                    <div style="font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; color: var(--cv-label); text-transform: uppercase;">Piano</div>
-                    <div style="font-size: 12.5px; line-height: 1.6; color: #8A7C6B; flex: 1; min-width: 200px;">One voicing per chord, root position — the red dot is the root, play left to right.</div>
-                  </div>
-                  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 4px;">
-                    ${chords.map((ch, i) => this.renderPianoCard(ch, i))}
-                  </div>
-
-                  <div style="display: flex; align-items: center; gap: 14px; margin-top: 24px; flex-wrap: wrap;">
-                    <div style="display: flex; gap: 4px; background: var(--cv-surface-2); border-radius: 100px; padding: 4px;">
-                      ${['Guitar', 'Ukulele'].map(inst => html`
-                        <button
-                          style="border: none; font-family: inherit; min-height: 38px; padding: 0 16px; border-radius: 100px; cursor: pointer; font-size: 13px; font-weight: 800; background: ${(this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar') === inst ? moodColor : 'transparent'}; color: ${(this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar') === inst ? '#2E271F' : 'rgba(46,39,31,0.55)'}; transition: background 200ms var(--cv-ease), color 200ms ease;"
-                          @click=${() => { this.playInstrument = inst as PlayInstrument; }}
-                        >${inst}</button>
-                      `)}
-                    </div>
-                    <div style="font-size: 12.5px; line-height: 1.6; color: #8A7C6B; flex: 1; min-width: 200px;">Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.</div>
-                  </div>
-                  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 4px;">
-                    ${chords.map((ch, i) => this.renderFretCard(ch, i, this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar'))}
-                  </div>
-                </div>
-              `}
-            </div>
-
-            <!-- Transport Bar -->
-            <div class="transport-footer">
-              <button
-                class="play-circle-btn"
-                style="background: ${moodColor};"
-                @click=${() => this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }))}
-                aria-label="${this.playing ? 'Pause' : 'Play'}"
-              >
-                ${this.playing ? html`
-                  <svg width="15" height="17" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>
-                ` : html`
-                  <svg width="17" height="19" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>
-                `}
-              </button>
-
-              <div class="progress-line-track">
-                <div
-                  class="progress-line-fill ${this.snapProgress ? 'snap' : ''}"
-                  style="width: 100%; transform: scaleX(${this.playing && chords.length ? (this.progressStep + 1) / chords.length : 0}); background: ${moodColor}; --progress-duration: ${AUTOPLAY_INTERVAL_MS}ms;"
-                ></div>
-              </div>
-
-              <div class="stepper-wrap">
-                <button class="stepper-btn" @click=${() => this.onStepLength(-1)} aria-label="Fewer chords">−</button>
-                <div class="stepper-text">${chords.length} chords</div>
-                <button class="stepper-btn" @click=${() => this.onStepLength(1)} aria-label="More chords">+</button>
-              </div>
-
-              <button class="dice-reroll-btn" @click=${this.onReroll}>
-                <svg width="15" height="15" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
-                Try another
-              </button>
-            </div>
-          </main>
-
-          <!-- 3. RIGHT SIDEBAR -->
-          <aside class="sidebar-right">
-            <div class="right-header">
-              ${!this.isInspectorOpen ? html`
-                <div class="kicker-label">Harmonic Arc</div>
-                <div style="font-size: 18px; font-weight: 800; color: var(--cv-ink); letter-spacing: -0.015em; margin-top: 4px;">
-                  ${arcTitle}
-                </div>
-              ` : html`
-                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
-                  <div>
-                    <div class="kicker-label">Swapping Bar ${(this.swapIndex || 0) + 1}</div>
-                    <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 4px;">
-                      <span style="font-size: 22px; font-weight: 800; color: var(--cv-ink);">${currentSwapChord?.name || ''}</span>
-                      ${this.showTheory && currentSwapChord?.roman ? html`
-                        <span style="font-size: 12px; font-weight: 800; color: var(--cv-label);">${currentSwapChord.roman}</span>
-                      ` : ''}
-                    </div>
-                  </div>
-                  <button
-                    class="round-btn"
-                    style="width: 36px; height: 36px; font-size: 18px;"
-                    @click=${() => {
-                      this.isInspectorOpen = false;
-                      this.swapIndex = null;
-                      this.abPick = null;
-                      this.requestUpdate();
-                    }}
-                    aria-label="Close chord inspector"
-                  >×</button>
-                </div>
-
-                <div class="ab-box">
-                  <div class="ab-compare-row">
-                    <button
-                      class="ab-card-half ${this.abSide === 'before' ? 'active-now' : ''}"
-                      style="background: ${this.abSide === 'before' ? '#5E5142' : '#F1E4D2'}; color: ${this.abSide === 'before' ? '#FBF3E6' : '#2E271F'};"
-                      @click=${() => this.setABSide('before')}
-                    >
-                      <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Now</div>
-                      <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px;">${currentSwapChord?.name || ''}</div>
-                    </button>
-                    <button
-                      class="ab-card-half ${this.abSide === 'after' ? 'active-swap' : ''}"
-                      style="background: ${this.abPick ? (this.abSide === 'after' ? moodColor : '#F1E4D2') : 'transparent'}; color: #2E271F; border: ${this.abPick ? 'none' : '1.5px dashed rgba(46,39,31,0.22)'};"
-                      @click=${() => this.setABSide('after')}
-                      ?disabled=${!this.abPick}
-                    >
-                      <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Swap to</div>
-                      <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.45)'};">
-                        ${this.abPick?.chord || 'Pick one below'}
-                      </div>
-                    </button>
-                  </div>
-
-                  <!-- Loop Progression Player Strip -->
-                  <div class="ab-loop-player-row">
-                    <button
-                      class="ab-play-toggle-btn"
-                      style="background: ${this.abPlaying ? moodColor : '#E8D9C2'};"
-                      @click=${this.toggleAB}
-                      aria-label="${this.abPlaying ? 'Pause loop' : 'Play loop with swap preview'}"
-                    >
-                      ${this.abPlaying ? html`
-                        <svg width="13" height="15" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>
-                      ` : html`
-                        <svg width="14" height="16" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>
-                      `}
-                    </button>
-                    <div class="ab-cells-track">
-                      ${chords.map((c, i) => {
-                        const isSwapBar = i === this.swapIndex;
-                        const cellLabel = isSwapBar && this.abSide === 'after' && this.abPick ? this.abPick.chord : c.name;
-                        const isCellActive = this.abPlaying && this.progressStep === i;
-                        return html`
-                          <button
-                            class="ab-cell-item ${isCellActive ? 'active-step' : ''}"
-                            style="background: ${isSwapBar && this.abSide === 'after' && this.abPick ? moodColor : '#F1E4D2'}; opacity: ${isSwapBar ? 1 : 0.65};"
-                            @click=${() => this.onAbCellClick(i)}
-                            aria-label="Preview ${cellLabel} in bar ${i + 1}"
-                          >
-                            ${cellLabel}
-                          </button>
-                        `;
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  class="accept-swap-btn"
-                  style="background: ${this.abPick ? moodColor : '#EDE0CC'}; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.4)'}; cursor: ${this.abPick ? 'pointer' : 'default'};"
-                  @click=${this.onConfirmSwap}
-                  ?disabled=${!this.abPick}
-                >
-                  ${this.abPick ? `Keep ${this.abPick.chord}` : 'Pick a swap to compare'}
-                </button>
-              `}
-            </div>
-
-            <div class="right-scroll">
-              ${!this.isInspectorOpen ? html`
-                <div class="arc-bars-box">
-                  ${chords.map((chord, idx) => {
-                    const r = roleForTension(chord.tension || 0.1);
-                    const h = Math.round(20 + (chord.tension || 0.1) * 75);
-                    return html`
-                      <button class="arc-bar-col" @click=${() => this.onChordSelect(idx)}>
-                        <div class="arc-bar-pillar" style="height: ${h}px; background: ${r.color};"></div>
-                        <div style="font-size: 11px; font-weight: 800; color: var(--cv-ink); margin-top: 6px;">${chord.name}</div>
-                        <div style="font-size: 9.5px; font-weight: 700; color: rgba(46, 39, 31, 0.45);">${ROLE_PLAIN[chord.functionLabel] || ''}</div>
-                      </button>
-                    `;
-                  })}
-                </div>
-                <div style="font-size: 11px; font-weight: 700; color: rgba(46, 39, 31, 0.42); margin-top: 8px;">Taller means more unresolved harmonic tension.</div>
-                <div style="font-size: 13.5px; line-height: 1.6; color: var(--cv-ink-muted); margin-top: 14px;">${arcSentence}</div>
-                <div style="display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; background: var(--cv-cream); border-radius: 14px; padding: 11px 13px; font-size: 12.5px; line-height: 1.5; color: var(--cv-ink-muted);">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${moodColor}" stroke-width="2.4" stroke-linecap="round" style="flex-shrink: 0; margin-top: 1px;"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
-                  Tap any chord block to swap it or explore substitutions.
-                </div>
-              ` : html`
-                <!-- Custom Geometric Substitution Family Tabs -->
-                <div class="swap-tab-nav">
-                  ${SWAP_FAMILIES.map(fam => {
-                    const on = this.activeSwapFamily === fam.key;
-                    const rr = roleForTension(fam.tension);
-                    const d = Math.round(rr.size * 0.34);
-                    const radius = Math.round(rr.radius * (d / rr.size));
-                    return html`
-                      <button
-                        class="swap-family-tab ${on ? 'active' : ''}"
-                        @click=${() => {
-                          this.activeSwapFamily = fam.key;
-                          this.requestUpdate();
-                        }}
-                      >
-                        ${fam.twoTone ? html`
-                          <span class="two-tone-swatch" style="box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};">
-                            <span style="width: 8px; height: 24px; border-radius: 3px; background: #9CC0EC;"></span>
-                            <span style="width: 8px; height: 24px; border-radius: 3px; background: #C9A9E0;"></span>
-                          </span>
-                        ` : html`
-                          <span
-                            class="family-shape"
-                            style="width: ${d}px; height: ${d}px; border-radius: ${radius}px; background: ${rr.color}; box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};"
-                          ></span>
-                        `}
-                        <span class="family-label ${on ? 'active' : ''}">${fam.label}</span>
-                      </button>
-                    `;
-                  })}
-                </div>
-
-                ${activeBand ? html`
-                  <div class="band-note-banner" style="background: ${activeBand.color}22;">
-                    <span>Sorted for ${activeBand.name} — their moves first</span>
-                  </div>
-                ` : ''}
-
-                ${familyNote ? html`
-                  <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-bottom: 12px; padding: 0 4px;">
-                    ${familyNote}
-                  </div>
-                ` : ''}
-
-                <div>
-                  ${familyRows.length ? familyRows.map(r => {
-                    const isSelected = this.abPick?.chord === r.name;
-                    const rRole = roleForTension(r.tension);
-                    const shapeSize = Math.max(28, Math.min(38, Math.round(rRole.size * 0.32)));
-                    const shapeRadius = Math.round(rRole.radius * (shapeSize / rRole.size));
-                    const isBandTagged = !!activeBand && activeBand.hoist.includes(r.name);
-
-                    return html`
-                      <div
-                        class="alt-item-row ${isSelected ? 'selected' : ''}"
-                        @click=${() => this.onAltAudition({
-                          name: r.name,
-                          chord: r.chord,
-                          sub: r.sub,
-                          functionCaption: r.sub,
-                        })}
-                      >
-                        <div style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                          <div
-                            style="width: ${shapeSize}px; height: ${shapeSize}px; border-radius: ${shapeRadius}px; background: ${rRole.color}; box-shadow: ${isSelected ? `0 0 0 2px ${moodColor}` : 'none'};"
-                          ></div>
-                        </div>
-
-                        <div style="flex: 1; min-width: 0;">
-                          <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
-                            <span style="font-size: 15px; font-weight: 800; color: var(--cv-ink);">${r.name}</span>
-                            ${this.showTheory && r.roman ? html`
-                              <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.8px; color: #7A5C88;">${r.roman}</span>
-                            ` : ''}
-                            ${isBandTagged ? html`
-                              <span class="band-move-tag" style="background: ${activeBand.color};">${activeBand.name} move</span>
-                            ` : ''}
-                          </div>
-                          <div style="font-size: 11.5px; color: var(--cv-ink-muted); margin-top: 2px;">${r.sub}</div>
-                          ${this.showTheory && r.notes && r.notes.length ? html`
-                            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; color: var(--cv-label); margin-top: 3px;">
-                              ${r.notes.join(' · ')}
-                            </div>
-                          ` : ''}
-                        </div>
-
-                        <button
-                          class="alt-play-btn"
-                          style="background: ${isSelected && this.abSide === 'after' ? moodColor : '#DCEAF9'};"
-                          aria-label="Audition ${r.name}"
-                        >
-                          ${isSelected && this.abSide === 'after' ? '❚❚' : '▶'}
-                        </button>
-                      </div>
-                    `;
-                  }) : html`
-                    <div style="padding: 14px 8px; font-size: 12.5px; color: var(--cv-ink-muted);">Loading substitutions...</div>
-                  `}
-                </div>
-              `}
-            </div>
-          </aside>
-
-        </div>
-      ` : html`
-        <!-- DEDICATED MOBILE LAYOUT -->
+    if (this.isMobile) {
+      return html`
         <div class="mobile-stage-wrap" style="--mood-color: ${moodColor};">
-          <!-- Collapsible Vibe Selector Drawer -->
+          <!-- Top Vibe Dropdown Button -->
           <div style="padding: 12px 18px 0;">
-            <button class="mobile-vibe-bar" @click=${() => { this.vibeOpen = !this.vibeOpen; }}>
-              <div>
+            <button class="mobile-vibe-toggle" @click=${this.toggleVibe}>
+              <div style="text-align: left;">
                 <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">The Vibe</div>
-                <div style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink); margin-top: 2px;">
-                  ${this.progression?.searchTerm ? html`
-                    ${this.renderStageTitle(moodColor)}
-                  ` : `${this.progression?.genre || 'Pop'} · ${this.progression?.mood || 'Warm'}`}
-                </div>
+                <div style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink); margin-top: 2px;">${this.getVibeSummary()}</div>
               </div>
-              <span>${this.vibeOpen ? '⌃' : '⌄'}</span>
+              <span style="font-size: 16px; font-weight: 800; color: var(--cv-ink-muted);">${this.vibeOpen ? '⌃' : '⌄'}</span>
             </button>
 
             ${this.vibeOpen ? html`
               <div style="background: var(--cv-surface); border-radius: 20px; padding: 16px 15px; margin-top: 8px;">
-                <form class="vibe-input-row ${this.isGenerating ? 'generating' : ''}" @submit=${this.onVibeSubmit} style="margin-top: 0;">
+                <form class="popover-input-row" @submit=${this.onVibeSubmit}>
                   <input
                     type="text"
-                    class="vibe-text-input"
+                    class="cv-vibe-input"
                     .value=${this.freeText}
                     @input=${(e: Event) => { this.freeText = (e.target as HTMLInputElement).value; }}
-                    placeholder=${this.isGenerating ? 'Composing your chords...' : this.vibeExamples[this.vibePlaceholderIdx]}
-                    ?disabled=${this.isGenerating}
+                    placeholder=${this.vibeExamples[this.vibePlaceholderIdx]}
                   />
-                  <button
-                    type="submit"
-                    class="vibe-submit-btn ${this.isGenerating ? 'generating' : ''}"
-                    style="background: ${moodColor};"
-                    aria-label="${this.isGenerating ? 'Composing chords' : 'Generate loop from vibe'}"
-                    ?disabled=${this.isGenerating || !this.freeText.trim()}
-                  >
-                    ${this.isGenerating ? html`
-                      <div class="vibe-spinner"></div>
-                    ` : html`
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
-                    `}
+                  <button type="submit" class="vibe-submit-btn" style="background: ${moodColor};">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
                   </button>
                 </form>
-                ${this.isGenerating ? html`
-                  <div class="vibe-generating-pill">
-                    <span class="vibe-spinner"></span>
-                    <span>Composing chords...</span>
-                  </div>
-                ` : ''}
 
-                <div class="kicker-label spaced">Genre</div>
+                <div class="popover-kicker spaced">Genre</div>
                 <div class="pills-group">
-                  ${shownGenres.map(g => html`
+                  ${GENRE_PRIMARY.map(g => html`
                     <button class="pill ${this.progression?.genre === g ? 'active' : ''}" @click=${() => this.onGenreClick(g)}>${g}</button>
                   `)}
                 </div>
 
-                <div class="kicker-label spaced">Mood</div>
+                <div class="popover-kicker spaced">Mood</div>
                 <div class="pills-group">
-                  ${shownMoods.map(m => html`
-                    <button class="pill ${this.progression?.mood === m ? 'active' : ''}" @click=${() => this.onMoodClick(m)}>${m}</button>
-                  `)}
-                  ${restMoodNames.length ? html`
-                    <button class="pill more-toggle" @click=${() => { this.expandedMood = !this.expandedMood; }}>
-                      ${this.expandedMood ? 'Show less ⌃' : `+${restMoodNames.length} more ⌄`}
-                    </button>
-                  ` : ''}
-                </div>
-
-                <div class="kicker-label spaced">Band</div>
-                <div class="pills-group">
-                  ${BANDS.map(b => html`
-                    <button class="pill ${this.selectedBand === b.name ? 'active' : ''}" @click=${() => this.onBandClick(b.name)}>${b.name}</button>
+                  ${MOOD_PRIMARY.map(m => html`
+                    <button class="pill mood-pill ${this.progression?.mood === m ? 'active' : ''}" @click=${() => this.onMoodClick(m)}>${m}</button>
                   `)}
                 </div>
               </div>
             ` : ''}
           </div>
 
-          <!-- View Switcher Tabs: Chords | Song | Play it -->
+          <!-- View Switcher Tabs -->
           <div style="padding: 12px 18px 0;">
             <div class="view-tabs-bar" style="width: 100%; justify-content: center;">
               <button class="view-tab ${this.activeView === 'loop' ? 'active' : ''}" @click=${() => { this.activeView = 'loop'; }}>Chords</button>
               <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
               <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
             </div>
-
-            ${this.activeView === 'loop' ? html`
-              <div class="mode-toggle-row" style="justify-content: center; margin: 10px 0 6px;">
-                <button
-                  class="perform-mode-btn ${this.performMode ? 'exit' : ''}"
-                  @click=${() => this.togglePerform(!this.performMode)}
-                  aria-label="${this.performMode ? 'Exit perform' : 'Perform'}"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;">
-                    <rect x="3" y="3" width="8" height="8" rx="2.4"/>
-                    <rect x="13" y="3" width="8" height="8" rx="2.4"/>
-                    <rect x="3" y="13" width="8" height="8" rx="2.4"/>
-                    <rect x="13" y="13" width="8" height="8" rx="2.4"/>
-                  </svg>
-                  ${this.performMode ? 'Exit perform' : 'Perform'}
-                </button>
-              </div>
-            ` : ''}
           </div>
 
-          <!-- Mobile Center View -->
+          <!-- Main Mobile Canvas -->
           <div style="padding: 14px 18px 24px; flex: 1;">
             ${this.activeView === 'loop' ? html`
-              ${this.performMode ? html`
-                <div class="stage-panel" style="min-height: 220px; padding: 18px 12px; display: flex; flex-direction: column;">
-                  <svg class="drift-shape a" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
-                  <svg class="drift-shape b" width="90" height="90" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
+              <div class="stage-card" style="padding: 18px 14px;">
+                <!-- 2-column pad cells grid -->
+                <div class="pad-cells-grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+                  ${chords.map((chord, idx) => {
+                    const role = roleForTension(chord.tension || 0.1);
+                    const isHeld = this.padFlash === idx;
+                    const isLit = this.playing && idx === this.progressStep;
 
-                  <div class="pad-cells-grid">
-                    ${chords.map((chord, idx) => {
-                      const r = roleForTension(chord.tension || 0.1);
-                      const isHeld = this.padFlash === idx;
-                      const isLit = this.playing && idx === this.progressStep;
-                      const keyLabel = String(idx + 1);
-                      const meta = isHeld && this.lastPad ? this.lastPad.voicing : (ROLE_PLAIN[chord.functionLabel] || chord.functionLabel || '');
+                    return html`
+                      <div
+                        class="pad-cell ${isHeld ? 'pad-held' : ''} ${isLit ? 'pad-lit' : ''}"
+                        style="background: ${role.color}; min-height: 108px;"
+                        tabindex="0"
+                        role="button"
+                        aria-label="${chord.name}, ${ROLE_PLAIN[chord.functionLabel] || chord.functionLabel} — press to play it; press nearer the top for a higher voicing"
+                        @pointerdown=${(e: PointerEvent) => this.handlePadPointerDown(e, idx)}
+                        @pointerup=${() => this.handlePadPointerUp()}
+                        @pointercancel=${() => this.handlePadPointerUp()}
+                        @pointerleave=${() => this.handlePadPointerUp()}
+                      >
+                        <div class="zone-line-a ${this.lastPad?.idx === idx && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
+                        <div class="zone-line-b ${this.lastPad?.idx === idx && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
 
-                      return html`
-                        <div
-                          class="pad-cell ${isHeld ? 'pad-held' : ''} ${isLit ? 'pad-lit' : ''}"
-                          style="background: ${r.color}; min-height: 108px;"
-                          @mousedown=${(e: MouseEvent) => this.onPadDown(idx, e)}
-                          @mouseup=${() => this.onPadUp(idx)}
-                          @touchstart=${(e: TouchEvent) => { e.preventDefault(); this.onPadDown(idx, e); }}
-                          @touchend=${(e: TouchEvent) => { e.preventDefault(); this.onPadUp(idx); }}
-                          tabindex="0"
-                          role="button"
-                          aria-label="Play ${chord.name}"
+                        <button
+                          class="pad-swap-btn"
+                          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openSwap(idx); }}
+                          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                          aria-label="Swap ${chord.name}"
                         >
-                          <div class="pad-key-label">${keyLabel}</div>
-                          <div>
-                            <div class="pad-name" style="font-size: 18px;">${chord.name}</div>
-                            <div class="pad-meta">${meta}</div>
-                          </div>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
+                        </button>
+
+                        <button
+                          class="pad-detail-btn"
+                          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openDetail(idx); }}
+                          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                          aria-label="View voicing for ${chord.name}"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.2 10-6.2 10 6.2 10 6.2-3.6 6.2-10 6.2-10-6.2z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                        </button>
+
+                        <div class="pad-top-row">
+                          <span class="pad-key-badge">${PAD_KEYS[idx] || ''}</span>
+                          ${this.showTheory && chord.roman ? html`<span class="pad-roman-badge">${chord.roman}</span>` : ''}
                         </div>
-                      `;
-                    })}
-                  </div>
-                  <div class="perform-banner" style="margin-top: 10px;">
-                    <span class="perform-banner-kicker">Playing now</span>
-                    <span class="perform-banner-now" style="font-size: 14px;">${this.lastPad ? chords[Math.min(this.lastPad.idx, chords.length - 1)]?.name : '—'}</span>
-                    <span class="perform-banner-sub" style="font-size: 11px;">${this.lastPad ? `${this.lastPad.voicing} · velocity ${this.lastPad.vel}` : 'Tap a pad to play'}</span>
+
+                        <div class="pad-bottom-info">
+                          <div class="pad-role-label">${ROLE_SHORT[chord.functionLabel] || chord.functionLabel}</div>
+                          <div class="pad-chord-name" style="font-size: 20px;">${chord.name}</div>
+                          <div class="pad-meta-voicing">${this.lastPad?.idx === idx ? (ZONE_NAMES[this.lastPad.zone] || this.lastPad.voicing) : ''}</div>
+                        </div>
+                      </div>
+                    `;
+                  })}
+                </div>
+
+                <div class="playing-now-row">
+                  <div class="playing-now-kicker">Playing now</div>
+                  <div class="playing-now-chord">${this.lastPad ? chords[this.lastPad.idx]?.name : '—'}</div>
+                  <div class="playing-now-desc">
+                    ${this.lastPad ? `${this.lastPad.voicing} · velocity ${this.lastPad.vel}` : 'Press a chord — nearer the top of a card plays a higher voicing. Home-row keys A S D F play them too.'}
                   </div>
                 </div>
-              ` : html`
-                <div class="stage-panel" style="min-height: 200px; padding: 24px 12px;">
-                  <svg class="drift-shape a" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#F2A79B"/></svg>
-                  <svg class="drift-shape b" width="90" height="90" viewBox="0 0 100 100"><rect width="100" height="100" rx="26" fill="#9CC0EC"/></svg>
+              </div>
 
-                  <div class="chords-flex-row" style="gap: 16px;">
-                    ${chords.map((chord, idx) => {
-                      const r = roleForTension(chord.tension || 0.1);
-                      const isLit = this.playing && idx === this.progressStep;
-                      const size = Math.max(76, Math.min(100, r.size * 0.8));
-                      const radius = Math.round(r.radius * (size / r.size));
-
-                      return html`
-                        <div
-                          class="chord-item-wrap ${this.dragState?.dragIndex === idx ? 'is-dragging' : ''}"
-                          style="${this.getChordDragStyle(idx)}"
-                          @pointerdown=${(e: PointerEvent) => this.onChordPointerDown(idx, e, () => this.onChordPreview(idx))}
-                          @keydown=${(e: KeyboardEvent) => this.onChordKeyDown(idx, e)}
-                          tabindex="0"
-                          role="button"
-                          aria-label="${chord.name}, ${chord.functionLabel || 'Chord'}. Grab and drag to reorder."
-                        >
-                          <div
-                            class="chord-block-shape ${isLit ? 'active-pulse' : ''}"
-                            style="width: ${size}px; height: ${size}px; border-radius: ${radius}px; background: ${r.color};"
-                          >
-                            <div class="drag-grip-indicator" title="Drag to reorder">
-                              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="4" r="1.4"/><circle cx="12" cy="4" r="1.4"/><circle cx="4" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/></svg>
-                            </div>
-                            ${this.showTheory && chord.roman ? html`
-                              <div class="roman-pill-badge">${chord.roman}</div>
-                            ` : ''}
-                            <div class="chord-title-text" style="font-size: ${Math.round(r.fontSize * 0.76)}px;">${chord.name}</div>
-
-                            <!-- Quick Mobile Action Buttons -->
-                            <button class="quick-action-btn swap" @pointerdown=${(e: Event) => e.stopPropagation()} @click=${(e: Event) => { e.stopPropagation(); this.onChordSelect(idx); }} aria-label="Swap chord">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
-                            </button>
-                          </div>
-                          <div class="chord-role-label">${ROLE_PLAIN[chord.functionLabel] || ''}</div>
-                        </div>
-                      `;
-                    })}
-                  </div>
-                </div>
-              `}
-
-              <!-- Quick Instrument & Play Style Chips -->
+              <!-- Quick chips -->
               <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px;">
-                <button class="pill ${this.activeSoundDrawer === 'instrument' ? 'active' : ''}" @click=${() => { this.activeSoundDrawer = this.activeSoundDrawer === 'instrument' ? null : 'instrument'; }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                  ${this.instrument || 'Piano'} <span style="opacity:0.6;">${this.activeSoundDrawer === 'instrument' ? '▴' : '▾'}</span>
+                <button class="instrument-chip" @click=${this.toggleInstrumentExpand} aria-label="Change instrument">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
+                  ${this.instrument || 'Piano'} <span style="opacity:0.6;">⌄</span>
                 </button>
-                <button class="pill ${this.activeSoundDrawer === 'playstyle' ? 'active' : ''}" @click=${() => { this.activeSoundDrawer = this.activeSoundDrawer === 'playstyle' ? null : 'playstyle'; }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
-                  ${this.playStyle || 'Block chords'} <span style="opacity:0.6;">${this.activeSoundDrawer === 'playstyle' ? '▴' : '▾'}</span>
+                <button class="play-style-chip" @click=${this.togglePlayStyleExpand} aria-label="Change playing style">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
+                  ${this.playStyle || 'Block chords'} <span style="opacity:0.6;">⌄</span>
                 </button>
               </div>
 
-              ${this.activeSoundDrawer ? html`
-                <div class="sound-drawer">
-                  ${this.activeSoundDrawer === 'instrument' ? html`
-                    <div class="kicker-label">Instrument</div>
-                    <div class="sound-options-flex">
-                      ${USER_INSTRUMENTS.map(i => html`
-                        <button
-                          class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
-                          @click=${() => {
-                            this.instrument = i.name;
-                            playbackEngine.setInstrument(i.name);
-                            this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
-                            this.activeSoundDrawer = null;
-                            this.requestUpdate();
-                          }}
-                        >
-                          <span class="control-dot" style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
-                        </button>
-                      `)}
-                    </div>
-                  ` : html`
-                    <div class="kicker-label">Play Style</div>
-                    <div class="sound-options-flex">
-                      ${USER_PLAY_STYLES.map(s => html`
-                        <button
-                          class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
-                          @click=${() => {
-                            this.playStyle = s.name;
-                            playbackEngine.setPlayStyle(s.name);
-                            this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
-                            this.activeSoundDrawer = null;
-                            this.requestUpdate();
-                          }}
-                        >
-                          <span class="control-dot" style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${s.name}
-                        </button>
-                      `)}
-                    </div>
-                  `}
+              ${this.expandedInstrument ? html`
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+                  ${USER_INSTRUMENTS.map(i => html`
+                    <button
+                      class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
+                      @click=${() => {
+                        this.instrument = i.name;
+                        playbackEngine.setInstrument(i.name);
+                        this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+                        this.expandedInstrument = false;
+                        this.requestUpdate();
+                      }}
+                    >
+                      <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
+                    </button>
+                  `)}
                 </div>
               ` : ''}
 
-              ${this.performMode ? this.renderLoopDeck(chords.length) : ''}
-
-              <!-- Music Theory & Harmonic Arc -->
-              <div style="display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(46,39,31,0.09); cursor: pointer;" @click=${() => { this.showTheory = !this.showTheory; }}>
-                <div style="width: 36px; height: 20px; border-radius: 100px; background: ${this.showTheory ? moodColor : 'rgba(46,39,31,0.2)'}; padding: 2px; display: flex; align-items: center; transition: background 150ms ease;">
-                  <div style="width: 16px; height: 16px; border-radius: 50%; background: #FFF; transform: ${this.showTheory ? 'translateX(16px)' : 'translateX(0)'}; transition: transform 150ms ease;"></div>
+              ${this.expandedPlayStyle ? html`
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+                  ${USER_PLAY_STYLES.map(s => html`
+                    <button
+                      class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
+                      @click=${() => {
+                        this.playStyle = s.name;
+                        playbackEngine.setPlayStyle(s.name);
+                        this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
+                        this.expandedPlayStyle = false;
+                        this.requestUpdate();
+                      }}
+                    >
+                      <span style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${s.name}
+                    </button>
+                  `)}
                 </div>
-                <span style="font-size: 13px; font-weight: 700; color: var(--cv-ink-muted);">Show music theory & tension arc</span>
+              ` : ''}
+
+              <div style="display: flex; gap: 7px; margin-top: 12px;">
+                <button class="mobile-chip-btn" @click=${() => { this.tempoOpen = !this.tempoOpen; }} aria-label="Key, tempo and length">
+                  ${this.progression?.key || 'C'} · ${this.progression?.bpm || 84}
+                </button>
+                <button class="mobile-chip-btn" @click=${() => { this.feelOpen = !this.feelOpen; }}>Feel &amp; tone</button>
+                <button class="mobile-bounce-btn" @click=${() => { this.bounceOpen = true; }}>Bounce</button>
+              </div>
+
+              <div class="mobile-theory-toggle" @click=${this.onTheoryToggle}>
+                <div class="toggle-track ${this.showTheory ? 'active' : ''}">
+                  <div class="toggle-knob ${this.showTheory ? 'active' : ''}"></div>
+                </div>
+                <div style="font-size: 13px; font-weight: 700; color: var(--cv-ink-muted);">Show music theory</div>
               </div>
 
               ${this.showTheory ? html`
-                <div style="margin-top: 14px; background: var(--cv-surface); border-radius: 18px; padding: 14px;">
-                  <div class="arc-bars-box" style="height: 100px;">
-                    ${chords.map((chord, idx) => {
-                      const r = roleForTension(chord.tension || 0.1);
-                      const h = Math.round(16 + (chord.tension || 0.1) * 50);
+                <div class="mobile-theory-panel">
+                  <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">This loop</div>
+                  <div style="font-size: 18px; font-weight: 800; color: var(--cv-ink); margin-top: 5px; letter-spacing: -0.015em;">${arcTitle}</div>
+                  <div class="mobile-arc-bars" style="display: flex; align-items: flex-end; gap: 6px; height: 132px; margin-top: 14px;">
+                    ${chords.map(c => {
+                      const h = Math.round(28 + (c.tension || 0.1) * 85);
+                      const r = roleForTension(c.tension || 0.1);
                       return html`
-                        <div class="arc-bar-col" @click=${() => this.onChordPreview(idx)}>
-                          <div class="arc-bar-pillar" style="height: ${h}px; background: ${r.color};"></div>
-                          <div style="font-size: 10px; font-weight: 800; color: var(--cv-ink); margin-top: 4px;">${chord.name}</div>
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; cursor: default;">
+                          <div style="width: 100%; height: ${h}px; border-radius: 100px; background: ${r.color};"></div>
+                          <div style="font-size: 12px; font-weight: 800; color: #2E271F; margin-top: 7px;">${c.name}</div>
+                          <div style="font-size: 10px; font-weight: 700; color: var(--cv-ink-muted);">${ROLE_PLAIN[c.functionLabel] || ''}</div>
                         </div>
                       `;
                     })}
                   </div>
-                  <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-top: 10px;">${arcSentence}</div>
+                  <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.2px; color: rgba(46, 39, 31, 0.42); margin-top: 8px;">Taller means more unresolved.</div>
+                  <div style="font-size: 13.5px; line-height: 1.6; color: var(--cv-ink-muted); margin-top: 12px;">${arcSentence}</div>
                 </div>
               ` : ''}
             ` : this.activeView === 'song' ? html`
               <div class="song-track-list">
                 ${this.sections.map((sec, i) => html`
-                  <div
-                    class="song-card ${this.activeSectionIdx === i ? 'active-sec' : ''}"
-                    @click=${() => {
-                      this.activeSectionIdx = i;
-                      this.activeView = 'loop';
-                      this.dispatchEvent(new CustomEvent('select-section', { detail: i, bubbles: true, composed: true }));
-                      this.requestUpdate();
-                    }}
-                  >
-                    <div style="flex: 1;">
-                      <div style="font-size: 15px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
-                      <div style="font-size: 11.5px; color: var(--cv-ink-muted);">${sec.desc}</div>
-                      <div class="section-chips" style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
-                        ${sec.order.map(idx => {
-                          const c = sec.progression.chords[idx];
-                          if (!c) return '';
-                          const role = roleForTension(c.tension || 0.1);
-                          return html`<div class="section-chip" style="width: 10px; height: 10px; background:${role.color}; border-radius:${Math.round(role.radius * 0.35)}px;" title="${c.name}"></div>`;
-                        })}
-                      </div>
+                  <div class="song-card" @click=${() => { this.activeSectionIdx = i; this.activeView = 'loop'; }}>
+                    <div style="display: flex; gap: 5px; margin-bottom: 6px;">
+                      ${sec.progression.chords.map(c => {
+                        const role = roleForTension(c.tension);
+                        return html`<span style="display:inline-block;width:8px;height:8px;border-radius:${Math.round(role.radius * 0.3)}px;background:${role.color};flex-shrink:0;"></span>`;
+                      })}
                     </div>
+                    <div style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
+                    <div style="font-size: 12px; color: var(--cv-ink-muted);">${sec.desc}</div>
                   </div>
                 `)}
-                <div class="add-sec-card" @click=${() => {
-                  if (this.progression) {
-                    const res = SongArranger.addSection(this.sections, this.progression);
-                    this.sections = res.sections;
-                    this.activeSectionIdx = res.activeIndex;
-                    this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }));
-                    this.requestUpdate();
-                  }
-                }}>
-                  + Add a related section
-                </div>
               </div>
             ` : html`
-              <div style="padding: 16px 4px 26px;">
-                <div style="background: var(--cv-surface); border-radius: 20px; padding: 15px 15px 17px;">
+              <div class="play-it-wrap" style="padding: 16px 4px 26px;">
+                <div style="background: var(--cv-surface); border-radius: 20px; padding: 15px 15px 17px; margin-bottom: 18px;">
                   <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.4px; color: var(--cv-label); text-transform: uppercase;">Instrument</div>
                   <div style="display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px;">
                     ${['Piano', 'Guitar', 'Ukulele'].map(inst => html`
@@ -4551,11 +2997,11 @@ export class LoopScreen extends LitElement {
                 </div>
 
                 ${this.playInstrument === 'Piano' ? html`
-                  <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 18px;">
+                  <div style="display: flex; flex-direction: column; gap: 12px;">
                     ${chords.map((ch, i) => this.renderPianoCard(ch, i))}
                   </div>
                 ` : html`
-                  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 18px;">
+                  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
                     ${chords.map((ch, i) => this.renderFretCard(ch, i, this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar'))}
                   </div>
                 `}
@@ -4563,59 +3009,17 @@ export class LoopScreen extends LitElement {
             `}
           </div>
 
-          <!-- Bottom Mobile Transport Bar -->
-          <div class="transport-footer" style="padding: 10px 16px;">
-            <button
-              class="play-circle-btn"
-              style="background: ${moodColor}; width: 42px; height: 42px;"
-              @click=${() => this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }))}
-              aria-label="${this.playing ? 'Pause' : 'Play'}"
-            >
-              ${this.playing ? html`
-                <svg width="14" height="16" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>
-              ` : html`
-                <svg width="15" height="17" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>
-              `}
-            </button>
-
-            <div class="progress-line-track">
-              <div
-                class="progress-line-fill ${this.snapProgress ? 'snap' : ''}"
-                style="width: 100%; transform: scaleX(${this.playing && chords.length ? (this.progressStep + 1) / chords.length : 0}); background: ${moodColor}; --progress-duration: ${AUTOPLAY_INTERVAL_MS}ms;"
-              ></div>
-            </div>
-
-            <button class="round-btn" style="width: 42px; height: 42px; flex-shrink: 0;" @click=${this.onReroll} aria-label="Try another progression">
-              <svg width="19" height="19" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
-            </button>
-            <button class="round-btn" style="width: 42px; height: 42px; flex-shrink: 0;" @click=${this.onBookmark} aria-label="Keep this loop">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
-            </button>
-            <button class="round-btn mobile-loops-toggle-btn ${this.libraryOpen ? 'active' : ''}" style="width: 42px; height: 42px; flex-shrink: 0; ${this.libraryOpen ? `--mood-color: ${moodColor};` : ''}" @click=${() => this.toggleLibrary()} aria-label="Your saved loops">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M19 4v10l-2.4-1.6L14.2 14V4z" fill="#2E271F" stroke="none"/></svg>
-            </button>
-            <button class="round-btn" style="width: 42px; height: 42px; flex-shrink: 0;" @click=${() => { this.shareOpen = true; }} aria-label="Share this loop">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
-            </button>
-
-            ${this.libraryOpen ? html`
-              <div class="sheet-scrim" style="z-index: 100; background: rgba(46, 39, 31, 0.2);" @click=${() => this.toggleLibrary(false)}></div>
-              <div class="library-popover-mobile">
-                ${this.renderLibraryPopoverContent(moodColor)}
-              </div>
-            ` : ''}
-          </div>
-
-          <!-- Mobile Slide-Up Substitution Sheet -->
+          <!-- Mobile Swap Sheet -->
           ${this.mobileSheetOpen && this.swapIndex !== null ? html`
             <div class="sheet-scrim" @click=${() => { this.mobileSheetOpen = false; }}></div>
-            <div class="mobile-sheet">
+            <div class="mobile-swap-sheet mobile-sheet">
+              <div class="sheet-handle"></div>
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <div style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">Swap Bar ${this.swapIndex + 1} (${currentSwapChord?.name})</div>
-                <button class="round-btn" style="width: 32px; height: 32px;" @click=${() => { this.mobileSheetOpen = false; }}>×</button>
+                <div class="sheet-title" style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">Swap Chord ${this.swapIndex + 1} (${currentSwapChord?.name})</div>
+                <button class="sheet-cancel-btn" style="padding: 4px 10px;" @click=${() => { this.mobileSheetOpen = false; }}>×</button>
               </div>
 
-              <div class="ab-box" style="margin-top: 0; margin-bottom: 14px;">
+              <div class="ab-box">
                 <div class="ab-compare-row">
                   <button
                     class="ab-card-half ${this.abSide === 'before' ? 'active-now' : ''}"
@@ -4632,31 +3036,23 @@ export class LoopScreen extends LitElement {
                     ?disabled=${!this.abPick}
                   >
                     <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Swap to</div>
-                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.45)'};">
-                      ${this.abPick?.chord || 'Pick one below'}
-                    </div>
+                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.45)'};"> ${this.abPick?.chord || 'Pick one below'}</div>
                   </button>
                 </div>
-
-                <!-- Loop Progression Player Strip -->
                 <div class="ab-loop-player-row">
                   <button
                     class="ab-play-toggle-btn"
                     style="background: ${this.abPlaying ? moodColor : '#E8D9C2'};"
-                    @click=${this.toggleAB}
+                    @click=${this.toggleABPlayback}
                     aria-label="${this.abPlaying ? 'Pause loop' : 'Play loop with swap preview'}"
                   >
-                    ${this.abPlaying ? html`
-                      <svg width="13" height="15" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>
-                    ` : html`
-                      <svg width="14" height="16" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>
-                    `}
+                    ${this.abPlaying ? html`<svg width="13" height="15" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>` : html`<svg width="14" height="16" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>`}
                   </button>
                   <div class="ab-cells-track">
                     ${chords.map((c, i) => {
                       const isSwapBar = i === this.swapIndex;
                       const cellLabel = isSwapBar && this.abSide === 'after' && this.abPick ? this.abPick.chord : c.name;
-                      const isCellActive = this.abPlaying && this.progressStep === i;
+                      const isCellActive = this.abPlaying && Math.floor(this.progressStep / 4) === i;
                       return html`
                         <button
                           class="ab-cell-item ${isCellActive ? 'active-step' : ''}"
@@ -4672,8 +3068,589 @@ export class LoopScreen extends LitElement {
                 </div>
               </div>
 
-              <!-- Custom Geometric Substitution Family Tabs -->
-              <div class="swap-tab-nav">
+              <div class="swap-family-tabs swap-tab-nav" style="margin-top: 14px;">
+                ${SWAP_FAMILIES.map(fam => {
+                  const on = this.activeSwapFamily === fam.key;
+                  const rr = roleForTension(fam.tension);
+                  const d = Math.round(rr.size * 0.34);
+                  const radius = Math.round(rr.radius * (d / rr.size));
+                  return html`
+                    <button
+                      class="swap-family-tab ${on ? 'active' : ''}"
+                      @click=${() => {
+                        this.activeSwapFamily = fam.key;
+                        this.requestUpdate();
+                      }}
+                    >
+                      ${fam.twoTone ? html`
+                        <span class="two-tone-swatch" style="box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};">
+                          <span style="width: 8px; height: 24px; border-radius: 3px; background: #9CC0EC;"></span>
+                          <span style="width: 8px; height: 24px; border-radius: 3px; background: #C9A9E0;"></span>
+                        </span>
+                      ` : html`
+                        <span
+                          class="family-shape"
+                          style="width: ${d}px; height: ${d}px; border-radius: ${radius}px; background: ${rr.color}; box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};"
+                        ></span>
+                      `}
+                      <span class="family-label ${on ? 'active' : ''}">${fam.label}</span>
+                    </button>
+                  `;
+                })}
+              </div>
+
+              ${activeBand ? html`
+                <div class="band-note-banner" style="background: ${activeBand.color}22; margin-top: 10px;">
+                  <span>Sorted for ${activeBand.name} — their moves first</span>
+                </div>
+              ` : ''}
+
+              <div class="alt-candidates-list" style="margin-top: 10px;">
+                ${familyRows.map(row => {
+                  const isBandTagged = !!activeBand && activeBand.hoist.includes(row.name);
+                  const rRole = roleForTension(row.tension);
+                  const shapeSize = Math.max(26, Math.min(36, Math.round(rRole.size * 0.32)));
+                  const shapeRadius = Math.round(rRole.radius * (shapeSize / rRole.size));
+                  return html`
+                    <div class="alt-chord-row alt-item-row ${this.abPick?.chord === row.name ? 'selected' : ''}" @click=${() => this.selectAlternative(row)}>
+                      <div class="alt-shape" style="width: ${shapeSize}px; height: ${shapeSize}px; border-radius: ${shapeRadius}px; background: ${rRole.color}; box-shadow: ${this.abPick?.chord === row.name ? `0 0 0 2px ${moodColor}` : 'none'}; flex-shrink: 0;"></div>
+                      <div style="flex: 1; min-width: 0;">
+                        <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
+                          <span style="font-size: 15px; font-weight: 800; color: var(--cv-ink);">${row.name}</span>
+                          ${this.showTheory && row.roman ? html`<span style="font-size: 11px; font-weight: 800; color: var(--cv-label);">${row.roman}</span>` : ''}
+                          ${isBandTagged ? html`<span class="band-move-tag" style="background: ${activeBand.color};">${activeBand.name} move</span>` : ''}
+                        </div>
+                        <div style="font-size: 11.5px; color: var(--cv-ink-muted);">${row.sub}</div>
+                      </div>
+                    </div>
+                  `;
+                })}
+              </div>
+
+              <div style="display: flex; gap: 10px; margin-top: 18px;">
+                <button class="sheet-cancel-btn" style="flex: 1;" @click=${() => { this.mobileSheetOpen = false; }}>Cancel</button>
+                <button class="accept-swap-btn" style="flex: 1; margin-top: 0;" @click=${this.confirmSwap} ?disabled=${!this.abPick}>
+                  ${this.abPick ? `Keep ${this.abPick.chord}` : 'Pick a chord'}
+                </button>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Mobile Detail Sheet -->
+          ${this.mobileDetailSheetOpen ? html`
+            <div class="sheet-scrim" @click=${() => { this.mobileDetailSheetOpen = false; }}></div>
+            <div class="mobile-detail-sheet mobile-swap-sheet">
+              <div class="sheet-handle"></div>
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px;">
+                <div>
+                  <div class="detail-kicker">Chord</div>
+                  <div class="detail-chord-name">${chords[this.detailIndex]?.name}</div>
+                  <div class="detail-chord-function">${chords[this.detailIndex]?.functionLabel}</div>
+                </div>
+                <button class="sheet-cancel-btn close-detail-btn" @click=${() => { this.mobileDetailSheetOpen = false; }}>×</button>
+              </div>
+
+              ${this.renderChordDetailContent(chords)}
+            </div>
+          ` : ''}
+
+          <!-- Mobile Bottom Transport Bar -->
+          <div class="mobile-bottom-transport-bar">
+            <button class="loop-play-btn" @click=${this.togglePlay} style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'}; flex-shrink: 0; min-height: 44px; padding: 9px 16px; border-radius: 100px; font-weight: 800; font-size: 12.5px; border: none; cursor: pointer;">
+              ${this.playing ? 'Stop' : 'Play loop'}
+            </button>
+            <div style="flex: 1 1 30px; min-width: 24px;">
+              <div style="display: flex; gap: 2px; align-items: flex-end; height: 16px;">
+                ${Array.from({ length: 16 }).map((_, i) => {
+                  const step = Math.floor(this.progressStep % (chords.length * 4));
+                  const isHead = this.playing && Math.floor((step / (chords.length * 4)) * 16) === i;
+                  const isBarStart = i % 4 === 0;
+                  return html`
+                    <div style="flex: 1; height: ${isHead ? 16 : (isBarStart ? 11 : 7)}px; border-radius: 2px; background: ${isHead ? '#F2735F' : (isBarStart ? 'rgba(46,39,31,0.3)' : 'rgba(46,39,31,0.14)')};"></div>
+                  `;
+                })}
+              </div>
+              <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--cv-label); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                ${this.playing ? `Bar ${Math.floor(this.progressStep / 4) + 1} · beat ${(this.progressStep % 4) + 1}` : `${chords.length} bars · stopped`}
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button aria-label="Try another progression" class="mobile-circle-btn" @click=${this.onReroll}>
+                <svg width="19" height="19" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
+              </button>
+              <button aria-label="Keep this loop" class="mobile-circle-btn" @click=${() => this.dispatchEvent(new CustomEvent('save-set', { bubbles: true, composed: true }))}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+              </button>
+              <button aria-label="Loops library" class="mobile-circle-btn" @click=${() => this.libraryOpen = !this.libraryOpen}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M19 4v10l-2.4-1.6L14.2 14V4z" fill="#2E271F" stroke="none"/></svg>
+              </button>
+              <button aria-label="Share this loop" class="mobile-circle-btn" @click=${() => this.shareOpen = true}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // DESKTOP STUDIO LAYOUT
+    return html`
+      ${activeBand ? html`
+        <div class="band-bar" style="background: ${activeBand.color}33;">
+          <div class="band-bar-content">
+            <span class="band-bar-kicker">Following Artist DNA</span>
+            <span class="band-bar-name" style="font-family: ${activeBand.font}; font-weight: ${activeBand.weight || 800};">
+              ${activeBand.name}
+            </span>
+            <span class="band-bar-trick">— ${this.showTheory ? activeBand.theory : activeBand.plain}</span>
+          </div>
+          <button class="band-bar-close" @click=${() => this.onBandClick(activeBand.name)} aria-label="Dismiss band DNA">×</button>
+        </div>
+      ` : ''}
+
+      <div class="studio-container" style="--mood-color: ${moodColor};">
+        <!-- 1. Left Narrow Rail (62px) -->
+        <nav class="rail-left" role="navigation">
+          <div class="rail-top">
+            <button
+              class="vibe-rail-btn rail-item vibe ${this.vibeOpen ? 'active' : ''}"
+              @click=${this.toggleVibe}
+              aria-label="Vibe, genre and mood"
+              title="Vibe, genre and mood"
+              style="background: ${moodColor};"
+            >
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M4.2 16.5l2.6-1.5M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="3.4"/>
+              </svg>
+            </button>
+            <div class="rail-label">Vibe</div>
+            <div class="rail-divider"></div>
+            <div class="vibe-summary-vertical">${this.getVibeSummary()}</div>
+          </div>
+
+          <div class="rail-bottom">
+            <button
+              class="loops-rail-btn library-toggle rail-item loops ${this.libraryOpen ? 'active' : ''}"
+              @click=${this.toggleLibrary}
+              aria-label="Your loops"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>
+              </svg>
+            </button>
+            <div class="rail-label">Loops</div>
+
+            ${this.libraryOpen ? html`
+              <div class="loops-popover-desktop library-popover">
+                ${this.renderLibraryPopoverContent(moodColor)}
+              </div>
+            ` : ''}
+          </div>
+        </nav>
+
+        <!-- Floating Vibe Popover (Desktop) -->
+        ${this.vibeOpen ? html`
+          <div class="vibe-popover-desktop">
+            <div class="popover-header">
+              <div class="popover-kicker">The Vibe</div>
+              <button class="close-popover-btn" @click=${this.toggleVibe} aria-label="Close">×</button>
+            </div>
+
+            <form class="popover-input-row" @submit=${this.onVibeSubmit}>
+              <input
+                type="text"
+                class="cv-vibe-input vibe-text-input"
+                .value=${this.freeText}
+                @input=${(e: Event) => { this.freeText = (e.target as HTMLInputElement).value; }}
+                placeholder=${this.vibeExamples[this.vibePlaceholderIdx]}
+              />
+              <button type="submit" class="vibe-submit-btn" style="background: ${moodColor};" aria-label="Generate loop from vibe">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+              </button>
+            </form>
+
+            <div class="popover-kicker spaced">Genre</div>
+            <div class="pills-group">
+              ${GENRE_PRIMARY.map(g => html`
+                <button class="pill ${this.progression?.genre === g ? 'active' : ''}" @click=${() => this.onGenreClick(g)}>${g}</button>
+              `)}
+            </div>
+
+            <div class="popover-kicker spaced">Mood</div>
+            <div class="pills-group">
+              ${MOOD_PRIMARY.map(m => {
+                const mCol = getMoodColor(m);
+                const isActive = this.progression?.mood === m;
+                return html`
+                  <button class="pill mood-pill ${isActive ? 'active' : ''}" style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}" @click=${() => this.onMoodClick(m)}>
+                    <span class="mood-badge" style="background: ${isActive ? 'rgba(46, 39, 31, 0.12)' : mCol + '33'};">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round"><path d="${MOOD_ICONS[m] || 'M12 4 a6.5 6.5 0 1 0 6.5 6.5'}"/></svg>
+                    </span>
+                    ${m}
+                  </button>
+                `;
+              })}
+            </div>
+
+            <div class="popover-kicker spaced" style="display:flex;align-items:baseline;gap:7px;">
+              <span>Band</span>
+              <span style="font-size:11px;font-weight:700;color:rgba(46,39,31,0.38);text-transform:lowercase;">optional</span>
+            </div>
+            <div class="pills-group">
+              ${BANDS.map(b => html`
+                <button class="pill ${this.selectedBand === b.name ? 'active' : ''}" style="font-family: ${b.font}; font-weight: ${b.weight || 800};" @click=${() => this.onBandClick(b.name)}>${b.name}</button>
+              `)}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 2. Center Stage (<main>) -->
+        <main class="stage-main">
+          <!-- Row 1: View Tabs -->
+          <div class="stage-top-bar">
+            <div class="view-tabs-bar">
+              <button class="view-tab ${this.activeView === 'loop' ? 'active' : ''}" @click=${() => { this.activeView = 'loop'; }}>Chords</button>
+              <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
+              <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
+            </div>
+          </div>
+
+          <!-- Row 2: Scrollable Stage Canvas -->
+          <div class="stage-scroll-canvas">
+            ${this.activeView === 'loop' ? html`
+              <div class="stage-card stage-panel">
+                <!-- Top Loop Play Strip -->
+                <div class="loop-strip-header">
+                  <button class="loop-play-btn play-circle-btn" @click=${this.togglePlay} style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'};">
+                    ${this.playing ? 'Stop' : 'Play loop'}
+                  </button>
+
+                  <div class="strip-timeline-wrap">
+                    <div class="strip-cells-bar loop-beat-cells">
+                      ${Array.from({ length: 16 }).map((_, i) => {
+                        const step = Math.floor(this.progressStep % (chords.length * 4));
+                        const isHead = this.playing && Math.floor((step / (chords.length * 4)) * 16) === i;
+                        const isBarStart = i % 4 === 0;
+                        return html`
+                          <div
+                            class="strip-cell beat-cell"
+                            style="height: ${isHead ? 20 : (isBarStart ? 13 : 8)}px; background: ${isHead ? '#F2735F' : (isBarStart ? 'rgba(46,39,31,0.3)' : 'rgba(46,39,31,0.14)')};"
+                          ></div>
+                        `;
+                      })}
+                    </div>
+                    <div class="strip-labels-row">
+                      <div class="strip-status-label">${this.playing ? `Bar ${Math.floor(this.progressStep / 4) + 1} · beat ${(this.progressStep % 4) + 1} of ${chords.length} bars` : `${chords.length} bars · stopped`}</div>
+                      <div class="strip-space-hint">Space plays the loop</div>
+                    </div>
+                  </div>
+
+                  <div class="loop-bar-chips-group">
+                    <div class="from-bar-label">From bar</div>
+                    <div class="loop-bar-chips">
+                      ${chords.map((_, i) => {
+                        const isCurrent = this.playing && Math.floor(this.progressStep / 4) === i;
+                        return html`
+                          <button
+                            class="strip-jump-chip"
+                            style="background: ${isCurrent ? moodColor : 'var(--cv-surface-2)'};"
+                            @click=${() => this.onJumpBar(i)}
+                            aria-label="Play loop from bar ${i + 1}"
+                          >${i + 1}</button>
+                        `;
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Pad Cells Grid -->
+                <div class="pad-cells-grid pad-cells-row">
+                  ${chords.map((c, i) => {
+                    const role = roleForTension(c.tension || 0.1);
+                    const isLit = this.activeIndex === i && this.playing;
+                    const isHeld = this.padFlash === i;
+                    const isSelected = this.swapIndex === i;
+
+                    return html`
+                      <div
+                        class="pad-cell chord-item-wrap ${isHeld ? 'pad-held' : ''} ${isSelected ? 'selected' : ''} ${isLit ? 'pad-lit' : ''}"
+                        style="background: ${role.color};"
+                        @pointerdown=${(e: PointerEvent) => this.handlePadPointerDown(e, i)}
+                        @pointerup=${() => this.handlePadPointerUp()}
+                        @pointercancel=${() => this.handlePadPointerUp()}
+                        @pointerleave=${() => this.handlePadPointerUp()}
+                        tabindex="0"
+                        role="button"
+                        aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || c.functionLabel} — press to play it; press nearer the top for a higher voicing"
+                      >
+                        <div class="zone-line-a ${this.lastPad?.idx === i && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
+                        <div class="zone-line-b ${this.lastPad?.idx === i && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
+
+                        <button
+                          class="pad-swap-btn quick-action-btn swap"
+                          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openSwap(i); }}
+                          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                          aria-label="Swap ${c.name}"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
+                        </button>
+
+                        <button
+                          class="pad-detail-btn"
+                          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openDetail(i); }}
+                          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                          aria-label="View voicing for ${c.name}"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.2 10-6.2 10 6.2 10 6.2-3.6 6.2-10 6.2-10-6.2z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                        </button>
+
+                        <div class="pad-top-row">
+                          <div class="pad-key-badge">${PAD_KEYS[i] || ''}</div>
+                          ${this.showTheory && c.roman ? html`<div class="pad-roman-badge">${c.roman}</div>` : ''}
+                        </div>
+
+                        <div class="pad-bottom-info">
+                          <div class="pad-role-label">${ROLE_SHORT[c.functionLabel] || c.functionLabel}</div>
+                          <div class="pad-chord-name">${c.name}</div>
+                          <div class="pad-meta-voicing">${this.lastPad?.idx === i ? (ZONE_NAMES[this.lastPad.zone] || this.lastPad.voicing) : ''}</div>
+                        </div>
+                      </div>
+                    `;
+                  })}
+                </div>
+
+                <!-- Playing Now Row -->
+                <div class="playing-now-row playing-now-banner">
+                  <div class="playing-now-kicker">Playing now</div>
+                  <div class="playing-now-chord">${this.lastPad ? chords[this.lastPad.idx]?.name : '—'}</div>
+                  <div class="playing-now-desc">
+                    ${this.lastPad ? `${this.lastPad.voicing} · velocity ${this.lastPad.vel}` : 'Press a chord — nearer the top of a card plays a higher voicing. Home-row keys A S D F play them too.'}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quick Controls Below Stage Card -->
+              <div class="stage-quick-controls">
+                <button class="instrument-chip" @click=${this.toggleInstrumentExpand}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
+                  ${this.instrument || 'Piano'} <span style="opacity:0.6;">⌄</span>
+                </button>
+                <button class="play-style-chip" @click=${this.togglePlayStyleExpand}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
+                  ${this.playStyle || 'Block chords'} <span style="opacity:0.6;">⌄</span>
+                </button>
+                <div class="quick-divider"></div>
+                <button class="tempo-chip" @click=${() => { this.tempoOpen = !this.tempoOpen; }}>${this.progression?.key || 'C'} · ${this.progression?.bpm || 84}</button>
+                <button class="feel-chip" @click=${() => { this.feelOpen = !this.feelOpen; }}>Feel &amp; tone</button>
+                <button class="bounce-btn" @click=${() => { this.bounceOpen = true; }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>
+                  Bounce
+                </button>
+              </div>
+
+              <!-- Instrument tray if expanded -->
+              ${this.expandedInstrument ? html`
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+                  ${USER_INSTRUMENTS.map(i => html`
+                    <button
+                      class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
+                      @click=${() => {
+                        this.instrument = i.name;
+                        playbackEngine.setInstrument(i.name);
+                        this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+                        this.expandedInstrument = false;
+                        this.requestUpdate();
+                      }}
+                    >
+                      <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
+                    </button>
+                  `)}
+                </div>
+              ` : ''}
+
+              <!-- Play style tray if expanded -->
+              ${this.expandedPlayStyle ? html`
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
+                  ${USER_PLAY_STYLES.map(s => html`
+                    <button
+                      class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
+                      @click=${() => {
+                        this.playStyle = s.name;
+                        playbackEngine.setPlayStyle(s.name);
+                        this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
+                        this.expandedPlayStyle = false;
+                        this.requestUpdate();
+                      }}
+                    >
+                      <span style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${s.name}
+                    </button>
+                  `)}
+                </div>
+              ` : ''}
+            ` : this.activeView === 'song' ? html`
+              <div class="song-track-list">
+                <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); max-width: 560px;">
+                  Each section reuses the loop, related but never identical. Press play below to hear the whole thing.
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 18px; max-width: 620px;">
+                  ${this.sections.map((sec, i) => html`
+                    <div
+                      class="song-card"
+                      style="display: flex; align-items: center; gap: 16px; background: var(--cv-surface); border-radius: 16px; padding: 14px 18px; cursor: pointer;"
+                      @click=${() => { this.activeSectionIdx = i; this.activeView = 'loop'; }}
+                    >
+                      <div style="font-size: 11px; font-weight: 800; color: var(--cv-label);">Section ${i + 1}</div>
+                      <div style="flex: 1; min-width: 0;">
+                        <div style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
+                        <div style="font-size: 12px; color: var(--cv-ink-muted);">${sec.desc}</div>
+                      </div>
+                      <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                        ${sec.progression.chords.map(c => {
+                          const role = roleForTension(c.tension);
+                          return html`<span style="display:inline-block;width:10px;height:10px;border-radius:${Math.round(role.radius * 0.35)}px;background:${role.color};flex-shrink:0;"></span>`;
+                        })}
+                      </div>
+                    </div>
+                  `)}
+                </div>
+              </div>
+            ` : html`
+              <div class="play-it-wrap" style="padding: 18px 24px 32px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
+                  <div style="font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; color: var(--cv-label); text-transform: uppercase;">Piano</div>
+                  <div style="display: flex; align-items: center; gap: 10px; cursor: pointer;" @click=${() => { this.showDegrees = !this.showDegrees; }}>
+                    <div style="width: 36px; height: 20px; border-radius: 100px; background: ${this.showDegrees ? moodColor : 'rgba(46,39,31,0.2)'}; padding: 2px; display: flex; align-items: center; transition: background 150ms ease;">
+                      <div style="width: 16px; height: 16px; border-radius: 50%; background: #FFF; transform: ${this.showDegrees ? 'translateX(16px)' : 'translateX(0)'}; transition: transform 150ms ease;"></div>
+                    </div>
+                    <div style="font-size: 13.5px; font-weight: 700; color: var(--cv-ink-muted);">Scale degrees</div>
+                  </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;">
+                  ${chords.map((ch, i) => this.renderPianoCard(ch, i))}
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 14px; margin-top: 24px; margin-bottom: 14px; flex-wrap: wrap;">
+                  <div style="display: flex; gap: 4px; background: var(--cv-surface-2); border-radius: 100px; padding: 4px;">
+                    ${['Guitar', 'Ukulele'].map(inst => html`
+                      <button
+                        style="border: none; font-family: inherit; min-height: 38px; padding: 0 16px; border-radius: 100px; cursor: pointer; font-size: 13px; font-weight: 800; background: ${(this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar') === inst ? moodColor : 'transparent'}; color: ${(this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar') === inst ? '#2E271F' : 'rgba(46,39,31,0.55)'}; transition: background 200ms var(--cv-ease), color 200ms ease;"
+                        @click=${() => { this.playInstrument = inst as PlayInstrument; }}
+                      >${inst}</button>
+                    `)}
+                  </div>
+                  <div style="font-size: 12.5px; line-height: 1.6; color: #8A7C6B; flex: 1; min-width: 200px;">Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.</div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;">
+                  ${chords.map((ch, i) => this.renderFretCard(ch, i, this.playInstrument === 'Ukulele' ? 'Ukulele' : 'Guitar'))}
+                </div>
+              </div>
+            `}
+          </div>
+
+          <!-- Row 3: Bottom Bar -->
+          <div class="stage-bottom-bar">
+            <div class="length-stepper">
+              <button class="stepper-btn" @click=${this.onDecLength} aria-label="Fewer chords">−</button>
+              <span class="stepper-count">${chords.length} chords</span>
+              <button class="stepper-btn" @click=${this.onIncLength} aria-label="More chords">+</button>
+            </div>
+            <button class="try-another-btn dice-reroll-btn" @click=${this.onReroll} aria-label="Try another progression">
+              <svg width="15" height="15" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
+              Try another
+            </button>
+          </div>
+        </main>
+
+        <!-- 3. Right Inspector (<aside>) -->
+        <aside class="inspector-right sidebar-right">
+          ${this.detailOpen ? html`
+            <!-- Chord Detail View -->
+            <div class="inspector-header">
+              <div style="display: flex; align-items: flex-start; gap: 13px;">
+                <div class="chord-shape-badge" style="background: ${roleForTension(chords[this.detailIndex]?.tension || 0.1).color};"></div>
+                <div style="flex: 1; min-width: 0;">
+                  <div class="detail-kicker">Chord</div>
+                  <div class="detail-chord-name">${chords[this.detailIndex]?.name}</div>
+                  <div class="detail-chord-function">${chords[this.detailIndex]?.functionLabel}</div>
+                </div>
+                <button class="close-detail-btn" @click=${this.clearSelection} aria-label="Close chord info">×</button>
+              </div>
+            </div>
+
+            <div class="inspector-body">
+              ${this.renderChordDetailContent(chords)}
+            </div>
+          ` : this.swapIndex !== null ? html`
+            <!-- Chord Swap View -->
+            <div class="inspector-header">
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+                <div>
+                  <div class="swap-kicker">Swapping Bar ${this.swapIndex + 1}</div>
+                  <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 4px;">
+                    <span class="swap-chord-name">${currentSwapChord?.name || ''}</span>
+                    ${this.showTheory && currentSwapChord?.roman ? html`<span class="swap-roman">${currentSwapChord.roman}</span>` : ''}
+                    <span class="swap-role">${ROLE_PLAIN[currentSwapChord?.functionLabel || ''] || ''}</span>
+                  </div>
+                </div>
+                <button class="close-swap-btn" @click=${this.clearSelection} aria-label="Close chord inspector">×</button>
+              </div>
+
+              <div class="ab-box">
+                <div class="ab-compare-row">
+                  <button
+                    class="ab-card-half ${this.abSide === 'before' ? 'active-now' : ''}"
+                    style="background: ${this.abSide === 'before' ? '#5E5142' : '#F1E4D2'}; color: ${this.abSide === 'before' ? '#FBF3E6' : '#2E271F'};"
+                    @click=${() => this.setABSide('before')}
+                  >
+                    <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Now</div>
+                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px;">${currentSwapChord?.name || ''}</div>
+                  </button>
+                  <button
+                    class="ab-card-half ${this.abSide === 'after' ? 'active-swap' : ''}"
+                    style="background: ${this.abPick ? (this.abSide === 'after' ? moodColor : '#F1E4D2') : 'transparent'}; color: #2E271F; border: ${this.abPick ? 'none' : '1.5px dashed rgba(46,39,31,0.22)'};"
+                    @click=${() => this.setABSide('after')}
+                    ?disabled=${!this.abPick}
+                  >
+                    <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Swap to</div>
+                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.45)'};"> ${this.abPick?.chord || 'Pick one below'}</div>
+                  </button>
+                </div>
+                <div class="ab-loop-player-row">
+                  <button
+                    class="ab-play-toggle-btn"
+                    style="background: ${this.abPlaying ? moodColor : '#E8D9C2'};"
+                    @click=${this.toggleABPlayback}
+                    aria-label="${this.abPlaying ? 'Pause loop' : 'Play loop with swap preview'}"
+                  >
+                    ${this.abPlaying ? html`<svg width="13" height="15" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>` : html`<svg width="14" height="16" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>`}
+                  </button>
+                  <div class="ab-cells-track">
+                    ${chords.map((c, idx) => {
+                      const isSwapBar = idx === this.swapIndex;
+                      const cellLabel = isSwapBar && this.abSide === 'after' && this.abPick ? this.abPick.chord : c.name;
+                      const isCellActive = this.abPlaying && Math.floor(this.progressStep / 4) === idx;
+                      return html`
+                        <button
+                          class="ab-cell-item ${isCellActive ? 'active-step' : ''}"
+                          style="background: ${isSwapBar && this.abSide === 'after' && this.abPick ? moodColor : '#F1E4D2'}; opacity: ${isSwapBar ? 1 : 0.65};"
+                          @click=${() => this.onAbCellClick(idx)}
+                          aria-label="Preview ${cellLabel} in bar ${idx + 1}"
+                        >
+                          ${cellLabel}
+                        </button>
+                      `;
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <button class="accept-swap-btn" @click=${this.confirmSwap} ?disabled=${!this.abPick}>
+                ${this.abPick ? `Keep ${this.abPick.chord}` : 'Pick a chord below'}
+              </button>
+            </div>
+
+            <div class="inspector-body">
+              <div class="swap-family-tabs swap-tab-nav">
                 ${SWAP_FAMILIES.map(fam => {
                   const on = this.activeSwapFamily === fam.key;
                   const rr = roleForTension(fam.tension);
@@ -4711,89 +3688,86 @@ export class LoopScreen extends LitElement {
               ` : ''}
 
               ${familyNote ? html`
-                <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-bottom: 12px; padding: 0 4px;">
+                <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-bottom: 12px;">
                   ${familyNote}
                 </div>
               ` : ''}
 
-              <div style="display: flex; flex-direction: column; gap: 6px;">
-                ${familyRows.length ? familyRows.map(r => {
-                  const isSelected = this.abPick?.chord === r.name;
-                  const rRole = roleForTension(r.tension);
+              <div class="alt-candidates-list">
+                ${familyRows.map(row => {
+                  const isBandTagged = !!activeBand && activeBand.hoist.includes(row.name);
+                  const rRole = roleForTension(row.tension);
                   const shapeSize = Math.max(28, Math.min(38, Math.round(rRole.size * 0.32)));
                   const shapeRadius = Math.round(rRole.radius * (shapeSize / rRole.size));
-                  const isBandTagged = !!activeBand && activeBand.hoist.includes(r.name);
-
                   return html`
-                    <div
-                      class="alt-item-row ${isSelected ? 'selected' : ''}"
-                      @click=${() => this.onAltAudition({
-                        name: r.name,
-                        chord: r.chord,
-                        sub: r.sub,
-                        functionCaption: r.sub,
-                      })}
-                    >
-                      <div style="width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                        <div
-                          style="width: ${shapeSize}px; height: ${shapeSize}px; border-radius: ${shapeRadius}px; background: ${rRole.color}; box-shadow: ${isSelected ? `0 0 0 2px ${moodColor}` : 'none'};"
-                        ></div>
-                      </div>
-
+                    <div class="alt-chord-row alt-item-row ${this.abPick?.chord === row.name ? 'selected' : ''}" @click=${() => this.selectAlternative(row)}>
+                      <div class="alt-shape" style="width: ${shapeSize}px; height: ${shapeSize}px; border-radius: ${shapeRadius}px; background: ${rRole.color}; box-shadow: ${this.abPick?.chord === row.name ? `0 0 0 2px ${moodColor}` : 'none'}; flex-shrink: 0;"></div>
                       <div style="flex: 1; min-width: 0;">
                         <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
-                          <span style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink);">${r.name}</span>
-                          ${this.showTheory && r.roman ? html`
-                            <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.8px; color: #7A5C88;">${r.roman}</span>
-                          ` : ''}
-                          ${isBandTagged ? html`
-                            <span class="band-move-tag" style="background: ${activeBand.color};">${activeBand.name} move</span>
-                          ` : ''}
+                          <span style="font-size: 15px; font-weight: 800; color: #2E271F;">${row.name}</span>
+                          ${this.showTheory && row.roman ? html`<span style="font-size: 11px; font-weight: 800; color: var(--cv-label);">${row.roman}</span>` : ''}
+                          ${isBandTagged ? html`<span class="band-move-tag" style="background: ${activeBand.color};">${activeBand.name} move</span>` : ''}
                         </div>
-                        <div style="font-size: 11px; color: var(--cv-ink-muted); margin-top: 2px;">${r.sub}</div>
-                        ${this.showTheory && r.notes && r.notes.length ? html`
+                        <div style="font-size: 11.5px; color: var(--cv-ink-muted); margin-top: 2px;">${row.sub}</div>
+                        ${this.showTheory && row.notes && row.notes.length ? html`
                           <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.4px; color: var(--cv-label); margin-top: 2px;">
-                            ${r.notes.join(' · ')}
+                            ${row.notes.join(' · ')}
                           </div>
                         ` : ''}
                       </div>
-
-                      <button
-                        class="alt-play-btn"
-                        style="background: ${isSelected && this.abSide === 'after' ? moodColor : '#DCEAF9'}; width: 30px; height: 30px;"
-                        aria-label="Audition ${r.name}"
-                      >
-                        ${isSelected && this.abSide === 'after' ? '❚❚' : '▶'}
-                      </button>
+                      <button class="alt-play-chip alt-play-btn" @click=${(e: MouseEvent) => { e.stopPropagation(); this.previewAlternative(row.name); }}>Hear</button>
                     </div>
                   `;
-                }) : html`
-                  <div style="padding: 12px; font-size: 12.5px; color: var(--cv-ink-muted);">Loading substitutions...</div>
-                `}
+                })}
               </div>
-
-              ${this.abPick ? html`
-                <button class="accept-swap-btn" style="background: ${moodColor}; margin-top: 14px;" @click=${this.onConfirmSwap}>
-                  Keep ${this.abPick.chord}
-                </button>
-              ` : ''}
             </div>
-          ` : ''}
-        </div>
-      `}
+          ` : html`
+            <!-- Idle Harmonic Arc View -->
+            <div class="inspector-header">
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;">
+                <div>
+                  <div class="inspector-kicker">This loop</div>
+                  <div class="arc-title-text">${arcTitle}</div>
+                </div>
+                <button class="theory-toggle-btn" @click=${this.onTheoryToggle} aria-label="Show the music theory">
+                  <span style="font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted);">Theory</span>
+                  <span class="toggle-track ${this.showTheory ? 'active' : ''}">
+                    <span class="toggle-knob"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
 
-      <!-- Share Modal -->
-      <share-modal
-        .open=${this.shareOpen}
-        .progression=${this.progression}
-        .order=${this.order}
-        .instrument=${this.instrument || this.playInstrument}
-        .playStyle=${this.playStyle}
-        @close=${() => { this.shareOpen = false; }}
-      ></share-modal>
+            <div class="inspector-body">
+              <div class="arc-bars-row">
+                ${chords.map((c, i) => {
+                  const r = roleForTension(c.tension || 0.1);
+                  const barH = Math.round(18 + (c.tension || 0.1) * 62);
+                  return html`
+                    <button class="arc-bar-col" @click=${() => this.openSwap(i)} aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || ''}">
+                      <div class="arc-bar-fill-wrap">
+                        <div class="arc-bar-fill" style="height: ${barH}px; background: ${r.color};"></div>
+                      </div>
+                      <div class="arc-bar-name">${c.name}</div>
+                      <div class="arc-bar-feel">${ROLE_PLAIN[c.functionLabel] || ''}</div>
+                    </button>
+                  `;
+                })}
+              </div>
+              <div class="arc-caption">Taller means more unresolved.</div>
+              <div class="arc-sentence-text">${arcSentence}</div>
+              ${this.showTheory ? html`
+                <div class="arc-theory-note">${this.progression?.key} ${this.progression?.scaleType}: ${chords.map(c => c.roman).join(' – ')}</div>
+              ` : ''}
 
-      <!-- Upgraded Loops Drawer (Desktop slide-over & Mobile bottom sheet) -->
-      ${this.renderLoopsDrawer(moodColor)}
+              <div class="inspector-tip-box">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${moodColor}" stroke-width="2.4" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
+                <div>Press a chord to hear it — the arrows on a card show what else could go there.</div>
+              </div>
+            </div>
+          `}
+        </aside>
+      </div>
     `;
   }
 }
