@@ -425,6 +425,12 @@ export class ChromaChordsApp extends LitElement {
     this.length = this.progression.chords.length;
     this.showTheory = p.showTheory ?? this.showTheory;
     
+    if (p.barsPerChord) {
+      playbackEngine.setBarsPerChord(p.barsPerChord);
+    }
+    if (p.feel) {
+      playbackEngine.setFeelSettings(p.feel);
+    }
     playbackEngine.setProgression(this.progression, this.order);
     this.setScreen('loop');
     this.sections = SongArranger.createInitialSong(this.progression, this.order);
@@ -584,6 +590,9 @@ export class ChromaChordsApp extends LitElement {
     const existing = projectStorage.getProjects().find(p => p.id === id);
     const name = customName || existing?.name || `Progression in ${this.progression.key} ${this.progression.scaleType}`;
 
+    const feelSettings = playbackEngine.getFeelSettings();
+    const barsPerChord = playbackEngine.getBarsPerChord();
+
     const project: ProjectData = {
       id,
       name,
@@ -595,6 +604,14 @@ export class ChromaChordsApp extends LitElement {
       bpm: this.progression.bpm,
       chords: this.progression.chords as unknown as ProjectChord[],
       showTheory: this.showTheory,
+      barsPerChord,
+      feel: {
+        swing: feelSettings.swing ?? 0,
+        spread: feelSettings.spread ?? 50,
+        density: feelSettings.density ?? 50,
+        tone: feelSettings.tone ?? 'Warm',
+        humanState: feelSettings.humanState,
+      },
     };
     projectStorage.saveProject(project);
     if (customName) {

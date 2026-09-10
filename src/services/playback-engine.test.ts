@@ -9,6 +9,11 @@ vi.mock('tone', () => ({
   FMSynth: class { triggerAttackRelease() {} },
   Reverb: class { connect() { return this; } },
   Chorus: class { start() { return this; } connect() { return this; } },
+  Gain: class { connect() { return this; } gain = { rampTo: vi.fn(), value: 1 }; },
+  Filter: class { connect() { return this; } },
+  EQ3: class { connect() { return this; } },
+  Vibrato: class { connect() { return this; } },
+  Distortion: class { connect() { return this; } },
   loaded: () => Promise.resolve(),
   start: () => Promise.resolve(),
   now: () => 0,
@@ -184,6 +189,32 @@ describe('PlaybackEngine Deep Module', () => {
     expect(barResult[1].pos).toBe(0.25);
     expect(barResult[2].pos).toBe(0.5);
     expect(barResult[3].pos).toBe(0.75);
+  });
+
+  describe('Dynamic BPM and Step Interval Calculation', () => {
+    it('calculates step interval dynamically from BPM and Bars per chord', () => {
+      engine.setProgression({ ...sampleProgression, bpm: 120 });
+      engine.setBarsPerChord(1);
+      // 1 bar at 120 bpm = 240000 / 120 = 2000 ms
+      expect(engine.getStepIntervalMs()).toBe(2000);
+
+      engine.setBarsPerChord(2);
+      // 2 bars at 120 bpm = 4000 ms
+      expect(engine.getStepIntervalMs()).toBe(4000);
+
+      engine.setBpm(60);
+      // 2 bars at 60 bpm = 2 * (240000 / 60) = 8000 ms
+      expect(engine.getStepIntervalMs()).toBe(8000);
+    });
+
+    it('updates and retrieves feel settings', () => {
+      engine.setFeelSettings({ swing: 25, spread: 75, density: 75, tone: 'Glassy' });
+      const feel = engine.getFeelSettings();
+      expect(feel.swing).toBe(25);
+      expect(feel.spread).toBe(75);
+      expect(feel.density).toBe(75);
+      expect(feel.tone).toBe('Glassy');
+    });
   });
 });
 

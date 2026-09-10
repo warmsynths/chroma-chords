@@ -25,6 +25,120 @@ function getLimiter(): Tone.Compressor {
   return limiter;
 }
 
+export interface FeelSettings {
+  swing?: number;
+  spread?: number;
+  density?: number;
+  tone?: string;
+  humanState?: any;
+}
+
+let activeToneName = 'Warm';
+let masterInputGain: Tone.Gain | null = null;
+let warmFilter: Tone.Filter | null = null;
+let warmGain: Tone.Gain | null = null;
+let glassyEq: Tone.EQ3 | null = null;
+let glassyChorus: Tone.Chorus | null = null;
+let glassyGain: Tone.Gain | null = null;
+let dustyFilter: Tone.Filter | null = null;
+let dustyVibrato: Tone.Vibrato | null = null;
+let dustyDist: Tone.Distortion | null = null;
+let dustyGain: Tone.Gain | null = null;
+
+export function initToneRack(): Tone.Gain {
+  if (!masterInputGain) {
+    masterInputGain = new Tone.Gain(1);
+    const dest = getLimiter();
+
+    // 1. Warm Chain: Low-pass filter (3200Hz) -> warm gain
+    warmFilter = new Tone.Filter({
+      frequency: 3200,
+      type: 'lowpass',
+      rolloff: -12,
+    });
+    warmGain = new Tone.Gain(1);
+    warmFilter.connect(warmGain);
+    warmGain.connect(dest);
+    masterInputGain.connect(warmFilter);
+
+    // 2. Glassy Chain: High shelf EQ boost + subtle Chorus shimmer -> glassy gain
+    glassyEq = new Tone.EQ3({
+      high: 3.5,
+      mid: 0,
+      low: -0.5,
+      highFrequency: 4500,
+    });
+    glassyChorus = new Tone.Chorus({
+      frequency: 1.5,
+      delayTime: 3.0,
+      depth: 0.35,
+      wet: 0.3,
+    });
+    try { glassyChorus.start(); } catch {}
+    glassyGain = new Tone.Gain(0);
+    glassyEq.connect(glassyChorus);
+    glassyChorus.connect(glassyGain);
+    glassyGain.connect(dest);
+    masterInputGain.connect(glassyEq);
+
+    // 3. Dusty Chain: Band-pass (1800Hz) + Tape wow/flutter Vibrato + subtle Saturation -> dusty gain
+    dustyFilter = new Tone.Filter({
+      frequency: 1800,
+      type: 'bandpass',
+      Q: 0.8,
+    });
+    dustyVibrato = new Tone.Vibrato({
+      frequency: 0.5,
+      depth: 0.1,
+      wet: 0.4,
+    });
+    dustyDist = new Tone.Distortion({
+      distortion: 0.1,
+      wet: 0.15,
+    });
+    dustyGain = new Tone.Gain(0);
+    dustyFilter.connect(dustyVibrato);
+    dustyVibrato.connect(dustyDist);
+    dustyDist.connect(dustyGain);
+    dustyGain.connect(dest);
+    masterInputGain.connect(dustyFilter);
+  }
+  return masterInputGain;
+}
+
+export function setMasterTone(tone: string): void {
+  initToneRack();
+  const clean = tone ? tone.toLowerCase().trim() : 'warm';
+  activeToneName = clean === 'glassy' ? 'Glassy' : clean === 'dusty' ? 'Dusty' : 'Warm';
+
+  const rampTime = 0.05;
+  const now = Tone.now();
+
+  try {
+    if (warmGain && glassyGain && dustyGain) {
+      if (activeToneName === 'Warm') {
+        warmGain.gain.rampTo(1, rampTime, now);
+        glassyGain.gain.rampTo(0, rampTime, now);
+        dustyGain.gain.rampTo(0, rampTime, now);
+      } else if (activeToneName === 'Glassy') {
+        warmGain.gain.rampTo(0, rampTime, now);
+        glassyGain.gain.rampTo(1, rampTime, now);
+        dustyGain.gain.rampTo(0, rampTime, now);
+      } else if (activeToneName === 'Dusty') {
+        warmGain.gain.rampTo(0, rampTime, now);
+        glassyGain.gain.rampTo(0, rampTime, now);
+        dustyGain.gain.rampTo(1, rampTime, now);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to ramp master tone:', e);
+  }
+}
+
+export function getMasterTone(): string {
+  return activeToneName;
+}
+
 function getSampler(): Tone.Sampler {
   if (!sampler) {
     sampler = new Tone.Sampler({
@@ -52,7 +166,7 @@ function getSampler(): Tone.Sampler {
       onerror: (err) => {
         console.warn("Failed to load Rhodes piano sampler:", err);
       }
-    }).connect(getLimiter());
+    }).connect(initToneRack());
   }
   return sampler;
 }
@@ -60,7 +174,7 @@ function getSampler(): Tone.Sampler {
 export type InstrumentId = 'rhodes' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab' | 'epiano' | 'guitar' | 'bell';
 
 function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
-  const l = getLimiter();
+  const l = initToneRack();
   switch (instrument) {
     case 'organ':
       if (!organ) {
@@ -762,6 +876,38 @@ export function playChord(
   }
 }
 
+export function applyDensityToNotes(noteNames: string[], density: number): string[] {
+  if (!Array.isArray(noteNames) || noteNames.length === 0) return [];
+  if (noteNames.length <= 1) return noteNames;
+
+  // Sparse (<= 25): Root + 5th / 3rd essential interval
+  if (density <= 25) {
+    if (noteNames.length <= 2) return noteNames;
+    return [noteNames[0], noteNames[noteNames.length - 1]];
+  }
+
+  // Simple (26 - 55): Standard 3-4 note voicing
+  if (density <= 55) {
+    if (noteNames.length <= 4) return noteNames;
+    return noteNames.slice(0, 4);
+  }
+
+  // Full (56 - 80): Full voicing with extensions and bass root
+  if (density <= 80) {
+    return noteNames;
+  }
+
+  // Busy (> 80): Multi-octave spread with upper doubling
+  const doubled = [...noteNames];
+  const topNote = noteNames[noteNames.length - 1];
+  const match = topNote.match(/^([A-G]#?)(-?\d+)$/);
+  if (match) {
+    const oct = parseInt(match[2], 10);
+    doubled.push(`${match[1]}${oct + 1}`);
+  }
+  return doubled;
+}
+
 /**
  * Plays a chord using the voice and humanize feel mapped to the given genre
  * (see GENRE_INSTRUMENT/GENRE_HUMANIZE) instead of always using the flat Rhodes hit.
@@ -769,7 +915,15 @@ export function playChord(
 export function playChordForGenre(
   noteNames: string[],
   genre: string,
-  opts?: { bpm?: number; duration?: number; instrument?: string; playStyle?: string; customConfig?: Record<string, unknown>; velocity?: number }
+  opts?: {
+    bpm?: number;
+    duration?: number;
+    instrument?: string;
+    playStyle?: string;
+    customConfig?: Record<string, unknown>;
+    velocity?: number;
+    feelSettings?: FeelSettings;
+  }
 ): void {
   const safeGenre = (genre === 'Unknown' || !genre) ? 'Pop' : genre;
   // User overrides (from the Instrument/Play style pickers) win over the genre's defaults —
@@ -780,9 +934,35 @@ export function playChordForGenre(
   const instrument = userInstrument?.instrument ?? GENRE_INSTRUMENT[safeGenre] ?? 'rhodes';
   const profile = GENRE_HUMANIZE[safeGenre] || {};
   const stylePatch = (userPlayStyle?.patch ?? {}) as { durationMultiplier?: number; [k: string]: unknown };
+
+  // Apply tone if provided
+  if (opts?.feelSettings?.tone) {
+    setMasterTone(opts.feelSettings.tone);
+  }
+
+  // Calculate feel overrides
+  const feelPatch: Record<string, unknown> = {};
+  if (opts?.feelSettings) {
+    const { spread, swing, humanState: customHuman } = opts.feelSettings;
+    if (customHuman) {
+      Object.assign(feelPatch, customHuman);
+    } else {
+      if (typeof spread === 'number') {
+        // Map 0-100 to 0.05 - 1.6
+        feelPatch.spread = parseFloat(((spread / 100) * 1.5).toFixed(2));
+      }
+      if (typeof swing === 'number') {
+        // Map swing to microTiming and humanVariance
+        feelPatch.microTiming = parseFloat(((swing / 100) * 0.9).toFixed(2));
+        feelPatch.humanVariance = parseFloat(((swing / 100) * 0.6).toFixed(2));
+      }
+    }
+  }
+
   const humanState = {
     ...profile,
     ...stylePatch,
+    ...feelPatch,
     bpm: opts?.bpm ?? profile.bpm ?? 90,
     ...(typeof opts?.velocity === 'number' ? { velocity: opts.velocity } : {}),
   };
@@ -790,7 +970,11 @@ export function playChordForGenre(
   const baseDuration = opts?.duration ?? profile.duration ?? 0.9;
   const duration = stylePatch.durationMultiplier ? baseDuration * stylePatch.durationMultiplier : baseDuration;
 
-  playChord(noteNames, duration, humanState, instrument, opts?.customConfig);
+  // Apply density filtering to notes
+  const density = opts?.feelSettings?.density ?? 50;
+  const processedNotes = applyDensityToNotes(noteNames, density);
+
+  playChord(processedNotes, duration, humanState, instrument, opts?.customConfig);
 }
 
 /**

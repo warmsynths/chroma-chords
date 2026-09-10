@@ -2,7 +2,8 @@ import * as Tone from 'tone';
 import { Progression, ChordBlock } from './chord-engine';
 import {
   USER_INSTRUMENTS, USER_PLAY_STYLES, GENRE_HUMANIZE, GENRE_INSTRUMENT, InstrumentId,
-  arpRateToSeconds, expandNotesAcrossOctaves, orderNotesForArp
+  arpRateToSeconds, expandNotesAcrossOctaves, orderNotesForArp,
+  FeelSettings, applyDensityToNotes,
 } from './audio-service';
 
 export interface ScheduledNoteEvent {
@@ -32,15 +33,16 @@ export function noteToMidiNumber(noteStr: string): number {
 export function generateScheduledEvents(
   progression: Progression,
   order?: number[],
-  playStyleName?: string | null
+  playStyleName?: string | null,
+  barsPerChord = 1,
+  feelSettings?: FeelSettings
 ): ScheduledNoteEvent[] {
   const chordsToExport: ChordBlock[] = (order && order.length > 0)
     ? order.map(i => progression.chords[i]).filter((c): c is ChordBlock => Boolean(c))
     : progression.chords;
 
   const bpm = progression.bpm || 120;
-  // Chord step pace in app: AUTOPLAY_INTERVAL_MS = 1.7s
-  const stepDuration = 1.7;
+  const stepDuration = (barsPerChord * 240) / bpm;
 
   const userPlayStyle = playStyleName
     ? USER_PLAY_STYLES.find(p => p.name.toLowerCase() === playStyleName.toLowerCase())
@@ -48,16 +50,30 @@ export function generateScheduledEvents(
 
   const profile = GENRE_HUMANIZE[progression.genre] || {};
   const stylePatch = (userPlayStyle?.patch ?? {}) as Record<string, any>;
-  const humanState = { ...profile, ...stylePatch, bpm };
+  const humanState = { ...profile, ...stylePatch, bpm, ...(feelSettings?.humanState ?? {}) };
 
   const baseDuration = profile.duration ?? 0.9;
   const duration = stylePatch.durationMultiplier ? baseDuration * stylePatch.durationMultiplier : baseDuration;
 
+  const effectiveSpread = feelSettings?.humanState?.strum !== undefined
+    ? (feelSettings.humanState.strum / 100) * 0.3
+    : (feelSettings?.spread !== undefined
+        ? (feelSettings.spread / 100) * 0.3
+        : (humanState.spread ?? 0));
+
+  const effectiveSwing = feelSettings?.humanState?.swing !== undefined
+    ? feelSettings.humanState.swing
+    : (feelSettings?.swing ?? 0);
+
   const events: ScheduledNoteEvent[] = [];
 
   chordsToExport.forEach((chord, barIdx) => {
-    const barStartTime = barIdx * stepDuration;
-    const rawNotes = chord.notes && chord.notes.length > 0 ? chord.notes : ['C', 'E', 'G'];
+    const swingSec = (effectiveSwing / 100) * 0.04 * (barIdx % 2 === 1 ? 1 : 0);
+    const barStartTime = barIdx * stepDuration + swingSec;
+    let rawNotes = chord.notes && chord.notes.length > 0 ? chord.notes : ['C', 'E', 'G'];
+    if (feelSettings?.density !== undefined) {
+      rawNotes = applyDensityToNotes(rawNotes, feelSettings.density);
+    }
     const pitchedNotes = rawNotes.map(n => `${n}4`);
 
     if (humanState.arpMode && humanState.arpMode !== 'off') {
@@ -81,9 +97,8 @@ export function generateScheduledEvents(
         });
       });
     } else {
-      const spread = humanState.spread ?? 0;
       pitchedNotes.forEach((noteName, index) => {
-        const stagger = index * spread * 0.1;
+        const stagger = index * effectiveSpread * 0.1;
         const startTime = barStartTime + stagger;
         events.push({
           note: noteName,
@@ -123,12 +138,14 @@ interface MidiRawEvent {
 export function generateMidiBuffer(
   progression: Progression,
   order?: number[],
-  playStyleName?: string | null
+  playStyleName?: string | null,
+  barsPerChord = 1,
+  feelSettings?: FeelSettings
 ): Uint8Array {
   const bpm = progression.bpm || 120;
   const ticksPerQuarter = 480;
 
-  const scheduledEvents = generateScheduledEvents(progression, order, playStyleName);
+  const scheduledEvents = generateScheduledEvents(progression, order, playStyleName, barsPerChord, feelSettings);
 
   const rawEvents: MidiRawEvent[] = [];
   scheduledEvents.forEach(evt => {
@@ -372,9 +389,11 @@ export async function downloadWav(
   progression: Progression,
   order?: number[],
   instrumentName?: string | null,
-  playStyleName?: string | null
+  playStyleName?: string | null,
+  barsPerChord = 1,
+  feelSettings?: FeelSettings
 ): Promise<void> {
-  const events = generateScheduledEvents(progression, order, playStyleName);
+  const events = generateScheduledEvents(progression, order, playStyleName, barsPerChord, feelSettings);
   if (!events.length) return;
 
   const maxTime = events.reduce((max, e) => Math.max(max, e.startTime + e.duration), 0);
@@ -414,13 +433,15 @@ export interface BounceLoopOptions {
   instrumentName?: string | null;
   playStyleName?: string | null;
   format?: 'wav' | 'midi';
+  barsPerChord?: number;
+  feelSettings?: FeelSettings;
 }
 
 /**
  * Bounces the active loop into a named file with chords and sub-bass stem (with 2-bar tail).
  */
 export async function bounceLoop(options: BounceLoopOptions): Promise<void> {
-  const { progression, setName, instrumentName, playStyleName, format = 'wav' } = options;
+  const { progression, setName, instrumentName, playStyleName, format = 'wav', barsPerChord = 1, feelSettings } = options;
   const bpm = progression.bpm || 84;
   const key = progression.key || 'C';
   const scale = (progression.scaleType || 'maj').toLowerCase().includes('min') ? 'min' : 'maj';
@@ -430,16 +451,17 @@ export async function bounceLoop(options: BounceLoopOptions): Promise<void> {
   const filename = `${slug}_${bpm}bpm_${key}${scale}.${ext}`;
 
   if (format === 'midi') {
-    const buffer = generateMidiBuffer(progression, undefined, playStyleName);
+    const buffer = generateMidiBuffer(progression, undefined, playStyleName, barsPerChord, feelSettings);
     const blob = new Blob([buffer as unknown as BlobPart], { type: 'audio/midi' });
     triggerDownload(blob, filename);
     return;
   }
 
-  // Render WAV with 2-bar tail
-  const events = generateScheduledEvents(progression, undefined, playStyleName);
+  // Render WAV with tail
+  const events = generateScheduledEvents(progression, undefined, playStyleName, barsPerChord, feelSettings);
   const maxTime = events.reduce((max, e) => Math.max(max, e.startTime + e.duration), 0);
-  const totalDuration = Math.max(4, maxTime + 3.4); // 2-bar tail
+  const stepDuration = (barsPerChord * 240) / bpm;
+  const totalDuration = Math.max(4, maxTime + stepDuration * 2); // 2-chord tail
 
   const renderedBuffer = await Tone.Offline(async () => {
     const voice = createOfflineVoice(instrumentName, progression.genre);
@@ -454,7 +476,6 @@ export async function bounceLoop(options: BounceLoopOptions): Promise<void> {
       volume: -7,
     }).toDestination();
 
-    const stepDuration = 1.7;
     progression.chords.forEach((chord, i) => {
       const root = (chord.notes && chord.notes[0]) || chord.name.match(/^[A-Ga-g][#b]?/)?.[0] || 'C';
       const clean = root.replace(/\d+$/, '');

@@ -1357,6 +1357,138 @@ export function rootOfChordName(name: string): string {
   return rootRaw[0].toUpperCase() + rootRaw.slice(1);
 }
 
+export function splitChordRootAndSuffix(symbol: string): { root: string; suffix: string } {
+  const clean = (symbol || 'C').trim();
+  const first = clean[0]?.toUpperCase() || 'C';
+  let root = first;
+  let suffix = clean.slice(1);
+  if (clean.length > 1) {
+    const second = clean[1];
+    if (second === 'b' || second === 'B' || second === '♭' || second === '\u266d') {
+      root = `${first}b`;
+      suffix = clean.slice(2);
+    } else if (second === '#' || second === '♯' || second === '\u266f') {
+      root = `${first}#`;
+      suffix = clean.slice(2);
+    }
+  }
+  return { root, suffix };
+}
+
+export function transposeChordName(symbol: string, semitonesDelta: number, preferFlat: boolean): string {
+  const { root, suffix } = splitChordRootAndSuffix(symbol);
+  const normalizedRoot = root.replace('♭', 'b').replace('♯', '#');
+  const rootPc = PITCH_CLASS[normalizedRoot] ?? 0;
+  const newPc = ((rootPc + semitonesDelta) % 12 + 12) % 12;
+  const newRoot = noteName(newPc, preferFlat);
+  return `${newRoot}${suffix}`;
+}
+
+export function transposeProgression(
+  progression: Progression,
+  targetKeyRaw: string,
+  targetScaleType?: string
+): Progression {
+  if (!progression || !progression.chords || progression.chords.length === 0) {
+    return progression;
+  }
+
+  // Parse raw key (e.g. "C min" -> key: "C", scaleType: "NATURAL_MINOR"; "G maj" -> key: "G", scaleType: "MAJOR")
+  const hasMin = /\bmin\b|minor/i.test(targetKeyRaw) || /\b[A-G][#b]?m\b/.test(targetKeyRaw);
+  const hasMaj = /\bmaj\b|major/i.test(targetKeyRaw);
+  const isMinor = hasMin && !hasMaj;
+
+  const cleanTargetKey = targetKeyRaw
+    .replace(/\s*(maj|min|major|minor)\s*/gi, '')
+    .replace(/♭/g, 'b')
+    .replace(/♯/g, '#')
+    .trim();
+
+  const newScaleType = targetScaleType || (isMinor ? 'NATURAL_MINOR' : (hasMaj ? 'MAJOR' : (progression.scaleType || 'MAJOR')));
+  const newKey = cleanTargetKey;
+
+  const oldKey = (progression.key || 'C').replace('♭', 'b').replace('♯', '#').trim();
+  const oldKeyPc = PITCH_CLASS[oldKey] ?? 0;
+  const newKeyPc = PITCH_CLASS[newKey] ?? 0;
+  const delta = ((newKeyPc - oldKeyPc) % 12 + 12) % 12;
+
+  const preferFlat = preferFlatSpelling(newKey, newScaleType);
+  const scaleKey = `${newKey}_${newScaleType}`;
+
+  // Scale degree semitone offsets from tonic
+  const degreeSemitones: Record<string, number> = {
+    TONIC: 0,
+    SUPERTONIC: 2,
+    MEDIANT: (newScaleType.includes('MINOR') || newScaleType === 'DORIAN') ? 3 : 4,
+    SUBDOMINANT: 5,
+    DOMINANT: 7,
+    SUBMEDIANT: (newScaleType === 'MAJOR' || newScaleType === 'DORIAN') ? 9 : 8,
+    SUBTONIC: 10,
+    'LEADING-TONE': 11,
+  };
+
+  const transposedChords: ChordBlock[] = progression.chords.map(chord => {
+    const newName = transposeChordName(chord.name, delta, preferFlat);
+    const { root: chordRoot, quality } = parseChordSymbol(newName);
+    const chordRootPc = PITCH_CLASS[chordRoot] ?? 0;
+    const semitonesFromTonic = ((chordRootPc - newKeyPc) % 12 + 12) % 12;
+
+    // Check if chordRoot matches a diatonic degree in the new scale
+    let matchedDegree: string | null = null;
+    for (const [degName, degSemi] of Object.entries(degreeSemitones)) {
+      if (degSemi === semitonesFromTonic) {
+        matchedDegree = degName;
+        break;
+      }
+    }
+
+    let roman: string;
+    let functionLabel: string;
+    let tag = chord.tag || 'move';
+    let tension = chord.tension;
+    let degree = chord.degree;
+
+    if (matchedDegree) {
+      degree = matchedDegree;
+      roman = formatDegreeRoman(degree, quality);
+      functionLabel = DEGREE_FUNCTION[degree] || degree;
+      tag = DEGREE_TAG[degree] || tag;
+      tension = DEGREE_TENSION[degree] ?? tension;
+    } else {
+      degree = 'BORROWED';
+      roman = formatBorrowedRoman(semitonesFromTonic, quality);
+      const borrowed = getBorrowedInfo(semitonesFromTonic, quality, newKey, preferFlat);
+      functionLabel = borrowed.functionLabel;
+      tag = borrowed.tag || tag;
+      tension = borrowed.tension || 0.45;
+    }
+
+    const newNotes = notesForSymbol(newName, preferFlat);
+
+    return {
+      ...chord,
+      name: newName,
+      roman,
+      functionLabel,
+      tag,
+      notes: newNotes,
+      degree,
+      scaleKey,
+      scaleLabel: `${newKey} ${SCALE_LABEL[newScaleType] || newScaleType}`,
+      desc: describeChord(functionLabel, SCALE_LABEL[newScaleType] || newScaleType, newName),
+      tension,
+    };
+  });
+
+  return {
+    ...progression,
+    key: newKey,
+    scaleType: newScaleType,
+    chords: transposedChords,
+  };
+}
+
+
 const VOICING_QUALITY_INTERVALS: Record<string, number[]> = {
   'Major': [0, 4, 7],
   'Minor': [0, 3, 7],

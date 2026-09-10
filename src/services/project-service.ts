@@ -43,6 +43,14 @@ export interface ProjectData {
   syncedToCloud?: boolean;
   performMode?: boolean;
   lanes?: LoopLane[];
+  barsPerChord?: number;
+  feel?: {
+    swing: number;
+    spread: number;
+    density: number;
+    tone: string;
+    humanState?: any;
+  };
 }
 
 const STORAGE_KEY = 'chroma_chords_projects';

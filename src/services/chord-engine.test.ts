@@ -9,6 +9,7 @@ import {
   generateBorrowedChords,
   injectModes,
   alignChordsToScale,
+  transposeProgression,
   RawChordData,
   Progression,
 } from './chord-engine';
@@ -280,6 +281,76 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
       expect(prog!.chords.map(c => c.roman)).toEqual(['I', 'V', 'vi', 'III7', 'IV', 'V', 'I', 'I']);
     });
   });
+
+  describe('transposeProgression: Non-Destructive Key Transposition', () => {
+    it('transposes C Major I-vi-ii-V to G Major preserving chord extensions', () => {
+      const initialProg = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj7' },
+          { root: 'A', quality: 'min7' },
+          { root: 'D', quality: 'min7' },
+          { root: 'G', quality: 'dom7' },
+        ],
+        'Jazz-ish',
+        'Warm'
+      )!;
+
+      const transposed = transposeProgression(initialProg, 'G maj');
+      expect(transposed.key).toBe('G');
+      expect(transposed.scaleType).toBe('MAJOR');
+      expect(transposed.chords.map(c => c.name)).toEqual(['Gmaj7', 'Em7', 'Am7', 'D7']);
+      expect(transposed.chords.map(c => c.roman)).toEqual(['Imaj7', 'vi7', 'ii7', 'V7']);
+    });
+
+    it('transposes to flat keys with proper flat spelling (e.g. F Major and Eb Major)', () => {
+      const initialProg = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj' },
+          { root: 'F', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+          { root: 'C', quality: 'maj' },
+        ],
+        'Pop',
+        'Uplifting'
+      )!;
+
+      const transposedF = transposeProgression(initialProg, 'F maj');
+      expect(transposedF.key).toBe('F');
+      expect(transposedF.chords.map(c => c.name)).toEqual(['F', 'Bb', 'C', 'F']);
+
+      const transposedEb = transposeProgression(initialProg, 'E♭ maj');
+      expect(transposedEb.key).toBe('Eb');
+      expect(transposedEb.chords.map(c => c.name)).toEqual(['Eb', 'Ab', 'Bb', 'Eb']);
+    });
+
+    it('transposes to minor keys and updates Roman numerals', () => {
+      const initialProg = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'min' },
+          { root: 'F', quality: 'min' },
+          { root: 'G', quality: 'dom7' },
+          { root: 'C', quality: 'min' },
+        ],
+        'R&B/Soul',
+        'Melancholy'
+      )!;
+
+      const transposedA = transposeProgression(initialProg, 'A min');
+      expect(transposedA.key).toBe('A');
+      expect(transposedA.scaleType).toBe('NATURAL_MINOR');
+      expect(transposedA.chords.map(c => c.name)).toEqual(['Am', 'Dm', 'E7', 'Am']);
+    });
+  });
 });
+
 
 

@@ -1,4 +1,4 @@
-import { playChordForGenre, playSubNote, applyVoicingToNotes } from './audio-service';
+import { playChordForGenre, playSubNote, applyVoicingToNotes, FeelSettings } from './audio-service';
 import { Progression, ChordBlock, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
 import type { SongSection } from '../components/song-screen';
 
@@ -56,6 +56,8 @@ export class PlaybackEngine {
   private tickCallbacks = new Set<PlaybackTickCallback>();
   private abOverride: { index: number; chord: ChordBlock | null; side: 'before' | 'after' } | null = null;
   private subBassEnabled = false;
+  private barsPerChord = 1;
+  private feelSettings: FeelSettings = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
 
   public setSubBassEnabled(enabled: boolean): void {
     this.subBassEnabled = enabled;
@@ -115,9 +117,41 @@ export class PlaybackEngine {
   }
 
   public setBpm(bpm: number): void {
+    const safeBpm = Math.max(40, Math.min(240, bpm));
     if (this.progression) {
-      this.progression.bpm = bpm;
+      this.progression.bpm = safeBpm;
     }
+    if (this.playing) {
+      this.startAutoplay();
+    }
+  }
+
+  public setBarsPerChord(bars: number): void {
+    this.barsPerChord = Math.max(1, bars);
+    if (this.playing) {
+      this.startAutoplay();
+    }
+  }
+
+  public getBarsPerChord(): number {
+    return this.barsPerChord;
+  }
+
+  public setFeelSettings(feel: Partial<FeelSettings>): void {
+    this.feelSettings = { ...this.feelSettings, ...feel };
+  }
+
+  public getFeelSettings(): FeelSettings {
+    return { ...this.feelSettings };
+  }
+
+  public getStepIntervalMs(): number {
+    const bpm = this.mode === 'song'
+      ? (this.sections[this.activeSectionIndex]?.progression.bpm || this.progression?.bpm || 84)
+      : (this.progression?.bpm || 84);
+    const safeBpm = Math.max(40, Math.min(240, bpm));
+    const bars = Math.max(1, this.barsPerChord);
+    return Math.round(bars * (240000 / safeBpm));
   }
 
   public isPlaying(): boolean {
@@ -166,6 +200,7 @@ export class PlaybackEngine {
 
   public startAutoplay(): void {
     this.stopAutoplay();
+    const intervalMs = this.getStepIntervalMs();
     this.autoplayTimer = setInterval(() => {
       if (!this.playing) return;
 
@@ -182,7 +217,7 @@ export class PlaybackEngine {
 
       this.playActiveChord();
       this.notifyTick();
-    }, AUTOPLAY_INTERVAL_MS);
+    }, intervalMs);
   }
 
   public stopAutoplay(): void {
@@ -248,9 +283,10 @@ export class PlaybackEngine {
         const pitchedNotes = pitchNotesAscending(notes, 4);
         playChordForGenre(pitchedNotes, sec.progression.genre, {
           bpm: sec.progression.bpm,
-          duration: 1.2,
+          duration: (this.getStepIntervalMs() / 1000) * 0.85,
           instrument: this.instrument ?? undefined,
           playStyle: this.playStyle ?? undefined,
+          feelSettings: this.feelSettings,
         });
       }
     } else {
@@ -317,10 +353,11 @@ export class PlaybackEngine {
 
     playChordForGenre(pitchedNotes, this.progression.genre || 'Unknown', {
       bpm: this.progression.bpm || 120,
-      duration: duration || 0.8,
+      duration: duration || (this.getStepIntervalMs() / 1000) * 0.85,
       instrument: this.instrument ?? undefined,
       playStyle: this.playStyle ?? undefined,
       velocity,
+      feelSettings: this.feelSettings,
     });
   }
 

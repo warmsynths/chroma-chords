@@ -10,14 +10,17 @@ import {
   detectProgressionCadences, CadenceInfo,
   analyzeVoiceLeading, VoiceLeadingLink,
   PITCH_CLASS,
+  transposeProgression,
 } from '../services/chord-engine';
 import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
 import { ProjectData } from '../services/project-service';
 import { SongArranger } from '../services/song-arranger';
 import { SongSection } from './song-screen';
-import { USER_INSTRUMENTS, USER_PLAY_STYLES } from '../services/audio-service';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone } from '../services/audio-service';
 import { bounceLoop } from '../services/export-service';
+import 'human-engine';
+import type { HumanState } from 'human-engine';
 import './share-modal';
 
 export interface BandArchetype {
@@ -374,6 +377,8 @@ export class LoopScreen extends LitElement {
   @state() spread = 50;
   @state() density = 50;
   @state() tone = 'Warm';
+  @state() private showAdvancedFeel = false;
+  @state() private humanEngineState: any = null;
   @state() auditionDeg: number | null = null;
   @state() auditionName: string | null = null;
   @state() auditionBar: number = 0;
@@ -1981,6 +1986,29 @@ export class LoopScreen extends LitElement {
             this.requestUpdate();
           })
         : null;
+
+    playbackEngine.setFeelSettings({ swing: this.swing, spread: this.spread, density: this.density, tone: this.tone });
+    playbackEngine.setBarsPerChord(this.barsPerChord);
+    setMasterTone(this.tone);
+  }
+
+  updated(changed: PropertyValues) {
+    super.updated(changed);
+    if (changed.has('swing') || changed.has('spread') || changed.has('density') || changed.has('tone') || changed.has('humanEngineState')) {
+      playbackEngine.setFeelSettings({
+        swing: this.swing,
+        spread: this.spread,
+        density: this.density,
+        tone: this.tone,
+        humanState: this.humanEngineState,
+      });
+      if (changed.has('tone')) {
+        setMasterTone(this.tone);
+      }
+    }
+    if (changed.has('barsPerChord')) {
+      playbackEngine.setBarsPerChord(this.barsPerChord);
+    }
   }
 
   disconnectedCallback() {
@@ -2472,12 +2500,32 @@ export class LoopScreen extends LitElement {
     this.spread = FEEL_DEFAULTS.spread;
     this.density = FEEL_DEFAULTS.density;
     this.tone = FEEL_DEFAULTS.tone;
+    this.humanEngineState = null;
+    playbackEngine.setFeelSettings({
+      swing: this.swing,
+      spread: this.spread,
+      density: this.density,
+      tone: this.tone,
+      humanState: undefined,
+    });
+    setMasterTone(this.tone);
     this.requestUpdate();
   }
 
   private nudgeBpm(d: number) {
     const cur = this.progression?.bpm || 84;
-    const next = Math.max(60, Math.min(180, cur + d));
+    const next = Math.max(40, Math.min(240, cur + d));
+    if (this.progression) {
+      this.progression.bpm = next;
+    }
+    playbackEngine.setBpm(next);
+    this.dispatchEvent(new CustomEvent('set-bpm', { detail: next, bubbles: true, composed: true }));
+    this.requestUpdate();
+  }
+
+  private setDirectBpm(bpm: number) {
+    if (isNaN(bpm)) return;
+    const next = Math.max(40, Math.min(240, bpm));
     if (this.progression) {
       this.progression.bpm = next;
     }
@@ -2488,30 +2536,105 @@ export class LoopScreen extends LitElement {
 
   private setBarsPerChord(n: number) {
     this.barsPerChord = n;
+    playbackEngine.setBarsPerChord(n);
     this.requestUpdate();
   }
 
   private selectKey(keyStr: string) {
-    const isMinor = keyStr.includes('min');
-    const rawKey = keyStr.replace(' min', '').replace(' maj', '').replace('♭', 'b').replace('♯', '#');
-    const scaleType = isMinor ? 'MINOR' : 'MAJOR';
     this.keyIdx = KEYS.indexOf(keyStr);
-    if (this.progression) {
-      this.progression.key = rawKey;
-      this.progression.scaleType = scaleType;
-    }
-    this.dispatchEvent(new CustomEvent('generate-progression', {
-      detail: {
-        genre: this.progression?.genre || 'Indie',
-        mood: this.progression?.mood || 'Warm',
-        key: rawKey,
-        scaleType,
-        length: this.progression?.chords?.length || 4,
-      },
-      bubbles: true,
-      composed: true,
-    }));
+    if (!this.progression) return;
+    const transposed = transposeProgression(this.progression, keyStr);
+    this.progression = transposed;
+    playbackEngine.setProgression(transposed);
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: transposed, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('toast', { detail: `Transposed to ${transposed.key} ${transposed.scaleType === 'NATURAL_MINOR' ? 'minor' : 'major'}`, bubbles: true, composed: true }));
     this.requestUpdate();
+  }
+
+  private onHumanChange = (e: CustomEvent<HumanState>) => {
+    if (e.detail) {
+      this.humanEngineState = e.detail;
+      playbackEngine.setFeelSettings({
+        swing: this.swing,
+        spread: this.spread,
+        density: this.density,
+        tone: this.tone,
+        humanState: e.detail,
+      });
+    }
+  };
+
+  private onHumanPreview = (e: CustomEvent<HumanState>) => {
+    if (e.detail) {
+      this.humanEngineState = e.detail;
+      playbackEngine.setFeelSettings({
+        swing: this.swing,
+        spread: this.spread,
+        density: this.density,
+        tone: this.tone,
+        humanState: e.detail,
+      });
+    }
+  };
+
+  private async executeBounce(format: 'wav' | 'midi') {
+    if (!this.progression) return;
+    try {
+      this.dispatchEvent(new CustomEvent('toast', { detail: `Bouncing ${format.toUpperCase()}...`, bubbles: true, composed: true }));
+      await bounceLoop({
+        progression: this.progression,
+        instrumentName: this.instrument,
+        playStyleName: this.playStyle,
+        format,
+        barsPerChord: this.barsPerChord,
+        feelSettings: {
+          swing: this.swing,
+          spread: this.spread,
+          density: this.density,
+          tone: this.tone,
+          humanState: this.humanEngineState,
+        },
+      });
+      this.bounceOpen = false;
+      this.dispatchEvent(new CustomEvent('toast', { detail: `Bounced loop as ${format.toUpperCase()}`, bubbles: true, composed: true }));
+    } catch (err) {
+      console.error('Failed to bounce loop:', err);
+      this.dispatchEvent(new CustomEvent('toast', { detail: 'Bounce failed. See console.', bubbles: true, composed: true }));
+    }
+  }
+
+  private renderBounceModal() {
+    if (!this.bounceOpen) return '';
+    return html`
+      <div style="position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; background: rgba(46, 39, 31, 0.45); backdrop-filter: blur(4px);">
+        <div style="background: var(--cv-surface, #F6EADB); border-radius: 20px; padding: 22px; width: 90%; max-width: 380px; box-shadow: 0 16px 36px rgba(46,39,31,0.25); border: 1px solid rgba(46,39,31,0.12);">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 17px; font-weight: 800; color: var(--cv-ink);">Export Loop</div>
+            <button
+              @click=${() => { this.bounceOpen = false; }}
+              style="border: none; background: transparent; font-size: 18px; font-weight: 800; cursor: pointer; color: var(--cv-ink-muted);"
+            >×</button>
+          </div>
+          <div style="font-size: 12.5px; color: var(--cv-ink-muted); margin-top: 6px; line-height: 1.4;">
+            Export with current key (${this.progression?.key || 'C'}), tempo (${this.progression?.bpm || 84} BPM, ${this.barsPerChord} bar${this.barsPerChord > 1 ? 's' : ''}/chord), and feel (${this.tone} tone, ${this.swing}% swing).
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 18px;">
+            <button
+              @click=${() => this.executeBounce('wav')}
+              style="flex: 1; min-height: 44px; border-radius: 12px; border: none; background: var(--cv-ink, #2E271F); color: var(--cv-cream, #FBF3E6); font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; transition: opacity 150ms ease;"
+            >
+              Bounce WAV
+            </button>
+            <button
+              @click=${() => this.executeBounce('midi')}
+              style="flex: 1; min-height: 44px; border-radius: 12px; border: 1.5px solid rgba(46,39,31,0.2); background: var(--cv-cream, #FBF3E6); color: var(--cv-ink, #2E271F); font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; transition: opacity 150ms ease;"
+            >
+              Export MIDI
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   private onScaleDegreeClick(di: number, chordName: string, inLoop: boolean, barIdx: number) {
@@ -2633,7 +2756,15 @@ export class LoopScreen extends LitElement {
               aria-label="Slower"
               style="border: none; font-family: inherit; width: 36px; height: 36px; border-radius: 11px; background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink); font-size: 17px; font-weight: 800; cursor: pointer;"
             >&#8722;</button>
-            <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.02em; color: var(--cv-ink); min-width: 62px; text-align: center;">${bpmVal}</div>
+            <input
+              type="number"
+              min="40"
+              max="240"
+              .value=${bpmVal.toString()}
+              @change=${(e: Event) => this.setDirectBpm(parseInt((e.target as HTMLInputElement).value, 10))}
+              style="border: 1px solid rgba(46,39,31,0.18); border-radius: 9px; background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink); font-size: 20px; font-weight: 800; letter-spacing: -0.02em; width: 66px; text-align: center; padding: 4px 0; font-family: inherit;"
+              aria-label="Tempo BPM"
+            />
             <button
               @click=${() => this.nudgeBpm(1)}
               aria-label="Faster"
@@ -2711,7 +2842,11 @@ export class LoopScreen extends LitElement {
                     return html`
                       <button
                         style="border: none; font-family: inherit; flex: 1; min-width: 0; min-height: 44px; padding: 0 6px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                        @click=${() => { this[d.k] = s.v; this.requestUpdate(); }}
+                        @click=${() => {
+                          this[d.k] = s.v;
+                          playbackEngine.setFeelSettings({ [d.k]: s.v });
+                          this.requestUpdate();
+                        }}
                         aria-label="${d.label}: ${s.name}"
                       >
                         ${s.name}
@@ -2731,12 +2866,38 @@ export class LoopScreen extends LitElement {
               ${TONES.map(t => html`
                 <button
                   style="flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 12px; font-size: 12px; font-weight: 800; cursor: pointer; border: none; font-family: inherit; transition: background 150ms ease, color 150ms ease; background: ${this.tone === t ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${this.tone === t ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                  @click=${() => { this.tone = t; this.requestUpdate(); }}
+                  @click=${() => {
+                    this.tone = t;
+                    playbackEngine.setFeelSettings({ tone: t });
+                    setMasterTone(t);
+                    this.requestUpdate();
+                  }}
                 >
                   ${t}
                 </button>
               `)}
             </div>
+          </div>
+          <div style="grid-column: 1 / -1; margin-top: 10px; padding-top: 12px; border-top: 1px dashed rgba(46, 39, 31, 0.18);">
+            <button
+              @click=${() => { this.showAdvancedFeel = !this.showAdvancedFeel; }}
+              style="border: 1px solid rgba(46, 39, 31, 0.18); background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink); font-family: inherit; font-size: 11.5px; font-weight: 800; padding: 7px 14px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background 150ms ease;"
+            >
+              <span>${this.showAdvancedFeel ? '▲ Hide Advanced Fine-Tuning' : '▼ Advanced Fine-Tuning…'}</span>
+            </button>
+            ${this.showAdvancedFeel ? html`
+              <div class="advanced-feel-wrap" style="margin-top: 10px; max-height: 480px; overflow-y: auto; border-radius: 12px; padding: 4px;">
+                <human-panel
+                  .chordSequence=${this.progression?.chords?.map(c => c.name).join(' ') || 'Cmaj7 Dm7 G7 Cmaj'}
+                  .bpm=${this.progression?.bpm || 80}
+                  ?hideInput=${true}
+                  heading="Human Expression Engine"
+                  style="--human-bg: var(--cv-cream, #FBF3E6); --human-surface: var(--cv-surface, #F6EADB); --human-border: rgba(46,39,31,0.15); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: var(--cv-ink-muted, #6B5F50); --human-accent: var(--cv-action, #9B7CA8); --human-accent-hover: var(--cv-action-hover, #84698F); max-width: 100%; min-width: 0; box-shadow: none;"
+                  @human-change=${this.onHumanChange}
+                  @human-preview=${this.onHumanPreview}
+                ></human-panel>
+              </div>
+            ` : ''}
           </div>
         </div>
       </div>
@@ -2761,8 +2922,17 @@ export class LoopScreen extends LitElement {
           <div style="display: flex; align-items: center; gap: 12px; background: var(--cv-cream); border-radius: 16px; padding: 12px 14px; margin-top: 13px;">
             <div style="flex: 1; min-width: 0;">
               <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Tempo</div>
-              <div style="font-size: 26px; font-weight: 800; letter-spacing: -0.02em; color: var(--cv-ink); line-height: 1.1; margin-top: 2px;">
-                ${bpmVal} <span style="font-size: 12px; font-weight: 800; color: var(--cv-ink-muted);">bpm</span>
+              <div style="display: flex; align-items: baseline; gap: 6px; margin-top: 2px;">
+                <input
+                  type="number"
+                  min="40"
+                  max="240"
+                  .value=${bpmVal.toString()}
+                  @change=${(e: Event) => this.setDirectBpm(parseInt((e.target as HTMLInputElement).value, 10))}
+                  style="border: 1px solid rgba(46,39,31,0.18); border-radius: 9px; background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink); font-size: 22px; font-weight: 800; letter-spacing: -0.02em; width: 68px; text-align: center; padding: 4px 0; font-family: inherit;"
+                  aria-label="Tempo BPM"
+                />
+                <span style="font-size: 12px; font-weight: 800; color: var(--cv-ink-muted);">bpm</span>
               </div>
             </div>
             <button
@@ -2845,7 +3015,11 @@ export class LoopScreen extends LitElement {
                       return html`
                         <button
                           style="border: none; font-family: inherit; flex: 1; min-width: 0; min-height: 44px; padding: 0 6px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                          @click=${() => { this[d.k] = s.v; this.requestUpdate(); }}
+                          @click=${() => {
+                            this[d.k] = s.v;
+                            playbackEngine.setFeelSettings({ [d.k]: s.v });
+                            this.requestUpdate();
+                          }}
                           aria-label="${d.label}: ${s.name}"
                         >
                           ${s.name}
@@ -2862,11 +3036,37 @@ export class LoopScreen extends LitElement {
             ${TONES.map(t => html`
               <button
                 style="flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 12px; font-size: 12px; font-weight: 800; cursor: pointer; border: none; font-family: inherit; transition: background 150ms ease, color 150ms ease; background: ${this.tone === t ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${this.tone === t ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                @click=${() => { this.tone = t; this.requestUpdate(); }}
+                @click=${() => {
+                  this.tone = t;
+                  playbackEngine.setFeelSettings({ tone: t });
+                  setMasterTone(t);
+                  this.requestUpdate();
+                }}
               >
                 ${t}
               </button>
             `)}
+          </div>
+          <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed rgba(46, 39, 31, 0.18);">
+            <button
+              @click=${() => { this.showAdvancedFeel = !this.showAdvancedFeel; }}
+              style="border: 1px solid rgba(46, 39, 31, 0.18); background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink); font-family: inherit; font-size: 11.5px; font-weight: 800; padding: 7px 14px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background 150ms ease;"
+            >
+              <span>${this.showAdvancedFeel ? '▲ Hide Advanced Fine-Tuning' : '▼ Advanced Fine-Tuning…'}</span>
+            </button>
+            ${this.showAdvancedFeel ? html`
+              <div class="advanced-feel-wrap" style="margin-top: 10px; max-height: 400px; overflow-y: auto; border-radius: 12px; padding: 4px;">
+                <human-panel
+                  .chordSequence=${this.progression?.chords?.map(c => c.name).join(' ') || 'Cmaj7 Dm7 G7 Cmaj'}
+                  .bpm=${this.progression?.bpm || 80}
+                  ?hideInput=${true}
+                  heading="Human Expression Engine"
+                  style="--human-bg: var(--cv-cream, #FBF3E6); --human-surface: var(--cv-surface, #F6EADB); --human-border: rgba(46,39,31,0.15); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: var(--cv-ink-muted, #6B5F50); --human-accent: var(--cv-action, #9B7CA8); --human-accent-hover: var(--cv-action-hover, #84698F); max-width: 100%; min-width: 0; box-shadow: none;"
+                  @human-change=${this.onHumanChange}
+                  @human-preview=${this.onHumanPreview}
+                ></human-panel>
+              </div>
+            ` : ''}
           </div>
         </div>
       </div>
@@ -3745,6 +3945,7 @@ export class LoopScreen extends LitElement {
 
           ${this.renderTempoSheetMobile()}
           ${this.renderFeelSheetMobile()}
+          ${this.renderBounceModal()}
         </div>
       `;
     }
@@ -4337,6 +4538,7 @@ export class LoopScreen extends LitElement {
             </div>
           `}
         </aside>
+        ${this.renderBounceModal()}
       </div>
     `;
   }

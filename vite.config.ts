@@ -1,5 +1,9 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
+import { existsSync } from 'fs';
+
+const localHumanEngine = resolve(__dirname, '../human-midi/docs/human-engine.js');
+const hasLocal = existsSync(localHumanEngine);
 
 export default defineConfig({
   base: './',
@@ -8,10 +12,14 @@ export default defineConfig({
     outDir: 'docs',
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
+      external: ['human-engine'],
       output: {
         entryFileNames: 'app.js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]',
+        paths: {
+          'human-engine': 'https://warmsynths.github.io/human-midi/human-engine.js'
+        },
         manualChunks: {
           vendor: ['lit', 'tone', 'meyda']
         }
@@ -25,8 +33,10 @@ export default defineConfig({
     }
   },
   resolve: {
-    alias: {
-      'human-engine': resolve(__dirname, '../human-midi/docs/human-engine.js')
+    alias: hasLocal ? {
+      'human-engine': localHumanEngine
+    } : {
+      'human-engine': 'https://warmsynths.github.io/human-midi/human-engine.js'
     }
   },
   // @ts-ignore

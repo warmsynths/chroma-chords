@@ -10,6 +10,31 @@ vi.mock('tone', () => ({
   FMSynth: class { triggerAttackRelease() { } },
   Reverb: class { connect() { return this; } },
   Chorus: class { start() { return this; } connect() { return this; } },
+  Gain: class {
+    gain = { rampTo: vi.fn(), value: 1 };
+    connect() { return this; }
+    toDestination() { return this; }
+  },
+  Filter: class {
+    frequency = { value: 1000 };
+    connect() { return this; }
+  },
+  EQ3: class {
+    high = { value: 0 };
+    mid = { value: 0 };
+    low = { value: 0 };
+    connect() { return this; }
+  },
+  Vibrato: class {
+    connect() { return this; }
+  },
+  Distortion: class {
+    connect() { return this; }
+  },
+  Limiter: class {
+    connect() { return this; }
+    toDestination() { return this; }
+  },
   loaded: () => Promise.resolve(),
   start: () => Promise.resolve(),
   now: () => 0,
@@ -319,6 +344,77 @@ describe('Studio Component Interactions', () => {
     // Close button
     const closeBtn = inspector?.querySelector('.close-detail-btn') as HTMLElement;
     expect(closeBtn).toBeTruthy();
+
+    document.body.removeChild(el);
+  });
+
+  it('transposes progression on key click, adjusts bpm and barsPerChord, and updates feel settings', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = { ...sampleProgression, chords: [...sampleProgression.chords] };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // Open tempo drawer
+    el.tempoOpen = true;
+    await el.updateComplete;
+
+    // Test Transposition via key button
+    const keyButtons = Array.from(el.shadowRoot?.querySelectorAll('.tempo-popover-desktop button') || []);
+    const gMajBtn = keyButtons.find(b => b.textContent?.trim() === 'G maj') as HTMLElement;
+    expect(gMajBtn).toBeTruthy();
+
+    const toastSpy = vi.fn();
+    const progChangeSpy = vi.fn();
+    el.addEventListener('toast', (e: any) => toastSpy(e.detail));
+    el.addEventListener('progression-change', (e: any) => progChangeSpy(e.detail));
+
+    gMajBtn.click();
+    await el.updateComplete;
+
+    expect(el.progression.key).toBe('G');
+    expect(el.progression.chords[0].name).toBe('G');
+    expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('Transposed to G'));
+    expect(progChangeSpy).toHaveBeenCalled();
+
+    // Test Direct BPM input
+    const bpmInput = el.shadowRoot?.querySelector('.tempo-popover-desktop input[type="number"]') as HTMLInputElement;
+    expect(bpmInput).toBeTruthy();
+    bpmInput.value = '96';
+    bpmInput.dispatchEvent(new Event('change'));
+    await el.updateComplete;
+
+    expect(el.progression.bpm).toBe(96);
+
+    // Test Bars per chord
+    const barsButtons = Array.from(el.shadowRoot?.querySelectorAll('.tempo-popover-desktop button') || []);
+    const twoBarsBtn = barsButtons.find(b => b.textContent?.trim() === '2 bars') as HTMLElement;
+    expect(twoBarsBtn).toBeTruthy();
+    twoBarsBtn.click();
+    await el.updateComplete;
+
+    expect(el.barsPerChord).toBe(2);
+
+    // Open Feel drawer
+    el.tempoOpen = false;
+    el.feelOpen = true;
+    await el.updateComplete;
+
+    // Test Feel selection (e.g. Swing: Light = 25)
+    const feelButtons = Array.from(el.shadowRoot?.querySelectorAll('.feel-popover-desktop button') || []);
+    const lightSwingBtn = feelButtons.find(b => b.getAttribute('aria-label')?.includes('Swing: Light')) as HTMLElement;
+    expect(lightSwingBtn).toBeTruthy();
+    lightSwingBtn.click();
+    await el.updateComplete;
+
+    expect(el.swing).toBe(25);
+
+    // Test Tone selection (Glassy)
+    const glassyBtn = feelButtons.find(b => b.textContent?.trim() === 'Glassy') as HTMLElement;
+    expect(glassyBtn).toBeTruthy();
+    glassyBtn.click();
+    await el.updateComplete;
+
+    expect(el.tone).toBe('Glassy');
 
     document.body.removeChild(el);
   });
