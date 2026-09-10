@@ -357,5 +357,128 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await closeBtn.click();
     await expect(sheet).not.toBeVisible();
   });
+
+  test('Desktop: Key, tempo and length drawer toggles inline and allows adjusting tempo, bars, and key', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Desktop tempo drawer test');
+
+    const tempoChip = page.locator('.stage-quick-controls .tempo-chip');
+    await expect(tempoChip).toBeVisible();
+
+    // Open drawer
+    await tempoChip.click();
+    const tempoDrawer = page.locator('.tempo-popover-desktop');
+    await expect(tempoDrawer).toBeVisible();
+
+    // Verify tempo controls
+    await expect(tempoDrawer.locator('button[aria-label="Slower"]')).toBeVisible();
+    await expect(tempoDrawer.locator('button[aria-label="Faster"]')).toBeVisible();
+
+    // Verify bars per chord
+    await expect(tempoDrawer.locator('button', { hasText: '1 bar' })).toBeVisible();
+    await expect(tempoDrawer.locator('button', { hasText: '2 bars' })).toBeVisible();
+
+    // Verify key pills
+    await expect(tempoDrawer.locator('button', { hasText: 'C maj' })).toBeVisible();
+    await expect(tempoDrawer.locator('button', { hasText: 'A min' })).toBeVisible();
+
+    // Toggle close
+    await tempoChip.click();
+    await expect(tempoDrawer).not.toBeVisible();
+  });
+
+  test('Desktop: Feel & tone drawer toggles inline with feel steps, tone pills, and reset', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Desktop feel drawer test');
+
+    const feelChip = page.locator('.stage-quick-controls .feel-chip');
+    await expect(feelChip).toBeVisible();
+
+    // Open feel drawer
+    await feelChip.click();
+    const feelDrawer = page.locator('.feel-popover-desktop');
+    await expect(feelDrawer).toBeVisible();
+
+    // Check tone options (Warm, Glassy, Dusty)
+    await expect(feelDrawer.locator('button', { hasText: 'Warm' })).toBeVisible();
+    await expect(feelDrawer.locator('button', { hasText: 'Glassy' })).toBeVisible();
+    await expect(feelDrawer.locator('button', { hasText: 'Dusty' })).toBeVisible();
+
+    // Close button
+    const closeBtn = feelDrawer.locator('button[aria-label="Close feel and tone"]');
+    await closeBtn.click();
+    await expect(feelDrawer).not.toBeVisible();
+  });
+
+  test('Theory Mode: Scale Chords responsive degree grid renders below pads with Roman numerals, in-loop dots, and auditions on click', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Desktop theory scale chords test');
+
+    // Initially theory mode is off -> scale chords is not visible
+    const scaleChords = page.locator('.scale-chords-panel');
+    await expect(scaleChords).not.toBeVisible();
+
+    // Toggle Theory mode in the inspector
+    const theoryToggle = page.locator('.theory-toggle-btn');
+    await expect(theoryToggle).toBeVisible();
+    await theoryToggle.click();
+
+    // Now scale chords component is visible below the pad cells
+    await expect(scaleChords).toBeVisible();
+    await expect(scaleChords).toContainText(/Scale ·/i);
+
+    // Degree buttons exist (7 diatonic scale degrees)
+    const degreeBtns = scaleChords.locator('.scale-degree-btn');
+    await expect(degreeBtns).toHaveCount(7);
+
+    // Click first degree to audition
+    await degreeBtns.first().click();
+    await expect(degreeBtns.first()).toHaveClass(/active/);
+
+    // Pad cells on stage now show Roman numerals and spelled notes
+    const firstPad = page.locator('.pad-cell').first();
+    await expect(firstPad.locator('.pad-roman-badge')).toBeVisible();
+    await expect(firstPad.locator('.pad-notes-theory')).toBeVisible();
+  });
+
+  test('Theory Mode: Inspector right column renders harmonic formula, cadences, voice leading, and candidate notes', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'Desktop theory inspector test');
+
+    // Turn on theory mode
+    await page.locator('.theory-toggle-btn').click();
+
+    const inspector = page.locator('aside.inspector-right');
+    const theoryStrip = inspector.locator('.theory-strip-box');
+    await expect(theoryStrip).toBeVisible();
+
+    // Formula and Key rows
+    await expect(theoryStrip).toContainText(/Key/i);
+    await expect(theoryStrip).toContainText(/Formula/i);
+    await expect(theoryStrip).toContainText(/Voice leading/i);
+
+    // Enter swap mode
+    const firstPad = page.locator('.pad-cell').first();
+    await firstPad.locator('.pad-swap-btn').click();
+
+    // In swap mode, candidate rows show Roman numerals and spelled notes
+    const altCandidate = inspector.locator('.alt-chord-row').first();
+    await expect(altCandidate).toBeVisible();
+    await expect(altCandidate.locator('span[style*="#7A5C88"]')).toBeVisible();
+
+    // Theory strip is also visible at the bottom of the swap view
+    await expect(inspector.locator('.theory-strip-box')).toBeVisible();
+  });
+
+  test('Responsive grid wraps chord cards in groups of 4 on desktop and 2 on mobile', async ({ page, isMobile }) => {
+    const padGrid = page.locator('.pad-cells-grid');
+    await expect(padGrid).toBeVisible();
+
+    const gridTemplate = await padGrid.evaluate((el) => window.getComputedStyle(el).gridTemplateColumns);
+    const cols = gridTemplate.split(' ').filter(Boolean);
+
+    if (isMobile) {
+      expect(cols.length).toBe(2);
+    } else {
+      expect(cols.length).toBe(4);
+    }
+  });
 });
+
 

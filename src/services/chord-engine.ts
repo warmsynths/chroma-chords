@@ -80,7 +80,7 @@ export interface BorrowedChordRow {
 const NOTE_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const NOTE_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
-const PITCH_CLASS: Record<string, number> = {
+export const PITCH_CLASS: Record<string, number> = {
   'C': 0, 'B#': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
   'E': 4, 'Fb': 4, 'E#': 5, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7,
   'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11, 'Cb': 11,
@@ -265,6 +265,7 @@ export function parseChordSymbol(symbol: string): { root: string; quality: keyof
   if (rest.includes('maj9') || (rest.includes('m9') && rest.includes('maj'))) quality = 'maj9';
   else if (rest.includes('min9') || rest.includes('m9')) quality = 'min9';
   else if (rest.includes('9') || rest.includes('dom9')) quality = 'dom9';
+  else if (rest.includes('m(maj7)') || rest.includes('mmaj7') || rest.includes('minmaj7')) quality = 'min7';
   else if (rest.includes('maj7') || (rest.includes('m7') && rest.includes('maj'))) quality = 'maj7';
   else if (rest.includes('min7') || rest.includes('m7')) quality = 'min7';
   else if (rest.includes('dim7')) quality = 'dim7';
@@ -1950,9 +1951,14 @@ export function getChordIntervalBreakdown(symbol: string, preferFlat: boolean): 
 }
 
 export interface CadenceInfo {
+  name: string;
   type: string;
   shortName: string;
   description: string;
+  why: string;
+  move: string;
+  degrees: string;
+  bars: string;
   fromBar: number;
   toBar: number;
   fromChord: string;
@@ -1975,58 +1981,79 @@ export function detectProgressionCadences(chords: ChordBlock[]): CadenceInfo[] {
 
     const fromBar = fromIdx + 1;
     const toBar = toIdx + 1;
+    const bars = `Bar ${fromBar} → ${toBar}`;
+    const move = `${c1.name} → ${c2.name}`;
+    const degrees = `${c1.roman}–${c2.roman}`;
 
     // Authentic Cadence (V -> I or V -> i)
     if ((r1 === 'V' || r1 === 'v') && (r2 === 'I' || r2 === 'i')) {
       cadences.push({
+        name: 'Perfect cadence',
         type: 'Authentic Cadence',
         shortName: `${c1.name} → ${c2.name} (${c1.roman}–${c2.roman})`,
-        description: 'Dominant tension resolving home to the Tonic — the fundamental release of Western harmony.',
+        description: 'The dominant resolves home — the strongest full stop.',
+        why: 'The dominant resolves home — the strongest full stop.',
+        move, degrees, bars,
         fromBar, toBar, fromChord: c1.name, toChord: c2.name,
       });
     }
     // Plagal Cadence (IV -> I or iv -> i)
     else if ((r1 === 'IV' || r1 === 'iv') && (r2 === 'I' || r2 === 'i')) {
       cadences.push({
+        name: 'Plagal cadence',
         type: 'Plagal Cadence',
         shortName: `${c1.name} → ${c2.name} (${c1.roman}–${c2.roman})`,
-        description: 'Subdominant lift resolving home — open, uplifting, and classic "Amen" motion.',
+        description: 'A softer landing home, no dominant pull.',
+        why: 'A softer landing home, no dominant pull.',
+        move, degrees, bars,
         fromBar, toBar, fromChord: c1.name, toChord: c2.name,
       });
     }
     // Deceptive Cadence (V -> vi or V -> ♭VI)
     else if ((r1 === 'V' || r1 === 'v') && (r2 === 'vi' || r2 === '♭VI' || r2 === 'VI')) {
       cadences.push({
+        name: 'Interrupted cadence',
         type: 'Deceptive Cadence',
         shortName: `${c1.name} → ${c2.name} (${c1.roman}–${c2.roman})`,
-        description: 'Dominant tension subverts expectation by landing on the relative minor submediant.',
+        description: 'Sidesteps home at the last moment.',
+        why: 'Sidesteps home at the last moment.',
+        move, degrees, bars,
         fromBar, toBar, fromChord: c1.name, toChord: c2.name,
       });
     }
     // Backdoor Cadence (♭VII -> I or ♭VII -> i)
     else if (r1 === '♭VII' && (r2 === 'I' || r2 === 'i')) {
       cadences.push({
+        name: 'Backdoor cadence',
         type: 'Backdoor Cadence',
         shortName: `${c1.name} → ${c2.name} (♭VII–${c2.roman})`,
         description: 'Borrowed subtonic resolving up a whole step into the tonic with smooth jazz/pop flavor.',
+        why: 'Borrowed subtonic resolving up a whole step into the tonic with smooth jazz/pop flavor.',
+        move, degrees, bars,
         fromBar, toBar, fromChord: c1.name, toChord: c2.name,
       });
     }
     // Half Cadence (* -> V)
     else if ((r2 === 'V' || r2 === 'v') && r1 !== 'V' && r1 !== 'v') {
       cadences.push({
+        name: 'Half cadence',
         type: 'Half Cadence',
         shortName: `${c1.name} → ${c2.name} (${c1.roman}–${c2.roman})`,
-        description: 'Pauses on the dominant, leaving the phrase hanging in expectant tension.',
+        description: 'Pauses on the dominant, left hanging.',
+        why: 'Pauses on the dominant, left hanging.',
+        move, degrees, bars,
         fromBar, toBar, fromChord: c1.name, toChord: c2.name,
       });
     }
     // Secondary Dominant resolution (e.g. III -> vi, II -> V, VI -> ii)
     else if (c1.functionLabel === 'Secondary Dominant') {
       cadences.push({
+        name: 'Secondary Dominant pull',
         type: 'Secondary Dominant Pull',
         shortName: `${c1.name} → ${c2.name}`,
         description: `${c1.name} acts as a temporary dominant, pulling strongly into ${c2.name}.`,
+        why: `${c1.name} acts as a temporary dominant, pulling strongly into ${c2.name}.`,
+        move, degrees, bars,
         fromBar, toBar, fromChord: c1.name, toChord: c2.name,
       });
     }
@@ -2040,6 +2067,10 @@ export interface VoiceLeadingLink {
   toBar: number;
   fromChord: string;
   toChord: string;
+  move: string;
+  chords: string;
+  link: string;
+  hasShared: boolean;
   commonNotes: string[];
   semitoneDistance: number;
   motionType: string;
@@ -2071,11 +2102,21 @@ export function analyzeVoiceLeading(chords: ChordBlock[]): VoiceLeadingLink[] {
       motionType = '4th / 5th Cycle Jump';
     }
 
+    const move = `Bar ${fromIdx + 1} → ${toIdx + 1}`;
+    const chordMove = `${c1.name} → ${c2.name}`;
+    const link = commonNotes.length
+      ? `${commonNotes.join(' · ')} held over`
+      : (semitoneDistance <= 2 ? 'Bass steps by a tone' : 'No shared notes');
+
     links.push({
       fromBar: fromIdx + 1,
       toBar: toIdx + 1,
       fromChord: c1.name,
       toChord: c2.name,
+      move,
+      chords: chordMove,
+      link,
+      hasShared: commonNotes.length > 0,
       commonNotes,
       semitoneDistance,
       motionType,
