@@ -2153,9 +2153,6 @@ import{f as Ri,u as _i,s as oi,n as si,l as ji,S as te,P as j,F as Ee,M as ri,C 
         `)}
       </div>
 
-      <div class="detail-kicker" style="margin-top: 18px;">Voicing on keys</div>
-      ${this.renderDetailKeyboard(e?.notes)}
-
       <div class="detail-kicker" style="margin-top: 20px;">Quality</div>
       <div class="detail-quality-box">
         <div class="quality-label">${i}</div>

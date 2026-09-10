@@ -1852,3 +1852,236 @@ export function buildDeviceShareUrl(progression: Progression, device: ShareDevic
   const chordParam = chords.map(c => encodeURIComponent(c.name)).join('+');
   return `${base}?p=${chordParam}`;
 }
+
+/* ==========================================================================
+   3-TIER MUSIC THEORY ENGINE HELPERS
+   ========================================================================== */
+
+export interface ScaleDegreeItem {
+  degreeKey: string;
+  roman: string;
+  chordName: string;
+  functionLabel: string;
+  notes: string[];
+  tension: number;
+  isUsedInLoop: boolean;
+}
+
+export function getDiatonicScaleDegreeList(
+  key: string,
+  scaleType: string,
+  data: RawChordData,
+  currentProgression?: Progression
+): ScaleDegreeItem[] {
+  const scaleKey = `${key}_${scaleType}`;
+  let scale = data.scales[scaleKey];
+  if (!scale) {
+    const fallbackKey = Object.keys(data.scales).find(k => k.endsWith(`_${scaleType}`)) || Object.keys(data.scales)[0];
+    scale = data.scales[fallbackKey] || { root: key, type: scaleType, degrees: {} };
+  }
+
+  const preferFlat = preferFlatSpelling(key, scaleType);
+  const romanTable = ROMAN_BY_SCALE[scaleType] || ROMAN_BY_SCALE.MAJOR;
+  const degrees = MODE_DEGREES[scaleType] || ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'LEADING-TONE'];
+
+  const usedChords = new Set(currentProgression?.chords.map(c => c.name.toUpperCase()) || []);
+
+  return degrees.map(degreeKey => {
+    const degProfile = scale.degrees[degreeKey];
+    const rawName = degProfile ? degProfile.chord_name : key;
+    const name = prettifyChordName(rawName);
+    const roman = romanTable[degreeKey] || '?';
+    const functionLabel = DEGREE_FUNCTION[degreeKey] || degreeKey;
+    const tension = DEGREE_TENSION[degreeKey] ?? 0.5;
+    const notes = notesForSymbol(rawName, preferFlat);
+    const isUsedInLoop = usedChords.has(name.toUpperCase());
+
+    return {
+      degreeKey,
+      roman,
+      chordName: name,
+      functionLabel,
+      notes,
+      tension,
+      isUsedInLoop,
+    };
+  });
+}
+
+export interface IntervalToken {
+  note: string;
+  intervalSymbol: string;
+  roleName: string;
+  isGuideTone: boolean;
+}
+
+const INTERVAL_META: Record<number, { symbol: string; name: string; isGuideTone: boolean }> = {
+  0: { symbol: '1', name: 'Root', isGuideTone: false },
+  1: { symbol: '♭9', name: 'Minor 9th', isGuideTone: false },
+  2: { symbol: '9', name: 'Major 2nd / 9th', isGuideTone: false },
+  3: { symbol: '♭3', name: 'Minor 3rd', isGuideTone: true },
+  4: { symbol: '3', name: 'Major 3rd', isGuideTone: true },
+  5: { symbol: '4', name: 'Perfect 4th', isGuideTone: false },
+  6: { symbol: '♭5', name: 'Diminished 5th', isGuideTone: false },
+  7: { symbol: '5', name: 'Perfect 5th', isGuideTone: false },
+  8: { symbol: '♯5 / ♭6', name: 'Augmented 5th', isGuideTone: false },
+  9: { symbol: '6', name: 'Major 6th', isGuideTone: false },
+  10: { symbol: '♭7', name: 'Minor 7th', isGuideTone: true },
+  11: { symbol: '7', name: 'Major 7th', isGuideTone: true },
+  14: { symbol: '9', name: 'Major 9th', isGuideTone: false },
+};
+
+export function getChordIntervalBreakdown(symbol: string, preferFlat: boolean): IntervalToken[] {
+  const { root, quality } = parseChordSymbol(symbol);
+  const rootPc = PITCH_CLASS[root] ?? 0;
+  const intervals = QUALITY_INTERVALS[quality] || QUALITY_INTERVALS.maj;
+  const effectivePreferFlat = preferChordFlatSpelling(root, quality, preferFlat);
+
+  return intervals.map(iv => {
+    const note = noteName(rootPc + iv, effectivePreferFlat);
+    const meta = INTERVAL_META[iv] || { symbol: `+${iv}`, name: `Interval ${iv}`, isGuideTone: false };
+    return {
+      note,
+      intervalSymbol: meta.symbol,
+      roleName: meta.name,
+      isGuideTone: meta.isGuideTone,
+    };
+  });
+}
+
+export interface CadenceInfo {
+  type: string;
+  shortName: string;
+  description: string;
+  fromBar: number;
+  toBar: number;
+  fromChord: string;
+  toChord: string;
+}
+
+export function detectProgressionCadences(chords: ChordBlock[]): CadenceInfo[] {
+  if (!chords || chords.length < 2) return [];
+  const cadences: CadenceInfo[] = [];
+
+  const cleanRoman = (r: string) => r.replace(/[^A-Za-z♭♯]/g, '');
+
+  for (let i = 0; i < chords.length; i++) {
+    const fromIdx = i;
+    const toIdx = (i + 1) % chords.length;
+    const c1 = chords[fromIdx];
+    const c2 = chords[toIdx];
+    const r1 = cleanRoman(c1.roman);
+    const r2 = cleanRoman(c2.roman);
+
+    const fromBar = fromIdx + 1;
+    const toBar = toIdx + 1;
+
+    // Authentic Cadence (V -> I or V -> i)
+    if ((r1 === 'V' || r1 === 'v') && (r2 === 'I' || r2 === 'i')) {
+      cadences.push({
+        type: 'Authentic Cadence',
+        shortName: `${c1.name} → ${c2.name} (${c1.roman}–${c2.roman})`,
+        description: 'Dominant tension resolving home to the Tonic — the fundamental release of Western harmony.',
+        fromBar, toBar, fromChord: c1.name, toChord: c2.name,
+      });
+    }
+    // Plagal Cadence (IV -> I or iv -> i)
+    else if ((r1 === 'IV' || r1 === 'iv') && (r2 === 'I' || r2 === 'i')) {
+      cadences.push({
+        type: 'Plagal Cadence',
+        shortName: `${c1.name} → ${c2.name} (${c1.roman}–${c2.roman})`,
+        description: 'Subdominant lift resolving home — open, uplifting, and classic "Amen" motion.',
+        fromBar, toBar, fromChord: c1.name, toChord: c2.name,
+      });
+    }
+    // Deceptive Cadence (V -> vi or V -> ♭VI)
+    else if ((r1 === 'V' || r1 === 'v') && (r2 === 'vi' || r2 === '♭VI' || r2 === 'VI')) {
+      cadences.push({
+        type: 'Deceptive Cadence',
+        shortName: `${c1.name} → ${c2.name} (${c1.roman}–${c2.roman})`,
+        description: 'Dominant tension subverts expectation by landing on the relative minor submediant.',
+        fromBar, toBar, fromChord: c1.name, toChord: c2.name,
+      });
+    }
+    // Backdoor Cadence (♭VII -> I or ♭VII -> i)
+    else if (r1 === '♭VII' && (r2 === 'I' || r2 === 'i')) {
+      cadences.push({
+        type: 'Backdoor Cadence',
+        shortName: `${c1.name} → ${c2.name} (♭VII–${c2.roman})`,
+        description: 'Borrowed subtonic resolving up a whole step into the tonic with smooth jazz/pop flavor.',
+        fromBar, toBar, fromChord: c1.name, toChord: c2.name,
+      });
+    }
+    // Half Cadence (* -> V)
+    else if ((r2 === 'V' || r2 === 'v') && r1 !== 'V' && r1 !== 'v') {
+      cadences.push({
+        type: 'Half Cadence',
+        shortName: `${c1.name} → ${c2.name} (${c1.roman}–${c2.roman})`,
+        description: 'Pauses on the dominant, leaving the phrase hanging in expectant tension.',
+        fromBar, toBar, fromChord: c1.name, toChord: c2.name,
+      });
+    }
+    // Secondary Dominant resolution (e.g. III -> vi, II -> V, VI -> ii)
+    else if (c1.functionLabel === 'Secondary Dominant') {
+      cadences.push({
+        type: 'Secondary Dominant Pull',
+        shortName: `${c1.name} → ${c2.name}`,
+        description: `${c1.name} acts as a temporary dominant, pulling strongly into ${c2.name}.`,
+        fromBar, toBar, fromChord: c1.name, toChord: c2.name,
+      });
+    }
+  }
+
+  return cadences;
+}
+
+export interface VoiceLeadingLink {
+  fromBar: number;
+  toBar: number;
+  fromChord: string;
+  toChord: string;
+  commonNotes: string[];
+  semitoneDistance: number;
+  motionType: string;
+}
+
+export function analyzeVoiceLeading(chords: ChordBlock[]): VoiceLeadingLink[] {
+  if (!chords || chords.length < 2) return [];
+  const links: VoiceLeadingLink[] = [];
+
+  for (let i = 0; i < chords.length; i++) {
+    const fromIdx = i;
+    const toIdx = (i + 1) % chords.length;
+    const c1 = chords[fromIdx];
+    const c2 = chords[toIdx];
+
+    const pcs1 = new Set(c1.notes.map(n => PITCH_CLASS[n] ?? 0));
+    const commonNotes = c2.notes.filter(n => pcs1.has(PITCH_CLASS[n] ?? -1));
+
+    const root1 = PITCH_CLASS[rootOfChordName(c1.name)] ?? 0;
+    const root2 = PITCH_CLASS[rootOfChordName(c2.name)] ?? 0;
+    const semitoneDistance = Math.min((root2 - root1 + 12) % 12, (root1 - root2 + 12) % 12);
+
+    let motionType = 'Harmonic Shift';
+    if (commonNotes.length >= 2) {
+      motionType = `Strong Common Tones (${commonNotes.length} shared)`;
+    } else if (semitoneDistance <= 2) {
+      motionType = 'Stepwise Bass Motion';
+    } else if (semitoneDistance === 5 || semitoneDistance === 7) {
+      motionType = '4th / 5th Cycle Jump';
+    }
+
+    links.push({
+      fromBar: fromIdx + 1,
+      toBar: toIdx + 1,
+      fromChord: c1.name,
+      toChord: c2.name,
+      commonNotes,
+      semitoneDistance,
+      motionType,
+    });
+  }
+
+  return links;
+}
+

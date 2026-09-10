@@ -268,7 +268,7 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await page.mouse.up();
   });
 
-  test('Desktop: Chord Info Card allows modifying chord quality, extensions, and updates mini-keyboard', async ({ page, isMobile }) => {
+  test('Desktop: Chord Info Card allows modifying chord quality and extensions', async ({ page, isMobile }) => {
     test.skip(isMobile, 'Desktop chord detail test');
 
     const firstPad = page.locator('.pad-cell').first();
@@ -278,11 +278,9 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     const inspector = page.locator('aside.inspector-right');
     await expect(inspector.locator('.detail-kicker').first()).toContainText(/Chord/i);
 
-    // Mini-keyboard preview is visible
+    // Mini-keyboard diagram is removed
     const miniKeyboard = inspector.locator('.detail-mini-keyboard');
-    await expect(miniKeyboard).toBeVisible();
-    await expect(miniKeyboard.locator('.white-key')).toHaveCount(7);
-    await expect(miniKeyboard.locator('.black-key')).toHaveCount(5);
+    await expect(miniKeyboard).toHaveCount(0);
 
     // Quality and extension chip grids
     const qualityChips = inspector.locator('.quality-chips-grid .chord-mod-chip');
@@ -303,9 +301,6 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await expect(firstPad.locator('.pad-chord-name')).toHaveText(`${root}m`);
     await expect(inspector.locator('.detail-quality-box')).toContainText('Minor');
     await expect(qualityChips.filter({ hasText: 'Minor' })).toHaveClass(/active/);
-
-    // Mini keyboard has at least one active key
-    await expect(miniKeyboard.locator('.white-key.active, .black-key.active').first()).toBeVisible();
 
     // Click Major 7th (M7) extension chip
     await extChips.filter({ hasText: 'Major 7th (M7)' }).click();

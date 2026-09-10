@@ -5,6 +5,10 @@ import {
   MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension,
   RawChordData, AUTOPLAY_INTERVAL_MS, preferFlatSpelling, notesForSymbol, parseChordSymbol,
   generateTheoryGroups, generateBorrowedChords, applyVoicingToChord,
+  getDiatonicScaleDegreeList, ScaleDegreeItem,
+  getChordIntervalBreakdown, IntervalToken,
+  detectProgressionCadences, CadenceInfo,
+  analyzeVoiceLeading, VoiceLeadingLink,
 } from '../services/chord-engine';
 import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
@@ -2398,10 +2402,20 @@ export class LoopScreen extends LitElement {
     `;
   }
 
+  private onDiatonicDegreeClick(deg: ScaleDegreeItem) {
+    if (!this.progression) return;
+    const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+    const notes = deg.notes || notesForSymbol(deg.chordName, preferFlat);
+    playbackEngine.auditionChord({ name: deg.chordName, notes } as ChordBlock, 0.8);
+    this.dispatchEvent(new CustomEvent('toast', { detail: `Degree ${deg.roman}: ${deg.chordName} (${deg.functionLabel})`, bubbles: true, composed: true }));
+  }
+
   private renderChordDetailContent(chords: ChordBlock[]) {
     const chord = chords[this.detailIndex];
     const curQuality = this.getChordQualityLabel(chord?.name);
     const curExt = this.getChordExtensionLabel(chord?.name);
+    const preferFlat = preferFlatSpelling(this.progression?.key || 'C', this.progression?.scaleType || 'MAJOR');
+    const intervalTokens = chord ? getChordIntervalBreakdown(chord.name, preferFlat) : [];
 
     return html`
       <div class="detail-kicker">Notes</div>
@@ -2411,8 +2425,18 @@ export class LoopScreen extends LitElement {
         `)}
       </div>
 
-      <div class="detail-kicker" style="margin-top: 18px;">Voicing on keys</div>
-      ${this.renderDetailKeyboard(chord?.notes)}
+      ${this.showTheory && intervalTokens.length ? html`
+        <div class="detail-kicker" style="margin-top: 18px;">Interval Formula &amp; Guide Tones</div>
+        <div class="theory-interval-tokens-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 8px; margin-top: 8px;">
+          ${intervalTokens.map(tok => html`
+            <div class="interval-token-badge ${tok.isGuideTone ? 'guide-tone' : ''}" style="background: ${tok.isGuideTone ? 'rgba(242, 115, 95, 0.16)' : 'var(--cv-surface)'}; border: 1.5px solid ${tok.isGuideTone ? '#F2735F' : 'rgba(46,39,31,0.1)'}; border-radius: 12px; padding: 7px 6px; text-align: center;">
+              <div style="font-size: 14px; font-weight: 800; color: #2E271F;">${tok.note}</div>
+              <div style="font-size: 11px; font-weight: 800; color: ${tok.isGuideTone ? '#F2735F' : 'var(--cv-label)'}; margin-top: 2px;">${tok.intervalSymbol}</div>
+              <div style="font-size: 9.5px; font-weight: 700; color: var(--cv-ink-muted); margin-top: 2px; line-height: 1.1;">${tok.roleName}</div>
+            </div>
+          `)}
+        </div>
+      ` : ''}
 
       <div class="detail-kicker" style="margin-top: 20px;">Quality</div>
       <div class="detail-quality-box">
@@ -3363,6 +3387,37 @@ export class LoopScreen extends LitElement {
                   </div>
                 </div>
 
+                <!-- Tier 1: Interactive Diatonic Scale Bar (Theory Mode) -->
+                ${this.showTheory && this.progression ? (() => {
+                  const diatonicDegrees = getDiatonicScaleDegreeList(this.progression.key, this.progression.scaleType, this.chordData, this.progression);
+                  return html`
+                    <div class="diatonic-scale-strip" style="background: var(--cv-surface, #F6EADB); border-radius: 16px; padding: 10px 14px; margin-bottom: 14px; border: 1px solid rgba(46,39,31,0.08);">
+                      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; color: var(--cv-label);">
+                          Diatonic Scale Roadmap · ${this.progression.key} ${this.progression.scaleType.replace('_', ' ')}
+                        </div>
+                        <div style="font-size: 10px; font-weight: 700; color: var(--cv-ink-muted);">
+                          Tap degree to audition
+                        </div>
+                      </div>
+                      <div class="diatonic-pills-row" style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;">
+                        ${diatonicDegrees.map(deg => html`
+                          <button
+                            class="scale-degree-pill ${deg.isUsedInLoop ? 'in-loop' : ''}"
+                            style="flex: 1; min-width: 52px; padding: 7px 5px; border-radius: 12px; border: ${deg.isUsedInLoop ? '2px solid #2E271F' : '1px solid rgba(46,39,31,0.12)'}; background: ${deg.isUsedInLoop ? moodColor : '#FBF3E6'}; cursor: pointer; text-align: center; font-family: inherit; transition: transform 120ms ease;"
+                            @click=${() => this.onDiatonicDegreeClick(deg)}
+                            title="Degree ${deg.roman}: ${deg.chordName} (${deg.functionLabel})"
+                          >
+                            <div style="font-size: 11px; font-weight: 800; color: var(--cv-label);">${deg.roman}</div>
+                            <div style="font-size: 13.5px; font-weight: 800; color: #2E271F; margin-top: 1px;">${deg.chordName}</div>
+                            <div style="font-size: 9px; font-weight: 700; color: rgba(46,39,31,0.6); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${deg.functionLabel}</div>
+                          </button>
+                        `)}
+                      </div>
+                    </div>
+                  `;
+                })() : ''}
+
                 <!-- Pad Cells Grid -->
                 <div class="pad-cells-grid pad-cells-row">
                   ${chords.map((c, i) => {
@@ -3412,6 +3467,11 @@ export class LoopScreen extends LitElement {
                         <div class="pad-bottom-info">
                           <div class="pad-role-label">${ROLE_SHORT[c.functionLabel] || c.functionLabel}</div>
                           <div class="pad-chord-name">${c.name}</div>
+                          ${this.showTheory && c.notes && c.notes.length ? html`
+                            <div class="pad-notes-theory" style="font-size: 10px; font-weight: 800; letter-spacing: 0.3px; color: var(--cv-label); margin-top: 2px;">
+                              ${c.notes.join(' · ')}
+                            </div>
+                          ` : ''}
                           <div class="pad-meta-voicing">${this.lastPad?.idx === i ? (ZONE_NAMES[this.lastPad.zone] || this.lastPad.voicing) : ''}</div>
                         </div>
                       </div>
@@ -3756,11 +3816,58 @@ export class LoopScreen extends LitElement {
               </div>
               <div class="arc-caption">Taller means more unresolved.</div>
               <div class="arc-sentence-text">${arcSentence}</div>
-              ${this.showTheory ? html`
-                <div class="arc-theory-note">${this.progression?.key} ${this.progression?.scaleType}: ${chords.map(c => c.roman).join(' – ')}</div>
-              ` : ''}
+              ${this.showTheory ? (() => {
+                const cadences = detectProgressionCadences(chords);
+                const voiceLeadingLinks = analyzeVoiceLeading(chords);
+                return html`
+                  <div class="arc-theory-note" style="margin-top: 10px; padding: 10px 12px; background: var(--cv-surface); border-radius: 12px; font-weight: 700; font-size: 11.5px; line-height: 1.4;">
+                    Key &amp; Mode: <strong>${this.progression?.key} ${this.progression?.scaleType?.replace('_', ' ')}</strong><br/>
+                    Harmonic Formula: <strong>${chords.map(c => c.roman).join(' – ')}</strong>
+                  </div>
 
-              <div class="inspector-tip-box">
+                  ${cadences.length ? html`
+                    <div class="theory-cadences-section" style="margin-top: 14px;">
+                      <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; color: var(--cv-label); margin-bottom: 6px;">
+                        Detected Cadences
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 7px;">
+                        ${cadences.map(cad => html`
+                          <div class="cadence-card" style="background: var(--cv-surface); border-radius: 12px; padding: 9px 11px; border-left: 3px solid #F2735F;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                              <span style="font-size: 12px; font-weight: 800; color: #2E271F;">${cad.type}</span>
+                              <span style="font-size: 9.5px; font-weight: 800; color: var(--cv-label); background: rgba(46,39,31,0.08); padding: 2px 6px; border-radius: 100px;">Bar ${cad.fromBar} → ${cad.toBar}</span>
+                            </div>
+                            <div style="font-size: 12px; font-weight: 800; color: #2E271F; margin-top: 2px;">${cad.shortName}</div>
+                            <div style="font-size: 11px; color: var(--cv-ink-muted); margin-top: 2px; line-height: 1.3;">${cad.description}</div>
+                          </div>
+                        `)}
+                      </div>
+                    </div>
+                  ` : ''}
+
+                  ${voiceLeadingLinks.length ? html`
+                    <div class="theory-voice-leading-section" style="margin-top: 14px;">
+                      <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; color: var(--cv-label); margin-bottom: 6px;">
+                        Voice-Leading Links
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 6px;">
+                        ${voiceLeadingLinks.map(link => html`
+                          <div style="display: flex; align-items: center; justify-content: space-between; background: var(--cv-surface); border-radius: 10px; padding: 7px 9px; font-size: 11px;">
+                            <div style="font-weight: 800; color: #2E271F;">
+                              Bar ${link.fromBar} (${link.fromChord}) → ${link.toBar} (${link.toChord})
+                            </div>
+                            <div style="font-weight: 700; color: ${link.commonNotes.length ? '#7FA968' : 'var(--cv-label)'}; font-size: 10.5px;">
+                              ${link.commonNotes.length ? `${link.commonNotes.join(', ')} shared` : link.motionType}
+                            </div>
+                          </div>
+                        `)}
+                      </div>
+                    </div>
+                  ` : ''}
+                `;
+              })() : ''}
+
+              <div class="inspector-tip-box" style="margin-top: 14px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${moodColor}" stroke-width="2.4" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
                 <div>Press a chord to hear it — the arrows on a card show what else could go there.</div>
               </div>
