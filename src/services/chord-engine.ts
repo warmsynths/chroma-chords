@@ -104,6 +104,11 @@ const QUALITY_INTERVALS: Record<string, number[]> = {
   dom9: [0, 4, 7, 10, 14],
   maj9: [0, 4, 7, 11, 14],
   min9: [0, 3, 7, 10, 14],
+  maj6: [0, 4, 7, 9],
+  min6: [0, 3, 7, 9],
+  mmaj7: [0, 3, 7, 11],
+  sus7: [0, 5, 7, 10],
+  sus9: [0, 5, 7, 10, 14],
 };
 
 export const CHORD_QUALITIES = Object.keys(QUALITY_INTERVALS);
@@ -264,10 +269,16 @@ export function parseChordSymbol(symbol: string): { root: string; quality: keyof
   let quality: keyof typeof QUALITY_INTERVALS = 'maj';
   if (rest.includes('maj9') || (rest.includes('m9') && rest.includes('maj'))) quality = 'maj9';
   else if (rest.includes('min9') || rest.includes('m9')) quality = 'min9';
-  else if (rest.includes('9') || rest.includes('dom9')) quality = 'dom9';
-  else if (rest.includes('m(maj7)') || rest.includes('mmaj7') || rest.includes('minmaj7')) quality = 'min7';
+  else if (rest.includes('dom9') || rest.includes('9sus') || rest.includes('9')) {
+    if (rest.includes('9sus') || rest.includes('sus9')) quality = 'sus9';
+    else quality = 'dom9';
+  }
+  else if (rest.includes('m(maj7)') || rest.includes('mmaj7') || rest.includes('minmaj7')) quality = 'mmaj7';
+  else if (rest.includes('maj7sus') || rest.includes('7sus')) quality = 'sus7';
   else if (rest.includes('maj7') || (rest.includes('m7') && rest.includes('maj'))) quality = 'maj7';
   else if (rest.includes('min7') || rest.includes('m7')) quality = 'min7';
+  else if (rest.includes('min6') || rest.includes('m6')) quality = 'min6';
+  else if (rest.includes('maj6') || (rest.includes('6') && !rest.includes('m'))) quality = 'maj6';
   else if (rest.includes('dim7')) quality = 'dim7';
   else if (rest.includes('dim') || rest.includes('°')) quality = 'dim';
   else if (rest.includes('aug') || rest.includes('+')) quality = 'aug';

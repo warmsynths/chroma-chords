@@ -363,7 +363,9 @@ export class LoopScreen extends LitElement {
   @state() private mobileSheetOpen = false;
   @state() private mobileDetailSheetOpen = false;
   @state() padFlash = -1;
-  @state() lastPad: { idx: number; voicing: string; vel: number; zone: number } | null = null;
+  @state() padHeld = -1;
+  @state() gridFor = -1;
+  @state() lastPad: { idx: number; voicing: string; vel: number; zone: number; reach?: number; meta?: string; playedChordName?: string } | null = null;
   @state() tempoOpen = false;
   @state() feelOpen = false;
   @state() bounceOpen = false;
@@ -382,6 +384,8 @@ export class LoopScreen extends LitElement {
   @state() auditionDeg: number | null = null;
   @state() auditionName: string | null = null;
   @state() auditionBar: number = 0;
+
+  private gridTimer: number | null = null;
 
   private vibeExamples = ['Rainy drive at 2am, first day of summer...', 'Portishead trip-hop', 'Bohemian Rhapsody', 'Tame Impala neo-psychedelia', 'Warm acoustic fireplace'];
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
@@ -910,7 +914,7 @@ export class LoopScreen extends LitElement {
       padding: 14px;
       border-radius: 20px;
       cursor: pointer;
-      min-height: 118px;
+      min-height: 124px;
       outline-offset: 4px;
       touch-action: none;
       transition: box-shadow 140ms ease, transform 120ms ease;
@@ -920,14 +924,39 @@ export class LoopScreen extends LitElement {
       transform: translateY(-1px);
     }
     .pad-cell.pad-held {
-      transform: scale(0.985);
+      transform: scale(0.96);
       box-shadow: inset 0 0 0 2.5px #2E271F;
     }
     .pad-cell.selected {
       box-shadow: inset 0 0 0 2.5px #2E271F, 0 14px 26px -18px rgba(46, 39, 31, 0.45);
     }
     .pad-cell.pad-lit {
-      box-shadow: inset 0 0 0 2px rgba(46, 39, 31, 0.3);
+      box-shadow: inset 0 0 0 2.5px rgba(46, 39, 31, 0.4);
+    }
+    .pad-voicing-grid {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background-image: linear-gradient(180deg, rgba(46, 39, 31, 0.2) 1px, transparent 1px);
+      background-size: 100% 33.33%;
+      opacity: 0;
+      transition: opacity 1100ms ease;
+    }
+    .pad-voicing-grid.active {
+      opacity: 1 !important;
+      transition: opacity 90ms ease !important;
+    }
+    .pad-rung-dots {
+      display: flex;
+      gap: 3px;
+      margin-top: 7px;
+      align-items: center;
+    }
+    .pad-rung-dot {
+      height: 4px;
+      border-radius: 3px;
+      transition: width 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), background 180ms ease;
     }
     .zone-line-a {
       position: absolute;
@@ -978,11 +1007,11 @@ export class LoopScreen extends LitElement {
       position: absolute;
       top: 9px;
       right: 9px;
-      width: 28px;
-      height: 28px;
+      width: 30px;
+      height: 30px;
       border: none;
       border-radius: 50%;
-      background: rgba(251, 243, 230, 0.82);
+      background: rgba(251, 243, 230, 0.88);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -999,11 +1028,11 @@ export class LoopScreen extends LitElement {
       position: absolute;
       top: 9px;
       right: 43px;
-      width: 28px;
-      height: 28px;
+      width: 30px;
+      height: 30px;
       border: none;
       border-radius: 50%;
-      background: rgba(251, 243, 230, 0.82);
+      background: rgba(251, 243, 230, 0.88);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1022,7 +1051,7 @@ export class LoopScreen extends LitElement {
       align-items: center;
       gap: 6px;
       min-width: 0;
-      padding-right: 64px;
+      padding-right: 76px;
     }
     .pad-key-badge {
       font-size: 11px;
@@ -1046,12 +1075,18 @@ export class LoopScreen extends LitElement {
       color: rgba(46, 39, 31, 0.45);
     }
     .pad-chord-name {
+      font-family: var(--cv-font, 'Plus Jakarta Sans', -apple-system, sans-serif);
       font-size: clamp(20px, 2.1vw, 30px);
       font-weight: 800;
       color: #2E271F;
       letter-spacing: -0.02em;
       line-height: 1.05;
       overflow-wrap: anywhere;
+      margin-top: 2px;
+    }
+    @keyframes cvfv-panel {
+      from { transform: translateY(-8px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
     }
     .pad-meta-voicing {
       font-size: 11px;
@@ -1059,8 +1094,8 @@ export class LoopScreen extends LitElement {
       letter-spacing: 0.5px;
       text-transform: uppercase;
       color: rgba(46, 39, 31, 0.62);
-      margin-top: 5px;
-      height: 13px;
+      margin-top: 4px;
+      min-height: 14px;
     }
 
     /* Playing now strip */
@@ -1120,12 +1155,19 @@ export class LoopScreen extends LitElement {
       font-size: 12.5px;
       font-weight: 700;
       cursor: pointer;
-      transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), transform 120ms ease, box-shadow 150ms ease;
       flex-shrink: 0;
       white-space: nowrap;
     }
     .instrument-chip:hover, .play-style-chip:hover, .tempo-chip:hover, .feel-chip:hover {
       background: var(--cv-surface, #F6EADB);
+    }
+    .instrument-chip.open, .play-style-chip.open, .tempo-chip.open, .feel-chip.open {
+      background: var(--cv-surface, #F6EADB);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.16);
+    }
+    .instrument-chip:active, .play-style-chip:active, .tempo-chip:active, .feel-chip:active {
+      transform: scale(0.97);
     }
     .quick-divider {
       width: 1px;
@@ -1133,6 +1175,71 @@ export class LoopScreen extends LitElement {
       min-height: 28px;
       background: rgba(46, 39, 31, 0.12);
       margin: 0 4px;
+    }
+    .song-track-container {
+      display: flex;
+      gap: 14px;
+      margin-top: 18px;
+      overflow-x: auto;
+      padding-bottom: 12px;
+      align-items: stretch;
+    }
+    @media (max-width: 768px) {
+      .song-track-container {
+        flex-direction: column;
+        overflow-x: visible;
+      }
+    }
+    .song-track-card {
+      flex: 1;
+      min-width: 190px;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 18px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      cursor: pointer;
+      transition: transform 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), box-shadow 150ms ease;
+      box-sizing: border-box;
+    }
+    .song-track-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px -14px rgba(46, 39, 31, 0.35);
+    }
+    .song-track-card.active {
+      box-shadow: inset 0 0 0 2px var(--cv-ink, #2E271F);
+    }
+    .song-card-chips {
+      display: flex;
+      gap: 5px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .add-section-card {
+      min-width: 180px;
+      border-radius: 18px;
+      border: 1.5px dashed rgba(46, 39, 31, 0.25);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--cv-label, #8A6B3F);
+      font-weight: 800;
+      font-size: 13px;
+      cursor: pointer;
+      transition: transform 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), background 150ms ease;
+      box-sizing: border-box;
+    }
+    .add-section-card:hover {
+      background: rgba(46, 39, 31, 0.03);
+      transform: translateY(-2px);
+    }
+    .add-section-card:active {
+      transform: scale(0.98);
     }
     .bounce-btn {
       margin-left: auto;
@@ -2043,9 +2150,34 @@ export class LoopScreen extends LitElement {
     if (idx >= 0 && idx < chords.length) {
       e.preventDefault();
       const vel = 88 + (idx % 3) * 6;
+      const chord = chords[idx];
+      const lad = this.getChordLadder(chord);
+      const rung = this.getLadderHome(chord);
+
+      let reach = rung >= 0 ? rung : 0;
+      let zone = 1;
+      let voicing = '1st inversion';
+      if (this.lastPad?.idx === idx && typeof this.lastPad.reach === 'number' && lad.length > 0) {
+        reach = (this.lastPad.reach + 1) % lad.length;
+      }
+      if (e.shiftKey) {
+        zone = 0;
+        voicing = 'up an octave';
+      }
+
+      const targetChord = (lad.length > 0 && lad[reach]) ? lad[reach] : chord.name;
+      const showsReach = reach !== rung && !!lad[reach];
+      const key = this.progression?.key || 'C';
+      const scaleType = this.progression?.scaleType || 'MAJOR';
+      const notes = notesForSymbol(targetChord, preferFlatSpelling(key, scaleType));
+
       this.padFlash = idx;
-      this.lastPad = { idx, voicing: '1st inversion', vel, zone: 1 };
-      playbackEngine.playChordAtIndex(idx, 0.85, '1st inversion', vel);
+      this.padHeld = idx;
+      this.gridFor = idx;
+      const meta = showsReach ? ('→ ' + targetChord) : (zone === 0 ? 'UP AN OCTAVE' : (zone === 1 ? '1ST INVERSION' : 'ROOT POSITION'));
+      this.lastPad = { idx, voicing, vel, zone, reach, meta };
+
+      playbackEngine.playChordNotes(notes, 0.85, voicing, vel);
       this.requestUpdate();
     }
   };
@@ -2120,9 +2252,27 @@ export class LoopScreen extends LitElement {
     this.requestUpdate();
   }
 
+  getChordLadder(c: ChordBlock): string[] {
+    if (!c) return [];
+    const n = String(c.name);
+    const root = (n.match(/^[A-G][#b]?/) || ['C'])[0];
+    const suf = /sus/.test(n) ? ['sus4', '7sus4', '9sus4', 'maj7sus4']
+      : (/dim/.test(n) ? ['dim', 'dim7', 'dim9']
+      : (/^[A-G][#b]?m(?!aj)/.test(n) ? ['m', 'm6', 'm7', 'm9', 'mMaj7']
+      : ['', '6', '7', 'maj7', 'maj9']));
+    return suf.map(s => root + s);
+  }
+
+  getLadderHome(c: ChordBlock): number {
+    return this.getChordLadder(c).indexOf(c && c.name);
+  }
+
   private handlePadPointerDown(e: PointerEvent, index: number) {
     let voicing = '1st inversion';
     let zone = 1;
+    let reach: number | undefined = undefined;
+
+    const chords = this.progression?.chords;
     if (e.currentTarget && typeof (e.currentTarget as HTMLElement).getBoundingClientRect === 'function') {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       const ratio = (e.clientY - rect.top) / (rect.height || 1);
@@ -2136,16 +2286,50 @@ export class LoopScreen extends LitElement {
         zone = 1;
         voicing = '1st inversion';
       }
+
+      if (typeof e.clientX === 'number' && chords && chords[index]) {
+        const lad = this.getChordLadder(chords[index]);
+        const x = Math.min(0.999, Math.max(0, (e.clientX - rect.left) / (rect.width || 1)));
+        reach = Math.min(lad.length - 1, Math.floor(x * lad.length));
+      }
     }
+
+    const chord = chords ? chords[index] : null;
+    if (!chord) return;
+    const lad = this.getChordLadder(chord);
+    const rung = this.getLadderHome(chord);
+    const targetChord = (reach !== undefined && lad[reach]) ? lad[reach] : chord.name;
+    const showsReach = reach !== undefined && reach !== rung && !!lad[reach];
+
+    const key = this.progression?.key || 'C';
+    const scaleType = this.progression?.scaleType || 'MAJOR';
+    const notes = notesForSymbol(targetChord, preferFlatSpelling(key, scaleType));
+
     const vel = 88 + (index % 3) * 6;
+    if (this.gridTimer) {
+      clearTimeout(this.gridTimer);
+      this.gridTimer = null;
+    }
     this.padFlash = index;
-    this.lastPad = { idx: index, voicing, vel, zone };
-    playbackEngine.playChordAtIndex(index, 0.85, voicing, vel);
+    this.padHeld = index;
+    this.gridFor = index;
+    const meta = showsReach ? ('→ ' + targetChord) : (zone === 0 ? 'UP AN OCTAVE' : (zone === 1 ? '1ST INVERSION' : 'ROOT POSITION'));
+    this.lastPad = { idx: index, voicing, vel, zone, reach, meta };
+
+    playbackEngine.playChordNotes(notes, 0.85, voicing, vel);
     this.requestUpdate();
   }
 
   private handlePadPointerUp() {
     this.padFlash = -1;
+    this.padHeld = -1;
+    if (this.gridTimer) {
+      clearTimeout(this.gridTimer);
+    }
+    this.gridTimer = window.setTimeout(() => {
+      this.gridFor = -1;
+      this.requestUpdate();
+    }, 1100);
     this.requestUpdate();
   }
 
@@ -3381,6 +3565,80 @@ export class LoopScreen extends LitElement {
     `;
   }
 
+  private renderChordPad(c: ChordBlock, i: number, moodColor: string, isDesktop: boolean) {
+    const role = roleForTension(c.tension || 0.1);
+    const isLit = this.activeIndex === i && this.playing;
+    const isHeld = this.padFlash === i || this.padHeld === i;
+    const isSelected = this.swapIndex === i;
+
+    const lad = this.getChordLadder(c);
+    const rung = this.getLadderHome(c);
+    const lastHere = this.lastPad?.idx === i;
+    const reached = lastHere && typeof this.lastPad?.reach === 'number' ? this.lastPad.reach : rung;
+    const showsReach = lastHere && reached >= 0 && reached !== rung && lad[reached];
+    const dotAt = showsReach ? reached : rung;
+    const metaLabel = lastHere
+      ? (showsReach ? ('→ ' + lad[reached]) : (ZONE_NAMES[this.lastPad?.zone ?? 1] || this.lastPad?.voicing || ''))
+      : '';
+
+    return html`
+      <div
+        class="pad-cell ${isDesktop ? 'chord-item-wrap' : ''} ${isHeld ? 'pad-held' : ''} ${isSelected ? 'selected' : ''} ${isLit ? 'pad-lit' : ''}"
+        style="background: ${role.color};"
+        tabindex="0"
+        role="button"
+        aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || c.functionLabel} — press to play it; press nearer the top for a higher voicing"
+        @pointerdown=${(e: PointerEvent) => this.handlePadPointerDown(e, i)}
+        @pointerup=${() => this.handlePadPointerUp()}
+        @pointercancel=${() => this.handlePadPointerUp()}
+        @pointerleave=${() => this.handlePadPointerUp()}
+      >
+        <div class="pad-voicing-grid ${this.gridFor === i ? 'active' : ''}">
+          ${lad.slice(1).map((_, li) => html`
+            <div style="position: absolute; top: 0; bottom: 0; left: ${((li + 1) / lad.length) * 100}%; width: 1px; background: rgba(46,39,31,0.18);"></div>
+          `)}
+        </div>
+
+        <div class="zone-line-a ${this.lastPad?.idx === i && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
+        <div class="zone-line-b ${this.lastPad?.idx === i && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
+
+        <button
+          class="pad-swap-btn"
+          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openSwap(i); }}
+          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+          aria-label="Swap ${c.name}"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
+        </button>
+
+        <button
+          class="pad-detail-btn"
+          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openDetail(i); }}
+          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+          aria-label="View voicing for ${c.name}"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+
+        <div class="pad-top-row">
+          <span class="pad-key-badge">${PAD_KEYS[i] || ''}</span>
+          ${this.showTheory && c.roman ? html`<span class="pad-roman-badge">${c.roman}</span>` : ''}
+        </div>
+
+        <div class="pad-bottom-info">
+          <div class="pad-role-label">${ROLE_SHORT[c.functionLabel] || c.functionLabel}</div>
+          <div class="pad-chord-name">${(lastHere && showsReach && lad[reached]) ? lad[reached] : c.name}</div>
+          ${this.showTheory && c.notes && c.notes.length ? html`
+            <div class="pad-notes-theory" style="font-size: 10px; font-weight: 800; letter-spacing: 0.3px; color: var(--cv-label); margin-top: 2px;">
+              ${c.notes.join(' · ')}
+            </div>
+          ` : ''}
+          ${metaLabel ? html`<div class="pad-meta-voicing">${metaLabel}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
   private renderLibraryPopoverContent(moodColor: string) {
     const q = this.librarySearch.trim().toLowerCase();
     const visible = this.savedSets.filter(s => !q || (s.name + ' ' + s.genre + ' ' + s.mood).toLowerCase().includes(q));
@@ -3547,73 +3805,10 @@ export class LoopScreen extends LitElement {
               <div class="stage-card" style="padding: 18px 14px;">
                 <!-- 2-column pad cells grid -->
                 <div class="pad-cells-grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-                  ${chords.map((chord, idx) => {
-                    const role = roleForTension(chord.tension || 0.1);
-                    const isHeld = this.padFlash === idx;
-                    const isLit = this.playing && idx === this.progressStep;
-
-                    return html`
-                      <div
-                        class="pad-cell ${isHeld ? 'pad-held' : ''} ${isLit ? 'pad-lit' : ''}"
-                        style="background: ${role.color}; min-height: 108px;"
-                        tabindex="0"
-                        role="button"
-                        aria-label="${chord.name}, ${ROLE_PLAIN[chord.functionLabel] || chord.functionLabel} — press to play it; press nearer the top for a higher voicing"
-                        @pointerdown=${(e: PointerEvent) => this.handlePadPointerDown(e, idx)}
-                        @pointerup=${() => this.handlePadPointerUp()}
-                        @pointercancel=${() => this.handlePadPointerUp()}
-                        @pointerleave=${() => this.handlePadPointerUp()}
-                      >
-                        <div class="zone-line-a ${this.lastPad?.idx === idx && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
-                        <div class="zone-line-b ${this.lastPad?.idx === idx && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
-
-                        <button
-                          class="pad-swap-btn"
-                          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openSwap(idx); }}
-                          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                          aria-label="Swap ${chord.name}"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
-                        </button>
-
-                        <button
-                          class="pad-detail-btn"
-                          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openDetail(idx); }}
-                          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                          aria-label="View voicing for ${chord.name}"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-
-                        <div class="pad-top-row">
-                          <span class="pad-key-badge">${PAD_KEYS[idx] || ''}</span>
-                          ${this.showTheory && chord.roman ? html`<span class="pad-roman-badge">${chord.roman}</span>` : ''}
-                        </div>
-
-                        <div class="pad-bottom-info">
-                          <div class="pad-role-label">${ROLE_SHORT[chord.functionLabel] || chord.functionLabel}</div>
-                          <div class="pad-chord-name" style="font-size: 20px;">${chord.name}</div>
-                          ${this.showTheory && chord.notes && chord.notes.length ? html`
-                            <div class="pad-notes-theory" style="font-size: 10px; font-weight: 800; letter-spacing: 0.3px; color: var(--cv-label); margin-top: 2px;">
-                              ${chord.notes.join(' · ')}
-                            </div>
-                          ` : ''}
-                          <div class="pad-meta-voicing">${this.lastPad?.idx === idx ? (ZONE_NAMES[this.lastPad.zone] || this.lastPad.voicing) : ''}</div>
-                        </div>
-                      </div>
-                    `;
-                  })}
+                  ${chords.map((chord, idx) => this.renderChordPad(chord, idx, moodColor, false))}
                 </div>
 
                 ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, true) : ''}
-
-                <div class="playing-now-row">
-                  <div class="playing-now-kicker">Playing now</div>
-                  <div class="playing-now-chord">${this.lastPad ? chords[this.lastPad.idx]?.name : '—'}</div>
-                  <div class="playing-now-desc">
-                    ${this.lastPad ? `${this.lastPad.voicing} · velocity ${this.lastPad.vel}` : 'Press a chord — nearer the top of a card plays a higher voicing. Home-row keys A S D F play them too.'}
-                  </div>
-                </div>
               </div>
 
               <!-- Quick chips -->
@@ -3704,19 +3899,38 @@ export class LoopScreen extends LitElement {
                 </div>
               ` : ''}
             ` : this.activeView === 'song' ? html`
-              <div class="song-track-list">
-                ${this.sections.map((sec, i) => html`
-                  <div class="song-card" @click=${() => { this.activeSectionIdx = i; this.activeView = 'loop'; }}>
-                    <div style="display: flex; gap: 5px; margin-bottom: 6px;">
-                      ${sec.progression.chords.map(c => {
-                        const role = roleForTension(c.tension);
-                        return html`<span style="display:inline-block;width:8px;height:8px;border-radius:${Math.round(role.radius * 0.3)}px;background:${role.color};flex-shrink:0;"></span>`;
-                      })}
+              <div class="song-track-list" style="display: flex; flex-direction: column; gap: 12px; padding: 4px 0 20px;">
+                <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); margin-bottom: 4px;">
+                  Each section reuses the loop, related but never identical. Tap a section to edit its chords, or press play to hear the whole arrangement.
+                </div>
+                ${this.sections.map((sec, i) => {
+                  const isActive = this.activeSectionIdx === i;
+                  return html`
+                    <div
+                      class="song-track-card ${isActive ? 'active' : ''}"
+                      style="width: 100%; box-sizing: border-box; cursor: pointer;"
+                      @click=${() => { this.activeSectionIdx = i; this.activeView = 'loop'; }}
+                    >
+                      <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Section ${i + 1}</div>
+                      <div style="font-size: 18px; font-weight: 800; letter-spacing: -0.01em; color: var(--cv-ink); margin-top: 4px;">${sec.name}</div>
+                      <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-top: 4px;">${sec.desc}</div>
+                      <div class="song-card-chips" style="display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap;">
+                        ${sec.progression.chords.map(c => {
+                          const role = roleForTension(c.tension);
+                          return html`<div class="song-chord-chip" style="width: 16px; height: 16px; border-radius: ${Math.round(role.radius * 0.4)}px; background: ${role.color}; flex-shrink: 0;" title="${c.name}"></div>`;
+                        })}
+                      </div>
                     </div>
-                    <div style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
-                    <div style="font-size: 12px; color: var(--cv-ink-muted);">${sec.desc}</div>
-                  </div>
-                `)}
+                  `;
+                })}
+                <button
+                  class="add-section-card"
+                  style="width: 100%; min-height: 60px; border: 2px dashed rgba(46,39,31,0.18); border-radius: 20px; background: transparent; color: var(--cv-ink-muted); font-size: 13.5px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: border-color 150ms ease, color 150ms ease;"
+                  @click=${() => this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }))}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Add a related section
+                </button>
               </div>
             ` : html`
               <div class="play-it-wrap" style="padding: 16px 4px 26px;">
@@ -3909,22 +4123,38 @@ export class LoopScreen extends LitElement {
 
           <!-- Mobile Bottom Transport Bar -->
           <div class="mobile-bottom-transport-bar">
-            <button class="loop-play-btn" @click=${this.togglePlay} style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'}; flex-shrink: 0; min-height: 44px; padding: 9px 16px; border-radius: 100px; font-weight: 800; font-size: 12.5px; border: none; cursor: pointer;">
-              ${this.playing ? 'Stop' : 'Play loop'}
+            <button
+              class="loop-play-btn"
+              @click=${this.activeView === 'song' ? () => this.dispatchEvent(new CustomEvent('toggle-play-song', { bubbles: true, composed: true })) : this.togglePlay}
+              style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'}; flex-shrink: 0; min-height: 44px; padding: 9px 16px; border-radius: 100px; font-weight: 800; font-size: 12.5px; border: none; cursor: pointer; white-space: nowrap;"
+              aria-label="${this.playing ? 'Stop' : (this.activeView === 'song' ? `Play song · ${this.sections.length} sections` : 'Play loop')}"
+            >
+              ${this.playing ? 'Stop' : (this.activeView === 'song' ? `Play song · ${this.sections.length} sections` : 'Play loop')}
             </button>
             <div style="flex: 1 1 30px; min-width: 24px;">
               <div style="display: flex; gap: 2px; align-items: flex-end; height: 16px;">
-                ${Array.from({ length: 16 }).map((_, i) => {
-                  const step = Math.floor(this.progressStep % (chords.length * 4));
-                  const isHead = this.playing && Math.floor((step / (chords.length * 4)) * 16) === i;
-                  const isBarStart = i % 4 === 0;
-                  return html`
-                    <div style="flex: 1; height: ${isHead ? 16 : (isBarStart ? 11 : 7)}px; border-radius: 2px; background: ${isHead ? '#F2735F' : (isBarStart ? 'rgba(46,39,31,0.3)' : 'rgba(46,39,31,0.14)')};"></div>
-                  `;
-                })}
+                ${this.activeView === 'song'
+                  ? this.sections.map((_, si) => {
+                      const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
+                      return html`<div style="flex: 1; height: ${isCurrentSec ? 16 : 8}px; border-radius: 2px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'};"></div>`;
+                    })
+                  : Array.from({ length: 16 }).map((_, i) => {
+                      const step = Math.floor(this.progressStep % (chords.length * 4));
+                      const isHead = this.playing && Math.floor((step / (chords.length * 4)) * 16) === i;
+                      const isBarStart = i % 4 === 0;
+                      return html`
+                        <div style="flex: 1; height: ${isHead ? 16 : (isBarStart ? 11 : 7)}px; border-radius: 2px; background: ${isHead ? '#F2735F' : (isBarStart ? 'rgba(46,39,31,0.3)' : 'rgba(46,39,31,0.14)')};"></div>
+                      `;
+                    })}
               </div>
               <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--cv-label); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                ${this.playing ? `Bar ${Math.floor(this.progressStep / 4) + 1} · beat ${(this.progressStep % 4) + 1}` : `${chords.length} bars · stopped`}
+                ${this.playing
+                  ? (this.activeView === 'song'
+                      ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
+                      : `Bar ${Math.floor(this.progressStep / 4) + 1} · beat ${(this.progressStep % 4) + 1}`)
+                  : (this.activeView === 'song'
+                      ? `${this.sections.length} sections · stopped`
+                      : `${chords.length} bars · stopped`)}
               </div>
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -4076,209 +4306,200 @@ export class LoopScreen extends LitElement {
           <div class="stage-scroll-canvas">
             ${this.activeView === 'loop' ? html`
               <div class="stage-card stage-panel">
-                <!-- Top Loop Play Strip -->
-                <div class="loop-strip-header">
-                  <button class="loop-play-btn play-circle-btn" @click=${this.togglePlay} style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'};">
+                <!-- Top Loop Play Button -->
+                <div style="position: relative; z-index: 2; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
+                  <button
+                    class="loop-play-btn"
+                    @click=${this.togglePlay}
+                    style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'}; min-height: 40px; padding: 0 20px; border-radius: 100px; font-weight: 800; font-size: 13px; border: none; cursor: pointer; transition: transform 120ms ease;"
+                    aria-label="${this.playing ? 'Stop loop' : 'Play loop'}"
+                  >
                     ${this.playing ? 'Stop' : 'Play loop'}
                   </button>
+                  <div style="font-size: 11px; font-weight: 700; color: var(--cv-ink-muted);">Space plays the loop</div>
+                </div>
 
+                <!-- Pad Cells Grid -->
+                <div class="pad-cells-grid pad-cells-row">
+                  ${chords.map((c, i) => this.renderChordPad(c, i, moodColor, true))}
+                </div>
+
+                ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, false) : ''}
+
+                <!-- Quick Controls Below Pad Cards -->
+                <div class="stage-quick-controls" style="display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 10px; margin-top: 16px;">
+                  <button
+                    class="instrument-chip ${this.expandedInstrument ? 'open' : ''}"
+                    @click=${this.toggleInstrumentExpand}
+                    aria-label="Change instrument"
+                    style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.expandedInstrument ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.expandedInstrument ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
+                    ${this.instrument || 'Piano'}
+                  </button>
+                  <button
+                    class="play-style-chip ${this.expandedPlayStyle ? 'open' : ''}"
+                    @click=${this.togglePlayStyleExpand}
+                    aria-label="Change playing style"
+                    style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.expandedPlayStyle ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.expandedPlayStyle ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
+                    ${this.playStyle || 'Block chords'}
+                  </button>
+                  <div style="width: 1px; align-self: stretch; min-height: 28px; background: rgba(46,39,31,0.12); margin: 0 4px;"></div>
+                  <button
+                    class="tempo-chip ${this.tempoOpen ? 'open' : ''}"
+                    @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) { this.feelOpen = false; this.expandedInstrument = false; this.expandedPlayStyle = false; } }}
+                    aria-label="Key, tempo and loop length"
+                    style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.tempoOpen ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.tempoOpen ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
+                  >
+                    ${this.progression?.key || 'C'} · ${this.progression?.bpm || 84}
+                  </button>
+                  <button
+                    class="feel-chip ${this.feelOpen ? 'open' : ''}"
+                    @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) { this.tempoOpen = false; this.expandedInstrument = false; this.expandedPlayStyle = false; } }}
+                    aria-label="Feel and tone"
+                    style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.feelOpen ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.feelOpen ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
+                  >
+                    Feel &amp; tone
+                  </button>
+                  <button
+                    @click=${() => { this.shareOpen = true; }}
+                    aria-label="Share this loop"
+                    style="margin-left: auto; border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: var(--cv-surface-2); color: var(--cv-ink); border-radius: 100px; min-height: 38px; padding: 0 18px; font-size: 12.5px; font-weight: 800; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background 150ms var(--cv-ease);"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/></svg>
+                    Share
+                  </button>
+                  <button
+                    @click=${() => { this.bounceOpen = true; }}
+                    style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: var(--cv-ink); color: var(--cv-cream); border-radius: 100px; min-height: 38px; padding: 0 18px; font-size: 12.5px; font-weight: 800; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: transform 120ms ease;"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>
+                    Bounce
+                  </button>
+                </div>
+
+                ${this.renderTempoDrawerDesktop()}
+                ${this.renderFeelDrawerDesktop()}
+
+                <!-- Instrument tray if expanded -->
+                ${this.expandedInstrument ? html`
+                  <div style="animation: cvfv-panel 200ms var(--cv-ease); background: var(--cv-cream); border-radius: 16px; padding: 14px 16px; margin-top: 11px;">
+                    <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Instrument</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                      ${USER_INSTRUMENTS.map(i => html`
+                        <button
+                          class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
+                          style="border: none; font-family: inherit; display: inline-flex; align-items: center; background: ${(this.instrument || 'Piano') === i.name ? 'var(--cv-ink)' : 'var(--cv-surface)'}; color: ${(this.instrument || 'Piano') === i.name ? 'var(--cv-cream)' : 'var(--cv-ink)'}; border-radius: 100px; min-height: 34px; padding: 0 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: transform 120ms ease;"
+                          @click=${() => {
+                            this.instrument = i.name;
+                            playbackEngine.setInstrument(i.name);
+                            this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+                            this.expandedInstrument = false;
+                            this.requestUpdate();
+                          }}
+                        >
+                          <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
+                        </button>
+                      `)}
+                    </div>
+                  </div>
+                ` : ''}
+
+                <!-- Play style tray if expanded -->
+                ${this.expandedPlayStyle ? html`
+                  <div style="animation: cvfv-panel 200ms var(--cv-ease); background: var(--cv-cream); border-radius: 16px; padding: 14px 16px; margin-top: 11px;">
+                    <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Play style</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                      ${USER_PLAY_STYLES.map(s => html`
+                        <button
+                          class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
+                          style="border: none; font-family: inherit; display: inline-flex; align-items: center; background: ${(this.playStyle || 'Block chords') === s.name ? 'var(--cv-ink)' : 'var(--cv-surface)'}; color: ${(this.playStyle || 'Block chords') === s.name ? 'var(--cv-cream)' : 'var(--cv-ink)'}; border-radius: 100px; min-height: 34px; padding: 0 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: transform 120ms ease;"
+                          @click=${() => {
+                            this.playStyle = s.name;
+                            playbackEngine.setPlayStyle(s.name);
+                            this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
+                            this.expandedPlayStyle = false;
+                            this.requestUpdate();
+                          }}
+                        >
+                          <span style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${s.name}
+                        </button>
+                      `)}
+                    </div>
+                  </div>
+                ` : ''}
+              </div>
+            ` : this.activeView === 'song' ? html`
+              <div class="song-view-wrap" style="padding: 10px 4px 24px;">
+                <!-- Song Play Transport Strip -->
+                <div class="loop-strip-header" style="margin-bottom: 20px;">
+                  <button
+                    class="loop-play-btn"
+                    @click=${() => this.dispatchEvent(new CustomEvent('toggle-play-song', { bubbles: true, composed: true }))}
+                    style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'}; min-height: 42px; padding: 0 18px; border-radius: 100px; font-weight: 800; font-size: 13px; border: none; cursor: pointer; white-space: nowrap;"
+                    aria-label="${this.playing ? 'Stop' : `Play song · ${this.sections.length} sections`}"
+                  >
+                    ${this.playing ? 'Stop' : `Play song · ${this.sections.length} sections`}
+                  </button>
                   <div class="strip-timeline-wrap">
                     <div class="strip-cells-bar loop-beat-cells">
-                      ${Array.from({ length: 16 }).map((_, i) => {
-                        const step = Math.floor(this.progressStep % (chords.length * 4));
-                        const isHead = this.playing && Math.floor((step / (chords.length * 4)) * 16) === i;
-                        const isBarStart = i % 4 === 0;
+                      ${this.sections.map((_, si) => {
+                        const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
                         return html`
                           <div
-                            class="strip-cell beat-cell"
-                            style="height: ${isHead ? 20 : (isBarStart ? 13 : 8)}px; background: ${isHead ? '#F2735F' : (isBarStart ? 'rgba(46,39,31,0.3)' : 'rgba(46,39,31,0.14)')};"
+                            class="strip-cell"
+                            style="height: ${isCurrentSec ? 20 : 10}px; border-radius: 3px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'}; flex: 1;"
                           ></div>
                         `;
                       })}
                     </div>
                     <div class="strip-labels-row">
-                      <div class="strip-status-label">${this.playing ? `Bar ${Math.floor(this.progressStep / 4) + 1} · beat ${(this.progressStep % 4) + 1} of ${chords.length} bars` : `${chords.length} bars · stopped`}</div>
-                      <div class="strip-space-hint">Space plays the loop</div>
-                    </div>
-                  </div>
-
-                  <div class="loop-bar-chips-group">
-                    <div class="from-bar-label">From bar</div>
-                    <div class="loop-bar-chips">
-                      ${chords.map((_, i) => {
-                        const isCurrent = this.playing && Math.floor(this.progressStep / 4) === i;
-                        return html`
-                          <button
-                            class="strip-jump-chip"
-                            style="background: ${isCurrent ? moodColor : 'var(--cv-surface-2)'};"
-                            @click=${() => this.onJumpBar(i)}
-                            aria-label="Play loop from bar ${i + 1}"
-                          >${i + 1}</button>
-                        `;
-                      })}
+                      <div class="strip-status-label">
+                        ${this.playing
+                          ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
+                          : `${this.sections.length} sections · stopped`}
+                      </div>
+                      <div class="strip-space-hint">Space plays the song</div>
                     </div>
                   </div>
                 </div>
 
-                <!-- Pad Cells Grid -->
-                <div class="pad-cells-grid pad-cells-row">
-                  ${chords.map((c, i) => {
-                    const role = roleForTension(c.tension || 0.1);
-                    const isLit = this.activeIndex === i && this.playing;
-                    const isHeld = this.padFlash === i;
-                    const isSelected = this.swapIndex === i;
+                <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); max-width: 600px;">
+                  Each section reuses the loop, related but never identical. Tap a section to edit its chords, or press play to hear the whole arrangement.
+                </div>
 
+                <!-- Desktop / Wide Horizontal Track -->
+                <div class="song-track-container">
+                  ${this.sections.map((sec, i) => {
+                    const isActive = this.activeSectionIdx === i;
                     return html`
                       <div
-                        class="pad-cell chord-item-wrap ${isHeld ? 'pad-held' : ''} ${isSelected ? 'selected' : ''} ${isLit ? 'pad-lit' : ''}"
-                        style="background: ${role.color};"
-                        @pointerdown=${(e: PointerEvent) => this.handlePadPointerDown(e, i)}
-                        @pointerup=${() => this.handlePadPointerUp()}
-                        @pointercancel=${() => this.handlePadPointerUp()}
-                        @pointerleave=${() => this.handlePadPointerUp()}
-                        tabindex="0"
-                        role="button"
-                        aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || c.functionLabel} — press to play it; press nearer the top for a higher voicing"
+                        class="song-track-card ${isActive ? 'active' : ''}"
+                        @click=${() => { this.activeSectionIdx = i; this.activeView = 'loop'; }}
                       >
-                        <div class="zone-line-a ${this.lastPad?.idx === i && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
-                        <div class="zone-line-b ${this.lastPad?.idx === i && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
-
-                        <button
-                          class="pad-swap-btn quick-action-btn swap"
-                          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openSwap(i); }}
-                          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                          aria-label="Swap ${c.name}"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
-                        </button>
-
-                        <button
-                          class="pad-detail-btn"
-                          @click=${(e: MouseEvent) => { e.stopPropagation(); this.openDetail(i); }}
-                          @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                          aria-label="View voicing for ${c.name}"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-
-                        <div class="pad-top-row">
-                          <div class="pad-key-badge">${PAD_KEYS[i] || ''}</div>
-                          ${this.showTheory && c.roman ? html`<div class="pad-roman-badge">${c.roman}</div>` : ''}
-                        </div>
-
-                        <div class="pad-bottom-info">
-                          <div class="pad-role-label">${ROLE_SHORT[c.functionLabel] || c.functionLabel}</div>
-                          <div class="pad-chord-name">${c.name}</div>
-                          ${this.showTheory && c.notes && c.notes.length ? html`
-                            <div class="pad-notes-theory" style="font-size: 10px; font-weight: 800; letter-spacing: 0.3px; color: var(--cv-label); margin-top: 2px;">
-                              ${c.notes.join(' · ')}
-                            </div>
-                          ` : ''}
-                          <div class="pad-meta-voicing">${this.lastPad?.idx === i ? (ZONE_NAMES[this.lastPad.zone] || this.lastPad.voicing) : ''}</div>
+                        <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Section ${i + 1}</div>
+                        <div style="font-size: 18px; font-weight: 800; letter-spacing: -0.01em; color: var(--cv-ink);">${sec.name}</div>
+                        <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); flex: 1;">${sec.desc}</div>
+                        <div class="song-card-chips">
+                          ${sec.progression.chords.map(c => {
+                            const role = roleForTension(c.tension);
+                            return html`<div class="song-chord-chip" style="width: 16px; height: 16px; border-radius: ${Math.round(role.radius * 0.4)}px; background: ${role.color}; flex-shrink: 0;" title="${c.name}"></div>`;
+                          })}
                         </div>
                       </div>
                     `;
                   })}
-                </div>
-
-                ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, false) : ''}
-
-                <!-- Playing Now Row -->
-                <div class="playing-now-row playing-now-banner">
-                  <div class="playing-now-kicker">Playing now</div>
-                  <div class="playing-now-chord">${this.lastPad ? chords[this.lastPad.idx]?.name : '—'}</div>
-                  <div class="playing-now-desc">
-                    ${this.lastPad ? `${this.lastPad.voicing} · velocity ${this.lastPad.vel}` : 'Press a chord — nearer the top of a card plays a higher voicing. Home-row keys A S D F play them too.'}
+                  <div
+                    class="add-section-card"
+                    @click=${() => this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }))}
+                    role="button"
+                    tabindex="0"
+                  >
+                    <span style="font-size: 24px; line-height: 1; font-weight: 700;">+</span>
+                    <span>Add a related section</span>
                   </div>
-                </div>
-              </div>
-
-              <!-- Quick Controls Below Stage Card -->
-              <div class="stage-quick-controls">
-                <button class="instrument-chip" @click=${this.toggleInstrumentExpand}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                  ${this.instrument || 'Piano'} <span style="opacity:0.6;">⌄</span>
-                </button>
-                <button class="play-style-chip" @click=${this.togglePlayStyleExpand}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
-                  ${this.playStyle || 'Block chords'} <span style="opacity:0.6;">⌄</span>
-                </button>
-                <div class="quick-divider"></div>
-                <button class="tempo-chip" @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) this.feelOpen = false; }}>${this.progression?.key || 'C'} · ${this.progression?.bpm || 84}</button>
-                <button class="feel-chip" @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }}>Feel &amp; tone</button>
-                <button class="bounce-btn" @click=${() => { this.bounceOpen = true; }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>
-                  Bounce
-                </button>
-              </div>
-
-              ${this.renderTempoDrawerDesktop()}
-              ${this.renderFeelDrawerDesktop()}
-
-              <!-- Instrument tray if expanded -->
-              ${this.expandedInstrument ? html`
-                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
-                  ${USER_INSTRUMENTS.map(i => html`
-                    <button
-                      class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
-                      @click=${() => {
-                        this.instrument = i.name;
-                        playbackEngine.setInstrument(i.name);
-                        this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
-                        this.expandedInstrument = false;
-                        this.requestUpdate();
-                      }}
-                    >
-                      <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
-                    </button>
-                  `)}
-                </div>
-              ` : ''}
-
-              <!-- Play style tray if expanded -->
-              ${this.expandedPlayStyle ? html`
-                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
-                  ${USER_PLAY_STYLES.map(s => html`
-                    <button
-                      class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
-                      @click=${() => {
-                        this.playStyle = s.name;
-                        playbackEngine.setPlayStyle(s.name);
-                        this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
-                        this.expandedPlayStyle = false;
-                        this.requestUpdate();
-                      }}
-                    >
-                      <span style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${s.name}
-                    </button>
-                  `)}
-                </div>
-              ` : ''}
-            ` : this.activeView === 'song' ? html`
-              <div class="song-track-list">
-                <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); max-width: 560px;">
-                  Each section reuses the loop, related but never identical. Press play below to hear the whole thing.
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 18px; max-width: 620px;">
-                  ${this.sections.map((sec, i) => html`
-                    <div
-                      class="song-card"
-                      style="display: flex; align-items: center; gap: 16px; background: var(--cv-surface); border-radius: 16px; padding: 14px 18px; cursor: pointer;"
-                      @click=${() => { this.activeSectionIdx = i; this.activeView = 'loop'; }}
-                    >
-                      <div style="font-size: 11px; font-weight: 800; color: var(--cv-label);">Section ${i + 1}</div>
-                      <div style="flex: 1; min-width: 0;">
-                        <div style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">${sec.name}</div>
-                        <div style="font-size: 12px; color: var(--cv-ink-muted);">${sec.desc}</div>
-                      </div>
-                      <div style="display: flex; gap: 4px; flex-shrink: 0;">
-                        ${sec.progression.chords.map(c => {
-                          const role = roleForTension(c.tension);
-                          return html`<span style="display:inline-block;width:10px;height:10px;border-radius:${Math.round(role.radius * 0.35)}px;background:${role.color};flex-shrink:0;"></span>`;
-                        })}
-                      </div>
-                    </div>
-                  `)}
                 </div>
               </div>
             ` : html`

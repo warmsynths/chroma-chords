@@ -173,23 +173,25 @@ export class SongScreen extends LitElement {
       box-shadow: 0 0 0 2px var(--ring-color, var(--cv-plum));
     }
     .section-name {
-      font-size: 15px;
+      font-size: 17px;
       font-weight: 800;
       color: var(--cv-ink);
     }
     .section-chords {
-      font-size: 12.5px;
+      font-size: 12px;
+      line-height: 1.5;
       color: var(--cv-ink-muted);
       margin-top: 3px;
     }
     .section-chips {
       display: flex;
-      gap: 4px;
+      gap: 6px;
       flex-shrink: 0;
+      align-items: center;
     }
     .section-chip {
-      width: 14px;
-      height: 14px;
+      width: 16px;
+      height: 16px;
       flex-shrink: 0;
     }
     .add-section-row {
@@ -280,19 +282,23 @@ export class SongScreen extends LitElement {
       }
     }
     .play-btn {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
+      min-height: 44px;
+      padding: 0 20px;
+      border-radius: 100px;
       border: none;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       flex-shrink: 0;
+      font-weight: 800;
+      font-size: 13px;
+      color: #2E271F;
       transition: transform 0.2s ease;
+      white-space: nowrap;
     }
     .play-btn:hover {
-      transform: scale(1.06);
+      transform: scale(1.03);
     }
     .save-btn {
       width: 50px;
@@ -463,14 +469,15 @@ export class SongScreen extends LitElement {
               return html`
                 <div class="section-row ${active ? 'active' : ''}" style=${active ? `--ring-color:${ringColor}` : ''} @click=${() => this.selectSection(i)}>
                   <div>
-                    <div class="section-name">${sec.name.toUpperCase()}</div>
+                    <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Section ${i + 1}</div>
+                    <div class="section-name" style="margin-top: 2px;">${sec.name}</div>
                     <div class="section-chords">${sec.desc}</div>
                   </div>
                   <div class="section-chips">
                     ${sec.order.map(idx => {
                       const c = sec.progression.chords[idx];
                       const role = roleForTension(c.tension);
-                      return html`<div class="section-chip" style="background:${role.color};border-radius:${Math.round(role.radius * 0.35)}px;"></div>`;
+                      return html`<div class="section-chip" style="background:${role.color};border-radius:${Math.round(role.radius * 0.4)}px;" title="${c.name}"></div>`;
                     })}
                   </div>
                 </div>
@@ -490,9 +497,7 @@ export class SongScreen extends LitElement {
             <div class="whole-song-label">HEAR THE WHOLE SONG</div>
             <div class="transport">
               <button class="play-btn" style="background:${moodColor}" @click=${() => this.dispatchEvent(new CustomEvent('toggle-play-song', { bubbles: true, composed: true }))}>
-                ${this.playing
-                  ? html`<svg width="16" height="16" viewBox="0 0 20 20"><rect width="20" height="20" rx="3" fill="#2E271F" /></svg>`
-                  : html`<svg width="20" height="22" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z" /></svg>`}
+                ${this.playing ? 'Stop' : `Play song · ${this.sections.length} sections`}
               </button>
               <div class="progress-track">
                 <div
