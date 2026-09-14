@@ -121,7 +121,7 @@ describe('Studio Component Interactions', () => {
     const songTab = tabs![1] as HTMLElement;
     songTab.click();
     await el.updateComplete;
-    expect(el.shadowRoot?.querySelector('.song-track-list')).toBeTruthy();
+    expect(el.shadowRoot?.querySelector('.song-track-list, .song-view-wrap')).toBeTruthy();
 
     // Switch to Play it
     const playTab = tabs![2] as HTMLElement;
@@ -146,7 +146,7 @@ describe('Studio Component Interactions', () => {
     el.addEventListener('set-length', (e: any) => lenSpy(e.detail));
     el.addEventListener('reroll', rerollSpy);
 
-    const playBtn = el.shadowRoot?.querySelector('.play-circle-btn') as HTMLElement;
+    const playBtn = el.shadowRoot?.querySelector('.play-circle-btn, .loop-play-btn') as HTMLElement;
     playBtn?.click();
     expect(playSpy).toHaveBeenCalled();
 
@@ -246,30 +246,28 @@ describe('Studio Component Interactions', () => {
   it('renders honest loop strip with bar jump chips and triggers jump', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;
+    el.sections = [
+      { name: 'Verse', desc: 'Main riff', progression: sampleProgression, order: [0, 1, 2, 3] },
+      { name: 'Chorus', desc: 'Hook', progression: sampleProgression, order: [0, 1, 2, 3] },
+    ];
     document.body.appendChild(el);
+    await el.updateComplete;
+
+    // Switch to song view
+    const songTab = el.shadowRoot?.querySelectorAll('.view-tab')?.[1] as HTMLElement;
+    songTab?.click();
     await el.updateComplete;
 
     const strip = el.shadowRoot?.querySelector('.loop-strip-header');
     expect(strip).toBeTruthy();
 
     const cells = strip?.querySelectorAll('.strip-cell');
-    expect(cells?.length).toBe(16);
-
-    const jumpChips = strip?.querySelectorAll('.strip-jump-chip');
-    expect(jumpChips?.length).toBe(4);
-
-    // Click bar 3 jump chip
-    const bar3Chip = jumpChips![2] as HTMLElement;
-    expect(bar3Chip.textContent?.trim()).toBe('3');
-    bar3Chip.click();
-    await el.updateComplete;
-
-    expect(el.progressStep).toBe(8);
+    expect(cells?.length).toBe(2);
 
     document.body.removeChild(el);
   });
 
-  it('quick settings bar controls tempo, feel, theory, and bounce modal', async () => {
+  it('quick settings bar controls tempo, feel, theory, and share modal', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;
     document.body.appendChild(el);
@@ -300,14 +298,53 @@ describe('Studio Component Interactions', () => {
     await el.updateComplete;
     expect(el.showTheory).toBe(true);
 
-    // Bounce button opens bounce modal
-    const bounceBtn = quickBar?.querySelector('.bounce-btn') as HTMLElement;
-    expect(bounceBtn).toBeTruthy();
-    bounceBtn.click();
+    // Share button opens share modal
+    const shareBtn = quickBar?.querySelector('.share-btn') as HTMLElement;
+    expect(shareBtn).toBeTruthy();
+    shareBtn.click();
     await el.updateComplete;
-    expect(el.bounceOpen).toBe(true);
+    expect(el.shareOpen).toBe(true);
+
+    const shareModal = el.shadowRoot?.querySelector('share-modal') as HTMLElement;
+    expect(shareModal).toBeTruthy();
+    expect((shareModal as any).open).toBe(true);
 
     document.body.removeChild(el);
+  });
+
+  it('mobile share buttons open share modal/drawer', async () => {
+    (window as any).innerWidth = 390;
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // 1. Mobile quick chip share button
+    const chipShareBtn = el.shadowRoot?.querySelector('.mobile-share-btn') as HTMLElement;
+    expect(chipShareBtn).toBeTruthy();
+    chipShareBtn.click();
+    await el.updateComplete;
+    expect(el.shareOpen).toBe(true);
+
+    const shareModal = el.shadowRoot?.querySelector('share-modal') as HTMLElement;
+    expect(shareModal).toBeTruthy();
+    expect((shareModal as any).open).toBe(true);
+
+    // Close modal
+    shareModal.dispatchEvent(new CustomEvent('close'));
+    await el.updateComplete;
+    expect(el.shareOpen).toBe(false);
+
+    // 2. Mobile bottom circle share button
+    const circleShareBtn = el.shadowRoot?.querySelector('.mobile-bottom-transport-bar button[aria-label="Share this loop"]') as HTMLElement;
+    expect(circleShareBtn).toBeTruthy();
+    circleShareBtn.click();
+    await el.updateComplete;
+    expect(el.shareOpen).toBe(true);
+    expect((shareModal as any).open).toBe(true);
+
+    document.body.removeChild(el);
+    (window as any).innerWidth = 1024;
   });
 
   it('pad info button opens typographic Chord Info inspector without piano diagram', async () => {

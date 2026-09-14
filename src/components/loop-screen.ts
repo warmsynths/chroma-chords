@@ -18,7 +18,6 @@ import { ProjectData } from '../services/project-service';
 import { SongArranger } from '../services/song-arranger';
 import { SongSection } from './song-screen';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone } from '../services/audio-service';
-import { bounceLoop } from '../services/export-service';
 import 'human-engine';
 import type { HumanState } from 'human-engine';
 import './share-modal';
@@ -368,8 +367,6 @@ export class LoopScreen extends LitElement {
   @state() lastPad: { idx: number; voicing: string; vel: number; zone: number; reach?: number; meta?: string; playedChordName?: string } | null = null;
   @state() tempoOpen = false;
   @state() feelOpen = false;
-  @state() bounceOpen = false;
-  @state() bounceFormat: 'wav' | 'midi' | 'stems' = 'wav';
   @state() shareOpen = false;
   @state() private expandedInstrument = false;
   @state() private expandedPlayStyle = false;
@@ -958,36 +955,7 @@ export class LoopScreen extends LitElement {
       border-radius: 3px;
       transition: width 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), background 180ms ease;
     }
-    .zone-line-a {
-      position: absolute;
-      left: 9px;
-      right: 9px;
-      top: 34%;
-      height: 1px;
-      border-radius: 2px;
-      background: rgba(46, 39, 31, 0.075);
-      pointer-events: none;
-      transition: background 180ms ease, height 180ms ease;
-    }
-    .zone-line-a.active {
-      height: 2px;
-      background: rgba(46, 39, 31, 0.34);
-    }
-    .zone-line-b {
-      position: absolute;
-      left: 9px;
-      right: 9px;
-      top: 67%;
-      height: 1px;
-      border-radius: 2px;
-      background: rgba(46, 39, 31, 0.075);
-      pointer-events: none;
-      transition: background 180ms ease, height 180ms ease;
-    }
-    .zone-line-b.active {
-      height: 2px;
-      background: rgba(46, 39, 31, 0.34);
-    }
+
     .play-card {
       background: var(--cv-surface, #F1E4CC);
       border-radius: 20px;
@@ -1241,7 +1209,7 @@ export class LoopScreen extends LitElement {
     .add-section-card:active {
       transform: scale(0.98);
     }
-    .bounce-btn {
+    .share-btn {
       margin-left: auto;
       border: none;
       font-family: inherit;
@@ -1258,9 +1226,9 @@ export class LoopScreen extends LitElement {
       cursor: pointer;
       white-space: nowrap;
       flex-shrink: 0;
-      transition: transform 120ms ease;
+      transition: transform 120ms ease, background 150ms var(--cv-ease);
     }
-    .bounce-btn:active {
+    .share-btn:active {
       transform: scale(0.97);
     }
 
@@ -2043,22 +2011,7 @@ export class LoopScreen extends LitElement {
     .mobile-chip-btn:hover {
       background: var(--cv-surface-2, #F1E4CC);
     }
-    .mobile-bounce-btn {
-      border: none;
-      font-family: inherit;
-      flex: 0.9;
-      background: var(--cv-ink, #2E271F);
-      color: var(--cv-cream, #FBF3E6);
-      border-radius: 14px;
-      min-height: 46px;
-      font-size: 12.5px;
-      font-weight: 800;
-      cursor: pointer;
-      transition: opacity 150ms ease;
-    }
-    .mobile-bounce-btn:hover {
-      opacity: 0.92;
-    }
+
     .mobile-theory-toggle {
       display: flex;
       align-items: center;
@@ -2137,10 +2090,9 @@ export class LoopScreen extends LitElement {
     }
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (this.tempoOpen || this.feelOpen || this.bounceOpen) {
+      if (this.tempoOpen || this.feelOpen) {
         this.tempoOpen = false;
         this.feelOpen = false;
-        this.bounceOpen = false;
         this.requestUpdate();
       }
       return;
@@ -2761,65 +2713,7 @@ export class LoopScreen extends LitElement {
     }
   };
 
-  private async executeBounce(format: 'wav' | 'midi') {
-    if (!this.progression) return;
-    try {
-      this.dispatchEvent(new CustomEvent('toast', { detail: `Bouncing ${format.toUpperCase()}...`, bubbles: true, composed: true }));
-      await bounceLoop({
-        progression: this.progression,
-        instrumentName: this.instrument,
-        playStyleName: this.playStyle,
-        format,
-        barsPerChord: this.barsPerChord,
-        feelSettings: {
-          swing: this.swing,
-          spread: this.spread,
-          density: this.density,
-          tone: this.tone,
-          humanState: this.humanEngineState,
-        },
-      });
-      this.bounceOpen = false;
-      this.dispatchEvent(new CustomEvent('toast', { detail: `Bounced loop as ${format.toUpperCase()}`, bubbles: true, composed: true }));
-    } catch (err) {
-      console.error('Failed to bounce loop:', err);
-      this.dispatchEvent(new CustomEvent('toast', { detail: 'Bounce failed. See console.', bubbles: true, composed: true }));
-    }
-  }
 
-  private renderBounceModal() {
-    if (!this.bounceOpen) return '';
-    return html`
-      <div style="position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; background: rgba(46, 39, 31, 0.45); backdrop-filter: blur(4px);">
-        <div style="background: var(--cv-surface, #F6EADB); border-radius: 20px; padding: 22px; width: 90%; max-width: 380px; box-shadow: 0 16px 36px rgba(46,39,31,0.25); border: 1px solid rgba(46,39,31,0.12);">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <div style="font-size: 17px; font-weight: 800; color: var(--cv-ink);">Export Loop</div>
-            <button
-              @click=${() => { this.bounceOpen = false; }}
-              style="border: none; background: transparent; font-size: 18px; font-weight: 800; cursor: pointer; color: var(--cv-ink-muted);"
-            >×</button>
-          </div>
-          <div style="font-size: 12.5px; color: var(--cv-ink-muted); margin-top: 6px; line-height: 1.4;">
-            Export with current key (${this.progression?.key || 'C'}), tempo (${this.progression?.bpm || 84} BPM, ${this.barsPerChord} bar${this.barsPerChord > 1 ? 's' : ''}/chord), and feel (${this.tone} tone, ${this.swing}% swing).
-          </div>
-          <div style="display: flex; gap: 10px; margin-top: 18px;">
-            <button
-              @click=${() => this.executeBounce('wav')}
-              style="flex: 1; min-height: 44px; border-radius: 12px; border: none; background: var(--cv-ink, #2E271F); color: var(--cv-cream, #FBF3E6); font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; transition: opacity 150ms ease;"
-            >
-              Bounce WAV
-            </button>
-            <button
-              @click=${() => this.executeBounce('midi')}
-              style="flex: 1; min-height: 44px; border-radius: 12px; border: 1.5px solid rgba(46,39,31,0.2); background: var(--cv-cream, #FBF3E6); color: var(--cv-ink, #2E271F); font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; transition: opacity 150ms ease;"
-            >
-              Export MIDI
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
 
   private onScaleDegreeClick(di: number, chordName: string, inLoop: boolean, barIdx: number) {
     this.auditionDeg = di;
@@ -3440,8 +3334,6 @@ export class LoopScreen extends LitElement {
         tabindex="0"
         aria-label="${ch.name} — press nearer the top for a higher voicing"
       >
-        <div class="zone-line-a ${this.lastPad?.idx === i && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
-        <div class="zone-line-b ${this.lastPad?.idx === i && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
         <div style="display: flex; align-items: baseline; gap: 9px; position: relative; z-index: 2;">
           <div style="font-size: 17px; font-weight: 800; color: #2E271F;">${ch.name}</div>
           ${this.showTheory && ch.roman ? html`
@@ -3525,8 +3417,6 @@ export class LoopScreen extends LitElement {
         tabindex="0"
         aria-label="${ch.name} — press nearer the top for a higher voicing"
       >
-        <div class="zone-line-a ${this.lastPad?.idx === i && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
-        <div class="zone-line-b ${this.lastPad?.idx === i && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
         <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; position: relative; z-index: 2;">
           <div style="display: flex; align-items: baseline; gap: 7px;">
             <div style="font-size: 17px; font-weight: 800; color: #2E271F;">${ch.name}</div>
@@ -3598,9 +3488,6 @@ export class LoopScreen extends LitElement {
             <div style="position: absolute; top: 0; bottom: 0; left: ${((li + 1) / lad.length) * 100}%; width: 1px; background: rgba(46,39,31,0.18);"></div>
           `)}
         </div>
-
-        <div class="zone-line-a ${this.lastPad?.idx === i && this.lastPad?.zone === 0 ? 'active' : ''}"></div>
-        <div class="zone-line-b ${this.lastPad?.idx === i && this.lastPad?.zone === 2 ? 'active' : ''}"></div>
 
         <button
           class="pad-swap-btn"
@@ -3866,7 +3753,15 @@ export class LoopScreen extends LitElement {
                   ${this.progression?.key || 'C'} · ${this.progression?.bpm || 84}
                 </button>
                 <button class="mobile-chip-btn" @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }}>Feel &amp; tone</button>
-                <button class="mobile-bounce-btn" @click=${() => { this.bounceOpen = true; }}>Bounce</button>
+                <button
+                  class="mobile-chip-btn mobile-share-btn"
+                  @click=${() => { this.shareOpen = true; }}
+                  aria-label="Share this loop"
+                  style="display: inline-flex; align-items: center; justify-content: center; gap: 6px;"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/></svg>
+                  Share
+                </button>
               </div>
 
               <div class="mobile-theory-toggle" @click=${this.onTheoryToggle}>
@@ -4175,7 +4070,17 @@ export class LoopScreen extends LitElement {
 
           ${this.renderTempoSheetMobile()}
           ${this.renderFeelSheetMobile()}
-          ${this.renderBounceModal()}
+          <share-modal
+            .open=${this.shareOpen}
+            .progression=${this.progression}
+            .order=${this.order}
+            .instrument=${this.instrument}
+            .playStyle=${this.playStyle}
+            @close=${() => { this.shareOpen = false; }}
+            @toast=${(e: CustomEvent<string>) => {
+              this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
+            }}
+          ></share-modal>
         </div>
       `;
     }
@@ -4364,19 +4269,12 @@ export class LoopScreen extends LitElement {
                     Feel &amp; tone
                   </button>
                   <button
+                    class="share-btn"
                     @click=${() => { this.shareOpen = true; }}
                     aria-label="Share this loop"
-                    style="margin-left: auto; border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: var(--cv-surface-2); color: var(--cv-ink); border-radius: 100px; min-height: 38px; padding: 0 18px; font-size: 12.5px; font-weight: 800; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background 150ms var(--cv-ease);"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/></svg>
                     Share
-                  </button>
-                  <button
-                    @click=${() => { this.bounceOpen = true; }}
-                    style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: var(--cv-ink); color: var(--cv-cream); border-radius: 100px; min-height: 38px; padding: 0 18px; font-size: 12.5px; font-weight: 800; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: transform 120ms ease;"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>
-                    Bounce
                   </button>
                 </div>
 
@@ -4759,7 +4657,17 @@ export class LoopScreen extends LitElement {
             </div>
           `}
         </aside>
-        ${this.renderBounceModal()}
+        <share-modal
+          .open=${this.shareOpen}
+          .progression=${this.progression}
+          .order=${this.order}
+          .instrument=${this.instrument}
+          .playStyle=${this.playStyle}
+          @close=${() => { this.shareOpen = false; }}
+          @toast=${(e: CustomEvent<string>) => {
+            this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
+          }}
+        ></share-modal>
       </div>
     `;
   }

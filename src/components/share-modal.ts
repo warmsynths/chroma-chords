@@ -314,34 +314,31 @@ export class ShareModal extends LitElement {
     }
     .share-drawer {
       position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      top: 50%;
+      left: 50%;
       z-index: 1001;
-      max-width: 580px;
-      margin: 0 auto;
+      width: calc(100% - 40px);
+      max-width: 560px;
       max-height: 85vh;
       background: var(--cv-cream, #FBF6EC);
-      border-radius: 26px 26px 0 0;
-      box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.4);
+      border-radius: 28px;
+      box-shadow: 0 28px 64px -14px rgba(46, 39, 31, 0.45), 0 0 0 1px rgba(46, 39, 31, 0.08);
       display: flex;
       flex-direction: column;
-      transform: translateY(100%);
+      transform: translate(-50%, -46%) scale(0.96);
       opacity: 0;
       pointer-events: none;
-      transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
+      transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
       box-sizing: border-box;
+      overflow: hidden;
     }
     .share-drawer.open {
-      transform: translateY(0);
+      transform: translate(-50%, -50%) scale(1);
       opacity: 1;
       pointer-events: auto;
     }
     .handle-bar {
-      padding: 11px 0 0;
-      display: flex;
-      justify-content: center;
-      flex-shrink: 0;
+      display: none;
     }
     .handle-pill {
       width: 38px;
@@ -353,7 +350,37 @@ export class ShareModal extends LitElement {
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 14px 22px 28px;
+      padding: 24px 26px 28px;
+    }
+
+    @media (max-width: 900px) {
+      .share-drawer {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 100%;
+        max-height: 88vh;
+        border-radius: 26px 26px 0 0;
+        box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.4);
+        transform: translateY(100%);
+        transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
+      }
+      .share-drawer.open {
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .handle-bar {
+        display: flex;
+        padding: 11px 0 0;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .drawer-content {
+        padding: 14px 22px 28px;
+      }
     }
     .head-row {
       display: flex;

@@ -82,10 +82,9 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     const pads = padGrid.locator('.pad-cell');
     await expect(pads).toHaveCount(4);
 
-    // First pad cell internals: zone lines, swap button, detail button, key badge, role label, bold chord name
+    // First pad cell internals: voicing grid guidelines, swap button, detail button, key badge, role label, bold chord name
     const firstPad = pads.first();
-    await expect(firstPad.locator('.zone-line-a')).toBeVisible();
-    await expect(firstPad.locator('.zone-line-b')).toBeVisible();
+    await expect(firstPad.locator('.pad-voicing-grid')).toBeAttached();
     await expect(firstPad.locator('.pad-swap-btn')).toBeVisible();
     await expect(firstPad.locator('.pad-detail-btn')).toBeVisible();
     await expect(firstPad.locator('.pad-key-badge')).toBeVisible();
@@ -103,7 +102,7 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await expect(quickControls.locator('.play-style-chip')).toBeVisible();
     await expect(quickControls.locator('.tempo-chip')).toBeVisible();
     await expect(quickControls.locator('.feel-chip')).toBeVisible();
-    await expect(quickControls.locator('.bounce-btn')).toBeVisible();
+    await expect(quickControls.locator('.share-btn')).toBeVisible();
   });
 
   test('Desktop: Right inspector shows Harmonic Arc (idle) and transitions to Swap / Detail', async ({ page, isMobile }) => {
@@ -196,8 +195,8 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await page.mouse.down();
     await page.waitForTimeout(50);
 
-    const zoneLineA = pad.locator('.zone-line-a');
-    await expect(zoneLineA).toHaveClass(/active/);
+    const voicingGrid = pad.locator('.pad-voicing-grid');
+    await expect(voicingGrid).toHaveClass(/active/);
     const metaVoicing = pad.locator('.pad-meta-voicing');
     await expect(metaVoicing).toContainText(/Octave up/i);
 
@@ -210,8 +209,7 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await page.mouse.down();
     await page.waitForTimeout(50);
 
-    const zoneLineB = pad.locator('.zone-line-b');
-    await expect(zoneLineB).toHaveClass(/active/);
+    await expect(voicingGrid).toHaveClass(/active/);
     await expect(metaVoicing).toContainText(/Low root/i);
     await expect(playingNowDesc).toContainText(/low, root position · velocity/i);
     await page.mouse.up();
@@ -221,8 +219,7 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await page.mouse.down();
     await page.waitForTimeout(50);
 
-    await expect(zoneLineA).not.toHaveClass(/active/);
-    await expect(zoneLineB).not.toHaveClass(/active/);
+    await expect(voicingGrid).toHaveClass(/active/);
     await expect(metaVoicing).toContainText(/1st inversion/i);
     await expect(playingNowDesc).toContainText(/1st inversion · velocity/i);
     await page.mouse.up();
@@ -244,7 +241,7 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await expect(playingNowDesc).toContainText(/1st inversion · velocity/i);
   });
 
-  test('Play Along view cards include inbuilt voicing zone lines and pointer interaction', async ({ page, isMobile }) => {
+  test('Play Along view cards include interactive cards and pointer interaction', async ({ page, isMobile }) => {
     test.skip(isMobile, 'Desktop view test');
 
     const playItTab = page.locator('.view-tabs-bar button.view-tab', { hasText: 'Play it' });
@@ -254,17 +251,13 @@ test.describe('Design Parity Tests: Chroma Chords App against Design Mockup', ()
     await expect(playCards.first()).toBeVisible();
 
     const firstCard = playCards.first();
-    await expect(firstCard.locator('.zone-line-a')).toBeVisible();
-    await expect(firstCard.locator('.zone-line-b')).toBeVisible();
-
     const box = await firstCard.boundingBox();
     expect(box).not.toBeNull();
 
-    // Tap top of play card -> zone A becomes active
+    // Tap play card
     await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height * 0.15);
     await page.mouse.down();
     await page.waitForTimeout(50);
-    await expect(firstCard.locator('.zone-line-a')).toHaveClass(/active/);
     await page.mouse.up();
   });
 
