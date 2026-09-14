@@ -139,26 +139,116 @@ export function getMasterTone(): string {
   return activeToneName;
 }
 
+export function createOfflineToneRack(tone = 'Warm', dest?: Tone.ToneAudioNode): Tone.ToneAudioNode {
+  const clean = tone ? tone.toLowerCase().trim() : 'warm';
+  const target = dest ?? Tone.getDestination();
+
+  if (clean === 'glassy') {
+    const eq = new Tone.EQ3({
+      high: 3.5,
+      mid: 0,
+      low: -0.5,
+      highFrequency: 4500,
+    });
+    const chorus = new Tone.Chorus({
+      frequency: 1.5,
+      delayTime: 3.0,
+      depth: 0.35,
+      wet: 0.3,
+    });
+    try { chorus.start(0); } catch {}
+    eq.connect(chorus);
+    chorus.connect(target);
+    return eq;
+  }
+
+  if (clean === 'dusty') {
+    const filter = new Tone.Filter({
+      frequency: 1800,
+      type: 'bandpass',
+      Q: 0.8,
+    });
+    const vibrato = new Tone.Vibrato({
+      frequency: 0.5,
+      depth: 0.1,
+      wet: 0.4,
+    });
+    const dist = new Tone.Distortion({
+      distortion: 0.1,
+      wet: 0.15,
+    });
+    filter.connect(vibrato);
+    vibrato.connect(dist);
+    dist.connect(target);
+    return filter;
+  }
+
+  // Default 'Warm':
+  const warmFilter = new Tone.Filter({
+    frequency: 3200,
+    type: 'lowpass',
+    rolloff: -12,
+  });
+  warmFilter.connect(target);
+  return warmFilter;
+}
+
+export const RHODES_SAMPLE_URLS: Record<string, string> = {
+  "F1": "A_029__F1_5.m4a",
+  "B1": "A_035__B1_5.m4a",
+  "E2": "A_040__E2_5.m4a",
+  "A2": "A_045__A2_5.m4a",
+  "D3": "A_050__D3_5.m4a",
+  "G3": "A_055__G3_5.m4a",
+  "B3": "A_059__B3_5.m4a",
+  "D4": "A_062__D4_5.m4a",
+  "F4": "A_065__F4_5.m4a",
+  "B4": "A_071__B4_5.m4a",
+  "E5": "A_076__E5_5.m4a",
+  "A5": "A_081__A5_5.m4a",
+  "D6": "A_086__D6_5.m4a",
+  "G6": "A_091__G6_5.m4a"
+};
+
+export const RHODES_SAMPLE_BASE_URL = "https://danigb.github.io/samples/jlearman/rhodes-mki/jRhodes3d-mono/";
+
+export function getLoadedSamplerBuffers(): Record<string, AudioBuffer> | null {
+  if (!sampler || !sampler.loaded) return null;
+  const toneBuffers = (sampler as any)._buffers;
+  if (!toneBuffers) return null;
+  const result: Record<string, AudioBuffer> = {};
+  for (const note of Object.keys(RHODES_SAMPLE_URLS)) {
+    try {
+      const midi = Tone.Frequency(note).toMidi();
+      const buf = toneBuffers.has(midi) ? toneBuffers.get(midi) : (toneBuffers.has(note) ? toneBuffers.get(note) : null);
+      if (buf && typeof buf.get === 'function' && buf.get()) {
+        result[note] = buf.get()!;
+      }
+    } catch {}
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+export async function ensureSamplerLoaded(): Promise<Tone.Sampler | null> {
+  const s = getSampler();
+  if (s.loaded) return s;
+  try {
+    await Promise.race([
+      Tone.loaded(),
+      new Promise<void>((_, reject) => setTimeout(() => reject(new Error('Sample load timeout')), 3000))
+    ]);
+    return s;
+  } catch (err) {
+    console.warn("ensureSamplerLoaded timed out or failed:", err);
+    return null;
+  }
+}
+
 function getSampler(): Tone.Sampler {
   if (!sampler) {
     sampler = new Tone.Sampler({
-      urls: {
-        "F1": "A_029__F1_5.m4a",
-        "B1": "A_035__B1_5.m4a",
-        "E2": "A_040__E2_5.m4a",
-        "A2": "A_045__A2_5.m4a",
-        "D3": "A_050__D3_5.m4a",
-        "G3": "A_055__G3_5.m4a",
-        "B3": "A_059__B3_5.m4a",
-        "D4": "A_062__D4_5.m4a",
-        "F4": "A_065__F4_5.m4a",
-        "B4": "A_071__B4_5.m4a",
-        "E5": "A_076__E5_5.m4a",
-        "A5": "A_081__A5_5.m4a",
-        "D6": "A_086__D6_5.m4a",
-        "G6": "A_091__G6_5.m4a"
-      },
-      baseUrl: "https://danigb.github.io/samples/jlearman/rhodes-mki/jRhodes3d-mono/",
+      urls: RHODES_SAMPLE_URLS,
+      baseUrl: RHODES_SAMPLE_BASE_URL,
       volume: -12,
       onload: () => {
         console.log("Rhodes piano sampler loaded successfully!");

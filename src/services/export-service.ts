@@ -4,7 +4,9 @@ import {
   USER_INSTRUMENTS, USER_PLAY_STYLES, GENRE_HUMANIZE, GENRE_INSTRUMENT, InstrumentId,
   arpRateToSeconds, expandNotesAcrossOctaves, orderNotesForArp,
   FeelSettings, applyDensityToNotes,
+  createOfflineToneRack, getLoadedSamplerBuffers, ensureSamplerLoaded,
 } from './audio-service';
+import { pitchNotesAscending } from './playback-engine';
 
 export interface ScheduledNoteEvent {
   note: string;
@@ -56,25 +58,27 @@ export function generateScheduledEvents(
   const duration = stylePatch.durationMultiplier ? baseDuration * stylePatch.durationMultiplier : baseDuration;
 
   const effectiveSpread = feelSettings?.humanState?.strum !== undefined
-    ? (feelSettings.humanState.strum / 100) * 0.3
+    ? (feelSettings.humanState.strum / 100) * 1.5
     : (feelSettings?.spread !== undefined
-        ? (feelSettings.spread / 100) * 0.3
-        : (humanState.spread ?? 0));
+        ? (feelSettings.spread / 100) * 1.5
+        : (profile.spread ?? 0.3));
 
   const effectiveSwing = feelSettings?.humanState?.swing !== undefined
     ? feelSettings.humanState.swing
     : (feelSettings?.swing ?? 0);
+
+  const density = feelSettings?.density ?? 50;
 
   const events: ScheduledNoteEvent[] = [];
 
   chordsToExport.forEach((chord, barIdx) => {
     const swingSec = (effectiveSwing / 100) * 0.04 * (barIdx % 2 === 1 ? 1 : 0);
     const barStartTime = barIdx * stepDuration + swingSec;
-    let rawNotes = chord.notes && chord.notes.length > 0 ? chord.notes : ['C', 'E', 'G'];
-    if (feelSettings?.density !== undefined) {
-      rawNotes = applyDensityToNotes(rawNotes, feelSettings.density);
-    }
-    const pitchedNotes = rawNotes.map(n => `${n}4`);
+    const rawNotes = chord.notes && chord.notes.length > 0 ? chord.notes : ['C', 'E', 'G'];
+    
+    // Exact 1-to-1 voicing with lower root bass note (e.g. C3) and ascending registers (C4, E4, G4, D5)
+    let pitchedNotes = pitchNotesAscending(rawNotes, 4);
+    pitchedNotes = applyDensityToNotes(pitchedNotes, density);
 
     if (humanState.arpMode && humanState.arpMode !== 'off') {
       const arpRate = humanState.arpRate ?? '1/16';
@@ -227,9 +231,11 @@ export function downloadMidi(
   progression: Progression,
   order?: number[],
   _instrumentName?: string | null,
-  playStyleName?: string | null
+  playStyleName?: string | null,
+  barsPerChord = 1,
+  feelSettings?: FeelSettings
 ): void {
-  const buffer = generateMidiBuffer(progression, order, playStyleName);
+  const buffer = generateMidiBuffer(progression, order, playStyleName, barsPerChord, feelSettings);
   const blob = new Blob([buffer as unknown as BlobPart], { type: 'audio/midi' });
   const key = (progression.key || 'C').toLowerCase();
   const mood = (progression.mood || 'progression').toLowerCase().replace(/\s+/g, '-');
@@ -243,7 +249,9 @@ export function downloadMidi(
  */
 function createOfflineVoice(
   instrumentName?: string | null,
-  genre?: string
+  genre?: string,
+  tone = 'Warm',
+  loadedBuffers?: Record<string, AudioBuffer> | null
 ): Tone.ToneAudioNode {
   const limiter = new Tone.Compressor({
     threshold: -6,
@@ -252,6 +260,8 @@ function createOfflineVoice(
     release: 0.1,
     knee: 3,
   }).toDestination();
+
+  const toneRack = createOfflineToneRack(tone, limiter);
 
   const userInstrument = instrumentName
     ? USER_INSTRUMENTS.find(i => i.name.toLowerCase() === instrumentName.toLowerCase())
@@ -267,7 +277,7 @@ function createOfflineVoice(
         envelope: { attack: 0.002, decay: 1.1, sustain: 0.05, release: 0.8 },
         modulationEnvelope: { attack: 0.002, decay: 0.5, sustain: 0, release: 0.4 },
         volume: -16,
-      }).connect(limiter);
+      }).connect(toneRack);
 
     case 'epiano':
       return new Tone.PolySynth(Tone.FMSynth, {
@@ -276,24 +286,24 @@ function createOfflineVoice(
         envelope: { attack: 0.008, decay: 0.6, sustain: 0.25, release: 1.2 },
         modulationEnvelope: { attack: 0.008, decay: 0.4, sustain: 0.1, release: 0.6 },
         volume: -14,
-      }).connect(limiter);
+      }).connect(toneRack);
 
     case 'guitar':
       return new Tone.PolySynth(Tone.Synth, {
         oscillator: { type: 'triangle' },
         envelope: { attack: 0.004, decay: 0.5, sustain: 0.05, release: 0.6 },
         volume: -13,
-      }).connect(limiter);
+      }).connect(toneRack);
 
     case 'organ':
       return new Tone.PolySynth(Tone.Synth, {
         oscillator: { type: 'fatsquare', count: 3, spread: 20 },
         envelope: { attack: 0.015, decay: 0.1, sustain: 0.9, release: 0.35 },
         volume: -16,
-      }).connect(limiter);
+      }).connect(toneRack);
 
     case 'pad-strings': {
-      const reverb = new Tone.Reverb({ decay: 4.5, wet: 0.35 }).connect(limiter);
+      const reverb = new Tone.Reverb({ decay: 4.5, wet: 0.35 }).connect(toneRack);
       return new Tone.PolySynth(Tone.Synth, {
         oscillator: { type: 'sine' },
         envelope: { attack: 0.9, decay: 0.4, sustain: 0.8, release: 2.8 },
@@ -302,7 +312,7 @@ function createOfflineVoice(
     }
 
     case 'juno-pad': {
-      const chorus = new Tone.Chorus({ frequency: 0.8, delayTime: 3.5, depth: 0.7, wet: 0.5 }).start().connect(limiter);
+      const chorus = new Tone.Chorus({ frequency: 0.8, delayTime: 3.5, depth: 0.7, wet: 0.5 }).start(0).connect(toneRack);
       return new Tone.PolySynth(Tone.Synth, {
         oscillator: { type: 'fatsawtooth', count: 3, spread: 25 },
         envelope: { attack: 0.35, decay: 0.4, sustain: 0.85, release: 1.6 },
@@ -316,17 +326,23 @@ function createOfflineVoice(
         envelope: { attack: 0.004, decay: 0.14, sustain: 0.12, release: 0.15 },
         filterEnvelope: { attack: 0.004, decay: 0.15, sustain: 0.1, release: 0.2, baseFrequency: 300, octaves: 4 },
         volume: -14,
-      }).connect(limiter);
+      }).connect(toneRack);
 
     case 'rhodes':
     default:
+      if (loadedBuffers && Object.keys(loadedBuffers).length > 0) {
+        return new Tone.Sampler({
+          urls: loadedBuffers,
+          volume: -12,
+        }).connect(toneRack);
+      }
       return new Tone.PolySynth(Tone.FMSynth, {
         harmonicity: 2,
         modulationIndex: 3.5,
         envelope: { attack: 0.008, decay: 0.6, sustain: 0.25, release: 1.2 },
         modulationEnvelope: { attack: 0.008, decay: 0.4, sustain: 0.1, release: 0.6 },
         volume: -12,
-      }).connect(limiter);
+      }).connect(toneRack);
   }
 }
 
@@ -396,20 +412,31 @@ export async function downloadWav(
   const events = generateScheduledEvents(progression, order, playStyleName, barsPerChord, feelSettings);
   if (!events.length) return;
 
-  const maxTime = events.reduce((max, e) => Math.max(max, e.startTime + e.duration), 0);
-  const totalDuration = maxTime + 1.2;
+  const chordsToExport: ChordBlock[] = (order && order.length > 0)
+    ? order.map(i => progression.chords[i]).filter((c): c is ChordBlock => Boolean(c))
+    : progression.chords;
+
+  const bpm = progression.bpm || 120;
+  const stepDuration = (barsPerChord * 240) / bpm;
+  // 1 full loop cycle trimmed strictly to the bar grid (seamless loop for DAWs, no tail)
+  const totalDuration = Math.max(0.1, chordsToExport.length * stepDuration);
+
+  await ensureSamplerLoaded();
+  const loadedBuffers = getLoadedSamplerBuffers();
+  const toneName = feelSettings?.tone || 'Warm';
 
   const renderedBuffer = await Tone.Offline(async () => {
-    const voice = createOfflineVoice(instrumentName, progression.genre);
+    const voice = createOfflineVoice(instrumentName, progression.genre, toneName, loadedBuffers);
     events.forEach(evt => {
-      (voice as any).triggerAttackRelease(evt.note, evt.duration, evt.startTime);
+      if (evt.startTime < totalDuration) {
+        (voice as any).triggerAttackRelease(evt.note, evt.duration, evt.startTime);
+      }
     });
   }, totalDuration);
 
   const wavBlob = audioBufferToWavBlob(renderedBuffer.get()!);
   const key = (progression.key || 'C').toLowerCase();
   const mood = (progression.mood || 'progression').toLowerCase().replace(/\s+/g, '-');
-  const bpm = progression.bpm || 120;
   const filename = `chroma-chords-${key}-${mood}-${bpm}bpm.wav`;
   triggerDownload(wavBlob, filename);
 }

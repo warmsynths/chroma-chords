@@ -4,11 +4,18 @@ vi.mock('tone', () => ({
   Compressor: class { connect() { return this; } toDestination() { return this; } },
   Sampler: class { connect() { return this; } triggerAttackRelease() {} },
   PolySynth: class { connect() { return this; } toDestination() { return this; } triggerAttackRelease() {} },
-  Synth: class { triggerAttackRelease() {} },
-  MonoSynth: class { triggerAttackRelease() {} },
-  FMSynth: class { triggerAttackRelease() {} },
+  Synth: class { connect() { return this; } triggerAttackRelease() {} },
+  MonoSynth: class { connect() { return this; } triggerAttackRelease() {} },
+  FMSynth: class { connect() { return this; } triggerAttackRelease() {} },
   Reverb: class { connect() { return this; } },
   Chorus: class { start() { return this; } connect() { return this; } },
+  Gain: class { connect() { return this; } gain = { rampTo: vi.fn(), value: 1 }; },
+  Filter: class { connect() { return this; } },
+  EQ3: class { connect() { return this; } },
+  Vibrato: class { connect() { return this; } },
+  Distortion: class { connect() { return this; } },
+  Frequency: () => ({ toMidi: () => 60 }),
+  getDestination: () => ({ connect: () => ({}) }),
   loaded: () => Promise.resolve(),
   start: () => Promise.resolve(),
   now: () => 0,
@@ -71,16 +78,26 @@ describe('export-service', () => {
     expect(noteToMidiNumber('Db5')).toBe(73);
   });
 
-  it('generates scheduled note events with arpeggiated step timings vs block chord timings', () => {
+  it('generates scheduled note events with lower root bass and arpeggiated step timings vs block chord timings', () => {
     const blockEvents = generateScheduledEvents(sampleProgression, undefined, 'Block chords');
-    expect(blockEvents.length).toBe(6);
+    // Each chord now includes root bass (C3, G3) + chord notes -> 4 notes * 2 chords = 8 events
+    expect(blockEvents.length).toBe(8);
+    expect(blockEvents[0].note).toBe('C3');
+    expect(blockEvents[1].note).toBe('C4');
     expect(blockEvents[0].startTime).toBe(0);
-    expect(blockEvents[1].startTime).toBe(0.03);
 
     const arpEvents = generateScheduledEvents(sampleProgression, undefined, 'Arpeggio');
-    expect(arpEvents.length).toBe(6);
+    expect(arpEvents.length).toBe(8);
     expect(arpEvents[0].startTime).toBe(0);
     expect(arpEvents[1].startTime).toBe(0.25);
+  });
+
+  it('reflects feelSettings density in generated events', () => {
+    // Sparse density (<= 25): Root + highest note = 2 notes per chord
+    const sparseEvents = generateScheduledEvents(sampleProgression, undefined, 'Block chords', 1, { density: 20 });
+    expect(sparseEvents.length).toBe(4);
+    expect(sparseEvents[0].note).toBe('C3');
+    expect(sparseEvents[1].note).toBe('G4');
   });
 
   it('generates valid Standard MIDI file header and track bytes', () => {
@@ -96,13 +113,13 @@ describe('export-service', () => {
     expect(buffer[11]).toBe(0x01); // 1 track
   });
 
-  it('handles downloadMidi without crashing', () => {
-    downloadMidi(sampleProgression, undefined, 'Synth Bell', 'Arpeggio');
+  it('handles downloadMidi without crashing with feel settings and bars', () => {
+    downloadMidi(sampleProgression, undefined, 'Synth Bell', 'Arpeggio', 2, { swing: 20, tone: 'Glassy' });
     expect(URL.createObjectURL).toHaveBeenCalled();
   });
 
-  it('handles downloadWav without crashing', async () => {
-    await downloadWav(sampleProgression, undefined, 'Synth Bell', 'Strum');
+  it('handles downloadWav without crashing with feel settings and bars', async () => {
+    await downloadWav(sampleProgression, undefined, 'Piano', 'Strum', 1, { tone: 'Dusty', spread: 60 });
     expect(URL.createObjectURL).toHaveBeenCalled();
   });
 });

@@ -2,6 +2,8 @@ import { LitElement, html, css, svg } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { Progression, ShareDevice, buildDeviceShareUrl } from '../services/chord-engine';
 import { downloadWav, downloadMidi } from '../services/export-service';
+import { FeelSettings } from '../services/audio-service';
+import { playbackEngine } from '../services/playback-engine';
 
 // Reuses the original app's inline device illustrations verbatim (still exist in git
 // history at 3383fcf's renderShareModal) rather than the flat mono-badge placeholder
@@ -284,6 +286,8 @@ export class ShareModal extends LitElement {
   @property({ type: Array }) order: number[] = [];
   @property({ type: String }) instrument: string | null = null;
   @property({ type: String }) playStyle: string | null = null;
+  @property({ type: Number }) barsPerChord = 1;
+  @property({ type: Object }) feelSettings: FeelSettings | null = null;
 
   get isOpened(): boolean {
     return this.open || this.visible;
@@ -585,7 +589,9 @@ export class ShareModal extends LitElement {
     if (!this.progression) return;
     this.emit('toast', 'Generating WAV audio...');
     try {
-      await downloadWav(this.progression, this.order, this.instrument, this.playStyle);
+      const bars = this.barsPerChord || playbackEngine.getBarsPerChord() || 1;
+      const feel = this.feelSettings || playbackEngine.getFeelSettings();
+      await downloadWav(this.progression, this.order, this.instrument, this.playStyle, bars, feel);
       this.emit('toast', 'WAV file downloaded');
     } catch (err) {
       console.error('WAV export failed', err);
@@ -597,7 +603,9 @@ export class ShareModal extends LitElement {
   private handleMidiClick() {
     if (!this.progression) return;
     try {
-      downloadMidi(this.progression, this.order, this.instrument, this.playStyle);
+      const bars = this.barsPerChord || playbackEngine.getBarsPerChord() || 1;
+      const feel = this.feelSettings || playbackEngine.getFeelSettings();
+      downloadMidi(this.progression, this.order, this.instrument, this.playStyle, bars, feel);
       this.emit('toast', 'MIDI file downloaded');
     } catch (err) {
       console.error('MIDI export failed', err);

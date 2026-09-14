@@ -4076,6 +4076,8 @@ export class LoopScreen extends LitElement {
             .order=${this.order}
             .instrument=${this.instrument}
             .playStyle=${this.playStyle}
+            .barsPerChord=${this.barsPerChord}
+            .feelSettings=${{ swing: this.swing, spread: this.spread, density: this.density, tone: this.tone }}
             @close=${() => { this.shareOpen = false; }}
             @toast=${(e: CustomEvent<string>) => {
               this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
@@ -4663,6 +4665,8 @@ export class LoopScreen extends LitElement {
           .order=${this.order}
           .instrument=${this.instrument}
           .playStyle=${this.playStyle}
+          .barsPerChord=${this.barsPerChord}
+          .feelSettings=${{ swing: this.swing, spread: this.spread, density: this.density, tone: this.tone }}
           @close=${() => { this.shareOpen = false; }}
           @toast=${(e: CustomEvent<string>) => {
             this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
