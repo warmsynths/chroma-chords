@@ -17,7 +17,7 @@ import { projectStorage } from '../services/project-storage';
 import { ProjectData } from '../services/project-service';
 import { SongArranger } from '../services/song-arranger';
 import { SongSection } from './song-screen';
-import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone } from '../services/audio-service';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, normalizeInstrumentName } from '../services/audio-service';
 import 'human-engine';
 import type { HumanState } from 'human-engine';
 import './share-modal';
@@ -3702,7 +3702,7 @@ export class LoopScreen extends LitElement {
               <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px;">
                 <button class="instrument-chip" @click=${this.toggleInstrumentExpand} aria-label="Change instrument">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                  ${this.instrument || 'Piano'} <span style="opacity:0.6;">⌄</span>
+                  ${normalizeInstrumentName(this.instrument)} <span style="opacity:0.6;">⌄</span>
                 </button>
                 <button class="play-style-chip" @click=${this.togglePlayStyleExpand} aria-label="Change playing style">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
@@ -3714,7 +3714,7 @@ export class LoopScreen extends LitElement {
                 <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
                   ${USER_INSTRUMENTS.map(i => html`
                     <button
-                      class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
+                      class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
                       @click=${() => {
                         this.instrument = i.name;
                         playbackEngine.setInstrument(i.name);
@@ -4242,7 +4242,7 @@ export class LoopScreen extends LitElement {
                     style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.expandedInstrument ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.expandedInstrument ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                    ${this.instrument || 'Piano'}
+                    ${normalizeInstrumentName(this.instrument)}
                   </button>
                   <button
                     class="play-style-chip ${this.expandedPlayStyle ? 'open' : ''}"
@@ -4290,7 +4290,7 @@ export class LoopScreen extends LitElement {
                     <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
                       ${USER_INSTRUMENTS.map(i => html`
                         <button
-                          class="pill ${(this.instrument || 'Piano') === i.name ? 'active' : ''}"
+                          class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
                           style="border: none; font-family: inherit; display: inline-flex; align-items: center; background: ${(this.instrument || 'Piano') === i.name ? 'var(--cv-ink)' : 'var(--cv-surface)'}; color: ${(this.instrument || 'Piano') === i.name ? 'var(--cv-cream)' : 'var(--cv-ink)'}; border-radius: 100px; min-height: 34px; padding: 0 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: transform 120ms ease;"
                           @click=${() => {
                             this.instrument = i.name;

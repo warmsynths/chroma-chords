@@ -1,16 +1,29 @@
 import * as Tone from 'tone';
 
 let limiter: Tone.Compressor | null = null;
-let sampler: Tone.Sampler | null = null;
+let pianoSampler: Tone.Sampler | null = null;
+let rhodesSampler: Tone.Sampler | null = null;
+let guitarSampler: Tone.Sampler | null = null;
+
 let organ: Tone.PolySynth | null = null;
+let organLeslieVibrato: Tone.Vibrato | null = null;
+let organDrive: Tone.Distortion | null = null;
+let organFilter: Tone.Filter | null = null;
+
 let cinematicReverb: Tone.Reverb | null = null;
+let padChorus: Tone.Chorus | null = null;
 let padStrings: Tone.PolySynth | null = null;
+
 let junoChorus: Tone.Chorus | null = null;
 let junoPad: Tone.PolySynth | null = null;
+
 let stab: Tone.PolySynth | null = null;
-let epiano: Tone.PolySynth | null = null;
-let guitar: Tone.PolySynth | null = null;
+let stabDist: Tone.Distortion | null = null;
+let stabReverb: Tone.Reverb | null = null;
+
 let bell: Tone.PolySynth | null = null;
+let bellEq: Tone.EQ3 | null = null;
+let bellReverb: Tone.Reverb | null = null;
 
 function getLimiter(): Tone.Compressor {
   if (!limiter) {
@@ -193,6 +206,26 @@ export function createOfflineToneRack(tone = 'Warm', dest?: Tone.ToneAudioNode):
   return warmFilter;
 }
 
+const envBase = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL) || './';
+const cleanBase = envBase.endsWith('/') ? envBase : `${envBase}/`;
+
+export const PIANO_SAMPLE_URLS: Record<string, string> = {
+  "A1": "A1.mp3",
+  "C2": "C2.mp3",
+  "F#2": "Fs2.mp3",
+  "C3": "C3.mp3",
+  "F#3": "Fs3.mp3",
+  "C4": "C4.mp3",
+  "F#4": "Fs4.mp3",
+  "C5": "C5.mp3",
+  "F#5": "Fs5.mp3",
+  "C6": "C6.mp3",
+  "F#6": "Fs6.mp3",
+  "C7": "C7.mp3"
+};
+
+export const PIANO_SAMPLE_BASE_URL = `${cleanBase}audio/samples/grand-piano/`;
+
 export const RHODES_SAMPLE_URLS: Record<string, string> = {
   "F1": "A_029__F1_5.m4a",
   "B1": "A_035__B1_5.m4a",
@@ -210,14 +243,43 @@ export const RHODES_SAMPLE_URLS: Record<string, string> = {
   "G6": "A_091__G6_5.m4a"
 };
 
-export const RHODES_SAMPLE_BASE_URL = "https://danigb.github.io/samples/jlearman/rhodes-mki/jRhodes3d-mono/";
+export const RHODES_SAMPLE_BASE_URL = `${cleanBase}audio/samples/stage-rhodes/`;
 
-export function getLoadedSamplerBuffers(): Record<string, AudioBuffer> | null {
-  if (!sampler || !sampler.loaded) return null;
-  const toneBuffers = (sampler as any)._buffers;
+export const GUITAR_SAMPLE_URLS: Record<string, string> = {
+  "B1": "B1.mp3",
+  "E2": "E2.mp3",
+  "A2": "A2.mp3",
+  "D3": "D3.mp3",
+  "G3": "G3.mp3",
+  "B3": "B3.mp3",
+  "E4": "E4.mp3",
+  "A4": "A4.mp3",
+  "E5": "E5.mp3",
+  "A5": "A5.mp3"
+};
+
+export const GUITAR_SAMPLE_BASE_URL = `${cleanBase}audio/samples/nylon-guitar/`;
+
+export type InstrumentId = 'piano' | 'rhodes' | 'guitar' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab' | 'bell' | 'epiano';
+
+export function getLoadedSamplerBuffers(instrument: InstrumentId = 'piano'): Record<string, AudioBuffer> | null {
+  let s: Tone.Sampler | null = null;
+  let urls: Record<string, string> = {};
+  if (instrument === 'guitar') {
+    s = guitarSampler;
+    urls = GUITAR_SAMPLE_URLS;
+  } else if (instrument === 'rhodes' || instrument === 'epiano') {
+    s = rhodesSampler;
+    urls = RHODES_SAMPLE_URLS;
+  } else {
+    s = pianoSampler;
+    urls = PIANO_SAMPLE_URLS;
+  }
+  if (!s || !s.loaded) return null;
+  const toneBuffers = (s as any)._buffers;
   if (!toneBuffers) return null;
   const result: Record<string, AudioBuffer> = {};
-  for (const note of Object.keys(RHODES_SAMPLE_URLS)) {
+  for (const note of Object.keys(urls)) {
     try {
       const midi = Tone.Frequency(note).toMidi();
       const buf = toneBuffers.has(midi) ? toneBuffers.get(midi) : (toneBuffers.has(note) ? toneBuffers.get(note) : null);
@@ -229,8 +291,8 @@ export function getLoadedSamplerBuffers(): Record<string, AudioBuffer> | null {
   return Object.keys(result).length > 0 ? result : null;
 }
 
-export async function ensureSamplerLoaded(): Promise<Tone.Sampler | null> {
-  const s = getSampler();
+export async function ensureSamplerLoaded(instrument: InstrumentId = 'piano'): Promise<Tone.Sampler | null> {
+  const s = getSamplerVoice(instrument);
   if (s.loaded) return s;
   try {
     await Promise.race([
@@ -239,121 +301,216 @@ export async function ensureSamplerLoaded(): Promise<Tone.Sampler | null> {
     ]);
     return s;
   } catch (err) {
-    console.warn("ensureSamplerLoaded timed out or failed:", err);
+    console.warn(`ensureSamplerLoaded(${instrument}) timed out or failed:`, err);
     return null;
   }
 }
 
-function getSampler(): Tone.Sampler {
-  if (!sampler) {
-    sampler = new Tone.Sampler({
-      urls: RHODES_SAMPLE_URLS,
-      baseUrl: RHODES_SAMPLE_BASE_URL,
-      volume: -12,
-      onload: () => {
-        console.log("Rhodes piano sampler loaded successfully!");
-      },
-      onerror: (err) => {
-        console.warn("Failed to load Rhodes piano sampler:", err);
-      }
+function getPianoSampler(): Tone.Sampler {
+  if (!pianoSampler) {
+    pianoSampler = new Tone.Sampler({
+      urls: PIANO_SAMPLE_URLS,
+      baseUrl: PIANO_SAMPLE_BASE_URL,
+      volume: -9,
+      onload: () => console.log("Grand Piano sampler loaded successfully!"),
+      onerror: (err) => console.warn("Failed to load Grand Piano sampler:", err),
     }).connect(initToneRack());
   }
-  return sampler;
+  return pianoSampler;
 }
 
-export type InstrumentId = 'rhodes' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab' | 'epiano' | 'guitar' | 'bell';
+function getRhodesSampler(): Tone.Sampler {
+  if (!rhodesSampler) {
+    rhodesSampler = new Tone.Sampler({
+      urls: RHODES_SAMPLE_URLS,
+      baseUrl: RHODES_SAMPLE_BASE_URL,
+      volume: -10,
+      onload: () => console.log("Stage Rhodes sampler loaded successfully!"),
+      onerror: (err) => console.warn("Failed to load Stage Rhodes sampler:", err),
+    }).connect(initToneRack());
+  }
+  return rhodesSampler;
+}
+
+function getGuitarSampler(): Tone.Sampler {
+  if (!guitarSampler) {
+    guitarSampler = new Tone.Sampler({
+      urls: GUITAR_SAMPLE_URLS,
+      baseUrl: GUITAR_SAMPLE_BASE_URL,
+      volume: -8,
+      onload: () => console.log("Nylon Guitar sampler loaded successfully!"),
+      onerror: (err) => console.warn("Failed to load Nylon Guitar sampler:", err),
+    }).connect(initToneRack());
+  }
+  return guitarSampler;
+}
+
+function getSamplerVoice(instrument: InstrumentId): Tone.Sampler {
+  if (instrument === 'guitar') return getGuitarSampler();
+  if (instrument === 'rhodes' || instrument === 'epiano') return getRhodesSampler();
+  return getPianoSampler();
+}
+
+/** Legacy alias for backwards compatibility */
+export function getSampler(): Tone.Sampler {
+  return getPianoSampler();
+}
+
+export function preloadAllSamplers(): void {
+  try {
+    getPianoSampler();
+    getRhodesSampler();
+    getGuitarSampler();
+  } catch (e) {
+    console.warn("Preloading samplers failed:", e);
+  }
+}
 
 function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
   const l = initToneRack();
   switch (instrument) {
     case 'organ':
       if (!organ) {
+        organLeslieVibrato = new Tone.Vibrato({
+          frequency: 5.8,
+          depth: 0.12,
+          wet: 0.55,
+        });
+        organDrive = new Tone.Distortion({
+          distortion: 0.08,
+          wet: 0.15,
+        });
+        organFilter = new Tone.Filter({
+          frequency: 4500,
+          type: 'lowpass',
+          rolloff: -12,
+        });
         organ = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: 'fatsquare', count: 3, spread: 20 },
-          envelope: { attack: 0.015, decay: 0.1, sustain: 0.9, release: 0.35 },
-          volume: -16,
-        }).connect(l);
+          oscillator: { type: 'fatsine', count: 3, spread: 15 },
+          envelope: { attack: 0.008, decay: 0.15, sustain: 0.9, release: 0.25 },
+          volume: -12,
+        });
+        organ.connect(organLeslieVibrato);
+        organLeslieVibrato.connect(organDrive);
+        organDrive.connect(organFilter);
+        organFilter.connect(l);
       }
       return organ;
+
     case 'pad-strings':
       if (!padStrings) {
-        cinematicReverb = new Tone.Reverb({ decay: 4.5, wet: 0.35 }).connect(l);
+        cinematicReverb = new Tone.Reverb({ decay: 5.5, preDelay: 0.03, wet: 0.45 });
+        padChorus = new Tone.Chorus({ frequency: 0.45, delayTime: 4.0, depth: 0.5, wet: 0.4 });
+        try { padChorus.start(); } catch {}
         padStrings = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: 'sine' },
-          envelope: { attack: 0.9, decay: 0.4, sustain: 0.8, release: 2.8 },
-          volume: -15,
-        }).connect(cinematicReverb);
+          oscillator: { type: 'fatsawtooth', count: 3, spread: 22 },
+          envelope: { attack: 0.65, decay: 0.8, sustain: 0.85, release: 2.5 },
+          volume: -13,
+        });
+        padStrings.connect(padChorus);
+        padChorus.connect(cinematicReverb);
+        cinematicReverb.connect(l);
       }
       return padStrings;
+
     case 'juno-pad':
       if (!junoPad) {
-        junoChorus = new Tone.Chorus({ frequency: 0.8, delayTime: 3.5, depth: 0.7, wet: 0.5 }).connect(l);
+        junoChorus = new Tone.Chorus({ frequency: 0.85, delayTime: 3.5, depth: 0.72, wet: 0.55 });
         try { junoChorus.start(); } catch {}
-        junoPad = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: 'fatsawtooth', count: 3, spread: 25 },
-          envelope: { attack: 0.35, decay: 0.4, sustain: 0.85, release: 1.6 },
-          volume: -16,
-        }).connect(junoChorus);
+        junoPad = new Tone.PolySynth(Tone.MonoSynth, {
+          oscillator: { type: 'fatsawtooth', count: 3, spread: 20 },
+          envelope: { attack: 0.02, decay: 0.45, sustain: 0.65, release: 0.85 },
+          filterEnvelope: {
+            attack: 0.02,
+            decay: 0.5,
+            sustain: 0.35,
+            release: 0.8,
+            baseFrequency: 750,
+            octaves: 3.2,
+            exponent: 2,
+          },
+          filter: {
+            type: 'lowpass',
+            rolloff: -24,
+            Q: 2.5,
+          },
+          volume: -12,
+        });
+        junoPad.connect(junoChorus);
+        junoChorus.connect(l);
       }
       return junoPad;
+
     case 'stab':
       if (!stab) {
+        stabDist = new Tone.Distortion({ distortion: 0.1, wet: 0.12 });
+        stabReverb = new Tone.Reverb({ decay: 1.0, wet: 0.22 });
         stab = new Tone.PolySynth(Tone.MonoSynth, {
-          oscillator: { type: 'square' },
-          envelope: { attack: 0.004, decay: 0.14, sustain: 0.12, release: 0.15 },
-          filterEnvelope: { attack: 0.004, decay: 0.15, sustain: 0.1, release: 0.2, baseFrequency: 300, octaves: 4 },
-          volume: -14,
-        }).connect(l);
+          oscillator: { type: 'fatsawtooth', count: 2, spread: 12 },
+          envelope: { attack: 0.003, decay: 0.16, sustain: 0.08, release: 0.18 },
+          filterEnvelope: {
+            attack: 0.003,
+            decay: 0.14,
+            sustain: 0.05,
+            release: 0.16,
+            baseFrequency: 420,
+            octaves: 3.5,
+            exponent: 2,
+          },
+          filter: {
+            type: 'lowpass',
+            rolloff: -24,
+            Q: 2.0,
+          },
+          volume: -10,
+        });
+        stab.connect(stabDist);
+        stabDist.connect(stabReverb);
+        stabReverb.connect(l);
       }
       return stab;
-    case 'epiano':
-      if (!epiano) {
-        epiano = new Tone.PolySynth(Tone.FMSynth, {
-          harmonicity: 2,
-          modulationIndex: 3.5,
-          envelope: { attack: 0.008, decay: 0.6, sustain: 0.25, release: 1.2 },
-          modulationEnvelope: { attack: 0.008, decay: 0.4, sustain: 0.1, release: 0.6 },
-          volume: -14,
-        }).connect(l);
-      }
-      return epiano;
-    case 'guitar':
-      if (!guitar) {
-        guitar = new Tone.PolySynth(Tone.Synth, {
-          oscillator: { type: 'triangle' },
-          envelope: { attack: 0.004, decay: 0.5, sustain: 0.05, release: 0.6 },
-          volume: -13,
-        }).connect(l);
-      }
-      return guitar;
+
     case 'bell':
       if (!bell) {
+        bellEq = new Tone.EQ3({ high: 3.5, mid: -0.5, low: -2.0, highFrequency: 4800 });
+        bellReverb = new Tone.Reverb({ decay: 3.2, wet: 0.32 });
         bell = new Tone.PolySynth(Tone.FMSynth, {
-          harmonicity: 5.5,
+          harmonicity: 3.5,
           modulationIndex: 12,
-          envelope: { attack: 0.002, decay: 1.1, sustain: 0.05, release: 0.8 },
-          modulationEnvelope: { attack: 0.002, decay: 0.5, sustain: 0, release: 0.4 },
-          volume: -16,
-        }).connect(l);
+          envelope: { attack: 0.002, decay: 1.2, sustain: 0.04, release: 1.4 },
+          modulationEnvelope: { attack: 0.002, decay: 0.6, sustain: 0.01, release: 0.5 },
+          volume: -12,
+        });
+        bell.connect(bellEq);
+        bellEq.connect(bellReverb);
+        bellReverb.connect(l);
       }
       return bell;
+
+    case 'guitar':
+      return getGuitarSampler();
+
     case 'rhodes':
+    case 'epiano':
+      return getRhodesSampler();
+
+    case 'piano':
     default:
-      return getSampler();
+      return getPianoSampler();
   }
 }
 
-// The instrument picker's five user-facing options (design: "Instrument" chip) — each maps to
-// one of the voices above. Colors match the dots used in the picker's option pills.
+// The instrument picker's eight user-facing options — each maps to
+// one of the pristine hybrid voices above. Colors match option pills.
 export const USER_INSTRUMENTS: { name: string; instrument: InstrumentId; color: string }[] = [
   {
-    "name": "Piano",
-    "instrument": "rhodes",
+    "name": "Grand Piano",
+    "instrument": "piano",
     "color": "#9CC0EC"
   },
   {
-    "name": "Rhodes",
-    "instrument": "epiano",
+    "name": "Stage Rhodes",
+    "instrument": "rhodes",
     "color": "#F2A79B"
   },
   {
@@ -362,12 +519,12 @@ export const USER_INSTRUMENTS: { name: string; instrument: InstrumentId; color: 
     "color": "#F6D98B"
   },
   {
-    "name": "Warm Pad",
+    "name": "Cinematic Pad",
     "instrument": "pad-strings",
     "color": "#C9A9E0"
   },
   {
-    "name": "Synth Bell",
+    "name": "Celestial Bell",
     "instrument": "bell",
     "color": "#B8CC9E"
   },
@@ -377,16 +534,50 @@ export const USER_INSTRUMENTS: { name: string; instrument: InstrumentId; color: 
     "color": "#E8609A"
   },
   {
-    "name": "Analog Synth",
+    "name": "Juno Synth",
     "instrument": "juno-pad",
     "color": "#7B61FF"
   },
   {
-    "name": "Synth Stab",
+    "name": "House Stab",
     "instrument": "stab",
     "color": "#FF8C42"
   }
 ];
+
+export const LEGACY_INSTRUMENT_NAME_MAP: Record<string, string> = {
+  'piano': 'Grand Piano',
+  'grand piano': 'Grand Piano',
+  'rhodes': 'Stage Rhodes',
+  'stage rhodes': 'Stage Rhodes',
+  'epiano': 'Stage Rhodes',
+  'nylon guitar': 'Nylon Guitar',
+  'guitar': 'Nylon Guitar',
+  'warm pad': 'Cinematic Pad',
+  'cinematic pad': 'Cinematic Pad',
+  'pad-strings': 'Cinematic Pad',
+  'synth bell': 'Celestial Bell',
+  'celestial bell': 'Celestial Bell',
+  'bell': 'Celestial Bell',
+  'drawbar organ': 'Drawbar Organ',
+  'organ': 'Drawbar Organ',
+  'analog synth': 'Juno Synth',
+  'juno synth': 'Juno Synth',
+  'juno-pad': 'Juno Synth',
+  'synth stab': 'House Stab',
+  'house stab': 'House Stab',
+  'stab': 'House Stab'
+};
+
+export function normalizeInstrumentName(name?: string | null): string {
+  if (!name) return 'Grand Piano';
+  const clean = name.trim().toLowerCase();
+  if (LEGACY_INSTRUMENT_NAME_MAP[clean]) {
+    return LEGACY_INSTRUMENT_NAME_MAP[clean];
+  }
+  const match = USER_INSTRUMENTS.find(i => i.name.toLowerCase() === clean);
+  return match ? match.name : 'Grand Piano';
+}
 
 // The play-style picker's five options (design: "Play style" chip) — each is a humanState
 // override applied on top of the genre's normal humanize profile. Colors match USER_INSTRUMENTS'
@@ -466,9 +657,9 @@ export const USER_PLAY_STYLES: { name: string; color: string; patch: Record<stri
 ];
 
 export const GENRE_INSTRUMENT: Record<string, InstrumentId> = {
-  "Pop": "rhodes",
-  "Rock": "rhodes",
-  "Indie/Folk": "rhodes",
+  "Pop": "piano",
+  "Rock": "piano",
+  "Indie/Folk": "guitar",
   "Lo-fi/Chill": "rhodes",
   "Jazz-ish": "rhodes",
   "R&B/Soul": "rhodes",
@@ -477,17 +668,17 @@ export const GENRE_INSTRUMENT: Record<string, InstrumentId> = {
   "Synthwave": "juno-pad",
   "House/Dance": "stab",
   "Blues": "rhodes",
-  "Funk/Disco": "epiano",
+  "Funk/Disco": "rhodes",
   "Country/Bluegrass": "guitar",
   "Reggae/Dub": "organ",
   "Metal": "stab",
   "Punk": "stab",
   "Ambient/Drone": "pad-strings",
-  "Trap/Hip-Hop": "epiano",
+  "Trap/Hip-Hop": "bell",
   "Bossa Nova/Latin": "guitar",
-  "Classical/Orchestral": "pad-strings",
+  "Classical/Orchestral": "piano",
   "EDM/Trance": "juno-pad",
-  "Afrobeats": "epiano",
+  "Afrobeats": "guitar",
   "Shoegaze": "pad-strings"
 };
 
@@ -693,21 +884,22 @@ export const GENRE_HUMANIZE: Record<string, any> = {
 // picker names, for display purposes — several genres (Gospel/organ, Synthwave/juno-pad,
 // House-Dance/stab) use a voice that isn't one of the 5 selectable options at all, so those
 // fall back to the nearest sonic category rather than a literal match.
-const INSTRUMENT_ID_TO_USER_NAME: Record<InstrumentId, string> = {
-  rhodes: 'Piano',
-  epiano: 'Rhodes',
+export const INSTRUMENT_ID_TO_USER_NAME: Record<InstrumentId, string> = {
+  piano: 'Grand Piano',
+  rhodes: 'Stage Rhodes',
+  epiano: 'Stage Rhodes',
   guitar: 'Nylon Guitar',
-  'pad-strings': 'Warm Pad',
-  'juno-pad': 'Warm Pad',
-  bell: 'Synth Bell',
-  organ: 'Piano',
-  stab: 'Nylon Guitar',
+  'pad-strings': 'Cinematic Pad',
+  bell: 'Celestial Bell',
+  organ: 'Drawbar Organ',
+  'juno-pad': 'Juno Synth',
+  stab: 'House Stab',
 };
 
 /** The instrument name (one of USER_INSTRUMENTS) this genre plays with by default. */
 export function genreDefaultInstrumentName(genre: string): string {
-  const id = GENRE_INSTRUMENT[genre] ?? 'rhodes';
-  return INSTRUMENT_ID_TO_USER_NAME[id] ?? 'Piano';
+  const id = GENRE_INSTRUMENT[genre] ?? 'piano';
+  return INSTRUMENT_ID_TO_USER_NAME[id] ?? 'Grand Piano';
 }
 
 /** The play style name (one of USER_PLAY_STYLES) this genre plays with by default. */
@@ -818,14 +1010,15 @@ export function orderNotesForArp(notes: string[], arpMode: string): string[] {
  * to the closest matching user-facing instrument name in USER_INSTRUMENTS.
  */
 const PRESET_ID_TO_USER_NAME: Record<string, string> = {
-  'rhodes': 'Piano',
-  'epiano': 'Rhodes',
+  'piano': 'Grand Piano',
+  'rhodes': 'Stage Rhodes',
+  'epiano': 'Stage Rhodes',
   'guitar': 'Nylon Guitar',
-  'pad-strings': 'Warm Pad',
-  'juno-pad': 'Analog Synth',
-  'bell': 'Synth Bell',
+  'pad-strings': 'Cinematic Pad',
+  'juno-pad': 'Juno Synth',
+  'bell': 'Celestial Bell',
   'organ': 'Drawbar Organ',
-  'stab': 'Synth Stab',
+  'stab': 'House Stab',
 };
 
 export function presetIdToUserInstrumentName(presetId?: string): string | undefined {
@@ -872,7 +1065,7 @@ export function playChord(
   noteNames: string[],
   duration = 0.7,
   humanState?: any,
-  instrument: InstrumentId = 'rhodes',
+  instrument: InstrumentId = 'piano',
   customConfig?: Record<string, unknown>
 ): void {
   try {
@@ -931,7 +1124,15 @@ export function playChord(
       }
 
       // --- Standard humanized chord playback ---
-      noteNames.forEach((noteName, index) => {
+      const isGuitar = instrument === 'guitar';
+      // If guitar, sort notes lowest to highest for natural down-strum roll
+      const sortedNotes = isGuitar
+        ? [...noteNames].sort((a, b) => {
+            try { return Tone.Frequency(a).toMidi() - Tone.Frequency(b).toMidi(); } catch { return 0; }
+          })
+        : noteNames;
+
+      sortedNotes.forEach((noteName, index) => {
         let stagger = 0;
         let vel = densityScaling;
         let dur = duration;
@@ -945,15 +1146,20 @@ export function playChord(
             : (minVelocity + Math.random() * (maxVelocity - minVelocity)) / 127;
           vel = rawVel * densityScaling;
 
-          // Spread/microtiming/variance offset in seconds
-          const spreadOffset = index * spread * 0.1;
-          const microTimingOffset = (Math.random() - 0.5) * microTiming * 0.05;
-          const varianceOffset = (Math.random() - 0.5) * humanVariance * 0.03;
+          // If guitar, add natural 24ms per string acoustic roll delay
+          const guitarStrumDelay = isGuitar ? index * 0.024 : 0;
+          const spreadOffset = index * (spread ?? 0.3) * 0.1;
+          const microTimingOffset = (Math.random() - 0.5) * (microTiming ?? 0) * 0.05;
+          const varianceOffset = (Math.random() - 0.5) * (humanVariance ?? 0) * 0.03;
 
-          stagger = Math.max(0, spreadOffset + microTimingOffset + varianceOffset);
+          stagger = Math.max(0, guitarStrumDelay + spreadOffset + microTimingOffset + varianceOffset);
+          dur = (hDuration || duration) * (1.0 + (Math.random() - 0.5) * 0.2 * (humanVariance ?? 0));
+        } else if (isGuitar) {
+          stagger = index * 0.024;
+        }
 
-          // Calculate duration scaled by human settings duration and randomized by humanVariance
-          dur = hDuration * (1.0 + (Math.random() - 0.5) * 0.2 * humanVariance);
+        if (isGuitar && index === 0) {
+          vel = Math.min(1, vel * 1.1); // Thumb pluck bass emphasis
         }
 
         voice.triggerAttackRelease(noteName, dur, now + stagger, vel);
@@ -1018,10 +1224,11 @@ export function playChordForGenre(
   const safeGenre = (genre === 'Unknown' || !genre) ? 'Pop' : genre;
   // User overrides (from the Instrument/Play style pickers) win over the genre's defaults —
   // when unset, playback falls back to the existing per-genre auto-selection untouched.
-  const userInstrument = opts?.instrument ? USER_INSTRUMENTS.find(i => i.name === opts.instrument) : undefined;
+  const normalized = opts?.instrument ? normalizeInstrumentName(opts.instrument) : undefined;
+  const userInstrument = normalized ? USER_INSTRUMENTS.find(i => i.name.toLowerCase() === normalized.toLowerCase()) : undefined;
   const userPlayStyle = opts?.playStyle ? USER_PLAY_STYLES.find(p => p.name === opts.playStyle) : undefined;
 
-  const instrument = userInstrument?.instrument ?? GENRE_INSTRUMENT[safeGenre] ?? 'rhodes';
+  const instrument = userInstrument?.instrument ?? GENRE_INSTRUMENT[safeGenre] ?? 'piano';
   const profile = GENRE_HUMANIZE[safeGenre] || {};
   const stylePatch = (userPlayStyle?.patch ?? {}) as { durationMultiplier?: number; [k: string]: unknown };
 
@@ -1290,7 +1497,7 @@ export function startChordNotes(
   notes: string[],
   voicing = 'root position',
   velocity = 96,
-  instrument: InstrumentId = 'rhodes'
+  instrument: InstrumentId = 'piano'
 ): void {
   try {
     Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
@@ -1300,8 +1507,21 @@ export function startChordNotes(
       }
       const pitched = applyVoicingToNotes(notes, voicing);
       const velNorm = Math.min(1, Math.max(0.1, velocity / 127));
-      if (typeof (voice as any)?.triggerAttack === 'function') {
-        (voice as any).triggerAttack(pitched, Tone.now(), velNorm);
+      if (instrument === 'guitar') {
+        const sorted = [...pitched].sort((a, b) => {
+          try { return Tone.Frequency(a).toMidi() - Tone.Frequency(b).toMidi(); } catch { return 0; }
+        });
+        sorted.forEach((n, idx) => {
+          setTimeout(() => {
+            if (activeHeldVoice === voice) {
+              (voice as any).triggerAttack?.(n, Tone.now(), velNorm * (idx === 0 ? 1.08 : 0.95));
+            }
+          }, idx * 24);
+        });
+      } else {
+        if (typeof (voice as any)?.triggerAttack === 'function') {
+          (voice as any).triggerAttack(pitched, Tone.now(), velNorm);
+        }
       }
       activeHeldChordNotes = pitched;
       activeHeldVoice = voice;

@@ -3,7 +3,7 @@ import { Progression, ChordBlock } from './chord-engine';
 import {
   USER_INSTRUMENTS, USER_PLAY_STYLES, GENRE_HUMANIZE, GENRE_INSTRUMENT, InstrumentId,
   arpRateToSeconds, expandNotesAcrossOctaves, orderNotesForArp,
-  FeelSettings, applyDensityToNotes,
+  FeelSettings, applyDensityToNotes, normalizeInstrumentName,
   createOfflineToneRack, getLoadedSamplerBuffers, ensureSamplerLoaded,
 } from './audio-service';
 import { pitchNotesAscending } from './playback-engine';
@@ -101,14 +101,22 @@ export function generateScheduledEvents(
         });
       });
     } else {
+      const userInstName = feelSettings?.humanState?.instrument || undefined;
+      const cleanName = userInstName ? normalizeInstrumentName(userInstName) : undefined;
+      const resolvedInstId = cleanName
+        ? (USER_INSTRUMENTS.find(i => i.name.toLowerCase() === cleanName.toLowerCase())?.instrument ?? 'piano')
+        : (GENRE_INSTRUMENT[progression.genre] ?? 'piano');
+      const isGuitar = resolvedInstId === 'guitar';
+
       pitchedNotes.forEach((noteName, index) => {
-        const stagger = index * effectiveSpread * 0.1;
+        const guitarDelay = isGuitar ? index * 0.024 : 0;
+        const stagger = guitarDelay + index * effectiveSpread * 0.1;
         const startTime = barStartTime + stagger;
         events.push({
           note: noteName,
           midi: noteToMidiNumber(noteName),
           startTime,
-          duration,
+          duration: isGuitar ? Math.max(duration, 1.2) : duration,
         });
       });
     }
@@ -263,77 +271,113 @@ function createOfflineVoice(
 
   const toneRack = createOfflineToneRack(tone, limiter);
 
-  const userInstrument = instrumentName
-    ? USER_INSTRUMENTS.find(i => i.name.toLowerCase() === instrumentName.toLowerCase())
+  const cleanName = instrumentName ? normalizeInstrumentName(instrumentName) : undefined;
+  const userInstrument = cleanName
+    ? USER_INSTRUMENTS.find(i => i.name.toLowerCase() === cleanName.toLowerCase())
     : undefined;
 
-  const instId: InstrumentId = userInstrument?.instrument ?? (genre ? GENRE_INSTRUMENT[genre] : undefined) ?? 'rhodes';
+  const instId: InstrumentId = userInstrument?.instrument ?? (genre ? GENRE_INSTRUMENT[genre] : undefined) ?? 'piano';
 
   switch (instId) {
-    case 'bell':
+    case 'bell': {
+      const bellEq = new Tone.EQ3({ high: 3.5, mid: -0.5, low: -2.0, highFrequency: 4800 }).connect(toneRack);
+      const bellReverb = new Tone.Reverb({ decay: 3.2, wet: 0.32 }).connect(bellEq);
       return new Tone.PolySynth(Tone.FMSynth, {
-        harmonicity: 5.5,
+        harmonicity: 3.5,
         modulationIndex: 12,
-        envelope: { attack: 0.002, decay: 1.1, sustain: 0.05, release: 0.8 },
-        modulationEnvelope: { attack: 0.002, decay: 0.5, sustain: 0, release: 0.4 },
-        volume: -16,
-      }).connect(toneRack);
-
-    case 'epiano':
-      return new Tone.PolySynth(Tone.FMSynth, {
-        harmonicity: 2,
-        modulationIndex: 3.5,
-        envelope: { attack: 0.008, decay: 0.6, sustain: 0.25, release: 1.2 },
-        modulationEnvelope: { attack: 0.008, decay: 0.4, sustain: 0.1, release: 0.6 },
-        volume: -14,
-      }).connect(toneRack);
-
-    case 'guitar':
-      return new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: 'triangle' },
-        envelope: { attack: 0.004, decay: 0.5, sustain: 0.05, release: 0.6 },
-        volume: -13,
-      }).connect(toneRack);
-
-    case 'organ':
-      return new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: 'fatsquare', count: 3, spread: 20 },
-        envelope: { attack: 0.015, decay: 0.1, sustain: 0.9, release: 0.35 },
-        volume: -16,
-      }).connect(toneRack);
-
-    case 'pad-strings': {
-      const reverb = new Tone.Reverb({ decay: 4.5, wet: 0.35 }).connect(toneRack);
-      return new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.9, decay: 0.4, sustain: 0.8, release: 2.8 },
-        volume: -15,
-      }).connect(reverb);
+        envelope: { attack: 0.002, decay: 1.2, sustain: 0.04, release: 1.4 },
+        modulationEnvelope: { attack: 0.002, decay: 0.6, sustain: 0.01, release: 0.5 },
+        volume: -12,
+      }).connect(bellReverb);
     }
 
-    case 'juno-pad': {
-      const chorus = new Tone.Chorus({ frequency: 0.8, delayTime: 3.5, depth: 0.7, wet: 0.5 }).start(0).connect(toneRack);
+    case 'organ': {
+      const filter = new Tone.Filter({ frequency: 4500, type: 'lowpass', rolloff: -12 }).connect(toneRack);
+      const dist = new Tone.Distortion({ distortion: 0.08, wet: 0.15 }).connect(filter);
+      const vibrato = new Tone.Vibrato({ frequency: 5.8, depth: 0.12, wet: 0.55 }).connect(dist);
       return new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: 'fatsawtooth', count: 3, spread: 25 },
-        envelope: { attack: 0.35, decay: 0.4, sustain: 0.85, release: 1.6 },
-        volume: -16,
+        oscillator: { type: 'fatsine', count: 3, spread: 15 },
+        envelope: { attack: 0.008, decay: 0.15, sustain: 0.9, release: 0.25 },
+        volume: -12,
+      }).connect(vibrato);
+    }
+
+    case 'pad-strings': {
+      const reverb = new Tone.Reverb({ decay: 5.5, preDelay: 0.03, wet: 0.45 }).connect(toneRack);
+      const chorus = new Tone.Chorus({ frequency: 0.45, delayTime: 4.0, depth: 0.5, wet: 0.4 }).start(0).connect(reverb);
+      return new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'fatsawtooth', count: 3, spread: 22 },
+        envelope: { attack: 0.65, decay: 0.8, sustain: 0.85, release: 2.5 },
+        volume: -13,
       }).connect(chorus);
     }
 
-    case 'stab':
+    case 'juno-pad': {
+      const chorus = new Tone.Chorus({ frequency: 0.85, delayTime: 3.5, depth: 0.72, wet: 0.55 }).start(0).connect(toneRack);
       return new Tone.PolySynth(Tone.MonoSynth, {
-        oscillator: { type: 'square' },
-        envelope: { attack: 0.004, decay: 0.14, sustain: 0.12, release: 0.15 },
-        filterEnvelope: { attack: 0.004, decay: 0.15, sustain: 0.1, release: 0.2, baseFrequency: 300, octaves: 4 },
-        volume: -14,
-      }).connect(toneRack);
+        oscillator: { type: 'fatsawtooth', count: 3, spread: 20 },
+        envelope: { attack: 0.02, decay: 0.45, sustain: 0.65, release: 0.85 },
+        filterEnvelope: {
+          attack: 0.02,
+          decay: 0.5,
+          sustain: 0.35,
+          release: 0.8,
+          baseFrequency: 750,
+          octaves: 3.2,
+          exponent: 2,
+        },
+        filter: {
+          type: 'lowpass',
+          rolloff: -24,
+          Q: 2.5,
+        },
+        volume: -12,
+      }).connect(chorus);
+    }
 
-    case 'rhodes':
-    default:
+    case 'stab': {
+      const dist = new Tone.Distortion({ distortion: 0.1, wet: 0.12 }).connect(toneRack);
+      const reverb = new Tone.Reverb({ decay: 1.0, wet: 0.22 }).connect(dist);
+      return new Tone.PolySynth(Tone.MonoSynth, {
+        oscillator: { type: 'fatsawtooth', count: 2, spread: 12 },
+        envelope: { attack: 0.003, decay: 0.16, sustain: 0.08, release: 0.18 },
+        filterEnvelope: {
+          attack: 0.003,
+          decay: 0.14,
+          sustain: 0.05,
+          release: 0.16,
+          baseFrequency: 420,
+          octaves: 3.5,
+          exponent: 2,
+        },
+        filter: {
+          type: 'lowpass',
+          rolloff: -24,
+          Q: 2.0,
+        },
+        volume: -10,
+      }).connect(reverb);
+    }
+
+    case 'guitar':
       if (loadedBuffers && Object.keys(loadedBuffers).length > 0) {
         return new Tone.Sampler({
           urls: loadedBuffers,
-          volume: -12,
+          volume: -8,
+        }).connect(toneRack);
+      }
+      return new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.004, decay: 0.6, sustain: 0.05, release: 0.8 },
+        volume: -8,
+      }).connect(toneRack);
+
+    case 'rhodes':
+    case 'epiano':
+      if (loadedBuffers && Object.keys(loadedBuffers).length > 0) {
+        return new Tone.Sampler({
+          urls: loadedBuffers,
+          volume: -10,
         }).connect(toneRack);
       }
       return new Tone.PolySynth(Tone.FMSynth, {
@@ -341,7 +385,21 @@ function createOfflineVoice(
         modulationIndex: 3.5,
         envelope: { attack: 0.008, decay: 0.6, sustain: 0.25, release: 1.2 },
         modulationEnvelope: { attack: 0.008, decay: 0.4, sustain: 0.1, release: 0.6 },
-        volume: -12,
+        volume: -10,
+      }).connect(toneRack);
+
+    case 'piano':
+    default:
+      if (loadedBuffers && Object.keys(loadedBuffers).length > 0) {
+        return new Tone.Sampler({
+          urls: loadedBuffers,
+          volume: -9,
+        }).connect(toneRack);
+      }
+      return new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.005, decay: 0.8, sustain: 0.15, release: 1.0 },
+        volume: -9,
       }).connect(toneRack);
   }
 }
@@ -421,12 +479,18 @@ export async function downloadWav(
   // 1 full loop cycle trimmed strictly to the bar grid (seamless loop for DAWs, no tail)
   const totalDuration = Math.max(0.1, chordsToExport.length * stepDuration);
 
-  await ensureSamplerLoaded();
-  const loadedBuffers = getLoadedSamplerBuffers();
+  const cleanName = instrumentName ? normalizeInstrumentName(instrumentName) : undefined;
+  const userInst = cleanName
+    ? USER_INSTRUMENTS.find(i => i.name.toLowerCase() === cleanName.toLowerCase())
+    : undefined;
+  const instId: InstrumentId = userInst?.instrument ?? (progression.genre ? GENRE_INSTRUMENT[progression.genre] : undefined) ?? 'piano';
+
+  await ensureSamplerLoaded(instId);
+  const loadedBuffers = getLoadedSamplerBuffers(instId);
   const toneName = feelSettings?.tone || 'Warm';
 
   const renderedBuffer = await Tone.Offline(async () => {
-    const voice = createOfflineVoice(instrumentName, progression.genre, toneName, loadedBuffers);
+    const voice = createOfflineVoice(cleanName || instrumentName, progression.genre, toneName, loadedBuffers);
     events.forEach(evt => {
       if (evt.startTime < totalDuration) {
         (voice as any).triggerAttackRelease(evt.note, evt.duration, evt.startTime);
@@ -490,8 +554,17 @@ export async function bounceLoop(options: BounceLoopOptions): Promise<void> {
   const stepDuration = (barsPerChord * 240) / bpm;
   const totalDuration = Math.max(4, maxTime + stepDuration * 2); // 2-chord tail
 
+  const cleanName = instrumentName ? normalizeInstrumentName(instrumentName) : undefined;
+  const userInst = cleanName
+    ? USER_INSTRUMENTS.find(i => i.name.toLowerCase() === cleanName.toLowerCase())
+    : undefined;
+  const instId: InstrumentId = userInst?.instrument ?? (progression.genre ? GENRE_INSTRUMENT[progression.genre] : undefined) ?? 'piano';
+
+  await ensureSamplerLoaded(instId);
+  const loadedBuffers = getLoadedSamplerBuffers(instId);
+
   const renderedBuffer = await Tone.Offline(async () => {
-    const voice = createOfflineVoice(instrumentName, progression.genre);
+    const voice = createOfflineVoice(cleanName || instrumentName, progression.genre, 'Warm', loadedBuffers);
     events.forEach(evt => {
       (voice as any).triggerAttackRelease(evt.note, evt.duration, evt.startTime);
     });

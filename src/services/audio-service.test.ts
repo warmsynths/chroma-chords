@@ -19,7 +19,7 @@ vi.mock('tone', () => ({
   now: () => 0,
 }));
 
-import { applyVoicingToNotes, applyDensityToNotes, setMasterTone, getMasterTone } from './audio-service';
+import { applyVoicingToNotes, applyDensityToNotes, setMasterTone, getMasterTone, normalizeInstrumentName, playChord, startChordNotes } from './audio-service';
 
 describe('Perform Mode Audio Functions', () => {
   describe('applyVoicingToNotes', () => {
@@ -85,6 +85,32 @@ describe('Perform Mode Audio Functions', () => {
 
       setMasterTone('Warm');
       expect(getMasterTone()).toBe('Warm');
+    });
+  });
+
+  describe('Instrument Presets & Normalization', () => {
+    it('normalizes legacy instrument names to new descriptive names', () => {
+      expect(normalizeInstrumentName('Piano')).toBe('Grand Piano');
+      expect(normalizeInstrumentName('Rhodes')).toBe('Stage Rhodes');
+      expect(normalizeInstrumentName('Warm Pad')).toBe('Cinematic Pad');
+      expect(normalizeInstrumentName('Synth Bell')).toBe('Celestial Bell');
+      expect(normalizeInstrumentName('Analog Synth')).toBe('Juno Synth');
+      expect(normalizeInstrumentName('Synth Stab')).toBe('House Stab');
+      expect(normalizeInstrumentName('Nylon Guitar')).toBe('Nylon Guitar');
+      expect(normalizeInstrumentName('Drawbar Organ')).toBe('Drawbar Organ');
+    });
+
+    it('plays chords across all 8 instrument voices without crashing', () => {
+      const notes = ['C4', 'E4', 'G4', 'B4'];
+      const instIds = ['piano', 'rhodes', 'guitar', 'organ', 'pad-strings', 'juno-pad', 'stab', 'bell'] as const;
+      for (const id of instIds) {
+        expect(() => playChord(notes, 0.8, undefined, id)).not.toThrow();
+      }
+    });
+
+    it('triggers natural guitar roll on guitar chord notes', () => {
+      expect(() => playChord(['C4', 'E4', 'G4'], 0.8, undefined, 'guitar')).not.toThrow();
+      expect(() => startChordNotes(['C', 'E', 'G'], 'root position', 90, 'guitar')).not.toThrow();
     });
   });
 });

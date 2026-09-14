@@ -119,7 +119,18 @@ describe('export-service', () => {
   });
 
   it('handles downloadWav without crashing with feel settings and bars', async () => {
-    await downloadWav(sampleProgression, undefined, 'Piano', 'Strum', 1, { tone: 'Dusty', spread: 60 });
+    await downloadWav(sampleProgression, undefined, 'Grand Piano', 'Strum', 1, { tone: 'Dusty', spread: 60 });
     expect(URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  it('renders WAV across all 8 instrument presets and legacy aliases', async () => {
+    const insts = [
+      'Grand Piano', 'Stage Rhodes', 'Nylon Guitar', 'Cinematic Pad',
+      'Celestial Bell', 'Drawbar Organ', 'Juno Synth', 'House Stab',
+      'Piano', 'Warm Pad', 'Synth Stab'
+    ];
+    for (const inst of insts) {
+      await expect(downloadWav(sampleProgression, undefined, inst, 'Block chords', 1)).resolves.not.toThrow();
+    }
   });
 });

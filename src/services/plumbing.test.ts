@@ -95,14 +95,15 @@ describe('LLM Payload Plumbing & Normalization', () => {
 
 describe('Audio Service Preset & Rhythm Mappings', () => {
   it('maps presetId to user-facing instrument names', () => {
-    expect(presetIdToUserInstrumentName('rhodes')).toBe('Piano');
-    expect(presetIdToUserInstrumentName('epiano')).toBe('Rhodes');
+    expect(presetIdToUserInstrumentName('piano')).toBe('Grand Piano');
+    expect(presetIdToUserInstrumentName('rhodes')).toBe('Stage Rhodes');
+    expect(presetIdToUserInstrumentName('epiano')).toBe('Stage Rhodes');
     expect(presetIdToUserInstrumentName('guitar')).toBe('Nylon Guitar');
-    expect(presetIdToUserInstrumentName('pad-strings')).toBe('Warm Pad');
-    expect(presetIdToUserInstrumentName('juno-pad')).toBe('Analog Synth');
-    expect(presetIdToUserInstrumentName('bell')).toBe('Synth Bell');
+    expect(presetIdToUserInstrumentName('pad-strings')).toBe('Cinematic Pad');
+    expect(presetIdToUserInstrumentName('juno-pad')).toBe('Juno Synth');
+    expect(presetIdToUserInstrumentName('bell')).toBe('Celestial Bell');
     expect(presetIdToUserInstrumentName('organ')).toBe('Drawbar Organ');
-    expect(presetIdToUserInstrumentName('stab')).toBe('Synth Stab');
+    expect(presetIdToUserInstrumentName('stab')).toBe('House Stab');
   });
 
   it('maps rhythmStyle strings to closest user play styles', () => {

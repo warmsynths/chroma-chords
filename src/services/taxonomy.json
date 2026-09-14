@@ -762,13 +762,13 @@
   ],
   "instruments": [
     {
-      "name": "Piano",
-      "instrument": "rhodes",
+      "name": "Grand Piano",
+      "instrument": "piano",
       "color": "#9CC0EC"
     },
     {
-      "name": "Rhodes",
-      "instrument": "epiano",
+      "name": "Stage Rhodes",
+      "instrument": "rhodes",
       "color": "#F2A79B"
     },
     {
@@ -777,12 +777,12 @@
       "color": "#F6D98B"
     },
     {
-      "name": "Warm Pad",
+      "name": "Cinematic Pad",
       "instrument": "pad-strings",
       "color": "#C9A9E0"
     },
     {
-      "name": "Synth Bell",
+      "name": "Celestial Bell",
       "instrument": "bell",
       "color": "#B8CC9E"
     },
@@ -792,12 +792,12 @@
       "color": "#E8609A"
     },
     {
-      "name": "Analog Synth",
+      "name": "Juno Synth",
       "instrument": "juno-pad",
       "color": "#7B61FF"
     },
     {
-      "name": "Synth Stab",
+      "name": "House Stab",
       "instrument": "stab",
       "color": "#FF8C42"
     }

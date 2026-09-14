@@ -3,7 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { Progression, getMoodColor, roleForTension, AUTOPLAY_INTERVAL_MS } from '../services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, genreDefaultInstrumentName, genreDefaultPlayStyleName } from '../services/audio-service';
 
-const INSTRUMENT_PRIMARY = ['Piano', 'Rhodes', 'Nylon Guitar', 'Warm Pad'];
+const INSTRUMENT_PRIMARY = ['Grand Piano', 'Stage Rhodes', 'Nylon Guitar', 'Cinematic Pad'];
 const PLAY_STYLE_PRIMARY = ['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)'];
 import { rollMascot, pickSlot, EasterEggCounter } from './mascot-character';
 import './mascot-character';
