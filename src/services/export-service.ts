@@ -106,10 +106,11 @@ export function generateScheduledEvents(
       const resolvedInstId = cleanName
         ? (USER_INSTRUMENTS.find(i => i.name.toLowerCase() === cleanName.toLowerCase())?.instrument ?? 'piano')
         : (GENRE_INSTRUMENT[progression.genre] ?? 'piano');
-      const isGuitar = resolvedInstId === 'guitar';
+      const isGuitar = resolvedInstId === 'guitar' || resolvedInstId === 'jazz-guitar';
+      const isJazzGuitar = resolvedInstId === 'jazz-guitar';
 
       pitchedNotes.forEach((noteName, index) => {
-        const guitarDelay = isGuitar ? index * 0.024 : 0;
+        const guitarDelay = isGuitar ? index * (isJazzGuitar ? 0.018 : 0.024) : 0;
         const stagger = guitarDelay + index * effectiveSpread * 0.1;
         const startTime = barStartTime + stagger;
         events.push({
@@ -357,6 +358,81 @@ function createOfflineVoice(
         },
         volume: -10,
       }).connect(reverb);
+    }
+
+    case 'jazz-guitar': {
+      const jazzEq = new Tone.EQ3({
+        low: -1.0,
+        mid: 2.0,
+        high: -3.5,
+        lowFrequency: 480,
+        highFrequency: 2800,
+      }).connect(toneRack);
+      const jazzFilter = new Tone.Filter({
+        frequency: 2800,
+        type: 'lowpass',
+        rolloff: -12,
+      }).connect(jazzEq);
+      const jazzReverb = new Tone.Reverb({
+        decay: 1.8,
+        preDelay: 0.02,
+        wet: 0.18,
+      }).connect(jazzFilter);
+
+      if (loadedBuffers && Object.keys(loadedBuffers).length > 0) {
+        return new Tone.Sampler({
+          urls: loadedBuffers,
+          volume: -8,
+        }).connect(jazzReverb);
+      }
+      return new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.005, decay: 0.7, sustain: 0.08, release: 0.9 },
+        volume: -8,
+      }).connect(jazzReverb);
+    }
+
+    case 'sh101': {
+      const chorus = new Tone.Chorus({
+        frequency: 0.25,
+        delayTime: 4.2,
+        depth: 0.6,
+        wet: 0.35,
+      }).start(0).connect(toneRack);
+      const filter = new Tone.Filter({
+        frequency: 3400,
+        type: 'lowpass',
+        rolloff: -12,
+      }).connect(chorus);
+      const dist = new Tone.Distortion({
+        distortion: 0.12,
+        wet: 0.18,
+      }).connect(filter);
+      const vibrato = new Tone.Vibrato({
+        frequency: 0.45,
+        depth: 0.18,
+        wet: 0.65,
+      }).connect(dist);
+
+      return new Tone.PolySynth(Tone.MonoSynth, {
+        oscillator: { type: 'fatsawtooth', count: 2, spread: 14 },
+        envelope: { attack: 0.03, decay: 0.6, sustain: 0.75, release: 1.4 },
+        filterEnvelope: {
+          attack: 0.04,
+          decay: 0.8,
+          sustain: 0.4,
+          release: 1.2,
+          baseFrequency: 450,
+          octaves: 2.6,
+          exponent: 2,
+        },
+        filter: {
+          type: 'lowpass',
+          rolloff: -24,
+          Q: 2.8,
+        },
+        volume: -11,
+      }).connect(vibrato);
     }
 
     case 'guitar':

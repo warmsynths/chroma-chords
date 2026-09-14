@@ -4,6 +4,10 @@ let limiter: Tone.Compressor | null = null;
 let pianoSampler: Tone.Sampler | null = null;
 let rhodesSampler: Tone.Sampler | null = null;
 let guitarSampler: Tone.Sampler | null = null;
+let jazzGuitarSampler: Tone.Sampler | null = null;
+let jazzGuitarEq: Tone.EQ3 | null = null;
+let jazzGuitarFilter: Tone.Filter | null = null;
+let jazzGuitarReverb: Tone.Reverb | null = null;
 
 let organ: Tone.PolySynth | null = null;
 let organLeslieVibrato: Tone.Vibrato | null = null;
@@ -16,6 +20,12 @@ let padStrings: Tone.PolySynth | null = null;
 
 let junoChorus: Tone.Chorus | null = null;
 let junoPad: Tone.PolySynth | null = null;
+
+let sh101Pad: Tone.PolySynth | null = null;
+let sh101Vibrato: Tone.Vibrato | null = null;
+let sh101Dist: Tone.Distortion | null = null;
+let sh101Filter: Tone.Filter | null = null;
+let sh101Chorus: Tone.Chorus | null = null;
 
 let stab: Tone.PolySynth | null = null;
 let stabDist: Tone.Distortion | null = null;
@@ -260,12 +270,33 @@ export const GUITAR_SAMPLE_URLS: Record<string, string> = {
 
 export const GUITAR_SAMPLE_BASE_URL = `${cleanBase}audio/samples/nylon-guitar/`;
 
-export type InstrumentId = 'piano' | 'rhodes' | 'guitar' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab' | 'bell' | 'epiano';
+export const JAZZ_GUITAR_SAMPLE_URLS: Record<string, string> = {
+  "E2": "E2.mp3",
+  "A2": "A2.mp3",
+  "C3": "C3.mp3",
+  "D#3": "Ds3.mp3",
+  "F#3": "Fs3.mp3",
+  "A3": "A3.mp3",
+  "C4": "C4.mp3",
+  "D#4": "Ds4.mp3",
+  "F#4": "Fs4.mp3",
+  "A4": "A4.mp3",
+  "C5": "C5.mp3",
+  "F#5": "Fs5.mp3",
+  "A5": "A5.mp3"
+};
+
+export const JAZZ_GUITAR_SAMPLE_BASE_URL = `${cleanBase}audio/samples/jazz-guitar/`;
+
+export type InstrumentId = 'piano' | 'rhodes' | 'guitar' | 'organ' | 'pad-strings' | 'juno-pad' | 'stab' | 'bell' | 'jazz-guitar' | 'sh101' | 'epiano';
 
 export function getLoadedSamplerBuffers(instrument: InstrumentId = 'piano'): Record<string, AudioBuffer> | null {
   let s: Tone.Sampler | null = null;
   let urls: Record<string, string> = {};
-  if (instrument === 'guitar') {
+  if (instrument === 'jazz-guitar') {
+    s = jazzGuitarSampler;
+    urls = JAZZ_GUITAR_SAMPLE_URLS;
+  } else if (instrument === 'guitar') {
     s = guitarSampler;
     urls = GUITAR_SAMPLE_URLS;
   } else if (instrument === 'rhodes' || instrument === 'epiano') {
@@ -345,7 +376,102 @@ function getGuitarSampler(): Tone.Sampler {
   return guitarSampler;
 }
 
+function getJazzGuitarSampler(): Tone.Sampler {
+  if (!jazzGuitarSampler) {
+    const l = initToneRack();
+    jazzGuitarEq = new Tone.EQ3({
+      low: 1.5,
+      mid: 2.0,
+      high: -3.5,
+      lowFrequency: 480,
+      highFrequency: 2800,
+    });
+    jazzGuitarFilter = new Tone.Filter({
+      frequency: 2800,
+      type: 'lowpass',
+      rolloff: -12,
+    });
+    jazzGuitarReverb = new Tone.Reverb({
+      decay: 1.8,
+      preDelay: 0.02,
+      wet: 0.18,
+    });
+
+    jazzGuitarSampler = new Tone.Sampler({
+      urls: JAZZ_GUITAR_SAMPLE_URLS,
+      baseUrl: JAZZ_GUITAR_SAMPLE_BASE_URL,
+      volume: -8,
+      onload: () => console.log("Jazz Archtop sampler loaded successfully!"),
+      onerror: (err) => console.warn("Failed to load Jazz Archtop sampler:", err),
+    });
+
+    jazzGuitarSampler.connect(jazzGuitarEq);
+    jazzGuitarEq.connect(jazzGuitarFilter);
+    jazzGuitarFilter.connect(jazzGuitarReverb);
+    jazzGuitarReverb.connect(l);
+  }
+  return jazzGuitarSampler;
+}
+
+function getSh101Voice(): Tone.PolySynth {
+  if (!sh101Pad) {
+    const l = initToneRack();
+    sh101Vibrato = new Tone.Vibrato({
+      frequency: 0.45,
+      depth: 0.18,
+      wet: 0.65,
+    });
+
+    sh101Dist = new Tone.Distortion({
+      distortion: 0.12,
+      wet: 0.18,
+    });
+
+    sh101Filter = new Tone.Filter({
+      frequency: 3400,
+      type: 'lowpass',
+      rolloff: -12,
+    });
+
+    sh101Chorus = new Tone.Chorus({
+      frequency: 0.25,
+      delayTime: 4.2,
+      depth: 0.6,
+      wet: 0.35,
+    });
+    try { sh101Chorus.start(); } catch {}
+
+    sh101Pad = new Tone.PolySynth(Tone.MonoSynth, {
+      oscillator: { type: 'fatsawtooth', count: 2, spread: 14 },
+      envelope: { attack: 0.03, decay: 0.6, sustain: 0.75, release: 1.4 },
+      filterEnvelope: {
+        attack: 0.04,
+        decay: 0.8,
+        sustain: 0.4,
+        release: 1.2,
+        baseFrequency: 450,
+        octaves: 2.6,
+        exponent: 2,
+      },
+      filter: {
+        type: 'lowpass',
+        rolloff: -24,
+        Q: 2.8,
+      },
+      volume: -11,
+    });
+
+    sh101Pad.connect(sh101Vibrato);
+    sh101Vibrato.connect(sh101Dist);
+    sh101Dist.connect(sh101Filter);
+    sh101Filter.connect(sh101Chorus);
+    sh101Chorus.connect(l);
+  }
+  return sh101Pad;
+}
+
 function getSamplerVoice(instrument: InstrumentId): Tone.Sampler {
+  if (instrument === 'jazz-guitar') return getJazzGuitarSampler();
   if (instrument === 'guitar') return getGuitarSampler();
   if (instrument === 'rhodes' || instrument === 'epiano') return getRhodesSampler();
   return getPianoSampler();
@@ -361,6 +487,7 @@ export function preloadAllSamplers(): void {
     getPianoSampler();
     getRhodesSampler();
     getGuitarSampler();
+    getJazzGuitarSampler();
   } catch (e) {
     console.warn("Preloading samplers failed:", e);
   }
@@ -490,6 +617,12 @@ function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
     case 'guitar':
       return getGuitarSampler();
 
+    case 'jazz-guitar':
+      return getJazzGuitarSampler();
+
+    case 'sh101':
+      return getSh101Voice();
+
     case 'rhodes':
     case 'epiano':
       return getRhodesSampler();
@@ -500,7 +633,7 @@ function getVoice(instrument: InstrumentId): Tone.Sampler | Tone.PolySynth {
   }
 }
 
-// The instrument picker's eight user-facing options — each maps to
+// The instrument picker's ten user-facing options — each maps to
 // one of the pristine hybrid voices above. Colors match option pills.
 export const USER_INSTRUMENTS: { name: string; instrument: InstrumentId; color: string }[] = [
   {
@@ -519,6 +652,16 @@ export const USER_INSTRUMENTS: { name: string; instrument: InstrumentId; color: 
     "color": "#F6D98B"
   },
   {
+    "name": "Jazz Archtop",
+    "instrument": "jazz-guitar",
+    "color": "#D89047"
+  },
+  {
+    "name": "Drawbar Organ",
+    "instrument": "organ",
+    "color": "#E8609A"
+  },
+  {
     "name": "Cinematic Pad",
     "instrument": "pad-strings",
     "color": "#C9A9E0"
@@ -529,14 +672,14 @@ export const USER_INSTRUMENTS: { name: string; instrument: InstrumentId; color: 
     "color": "#B8CC9E"
   },
   {
-    "name": "Drawbar Organ",
-    "instrument": "organ",
-    "color": "#E8609A"
-  },
-  {
     "name": "Juno Synth",
     "instrument": "juno-pad",
     "color": "#7B61FF"
+  },
+  {
+    "name": "Vintage SH-101",
+    "instrument": "sh101",
+    "color": "#4EA598"
   },
   {
     "name": "House Stab",
@@ -553,6 +696,15 @@ export const LEGACY_INSTRUMENT_NAME_MAP: Record<string, string> = {
   'epiano': 'Stage Rhodes',
   'nylon guitar': 'Nylon Guitar',
   'guitar': 'Nylon Guitar',
+  'jazz archtop': 'Jazz Archtop',
+  'jazz guitar': 'Jazz Archtop',
+  'archtop': 'Jazz Archtop',
+  'hollowbody': 'Jazz Archtop',
+  'jazz-guitar': 'Jazz Archtop',
+  'vintage sh-101': 'Vintage SH-101',
+  'sh-101': 'Vintage SH-101',
+  'sh101': 'Vintage SH-101',
+  'boc synth': 'Vintage SH-101',
   'warm pad': 'Cinematic Pad',
   'cinematic pad': 'Cinematic Pad',
   'pad-strings': 'Cinematic Pad',
@@ -889,10 +1041,12 @@ export const INSTRUMENT_ID_TO_USER_NAME: Record<InstrumentId, string> = {
   rhodes: 'Stage Rhodes',
   epiano: 'Stage Rhodes',
   guitar: 'Nylon Guitar',
+  'jazz-guitar': 'Jazz Archtop',
   'pad-strings': 'Cinematic Pad',
   bell: 'Celestial Bell',
   organ: 'Drawbar Organ',
   'juno-pad': 'Juno Synth',
+  sh101: 'Vintage SH-101',
   stab: 'House Stab',
 };
 
@@ -1124,7 +1278,8 @@ export function playChord(
       }
 
       // --- Standard humanized chord playback ---
-      const isGuitar = instrument === 'guitar';
+      const isGuitar = instrument === 'guitar' || instrument === 'jazz-guitar';
+      const isJazzGuitar = instrument === 'jazz-guitar';
       // If guitar, sort notes lowest to highest for natural down-strum roll
       const sortedNotes = isGuitar
         ? [...noteNames].sort((a, b) => {
@@ -1146,8 +1301,8 @@ export function playChord(
             : (minVelocity + Math.random() * (maxVelocity - minVelocity)) / 127;
           vel = rawVel * densityScaling;
 
-          // If guitar, add natural 24ms per string acoustic roll delay
-          const guitarStrumDelay = isGuitar ? index * 0.024 : 0;
+          // If guitar, add natural roll delay (18ms for jazz, 24ms for nylon)
+          const guitarStrumDelay = isGuitar ? index * (isJazzGuitar ? 0.018 : 0.024) : 0;
           const spreadOffset = index * (spread ?? 0.3) * 0.1;
           const microTimingOffset = (Math.random() - 0.5) * (microTiming ?? 0) * 0.05;
           const varianceOffset = (Math.random() - 0.5) * (humanVariance ?? 0) * 0.03;
@@ -1155,11 +1310,11 @@ export function playChord(
           stagger = Math.max(0, guitarStrumDelay + spreadOffset + microTimingOffset + varianceOffset);
           dur = (hDuration || duration) * (1.0 + (Math.random() - 0.5) * 0.2 * (humanVariance ?? 0));
         } else if (isGuitar) {
-          stagger = index * 0.024;
+          stagger = index * (isJazzGuitar ? 0.018 : 0.024);
         }
 
         if (isGuitar && index === 0) {
-          vel = Math.min(1, vel * 1.1); // Thumb pluck bass emphasis
+          vel = Math.min(1, vel * (isJazzGuitar ? 1.05 : 1.1));
         }
 
         voice.triggerAttackRelease(noteName, dur, now + stagger, vel);
@@ -1507,7 +1662,8 @@ export function startChordNotes(
       }
       const pitched = applyVoicingToNotes(notes, voicing);
       const velNorm = Math.min(1, Math.max(0.1, velocity / 127));
-      if (instrument === 'guitar') {
+      if (instrument === 'guitar' || instrument === 'jazz-guitar') {
+        const isJazz = instrument === 'jazz-guitar';
         const sorted = [...pitched].sort((a, b) => {
           try { return Tone.Frequency(a).toMidi() - Tone.Frequency(b).toMidi(); } catch { return 0; }
         });
@@ -1516,7 +1672,7 @@ export function startChordNotes(
             if (activeHeldVoice === voice) {
               (voice as any).triggerAttack?.(n, Tone.now(), velNorm * (idx === 0 ? 1.08 : 0.95));
             }
-          }, idx * 24);
+          }, idx * (isJazz ? 18 : 24));
         });
       } else {
         if (typeof (voice as any)?.triggerAttack === 'function') {

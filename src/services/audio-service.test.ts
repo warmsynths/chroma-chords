@@ -98,11 +98,13 @@ describe('Perform Mode Audio Functions', () => {
       expect(normalizeInstrumentName('Synth Stab')).toBe('House Stab');
       expect(normalizeInstrumentName('Nylon Guitar')).toBe('Nylon Guitar');
       expect(normalizeInstrumentName('Drawbar Organ')).toBe('Drawbar Organ');
+      expect(normalizeInstrumentName('Jazz Guitar')).toBe('Jazz Archtop');
+      expect(normalizeInstrumentName('SH-101')).toBe('Vintage SH-101');
     });
 
-    it('plays chords across all 8 instrument voices without crashing', () => {
+    it('plays chords across all 10 instrument voices without crashing', () => {
       const notes = ['C4', 'E4', 'G4', 'B4'];
-      const instIds = ['piano', 'rhodes', 'guitar', 'organ', 'pad-strings', 'juno-pad', 'stab', 'bell'] as const;
+      const instIds = ['piano', 'rhodes', 'guitar', 'jazz-guitar', 'organ', 'pad-strings', 'juno-pad', 'sh101', 'stab', 'bell'] as const;
       for (const id of instIds) {
         expect(() => playChord(notes, 0.8, undefined, id)).not.toThrow();
       }
@@ -111,6 +113,8 @@ describe('Perform Mode Audio Functions', () => {
     it('triggers natural guitar roll on guitar chord notes', () => {
       expect(() => playChord(['C4', 'E4', 'G4'], 0.8, undefined, 'guitar')).not.toThrow();
       expect(() => startChordNotes(['C', 'E', 'G'], 'root position', 90, 'guitar')).not.toThrow();
+      expect(() => playChord(['C4', 'E4', 'G4'], 0.8, undefined, 'jazz-guitar')).not.toThrow();
+      expect(() => startChordNotes(['C', 'E', 'G'], 'root position', 90, 'jazz-guitar')).not.toThrow();
     });
   });
 });

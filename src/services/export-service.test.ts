@@ -123,11 +123,11 @@ describe('export-service', () => {
     expect(URL.createObjectURL).toHaveBeenCalled();
   });
 
-  it('renders WAV across all 8 instrument presets and legacy aliases', async () => {
+  it('renders WAV across all 10 instrument presets and legacy aliases', async () => {
     const insts = [
-      'Grand Piano', 'Stage Rhodes', 'Nylon Guitar', 'Cinematic Pad',
-      'Celestial Bell', 'Drawbar Organ', 'Juno Synth', 'House Stab',
-      'Piano', 'Warm Pad', 'Synth Stab'
+      'Grand Piano', 'Stage Rhodes', 'Nylon Guitar', 'Jazz Archtop', 'Cinematic Pad',
+      'Celestial Bell', 'Drawbar Organ', 'Juno Synth', 'Vintage SH-101', 'House Stab',
+      'Piano', 'Warm Pad', 'Synth Stab', 'Jazz Guitar', 'SH-101'
     ];
     for (const inst of insts) {
       await expect(downloadWav(sampleProgression, undefined, inst, 'Block chords', 1)).resolves.not.toThrow();

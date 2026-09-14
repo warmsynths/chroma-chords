@@ -4,7 +4,7 @@
     "source": "MusicBrainz Web API & Curated Real-World Music Taxonomy",
     "totalGenres": 23,
     "totalMoods": 11,
-    "totalInstruments": 8,
+    "totalInstruments": 10,
     "totalPlayStyles": 8,
     "fetchedMBInstrumentsCount": 100,
     "fetchedMBTagsCount": 280
@@ -777,6 +777,16 @@
       "color": "#F6D98B"
     },
     {
+      "name": "Jazz Archtop",
+      "instrument": "jazz-guitar",
+      "color": "#D89047"
+    },
+    {
+      "name": "Drawbar Organ",
+      "instrument": "organ",
+      "color": "#E8609A"
+    },
+    {
       "name": "Cinematic Pad",
       "instrument": "pad-strings",
       "color": "#C9A9E0"
@@ -787,14 +797,14 @@
       "color": "#B8CC9E"
     },
     {
-      "name": "Drawbar Organ",
-      "instrument": "organ",
-      "color": "#E8609A"
-    },
-    {
       "name": "Juno Synth",
       "instrument": "juno-pad",
       "color": "#7B61FF"
+    },
+    {
+      "name": "Vintage SH-101",
+      "instrument": "sh101",
+      "color": "#4EA598"
     },
     {
       "name": "House Stab",
