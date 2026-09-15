@@ -90,7 +90,9 @@ export class ChromaChordsApp extends LitElement {
 
       display: flex;
       flex-direction: column;
+      height: 100%;
       height: 100vh;
+      height: 100dvh;
       width: 100%;
       background: var(--cv-cream, #FBF3E6);
       font-family: var(--cv-font);

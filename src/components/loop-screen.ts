@@ -1901,6 +1901,8 @@ export class LoopScreen extends LitElement {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
       background: var(--cv-cream, #FBF3E6);
     }
     .mobile-vibe-toggle {
@@ -1929,7 +1931,7 @@ export class LoopScreen extends LitElement {
       flex-direction: column;
       animation: cvfv-sheet-up 260ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
       box-sizing: border-box;
-      padding: 16px 20px 24px;
+      padding: 16px 20px max(24px, calc(16px + env(safe-area-inset-bottom, 0px)));
       overflow-y: auto;
     }
     .sheet-handle {
@@ -1960,16 +1962,16 @@ export class LoopScreen extends LitElement {
       z-index: 95;
     }
     .mobile-bottom-transport-bar {
-      position: sticky;
-      bottom: 0;
       flex-shrink: 0;
       border-top: 1px solid rgba(46, 39, 31, 0.09);
       background: var(--cv-cream, #FBF3E6);
-      padding: 11px 14px 26px;
+      padding: 11px 14px max(16px, calc(10px + env(safe-area-inset-bottom, 0px)));
       display: flex;
       align-items: center;
       gap: 8px;
       z-index: 50;
+      box-sizing: border-box;
+      width: 100%;
     }
     .mobile-circle-btn {
       border: none;
@@ -4015,58 +4017,59 @@ export class LoopScreen extends LitElement {
               ${this.renderChordDetailContent(chords)}
             </div>
           ` : ''}
+        </div>
 
-          <!-- Mobile Bottom Transport Bar -->
-          <div class="mobile-bottom-transport-bar">
-            <button
-              class="loop-play-btn"
-              @click=${this.activeView === 'song' ? () => this.dispatchEvent(new CustomEvent('toggle-play-song', { bubbles: true, composed: true })) : this.togglePlay}
-              style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'}; flex-shrink: 0; min-height: 44px; padding: 9px 16px; border-radius: 100px; font-weight: 800; font-size: 12.5px; border: none; cursor: pointer; white-space: nowrap;"
-              aria-label="${this.playing ? 'Stop' : (this.activeView === 'song' ? `Play song · ${this.sections.length} sections` : 'Play loop')}"
-            >
-              ${this.playing ? 'Stop' : (this.activeView === 'song' ? `Play song · ${this.sections.length} sections` : 'Play loop')}
-            </button>
-            <div style="flex: 1 1 30px; min-width: 24px;">
-              <div style="display: flex; gap: 2px; align-items: flex-end; height: 16px;">
-                ${this.activeView === 'song'
-                  ? this.sections.map((_, si) => {
-                      const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
-                      return html`<div style="flex: 1; height: ${isCurrentSec ? 16 : 8}px; border-radius: 2px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'};"></div>`;
-                    })
-                  : Array.from({ length: 16 }).map((_, i) => {
-                      const step = Math.floor(this.progressStep % (chords.length * 4));
-                      const isHead = this.playing && Math.floor((step / (chords.length * 4)) * 16) === i;
-                      const isBarStart = i % 4 === 0;
-                      return html`
-                        <div style="flex: 1; height: ${isHead ? 16 : (isBarStart ? 11 : 7)}px; border-radius: 2px; background: ${isHead ? '#F2735F' : (isBarStart ? 'rgba(46,39,31,0.3)' : 'rgba(46,39,31,0.14)')};"></div>
-                      `;
-                    })}
-              </div>
-              <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--cv-label); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                ${this.playing
-                  ? (this.activeView === 'song'
-                      ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
-                      : `Bar ${Math.floor(this.progressStep / 4) + 1} · beat ${(this.progressStep % 4) + 1}`)
-                  : (this.activeView === 'song'
-                      ? `${this.sections.length} sections · stopped`
-                      : `${chords.length} bars · stopped`)}
-              </div>
+        <!-- Mobile Bottom Transport Bar -->
+        <div class="mobile-bottom-transport-bar">
+          <button
+            class="loop-play-btn"
+            @click=${this.activeView === 'song' ? () => this.dispatchEvent(new CustomEvent('toggle-play-song', { bubbles: true, composed: true })) : this.togglePlay}
+            style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'}; flex-shrink: 0; min-height: 44px; padding: 9px 16px; border-radius: 100px; font-weight: 800; font-size: 12.5px; border: none; cursor: pointer; white-space: nowrap;"
+            aria-label="${this.playing ? 'Stop' : (this.activeView === 'song' ? `Play song · ${this.sections.length} sections` : 'Play loop')}"
+          >
+            ${this.playing ? 'Stop' : (this.activeView === 'song' ? `Play song · ${this.sections.length} sections` : 'Play loop')}
+          </button>
+          <div style="flex: 1 1 30px; min-width: 24px;">
+            <div style="display: flex; gap: 2px; align-items: flex-end; height: 16px;">
+              ${this.activeView === 'song'
+                ? this.sections.map((_, si) => {
+                    const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
+                    return html`<div style="flex: 1; height: ${isCurrentSec ? 16 : 8}px; border-radius: 2px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'};"></div>`;
+                  })
+                : Array.from({ length: 16 }).map((_, i) => {
+                    const step = Math.floor(this.progressStep % (chords.length * 4));
+                    const isHead = this.playing && Math.floor((step / (chords.length * 4)) * 16) === i;
+                    const isBarStart = i % 4 === 0;
+                    return html`
+                      <div style="flex: 1; height: ${isHead ? 16 : (isBarStart ? 11 : 7)}px; border-radius: 2px; background: ${isHead ? '#F2735F' : (isBarStart ? 'rgba(46,39,31,0.3)' : 'rgba(46,39,31,0.14)')};"></div>
+                    `;
+                  })}
             </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <button aria-label="Try another progression" class="mobile-circle-btn" @click=${this.onReroll}>
-                <svg width="19" height="19" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
-              </button>
-              <button aria-label="Keep this loop" class="mobile-circle-btn" @click=${() => this.dispatchEvent(new CustomEvent('save-set', { bubbles: true, composed: true }))}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
-              </button>
-              <button aria-label="Loops library" class="mobile-circle-btn" @click=${() => this.libraryOpen = !this.libraryOpen}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M19 4v10l-2.4-1.6L14.2 14V4z" fill="#2E271F" stroke="none"/></svg>
-              </button>
-              <button aria-label="Share this loop" class="mobile-circle-btn" @click=${() => this.shareOpen = true}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
-              </button>
+            <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--cv-label); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${this.playing
+                ? (this.activeView === 'song'
+                    ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
+                    : `Bar ${Math.floor(this.progressStep / 4) + 1} · beat ${(this.progressStep % 4) + 1}`)
+                : (this.activeView === 'song'
+                    ? `${this.sections.length} sections · stopped`
+                    : `${chords.length} bars · stopped`)}
             </div>
           </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button aria-label="Try another progression" class="mobile-circle-btn" @click=${this.onReroll}>
+              <svg width="19" height="19" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
+            </button>
+            <button aria-label="Keep this loop" class="mobile-circle-btn" @click=${() => this.dispatchEvent(new CustomEvent('save-set', { bubbles: true, composed: true }))}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+            </button>
+            <button aria-label="Loops library" class="mobile-circle-btn" @click=${() => this.libraryOpen = !this.libraryOpen}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M19 4v10l-2.4-1.6L14.2 14V4z" fill="#2E271F" stroke="none"/></svg>
+            </button>
+            <button aria-label="Share this loop" class="mobile-circle-btn" @click=${() => this.shareOpen = true}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 16V3M7 8l5-5 5 5"/></svg>
+            </button>
+          </div>
+        </div>
 
           ${this.renderTempoSheetMobile()}
           ${this.renderFeelSheetMobile()}
@@ -4083,7 +4086,6 @@ export class LoopScreen extends LitElement {
               this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
             }}
           ></share-modal>
-        </div>
       `;
     }
 
