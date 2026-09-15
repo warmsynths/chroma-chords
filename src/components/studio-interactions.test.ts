@@ -455,4 +455,98 @@ describe('Studio Component Interactions', () => {
 
     document.body.removeChild(el);
   });
+
+  it('desktop swap button opens chord-swap-lane in main area and shows harmonic context in right inspector', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = { ...sampleProgression, chords: [...sampleProgression.chords] };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const pads = el.shadowRoot?.querySelectorAll('.pad-cells-row .pad-cell');
+    expect(pads?.length).toBe(4);
+
+    // Click swap button on chord 1
+    const swapBtn = pads![0].querySelector('.pad-swap-btn') as HTMLElement;
+    expect(swapBtn).toBeTruthy();
+    swapBtn.click();
+    await el.updateComplete;
+
+    // Verify chord-swap-lane exists in main stage pad grid
+    const swapLane = el.shadowRoot?.querySelector('chord-swap-lane') as HTMLElement;
+    expect(swapLane).toBeTruthy();
+    expect((swapLane as any).swapIndex).toBe(0);
+
+    // Verify right inspector shows harmonic context
+    const inspector = el.shadowRoot?.querySelector('aside.inspector-right');
+    expect(inspector).toBeTruthy();
+    expect(inspector?.textContent).toContain('Bar 1 Harmonic Context');
+
+    // Simulate selecting a candidate chord
+    swapLane.dispatchEvent(new CustomEvent('swap-audition', {
+      detail: {
+        chordName: 'Abmaj7',
+        roman: '♭VI',
+        notes: ['Ab4', 'C5', 'Eb5', 'G5'],
+        sub: 'Cinematic shadow borrowed chord',
+        tension: 0.55,
+        feel: 'Darker',
+      },
+      bubbles: true,
+      composed: true,
+    }));
+    await el.updateComplete;
+
+    expect(inspector?.textContent).toContain('Auditioning · Darker');
+    expect(inspector?.textContent).toContain('Abmaj7');
+    expect(inspector?.textContent).toContain('Cinematic shadow');
+
+    // Confirm swap
+    swapLane.dispatchEvent(new CustomEvent('swap-confirm', { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    expect(el.progression.chords[0].name).toBe('Abmaj7');
+    expect(el.shadowRoot?.querySelector('chord-swap-lane')).toBeFalsy();
+
+    document.body.removeChild(el);
+  });
+
+  it('mobile swap flips pad into chord-pad-cycler inline without opening a bottom sheet', async () => {
+    (window as any).innerWidth = 390;
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = { ...sampleProgression, chords: [...sampleProgression.chords] };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const pads = el.shadowRoot?.querySelectorAll('.pad-cells-grid .pad-cell');
+    expect(pads?.length).toBe(4);
+
+    // Click swap on chord 2 (index 1)
+    const swapBtn = pads![1].querySelector('.pad-swap-btn') as HTMLElement;
+    expect(swapBtn).toBeTruthy();
+    swapBtn.click();
+    await el.updateComplete;
+
+    // Verify NO bottom sheet was opened
+    expect(el.shadowRoot?.querySelector('.mobile-swap-sheet')).toBeFalsy();
+
+    // Verify chord-pad-cycler is rendered inline in the pad grid
+    const cycler = el.shadowRoot?.querySelector('chord-pad-cycler') as HTMLElement;
+    expect(cycler).toBeTruthy();
+    expect((cycler as any).barIndex).toBe(1);
+    expect((cycler as any).originalChord.name).toBe('G');
+
+    // Simulate keeping the cycled chord
+    cycler.dispatchEvent(new CustomEvent('cycler-keep', {
+      detail: { chordName: 'Em7', feel: 'Resolve home' },
+      bubbles: true,
+      composed: true,
+    }));
+    await el.updateComplete;
+
+    expect(el.shadowRoot?.querySelector('chord-pad-cycler')).toBeFalsy();
+
+    document.body.removeChild(el);
+    (window as any).innerWidth = 1024;
+  });
 });
+

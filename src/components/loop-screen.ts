@@ -21,6 +21,9 @@ import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, normalizeInstrumentN
 import 'human-engine';
 import type { HumanState } from 'human-engine';
 import './share-modal';
+import './chord-swap-lane';
+import './chord-pad-cycler';
+import type { SwapFeelItem } from './chord-swap-lane';
 
 export interface BandArchetype {
   name: string;
@@ -347,9 +350,11 @@ export class LoopScreen extends LitElement {
   @state() private isInspectorOpen = false;
   @state() private detailOpen = false;
   @state() private detailIndex = 0;
-  @state() private abPick: { chord: string; tension: number; roman: string; fn: string; label?: string } | null = null;
+  @state() private abPick: { chord: string; name?: string; tension: number; roman: string; fn?: string; functionLabel?: string; notes?: string[]; label?: string } | null = null;
   @state() private abSide: 'before' | 'after' = 'before';
   @state() private abPlaying = false;
+  @state() private mobileFeelIndex = 0;
+  @state() private mobileChordIndex = 0;
   @state() private savedSets: ProjectData[] = [];
   @state() private renamingId: string | null = null;
   @state() private draftName = '';
@@ -2294,10 +2299,107 @@ export class LoopScreen extends LitElement {
     this.abPick = null;
     this.abSide = 'before';
     this.abPlaying = false;
+    this.mobileFeelIndex = 0;
+    this.mobileChordIndex = 0;
+    this.activeSwapFamily = 'Darker';
     playbackEngine.setABOverride(null);
-    if (this.isMobile) {
-      this.mobileSheetOpen = true;
-    }
+    this.requestUpdate();
+  }
+
+  private getSwapFeelings(swapIndex: number): SwapFeelItem[] {
+    if (!this.progression || !this.chordData.scales) return [];
+    const isMinor = this.progression.scaleType?.includes('MINOR') ?? false;
+    const groups = generateTheoryGroups(this.chordData, this.progression, swapIndex);
+    const borrowedRows = generateBorrowedChords(this.chordData, this.progression, swapIndex);
+
+    const feels: SwapFeelItem[] = groups.map(g => ({
+      name: g.name,
+      sub: GROUP_NOTES[g.name] ? GROUP_NOTES[g.name][this.showTheory ? 1 : 0] : (g.sub || ''),
+      tension: g.tension,
+      rows: g.rows.map(r => ({
+        name: r.name,
+        roman: r.roman || '',
+        notes: r.notes || r.chord?.notes,
+        sub: r.sub,
+        tension: r.tension,
+        chord: r.chord,
+      })),
+    }));
+
+    feels.push({
+      name: 'Borrowed',
+      sub: `Four chords from the ${isMinor ? 'major' : 'minor'} version of this key`,
+      tension: 0.45,
+      rows: borrowedRows.map(r => ({
+        name: r.name,
+        roman: r.roman || '',
+        notes: r.notes || r.chord?.notes,
+        sub: r.sub,
+        tension: r.tension,
+        chord: r.chord,
+      })),
+    });
+
+    const ordered = feels.filter(f => f.name !== 'Borrowed').sort((a, b) => a.tension - b.tension);
+    const borrowed = feels.filter(f => f.name === 'Borrowed');
+    return [...ordered, ...borrowed];
+  }
+
+  private handleSwapAudition(detail: {
+    chordName: string;
+    roman?: string;
+    notes?: string[];
+    sub: string;
+    tension: number;
+    feel: string;
+    chord?: ChordBlock;
+  }) {
+    if (this.swapIndex === null || !this.progression) return;
+    const original = this.progression.chords[this.swapIndex];
+    const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
+    const resolvedNotes = detail.notes && detail.notes.length
+      ? detail.notes
+      : (notesForSymbol(detail.chordName, preferFlat) || original.notes);
+
+    const pickedChord: ChordBlock = detail.chord ? {
+      ...detail.chord,
+      name: detail.chordName,
+      notes: resolvedNotes,
+      roman: detail.roman || detail.chord.roman || '',
+      tension: detail.tension,
+      functionLabel: detail.sub || detail.chord.functionLabel || 'Swapped in',
+    } : {
+      ...original,
+      name: detail.chordName,
+      notes: resolvedNotes,
+      roman: detail.roman || '',
+      tension: detail.tension,
+      functionLabel: detail.sub || 'Swapped in',
+    };
+
+    this.abPick = {
+      chord: detail.chordName,
+      name: detail.chordName,
+      roman: detail.roman || '',
+      notes: resolvedNotes,
+      tension: detail.tension,
+      fn: detail.sub,
+      functionLabel: detail.sub,
+      label: detail.chordName,
+    };
+    this.abSide = 'after';
+    this.activeSwapFamily = detail.feel;
+
+    // Single chord audition
+    playbackEngine.auditionChord(pickedChord, 0.8);
+
+    // In-loop override so replacement is heard in rhythm
+    playbackEngine.setABOverride({
+      index: this.swapIndex,
+      side: 'after',
+      chord: pickedChord,
+    });
+
     this.requestUpdate();
   }
 
@@ -2453,7 +2555,7 @@ export class LoopScreen extends LitElement {
   private confirmSwap = () => {
     if (this.swapIndex === null || !this.abPick || !this.progression) return;
     const preferFlat = preferFlatSpelling(this.progression.key, this.progression.scaleType);
-    const newNotes = notesForSymbol(this.abPick.chord, preferFlat);
+    const newNotes = this.abPick.notes && this.abPick.notes.length ? this.abPick.notes : notesForSymbol(this.abPick.chord, preferFlat);
 
     const updatedChords = [...this.progression.chords];
     updatedChords[this.swapIndex] = {
@@ -2465,6 +2567,7 @@ export class LoopScreen extends LitElement {
     };
 
     const newProg = { ...this.progression, chords: updatedChords };
+    this.progression = newProg;
     this.dispatchEvent(new CustomEvent('progression-change', { detail: newProg, bubbles: true, composed: true }));
     this.dispatchEvent(new CustomEvent('toast', { detail: `Swapped in ${this.abPick.chord}`, bubbles: true, composed: true }));
 
@@ -2475,6 +2578,20 @@ export class LoopScreen extends LitElement {
     this.mobileSheetOpen = false;
     this.abPick = null;
     this.requestUpdate();
+  };
+
+  private handleCyclerKeep = (detail?: { chordName?: string; chord?: ChordBlock; roman?: string; tension?: number; sub?: string; feel?: string }) => {
+    if (detail && detail.chordName && (!this.abPick || this.abPick.chord !== detail.chordName)) {
+      this.handleSwapAudition({
+        chordName: detail.chordName,
+        roman: detail.roman || '',
+        tension: detail.tension ?? 0.3,
+        sub: detail.sub || '',
+        feel: detail.feel || 'Resolve home',
+        chord: detail.chord,
+      });
+    }
+    this.confirmSwap();
   };
 
   private onDecLength = () => {
@@ -3476,7 +3593,11 @@ export class LoopScreen extends LitElement {
     return html`
       <div
         class="pad-cell ${isDesktop ? 'chord-item-wrap' : ''} ${isHeld ? 'pad-held' : ''} ${isSelected ? 'selected' : ''} ${isLit ? 'pad-lit' : ''}"
-        style="background: ${role.color};"
+        style="
+          background: ${role.color};
+          border-radius: ${isSelected && isDesktop ? '20px 20px 5px 5px' : '20px'};
+          ${isSelected ? `box-shadow: inset 0 0 0 2.5px ${moodColor}, 0 14px 26px -18px rgba(46,39,31,0.45);` : ''}
+        "
         tabindex="0"
         role="button"
         aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || c.functionLabel} — press to play it; press nearer the top for a higher voicing"
@@ -3509,8 +3630,10 @@ export class LoopScreen extends LitElement {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
 
-        <div class="pad-top-row">
-          <span class="pad-key-badge">${PAD_KEYS[i] || ''}</span>
+        <div class="pad-top-row" style="display: flex; align-items: center; gap: 6px;">
+          <div style="display: inline-flex; align-items: flex-start; justify-content: center; width: 20px; height: 20px; padding: 1.5px 1.5px 3.5px; border-radius: 5px; background: rgba(46,39,31,0.16); box-shadow: 0 1px 0 rgba(46,39,31,0.18); flex-shrink: 0;">
+            <span style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 3.5px; background: rgba(255,255,255,0.62); box-shadow: inset 0 -1px 0 rgba(46,39,31,0.12); font-size: 10.5px; font-weight: 800; color: #2E271F;">${(PAD_KEYS[i] || '').toUpperCase()}</span>
+          </div>
           ${this.showTheory && c.roman ? html`<span class="pad-roman-badge">${c.roman}</span>` : ''}
         </div>
 
@@ -3523,10 +3646,16 @@ export class LoopScreen extends LitElement {
             </div>
           ` : ''}
           ${metaLabel ? html`<div class="pad-meta-voicing">${metaLabel}</div>` : ''}
+          <div style="display: flex; gap: 3px; margin-top: 7px;">
+            ${lad.map((_, li) => html`
+              <div style="width: ${li === dotAt ? 16 : 6}px; height: 4px; border-radius: 3px; background: ${li === dotAt ? (showsReach ? moodColor : 'rgba(46,39,31,0.55)') : 'rgba(46,39,31,0.16)'}; transition: width 200ms cubic-bezier(0.23,1,0.32,1), background 180ms ease;"></div>
+            `)}
+          </div>
         </div>
       </div>
     `;
   }
+
 
   private renderLibraryPopoverContent(moodColor: string) {
     const q = this.librarySearch.trim().toLowerCase();
@@ -3694,7 +3823,36 @@ export class LoopScreen extends LitElement {
               <div class="stage-card" style="padding: 18px 14px;">
                 <!-- 2-column pad cells grid -->
                 <div class="pad-cells-grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
-                  ${chords.map((chord, idx) => this.renderChordPad(chord, idx, moodColor, false))}
+                  ${chords.map((chord, idx) => {
+                    if (this.swapIndex === idx) {
+                      const role = roleForTension(chord.tension || 0.1);
+                      const isLit = this.activeIndex === idx && this.playing;
+                      return html`
+                        <div
+                          class="pad-cell pad-cell-cycler ${isLit ? 'pad-lit' : ''}"
+                          style="
+                            background: ${role.color};
+                            border-radius: 20px;
+                            padding: 12px;
+                            min-height: 220px;
+                            box-shadow: inset 0 0 0 2.5px ${moodColor}, 0 14px 26px -18px rgba(46,39,31,0.45);
+                          "
+                        >
+                          <chord-pad-cycler
+                            .originalChord=${chord}
+                            .barIndex=${idx}
+                            .feelings=${this.getSwapFeelings(idx)}
+                            .feelIndex=${this.mobileFeelIndex}
+                            .chordIndex=${this.mobileChordIndex}
+                            @cycler-audition=${(e: CustomEvent) => this.handleSwapAudition(e.detail)}
+                            @cycler-keep=${(e: CustomEvent) => this.handleCyclerKeep(e.detail)}
+                            @cycler-revert=${() => this.clearSelection()}
+                          ></chord-pad-cycler>
+                        </div>
+                      `;
+                    }
+                    return this.renderChordPad(chord, idx, moodColor, false);
+                  })}
                 </div>
 
                 ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, true) : ''}
@@ -3868,137 +4026,7 @@ export class LoopScreen extends LitElement {
             `}
           </div>
 
-          <!-- Mobile Swap Sheet -->
-          ${this.mobileSheetOpen && this.swapIndex !== null ? html`
-            <div class="sheet-scrim" @click=${() => { this.mobileSheetOpen = false; }}></div>
-            <div class="mobile-swap-sheet mobile-sheet">
-              <div class="sheet-handle"></div>
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <div class="sheet-title" style="font-size: 16px; font-weight: 800; color: var(--cv-ink);">Swap Chord ${this.swapIndex + 1} (${currentSwapChord?.name})</div>
-                <button class="sheet-cancel-btn" style="padding: 4px 10px;" @click=${() => { this.mobileSheetOpen = false; }}>×</button>
-              </div>
 
-              <div class="ab-compare-box ab-box">
-                <div class="ab-compare-row">
-                  <button
-                    class="ab-card-half ${this.abSide === 'before' ? 'active-now' : ''}"
-                    style="background: ${this.abSide === 'before' ? '#5E5142' : '#F1E4D2'}; color: ${this.abSide === 'before' ? '#FBF3E6' : '#2E271F'};"
-                    @click=${() => this.setABSide('before')}
-                  >
-                    <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Now</div>
-                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px;">${currentSwapChord?.name || ''}</div>
-                  </button>
-                  <button
-                    class="ab-card-half ${this.abSide === 'after' ? 'active-swap' : ''}"
-                    style="background: ${this.abPick ? (this.abSide === 'after' ? moodColor : '#F1E4D2') : 'transparent'}; color: #2E271F; border: ${this.abPick ? 'none' : '1.5px dashed rgba(46,39,31,0.22)'};"
-                    @click=${() => this.setABSide('after')}
-                    ?disabled=${!this.abPick}
-                  >
-                    <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Swap to</div>
-                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.45)'};"> ${this.abPick?.chord || 'Pick one below'}</div>
-                  </button>
-                </div>
-                <div class="ab-loop-player-row">
-                  <button
-                    class="ab-play-toggle-btn"
-                    style="background: ${this.abPlaying ? moodColor : '#E8D9C2'};"
-                    @click=${this.toggleABPlayback}
-                    aria-label="${this.abPlaying ? 'Pause loop' : 'Play loop with swap preview'}"
-                  >
-                    ${this.abPlaying ? html`<svg width="13" height="15" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>` : html`<svg width="14" height="16" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>`}
-                  </button>
-                  <div class="ab-cells-track">
-                    ${chords.map((c, i) => {
-                      const isSwapBar = i === this.swapIndex;
-                      const cellLabel = isSwapBar && this.abSide === 'after' && this.abPick ? this.abPick.chord : c.name;
-                      const isCellActive = this.abPlaying && Math.floor(this.progressStep / 4) === i;
-                      return html`
-                        <button
-                          class="ab-cell-item ${isCellActive ? 'active-step' : ''}"
-                          style="background: ${isSwapBar && this.abSide === 'after' && this.abPick ? moodColor : '#F1E4D2'}; opacity: ${isSwapBar ? 1 : 0.65};"
-                          @click=${() => this.onAbCellClick(i)}
-                          aria-label="Preview ${cellLabel} in bar ${i + 1}"
-                        >
-                          ${cellLabel}
-                        </button>
-                      `;
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div class="swap-family-tabs swap-tab-nav" style="margin-top: 14px;">
-                ${SWAP_FAMILIES.map(fam => {
-                  const on = this.activeSwapFamily === fam.key;
-                  const rr = roleForTension(fam.tension);
-                  const d = Math.round(rr.size * 0.34);
-                  const radius = Math.round(rr.radius * (d / rr.size));
-                  return html`
-                    <button
-                      class="swap-family-tab ${on ? 'active' : ''}"
-                      @click=${() => {
-                        this.activeSwapFamily = fam.key;
-                        this.requestUpdate();
-                      }}
-                    >
-                      ${fam.twoTone ? html`
-                        <span class="two-tone-swatch" style="box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};">
-                          <span style="width: 8px; height: 24px; border-radius: 3px; background: #9CC0EC;"></span>
-                          <span style="width: 8px; height: 24px; border-radius: 3px; background: #C9A9E0;"></span>
-                        </span>
-                      ` : html`
-                        <span
-                          class="family-shape"
-                          style="width: ${d}px; height: ${d}px; border-radius: ${radius}px; background: ${rr.color}; box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};"
-                        ></span>
-                      `}
-                      <span class="family-label ${on ? 'active' : ''}">${fam.label}</span>
-                    </button>
-                  `;
-                })}
-              </div>
-
-              ${activeBand ? html`
-                <div class="band-note-banner" style="background: ${activeBand.color}22; margin-top: 10px;">
-                  <span>${this.showTheory ? `${activeBand.name}: ${activeBand.theory}` : `Sorted for ${activeBand.name} — their moves first`}</span>
-                </div>
-              ` : ''}
-
-              <div class="alt-candidates-list" style="margin-top: 10px;">
-                ${familyRows.map(row => {
-                  const isBandTagged = !!activeBand && activeBand.hoist.includes(row.name);
-                  const rRole = roleForTension(row.tension);
-                  const shapeSize = Math.max(26, Math.min(36, Math.round(rRole.size * 0.32)));
-                  const shapeRadius = Math.round(rRole.radius * (shapeSize / rRole.size));
-                  return html`
-                    <div class="alt-chord-row alt-item-row ${this.abPick?.chord === row.name ? 'selected' : ''}" @click=${() => this.selectAlternative(row)}>
-                      <div class="alt-shape" style="width: ${shapeSize}px; height: ${shapeSize}px; border-radius: ${shapeRadius}px; background: ${rRole.color}; box-shadow: ${this.abPick?.chord === row.name ? `0 0 0 2px ${moodColor}` : 'none'}; flex-shrink: 0;"></div>
-                      <div style="flex: 1; min-width: 0;">
-                        <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
-                          <span style="font-size: 15px; font-weight: 800; color: var(--cv-ink);">${row.name}</span>
-                          ${this.showTheory && row.roman ? html`<span style="font-size: 11px; font-weight: 800; color: #7A5C88;">${row.roman}</span>` : ''}
-                          ${isBandTagged ? html`<span class="band-move-tag" style="background: ${activeBand.color};">${activeBand.name} move</span>` : ''}
-                        </div>
-                        <div style="font-size: 11.5px; color: var(--cv-ink-muted);">${row.sub}</div>
-                        ${this.showTheory && row.notes && row.notes.length ? html`
-                          <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.4px; color: var(--cv-label); margin-top: 2px;">
-                            ${row.notes.join(' · ')}
-                          </div>
-                        ` : ''}
-                      </div>
-                    </div>
-                  `;
-                })}
-              </div>
-
-              <div style="display: flex; gap: 10px; margin-top: 18px;">
-                <button class="sheet-cancel-btn" style="flex: 1;" @click=${() => { this.mobileSheetOpen = false; }}>Cancel</button>
-                <button class="accept-swap-btn" style="flex: 1; margin-top: 0;" @click=${this.confirmSwap} ?disabled=${!this.abPick}>
-                  ${this.abPick ? `Keep ${this.abPick.chord}` : 'Pick a chord'}
-                </button>
-              </div>
-            </div>
-          ` : ''}
 
           <!-- Mobile Detail Sheet -->
           ${this.mobileDetailSheetOpen ? html`
@@ -4225,12 +4253,40 @@ export class LoopScreen extends LitElement {
                   >
                     ${this.playing ? 'Stop' : 'Play loop'}
                   </button>
-                  <div style="font-size: 11px; font-weight: 700; color: var(--cv-ink-muted);">Space plays the loop</div>
+                  <div style="display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 700; color: var(--cv-ink-muted); min-width: 0;">
+                    <span style="display: inline-flex; align-items: flex-start; justify-content: center; width: 44px; height: 18px; padding: 1.5px 1.5px 3.5px; border-radius: 5px; background: rgba(46,39,31,0.16); box-shadow: 0 1px 0 rgba(46,39,31,0.18); flex-shrink: 0;" aria-hidden="true">
+                      <span style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 3.5px; background: rgba(255,255,255,0.62); box-shadow: inset 0 -1px 0 rgba(46,39,31,0.12);">
+                        <span style="display: block; width: 20px; height: 1.25px; background: rgba(46,39,31,0.34); border-radius: 1px;"></span>
+                      </span>
+                    </span>
+                    Space plays the loop
+                  </div>
                 </div>
 
                 <!-- Pad Cells Grid -->
-                <div class="pad-cells-grid pad-cells-row">
-                  ${chords.map((c, i) => this.renderChordPad(c, i, moodColor, true))}
+                <div class="pad-cells-grid pad-cells-row cv-padgrid" data-padgrid="1" data-wide="1">
+                  ${chords.map((c, i) => {
+                    const padColsNow = 4;
+                    const laneAfterIdx = Math.min(chords.length - 1, (Math.floor((this.swapIndex ?? 0) / padColsNow) + 1) * padColsNow - 1);
+                    return html`
+                      ${this.renderChordPad(c, i, moodColor, true)}
+                      ${this.swapIndex !== null && i === laneAfterIdx ? html`
+                        <chord-swap-lane
+                          .swapIndex=${this.swapIndex}
+                          .chord=${chords[this.swapIndex]}
+                          .feelings=${this.getSwapFeelings(this.swapIndex)}
+                          .activeFeel=${this.activeSwapFamily}
+                          .pickedChord=${this.abPick}
+                          .padCols=${Math.min(chords.length, 4)}
+                          .moodColor=${moodColor}
+                          @swap-feel-change=${(e: CustomEvent) => { this.activeSwapFamily = e.detail.feel; this.requestUpdate(); }}
+                          @swap-audition=${(e: CustomEvent) => this.handleSwapAudition(e.detail)}
+                          @swap-confirm=${this.confirmSwap}
+                          @swap-close=${this.clearSelection}
+                        ></chord-swap-lane>
+                      ` : ''}
+                    `;
+                  })}
                 </div>
 
                 ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, false) : ''}
@@ -4471,11 +4527,11 @@ export class LoopScreen extends LitElement {
               ${this.renderChordDetailContent(chords)}
             </div>
           ` : this.swapIndex !== null ? html`
-            <!-- Chord Swap View -->
+            <!-- Chord Swap Harmonic Context View -->
             <div class="inspector-header">
               <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
                 <div>
-                  <div class="swap-kicker">Swapping Bar ${this.swapIndex + 1}</div>
+                  <div class="swap-kicker">Bar ${this.swapIndex + 1} Harmonic Context</div>
                   <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 4px;">
                     <span class="swap-chord-name">${currentSwapChord?.name || ''}</span>
                     ${this.showTheory && currentSwapChord?.roman ? html`<span class="swap-roman">${currentSwapChord.roman}</span>` : ''}
@@ -4484,132 +4540,43 @@ export class LoopScreen extends LitElement {
                 </div>
                 <button class="close-swap-btn" @click=${this.clearSelection} aria-label="Close chord inspector">×</button>
               </div>
-
-              <div class="ab-compare-box ab-box">
-                <div class="ab-compare-row">
-                  <button
-                    class="ab-card-half ${this.abSide === 'before' ? 'active-now' : ''}"
-                    style="background: ${this.abSide === 'before' ? '#5E5142' : '#F1E4D2'}; color: ${this.abSide === 'before' ? '#FBF3E6' : '#2E271F'};"
-                    @click=${() => this.setABSide('before')}
-                  >
-                    <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Now</div>
-                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px;">${currentSwapChord?.name || ''}</div>
-                  </button>
-                  <button
-                    class="ab-card-half ${this.abSide === 'after' ? 'active-swap' : ''}"
-                    style="background: ${this.abPick ? (this.abSide === 'after' ? moodColor : '#F1E4D2') : 'transparent'}; color: #2E271F; border: ${this.abPick ? 'none' : '1.5px dashed rgba(46,39,31,0.22)'};"
-                    @click=${() => this.setABSide('after')}
-                    ?disabled=${!this.abPick}
-                  >
-                    <div style="font-size: 9px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; opacity: 0.65;">Swap to</div>
-                    <div style="font-size: 14.5px; font-weight: 800; margin-top: 2px; color: ${this.abPick ? '#2E271F' : 'rgba(46,39,31,0.45)'};"> ${this.abPick?.chord || 'Pick one below'}</div>
-                  </button>
-                </div>
-                <div class="ab-loop-player-row">
-                  <button
-                    class="ab-play-toggle-btn"
-                    style="background: ${this.abPlaying ? moodColor : '#E8D9C2'};"
-                    @click=${this.toggleABPlayback}
-                    aria-label="${this.abPlaying ? 'Pause loop' : 'Play loop with swap preview'}"
-                  >
-                    ${this.abPlaying ? html`<svg width="13" height="15" viewBox="0 0 16 18" fill="#2E271F"><rect x="1" y="0" width="5" height="18" rx="1.5"/><rect x="10" y="0" width="5" height="18" rx="1.5"/></svg>` : html`<svg width="14" height="16" viewBox="0 0 18 20" fill="#2E271F"><path d="M0 0L18 10L0 20Z"/></svg>`}
-                  </button>
-                  <div class="ab-cells-track">
-                    ${chords.map((c, idx) => {
-                      const isSwapBar = idx === this.swapIndex;
-                      const cellLabel = isSwapBar && this.abSide === 'after' && this.abPick ? this.abPick.chord : c.name;
-                      const isCellActive = this.abPlaying && Math.floor(this.progressStep / 4) === idx;
-                      return html`
-                        <button
-                          class="ab-cell-item ${isCellActive ? 'active-step' : ''}"
-                          style="background: ${isSwapBar && this.abSide === 'after' && this.abPick ? moodColor : '#F1E4D2'}; opacity: ${isSwapBar ? 1 : 0.65};"
-                          @click=${() => this.onAbCellClick(idx)}
-                          aria-label="Preview ${cellLabel} in bar ${idx + 1}"
-                        >
-                          ${cellLabel}
-                        </button>
-                      `;
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <button class="accept-swap-btn" @click=${this.confirmSwap} ?disabled=${!this.abPick}>
-                ${this.abPick ? `Keep ${this.abPick.chord}` : 'Pick a chord below'}
-              </button>
             </div>
 
-            <div class="inspector-body">
-              <div class="swap-family-tabs swap-tab-nav">
-                ${SWAP_FAMILIES.map(fam => {
-                  const on = this.activeSwapFamily === fam.key;
-                  const rr = roleForTension(fam.tension);
-                  const d = Math.round(rr.size * 0.34);
-                  const radius = Math.round(rr.radius * (d / rr.size));
-                  return html`
-                    <button
-                      class="swap-family-tab ${on ? 'active' : ''}"
-                      @click=${() => {
-                        this.activeSwapFamily = fam.key;
-                        this.requestUpdate();
-                      }}
-                    >
-                      ${fam.twoTone ? html`
-                        <span class="two-tone-swatch" style="box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};">
-                          <span style="width: 8px; height: 24px; border-radius: 3px; background: #9CC0EC;"></span>
-                          <span style="width: 8px; height: 24px; border-radius: 3px; background: #C9A9E0;"></span>
-                        </span>
-                      ` : html`
-                        <span
-                          class="family-shape"
-                          style="width: ${d}px; height: ${d}px; border-radius: ${radius}px; background: ${rr.color}; box-shadow: ${on ? `0 0 0 3px ${moodColor}` : 'none'};"
-                        ></span>
-                      `}
-                      <span class="family-label ${on ? 'active' : ''}">${fam.label}</span>
-                    </button>
-                  `;
-                })}
-              </div>
-
+            <div class="inspector-body" style="padding: 16px 20px 22px;">
               ${activeBand ? html`
-                <div class="band-note-banner" style="background: ${activeBand.color}22;">
-                  <span>${this.showTheory ? `${activeBand.name}: ${activeBand.theory}` : `Sorted for ${activeBand.name} — their moves first`}</span>
+                <div style="background: var(--cv-cream); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;">
+                  <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--cv-label);">Band DNA · ${activeBand.name}</div>
+                  <div style="font-size: 12.5px; font-weight: 700; color: var(--cv-ink); margin-top: 4px;">${this.showTheory ? activeBand.theory : activeBand.plain}</div>
                 </div>
               ` : ''}
 
-              ${familyNote ? html`
-                <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-bottom: 12px;">
-                  ${familyNote}
-                </div>
-              ` : ''}
-
-              <div class="alt-candidates-list">
-                ${familyRows.map(row => {
-                  const isBandTagged = !!activeBand && activeBand.hoist.includes(row.name);
-                  const rRole = roleForTension(row.tension);
-                  const shapeSize = Math.max(28, Math.min(38, Math.round(rRole.size * 0.32)));
-                  const shapeRadius = Math.round(rRole.radius * (shapeSize / rRole.size));
-                  return html`
-                    <div class="alt-chord-row alt-item-row ${this.abPick?.chord === row.name ? 'selected' : ''}" @click=${() => this.selectAlternative(row)}>
-                      <div class="alt-shape" style="width: ${shapeSize}px; height: ${shapeSize}px; border-radius: ${shapeRadius}px; background: ${rRole.color}; box-shadow: ${this.abPick?.chord === row.name ? `0 0 0 2px ${moodColor}` : 'none'}; flex-shrink: 0;"></div>
-                      <div style="flex: 1; min-width: 0;">
-                        <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
-                          <span style="font-size: 15px; font-weight: 800; color: #2E271F;">${row.name}</span>
-                          ${this.showTheory && row.roman ? html`<span style="font-size: 11px; font-weight: 800; color: #7A5C88;">${row.roman}</span>` : ''}
-                          ${isBandTagged ? html`<span class="band-move-tag" style="background: ${activeBand.color};">${activeBand.name} move</span>` : ''}
-                        </div>
-                        <div style="font-size: 11.5px; color: var(--cv-ink-muted); margin-top: 2px;">${row.sub}</div>
-                        ${this.showTheory && row.notes && row.notes.length ? html`
-                          <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.4px; color: var(--cv-label); margin-top: 2px;">
-                            ${row.notes.join(' · ')}
-                          </div>
-                        ` : ''}
-                      </div>
-                      <button class="alt-play-chip alt-play-btn" @click=${(e: MouseEvent) => { e.stopPropagation(); this.previewAlternative(row.name); }}>Hear</button>
+              ${this.abPick ? html`
+                <div style="animation: cvfv-pop 200ms ease-out; background: var(--cv-cream); border-radius: 16px; padding: 16px;">
+                  <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">
+                    Auditioning · ${this.activeSwapFamily || 'Substitution'}
+                  </div>
+                  <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
+                    <div style="font-size: 22px; font-weight: 800; color: var(--cv-ink); letter-spacing: -0.02em; line-height: 1.1;">${this.abPick.chord || this.abPick.name}</div>
+                    ${this.abPick.roman ? html`<div style="font-size: 12px; font-weight: 800; letter-spacing: 0.6px; color: var(--cv-label);">${this.abPick.roman}</div>` : ''}
+                  </div>
+                  <div style="font-size: 12.5px; font-weight: 700; line-height: 1.5; color: var(--cv-ink-muted); margin-top: 6px;">
+                    ${this.abPick.functionLabel || this.abPick.fn || 'Harmonic substitution that alters the feel of the bar.'}
+                  </div>
+                  ${this.abPick.notes && this.abPick.notes.length ? html`
+                    <div style="font-size: 12px; font-weight: 800; letter-spacing: 0.4px; color: var(--cv-ink); margin-top: 10px;">
+                      Notes: ${this.abPick.notes.join(' · ')}
                     </div>
-                  `;
-                })}
-              </div>
+                  ` : ''}
+                  <div style="font-size: 11.5px; font-weight: 700; line-height: 1.55; color: var(--cv-ink-muted); margin-top: 12px; padding-top: 11px; border-top: 1px solid rgba(46,39,31,0.08);">
+                    Hear how this chord changes the emotional arc of the progression.
+                  </div>
+                </div>
+              ` : html`
+                <div style="font-size: 12.5px; font-weight: 700; line-height: 1.55; color: var(--cv-ink-muted); background: var(--cv-cream); border-radius: 14px; padding: 15px;">
+                  Pick a feeling in the swap lane under the loop, then tap a candidate chord to audition it. What it does, its notes, and how it voices will show up here.
+                </div>
+              `}
+
               ${this.showTheory ? this.renderTheoryStrip(theoryData) : ''}
             </div>
           ` : html`

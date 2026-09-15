@@ -71,15 +71,42 @@ button {
   to { transform: translateY(0); opacity: 1; }
 }
 
-@keyframes cvfv-bg-drift-a {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  50% { transform: translate(0, -7px) rotate(1.5deg); }
+@keyframes cvfv-pop {
+  from { transform: scale(0.97); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
-@keyframes cvfv-bg-drift-b {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  50% { transform: translate(0, 6px) rotate(-1.5deg); }
+@keyframes cvfv-panel {
+  from { transform: translateY(-8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
+
+@keyframes cvfv-trayitem {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes cvfv-laneopen {
+  from { grid-template-rows: 0fr; }
+  to { grid-template-rows: 1fr; }
+}
+
+@keyframes cvfv-laneneck {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+@keyframes cvfv-lanepanel {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@container padgrid (min-width: 860px) {
+  .cv-padgrid[data-wide="1"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
