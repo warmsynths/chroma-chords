@@ -130,6 +130,14 @@ const ROLE_SHORT: Record<string, string> = ROLE_PLAIN;
 const PAD_KEYS = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K'];
 const ZONE_NAMES = ['Octave up', '1st inversion', 'Low root'];
 
+function zoneForVoicing(v?: string): number {
+  if (!v) return 1;
+  const l = v.toLowerCase();
+  if (l.includes('octave') || l.includes('up')) return 0;
+  if (l.includes('low') || l.includes('root')) return 2;
+  return 1;
+}
+
 export const CHORD_QUALITIES = [
   { label: 'Major', sub: 'bright' },
   { label: 'Minor', sub: 'warm' },
@@ -387,6 +395,13 @@ export class LoopScreen extends LitElement {
   @state() auditionBar: number = 0;
 
   private gridTimer: number | null = null;
+  private lastCenterTap: { index: number; time: number } | null = null;
+  private pendingLatch: {
+    index: number;
+    reach?: number;
+    voicing?: string;
+    targetChordName?: string;
+  } | null = null;
 
   private vibeExamples = ['Rainy drive at 2am, first day of summer...', 'Portishead trip-hop', 'Bohemian Rhapsody', 'Tame Impala neo-psychedelia', 'Warm acoustic fireplace'];
   private placeholderTimer: ReturnType<typeof setInterval> | null = null;
@@ -2110,31 +2125,25 @@ export class LoopScreen extends LitElement {
       e.preventDefault();
       const vel = 88 + (idx % 3) * 6;
       const chord = chords[idx];
-      const lad = this.getChordLadder(chord);
       const rung = this.getLadderHome(chord);
+      const voicing = chord.voicing || '1st inversion';
+      const zone = zoneForVoicing(voicing);
 
-      let reach = rung >= 0 ? rung : 0;
-      let zone = 1;
-      let voicing = '1st inversion';
-      if (this.lastPad?.idx === idx && typeof this.lastPad.reach === 'number' && lad.length > 0) {
-        reach = (this.lastPad.reach + 1) % lad.length;
-      }
-      if (e.shiftKey) {
-        zone = 0;
-        voicing = 'up an octave';
-      }
-
-      const targetChord = (lad.length > 0 && lad[reach]) ? lad[reach] : chord.name;
-      const showsReach = reach !== rung && !!lad[reach];
       const key = this.progression?.key || 'C';
       const scaleType = this.progression?.scaleType || 'MAJOR';
-      const notes = notesForSymbol(targetChord, preferFlatSpelling(key, scaleType));
+      const notes = chord.notes && chord.notes.length
+        ? chord.notes
+        : notesForSymbol(chord.name, preferFlatSpelling(key, scaleType));
 
+      if (this.gridTimer) {
+        clearTimeout(this.gridTimer);
+        this.gridTimer = null;
+      }
       this.padFlash = idx;
       this.padHeld = idx;
       this.gridFor = idx;
-      const meta = showsReach ? ('→ ' + targetChord) : (zone === 0 ? 'UP AN OCTAVE' : (zone === 1 ? '1ST INVERSION' : 'ROOT POSITION'));
-      this.lastPad = { idx, voicing, vel, zone, reach, meta };
+      const meta = zone === 0 ? 'UP AN OCTAVE' : (zone === 1 ? '1ST INVERSION' : 'ROOT POSITION');
+      this.lastPad = { idx, voicing, vel, zone, reach: rung, meta };
 
       playbackEngine.playChordNotes(notes, 0.85, voicing, vel);
       this.requestUpdate();
@@ -2227,42 +2236,86 @@ export class LoopScreen extends LitElement {
   }
 
   private handlePadPointerDown(e: PointerEvent, index: number) {
-    let voicing = '1st inversion';
-    let zone = 1;
-    let reach: number | undefined = undefined;
-
     const chords = this.progression?.chords;
+    const chord = chords ? chords[index] : null;
+    if (!chord) return;
+
+    let voicing = chord.voicing || '1st inversion';
+    let zone = zoneForVoicing(voicing);
+    let reach: number | undefined = undefined;
+    let isCenter = false;
+
+    const lad = this.getChordLadder(chord);
+    const rung = this.getLadderHome(chord);
+
     if (e.currentTarget && typeof (e.currentTarget as HTMLElement).getBoundingClientRect === 'function') {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const ratio = (e.clientY - rect.top) / (rect.height || 1);
-      if (ratio < 0.34) {
-        zone = 0;
-        voicing = 'up an octave';
-      } else if (ratio > 0.67) {
-        zone = 2;
-        voicing = 'low, root position';
-      } else {
-        zone = 1;
-        voicing = '1st inversion';
-      }
+      const xRatio = Math.min(0.999, Math.max(0, (e.clientX - rect.left) / (rect.width || 1)));
+      const yRatio = Math.min(0.999, Math.max(0, (e.clientY - rect.top) / (rect.height || 1)));
 
-      if (typeof e.clientX === 'number' && chords && chords[index]) {
-        const lad = this.getChordLadder(chords[index]);
-        const x = Math.min(0.999, Math.max(0, (e.clientX - rect.left) / (rect.width || 1)));
-        reach = Math.min(lad.length - 1, Math.floor(x * lad.length));
+      isCenter = xRatio >= 0.25 && xRatio <= 0.75 && yRatio >= 0.33 && yRatio <= 0.67;
+
+      if (!isCenter) {
+        if (yRatio < 0.34) {
+          zone = 0;
+          voicing = 'up an octave';
+        } else if (yRatio > 0.67) {
+          zone = 2;
+          voicing = 'low, root position';
+        } else {
+          zone = 1;
+          voicing = '1st inversion';
+        }
+
+        if (lad.length > 0) {
+          reach = Math.min(lad.length - 1, Math.floor(xRatio * lad.length));
+        }
       }
     }
 
-    const chord = chords ? chords[index] : null;
-    if (!chord) return;
-    const lad = this.getChordLadder(chord);
-    const rung = this.getLadderHome(chord);
-    const targetChord = (reach !== undefined && lad[reach]) ? lad[reach] : chord.name;
+    const now = Date.now();
+
+    // Check double-click in center sweet spot
+    if (isCenter && this.lastCenterTap && this.lastCenterTap.index === index && (now - this.lastCenterTap.time) < 350) {
+      // Tap 2: SILENT REVERT
+      this.lastCenterTap = null;
+      this.pendingLatch = null;
+
+      if (chord.initialChord) {
+        const updatedChords = [...chords];
+        const restored = { ...chord.initialChord };
+        delete restored.initialChord;
+        updatedChords[index] = restored;
+
+        const newProg = { ...this.progression, chords: updatedChords };
+        this.progression = newProg;
+        this.dispatchEvent(new CustomEvent('progression-change', {
+          detail: newProg,
+          bubbles: true,
+          composed: true,
+        }));
+        playbackEngine.setProgression(newProg, this.order);
+
+        this.padFlash = -1;
+        this.padHeld = -1;
+        this.lastPad = null;
+        this.requestUpdate();
+        return; // Silent revert: no audio trigger
+      }
+    }
+
+    if (isCenter) {
+      this.lastCenterTap = { index, time: now };
+    } else {
+      this.lastCenterTap = null;
+    }
+
+    const targetChordName = (reach !== undefined && lad[reach]) ? lad[reach] : chord.name;
     const showsReach = reach !== undefined && reach !== rung && !!lad[reach];
 
     const key = this.progression?.key || 'C';
     const scaleType = this.progression?.scaleType || 'MAJOR';
-    const notes = notesForSymbol(targetChord, preferFlatSpelling(key, scaleType));
+    const notes = notesForSymbol(targetChordName, preferFlatSpelling(key, scaleType));
 
     const vel = 88 + (index % 3) * 6;
     if (this.gridTimer) {
@@ -2272,10 +2325,22 @@ export class LoopScreen extends LitElement {
     this.padFlash = index;
     this.padHeld = index;
     this.gridFor = index;
-    const meta = showsReach ? ('→ ' + targetChord) : (zone === 0 ? 'UP AN OCTAVE' : (zone === 1 ? '1ST INVERSION' : 'ROOT POSITION'));
+    const meta = showsReach ? ('→ ' + targetChordName) : (zone === 0 ? 'UP AN OCTAVE' : (zone === 1 ? '1ST INVERSION' : 'ROOT POSITION'));
     this.lastPad = { idx: index, voicing, vel, zone, reach, meta };
 
     playbackEngine.playChordNotes(notes, 0.85, voicing, vel);
+
+    if (!isCenter && (reach !== undefined || voicing !== (chord.voicing || '1st inversion'))) {
+      this.pendingLatch = {
+        index,
+        reach,
+        voicing,
+        targetChordName,
+      };
+    } else {
+      this.pendingLatch = null;
+    }
+
     this.requestUpdate();
   }
 
@@ -2289,6 +2354,56 @@ export class LoopScreen extends LitElement {
       this.gridFor = -1;
       this.requestUpdate();
     }, 1100);
+
+    if (this.pendingLatch) {
+      const { index, reach, voicing, targetChordName } = this.pendingLatch;
+      this.pendingLatch = null;
+
+      if (this.progression && this.progression.chords[index]) {
+        const currentChord = this.progression.chords[index];
+        const lad = this.getChordLadder(currentChord);
+        const rung = this.getLadderHome(currentChord);
+        const currentVoicing = currentChord.voicing || '1st inversion';
+
+        const extensionChanged = reach !== undefined && reach !== rung && !!lad[reach] && !!targetChordName;
+        const voicingChanged = !!voicing && voicing !== currentVoicing;
+
+        if (extensionChanged || voicingChanged) {
+          const initialChord = currentChord.initialChord || { ...currentChord };
+          let updated: ChordBlock;
+
+          if (extensionChanged && targetChordName) {
+            const curQual = this.getChordQualityLabel(currentChord.name);
+            const extLabel = this.getChordExtensionLabel(targetChordName);
+            const key = this.progression.key || 'C';
+            const scaleType = this.progression.scaleType || 'MAJOR';
+            updated = applyVoicingToChord(currentChord, curQual, extLabel);
+            updated.name = targetChordName;
+            updated.notes = notesForSymbol(targetChordName, preferFlatSpelling(key, scaleType));
+          } else {
+            updated = { ...currentChord };
+          }
+
+          if (voicing) {
+            updated.voicing = voicing;
+          }
+          updated.initialChord = initialChord;
+
+          const updatedChords = [...this.progression.chords];
+          updatedChords[index] = updated;
+          const newProg = { ...this.progression, chords: updatedChords };
+          this.progression = newProg;
+
+          this.dispatchEvent(new CustomEvent('progression-change', {
+            detail: newProg,
+            bubbles: true,
+            composed: true,
+          }));
+          playbackEngine.setProgression(newProg, this.order);
+        }
+      }
+    }
+
     this.requestUpdate();
   }
 
@@ -2558,12 +2673,15 @@ export class LoopScreen extends LitElement {
     const newNotes = this.abPick.notes && this.abPick.notes.length ? this.abPick.notes : notesForSymbol(this.abPick.chord, preferFlat);
 
     const updatedChords = [...this.progression.chords];
+    const currentChord = updatedChords[this.swapIndex];
+    const initialChord = currentChord.initialChord || { ...currentChord };
     updatedChords[this.swapIndex] = {
-      ...updatedChords[this.swapIndex],
+      ...currentChord,
       name: this.abPick.chord,
       roman: this.abPick.roman,
       tension: this.abPick.tension,
       notes: newNotes,
+      initialChord,
     };
 
     const newProg = { ...this.progression, chords: updatedChords };
@@ -3588,7 +3706,7 @@ export class LoopScreen extends LitElement {
     const dotAt = showsReach ? reached : rung;
     const metaLabel = lastHere
       ? (showsReach ? ('→ ' + lad[reached]) : (ZONE_NAMES[this.lastPad?.zone ?? 1] || this.lastPad?.voicing || ''))
-      : '';
+      : (c.voicing && c.voicing !== '1st inversion' ? c.voicing.toUpperCase() : '');
 
     return html`
       <div

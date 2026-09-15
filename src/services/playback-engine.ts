@@ -306,7 +306,11 @@ export class PlaybackEngine {
           const scaleType = this.progression.scaleType || 'MAJOR';
           notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
         }
-        this.playChordNotes(notes, 1.2);
+        if (chord.voicing) {
+          this.playChordNotes(notes, 1.2, chord.voicing);
+        } else {
+          this.playChordNotes(notes, 1.2);
+        }
         if (this.subBassEnabled && notes.length > 0) {
           playSubNote(notes[0], 1.4);
         }
@@ -323,7 +327,11 @@ export class PlaybackEngine {
       const scaleType = this.progression?.scaleType || 'MAJOR';
       notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
     }
-    this.playChordNotes(notes, duration);
+    if (chord.voicing) {
+      this.playChordNotes(notes, duration, chord.voicing);
+    } else {
+      this.playChordNotes(notes, duration);
+    }
   }
 
   public playChordAtIndex(index: number, duration = 0.8, voicing?: string, velocity?: number): void {
@@ -338,7 +346,12 @@ export class PlaybackEngine {
       notes = notesForSymbol(safeName, preferFlatSpelling(key, scaleType));
     }
     
-    this.playChordNotes(notes, duration, voicing, velocity);
+    const v = voicing || chord.voicing;
+    if (v !== undefined) {
+      this.playChordNotes(notes, duration, v, velocity);
+    } else {
+      this.playChordNotes(notes, duration);
+    }
   }
 
   public playChordNotes(notes: string[], duration?: number, voicing?: string, velocity?: number): void {

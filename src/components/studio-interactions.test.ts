@@ -574,5 +574,143 @@ describe('Studio Component Interactions', () => {
     document.body.removeChild(el);
     (window as any).innerWidth = 1024;
   });
+
+  it('latches chord extension and voicing on pointer release', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = {
+      ...sampleProgression,
+      chords: sampleProgression.chords.map(c => ({ ...c })),
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const pad = el.shadowRoot?.querySelector('.pad-cells-grid .pad-cell') as HTMLElement;
+    expect(pad).toBeTruthy();
+
+    pad.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: 200, height: 150, right: 200, bottom: 150, x: 0, y: 0, toJSON: () => {}
+    } as DOMRect);
+
+    // Press down in the upper-right corner: x=180 (maj9), y=20 (up an octave)
+    pad.dispatchEvent(new PointerEvent('pointerdown', {
+      clientX: 180,
+      clientY: 20,
+      bubbles: true,
+      composed: true,
+    }));
+    await el.updateComplete;
+
+    // Release pointer to latch
+    pad.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      composed: true,
+    }));
+    await el.updateComplete;
+
+    expect(el.progression.chords[0].name).toBe('Cmaj9');
+    expect(el.progression.chords[0].voicing).toBe('up an octave');
+    expect(el.progression.chords[0].initialChord?.name).toBe('C');
+
+    document.body.removeChild(el);
+  });
+
+  it('silently reverts latched chord to baseline on double-click in center', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = {
+      ...sampleProgression,
+      chords: sampleProgression.chords.map(c => ({ ...c })),
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const pad = el.shadowRoot?.querySelector('.pad-cells-grid .pad-cell') as HTMLElement;
+    expect(pad).toBeTruthy();
+
+    pad.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: 200, height: 150, right: 200, bottom: 150, x: 0, y: 0, toJSON: () => {}
+    } as DOMRect);
+
+    // Latch chord 0 to Cmaj9 first (x=180, y=20)
+    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 180, clientY: 20, bubbles: true, composed: true }));
+    pad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(el.progression.chords[0].name).toBe('Cmaj9');
+    expect(el.progression.chords[0].initialChord?.name).toBe('C');
+
+    // Tap 1 in the center sweet spot (x=100, y=75)
+    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 75, bubbles: true, composed: true }));
+    pad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Tap 2 in the center sweet spot (double-click within 200ms)
+    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 75, bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Chord should be reverted to baseline 'C'
+    expect(el.progression.chords[0].name).toBe('C');
+    expect(el.progression.chords[0].initialChord).toBeUndefined();
+
+    document.body.removeChild(el);
+  });
+
+  it('plays current chord without altering extension on single click in center', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = {
+      ...sampleProgression,
+      chords: sampleProgression.chords.map(c => ({ ...c })),
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const pad = el.shadowRoot?.querySelector('.pad-cells-grid .pad-cell') as HTMLElement;
+    expect(pad).toBeTruthy();
+
+    pad.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: 200, height: 150, right: 200, bottom: 150, x: 0, y: 0, toJSON: () => {}
+    } as DOMRect);
+
+    // Latch chord 0 to Cmaj9 first
+    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 180, clientY: 20, bubbles: true, composed: true }));
+    pad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
+    await el.updateComplete;
+    expect(el.progression.chords[0].name).toBe('Cmaj9');
+
+    // Single click in center sweet spot (x=100, y=75)
+    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 75, bubbles: true, composed: true }));
+    pad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Chord remains Cmaj9
+    expect(el.progression.chords[0].name).toBe('Cmaj9');
+
+    document.body.removeChild(el);
+  });
+
+  it('plays current chord and voicing when keyboard hotkey is pressed', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    const initialChords = sampleProgression.chords.map(c => ({ ...c }));
+    initialChords[0] = { ...initialChords[0], name: 'Cmaj9', voicing: 'up an octave' };
+    el.progression = {
+      ...sampleProgression,
+      chords: initialChords,
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const { playbackEngine } = await import('../services/playback-engine');
+    const playNotesSpy = vi.spyOn(playbackEngine, 'playChordNotes');
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+    await el.updateComplete;
+
+    expect(playNotesSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      0.85,
+      'up an octave',
+      expect.any(Number)
+    );
+
+    document.body.removeChild(el);
+  });
 });
 

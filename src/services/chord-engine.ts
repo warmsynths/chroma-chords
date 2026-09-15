@@ -31,6 +31,8 @@ export interface ChordBlock {
   degree: string;
   scaleKey: string;
   tension: number;
+  voicing?: string;
+  initialChord?: ChordBlock;
 }
 
 export interface Progression {
