@@ -1965,6 +1965,20 @@ export function buildDeviceShareUrl(progression: Progression, device: ShareDevic
     ? order.map(i => progression.chords[i]).filter((c): c is ChordBlock => Boolean(c))
     : progression.chords;
   const chordParam = chords.map(c => encodeURIComponent(c.name)).join('+');
+
+  if (device === 'circuit') {
+    const mapVoicingToken = (v?: string): string => {
+      const norm = (v || '').toLowerCase();
+      if (norm.includes('octave') || norm.includes('high') || norm.includes('up')) return 'octave';
+      if (norm.includes('inversion') || norm.includes('1st')) return '1st';
+      return 'root';
+    };
+    const voicingParam = chords.map(c => mapVoicingToken(c.voicing)).join('+');
+    const keyParam = encodeURIComponent(progression.key || 'C');
+    const scaleParam = encodeURIComponent((progression.scaleType || 'major').toLowerCase());
+    return `${base}?p=${chordParam}&v=${voicingParam}&key=${keyParam}&scale=${scaleParam}`;
+  }
+
   return `${base}?p=${chordParam}`;
 }
 

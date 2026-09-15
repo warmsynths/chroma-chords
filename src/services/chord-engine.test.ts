@@ -9,8 +9,10 @@ import {
   injectModes,
   alignChordsToScale,
   transposeProgression,
+  buildDeviceShareUrl,
   RawChordData,
   Progression,
+  ChordBlock,
 } from './chord-engine';
 
 describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => {
@@ -341,7 +343,41 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
       expect(transposedA.chords.map(c => c.name)).toEqual(['Am', 'Dm', 'E7', 'Am']);
     });
   });
+
+  describe('buildDeviceShareUrl', () => {
+    const testProg: Progression = {
+      genre: 'Neo-Soul',
+      mood: 'Dreamy',
+      key: 'Eb',
+      scaleType: 'MAJOR',
+      bpm: 90,
+      chords: [
+        { name: 'Ebmaj9', notes: ['Eb', 'G', 'Bb', 'D', 'F'], voicing: '1st inversion' },
+        { name: 'Cm7', notes: ['C', 'Eb', 'G', 'Bb'], voicing: 'up an octave' },
+        { name: 'Fm9', notes: ['F', 'Ab', 'C', 'Eb', 'G'], voicing: 'root position' },
+        { name: 'Bb7', notes: ['Bb', 'D', 'F', 'Ab'] },
+      ] as unknown as ChordBlock[],
+    };
+
+    it('encodes chord names, voicings, key, and scale for Circuit Tracks', () => {
+      const url = buildDeviceShareUrl(testProg, 'circuit');
+      expect(url).toContain('circuit-chords');
+      expect(url).toContain('p=Ebmaj9+Cm7+Fm9+Bb7');
+      expect(url).toContain('v=1st+octave+root+root');
+      expect(url).toContain('key=Eb');
+      expect(url).toContain('scale=major');
+    });
+
+    it('preserves clean m8 link format without extra params', () => {
+      const url = buildDeviceShareUrl(testProg, 'm8');
+      expect(url).toContain('m8hyper');
+      expect(url).toContain('?p=Ebmaj9+Cm7+Fm9+Bb7');
+      expect(url).not.toContain('v=');
+      expect(url).not.toContain('key=');
+    });
+  });
 });
+
 
 
 
