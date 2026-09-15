@@ -1,16 +1,11 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { projectStorage } from '../services/project-storage';
-import { capacityService } from '../services/capacity-service';
 
 @customElement('app-header')
 export class AppHeader extends LitElement {
   @property({ type: Boolean }) compact = false;
-  @property({ type: Boolean }) hideCapacity = false;
   @property({ type: Boolean }) isAdmin = false;
-  @property({ type: Number }) capacityCharges = 4;
-  @property({ type: Number }) capacityMax = 4;
-  @property({ type: Number }) rechargeNextSec = 60;
   @property({ type: Boolean }) isAuthenticated = false;
   @property({ type: String }) userEmail: string | null = null;
   @property({ type: Number }) savedCount = 0;
@@ -18,10 +13,8 @@ export class AppHeader extends LitElement {
   @property({ type: String }) title = 'Chroma Chords';
 
   @state() private accountMenuOpen = false;
-  @state() private showCapacityNote = false;
 
   private unsubscribeProjects: (() => void) | null = null;
-  private unsubscribeCapacity: (() => void) | null = null;
 
   static styles = css`
     :host {
@@ -217,31 +210,17 @@ export class AppHeader extends LitElement {
       this.syncStatus = projectStorage.getSyncStatus();
       this.requestUpdate();
     });
-    this.unsubscribeCapacity = capacityService.subscribe(state => {
-      this.capacityCharges = state.charges;
-      this.capacityMax = state.max;
-      this.rechargeNextSec = state.rechargeNextSec;
-      this.requestUpdate();
-    });
     this.savedCount = projectStorage.getProjects().length;
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.unsubscribeProjects) this.unsubscribeProjects();
-    if (this.unsubscribeCapacity) this.unsubscribeCapacity();
-  }
-
-  private toggleCapacityNote(e: Event) {
-    e.stopPropagation();
-    this.showCapacityNote = !this.showCapacityNote;
-    this.accountMenuOpen = false;
   }
 
   private toggleAccountMenu(e: Event) {
     e.stopPropagation();
     this.accountMenuOpen = !this.accountMenuOpen;
-    this.showCapacityNote = false;
   }
 
   private onSignIn() {

@@ -21,7 +21,7 @@ export default defineConfig({
           'human-engine': 'https://warmsynths.github.io/human-midi/human-engine.js'
         },
         manualChunks: {
-          vendor: ['lit', 'tone', 'meyda']
+          vendor: ['lit', 'tone']
         }
       }
     }

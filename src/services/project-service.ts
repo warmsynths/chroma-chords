@@ -12,23 +12,6 @@ export interface ProjectChord {
   tension: number;
 }
 
-export interface LoopLaneHit {
-  pos: number; // 0..1 normalized loop position
-  vel: number; // 0..127 MIDI velocity
-  bar?: number;
-  voicing?: string;
-}
-
-export interface LoopLane {
-  id: string;
-  name: string;
-  color: string;
-  quantise: 'Off' | '1/16' | '1/8' | 'Bar';
-  hits: LoopLaneHit[];
-  kept: boolean;
-  muted?: boolean;
-}
-
 export interface ProjectData {
   id: string;
   name: string;
@@ -41,8 +24,6 @@ export interface ProjectData {
   chords: ProjectChord[];
   showTheory?: boolean;
   syncedToCloud?: boolean;
-  performMode?: boolean;
-  lanes?: LoopLane[];
   barsPerChord?: number;
   feel?: {
     swing: number;

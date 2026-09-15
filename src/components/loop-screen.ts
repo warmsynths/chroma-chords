@@ -1,7 +1,7 @@
 import { LitElement, html, svg, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
-  Progression, ChordBlock, Alternative, TheoryGroup, BorrowedChordRow,
+  Progression, ChordBlock, TheoryGroup, BorrowedChordRow,
   MIN_PROGRESSION_LENGTH, MAX_PROGRESSION_LENGTH, getMoodColor, roleForTension,
   RawChordData, AUTOPLAY_INTERVAL_MS, preferFlatSpelling, notesForSymbol, parseChordSymbol,
   generateTheoryGroups, generateBorrowedChords, applyVoicingToChord,
@@ -15,8 +15,7 @@ import {
 import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
 import { ProjectData } from '../services/project-service';
-import { SongArranger } from '../services/song-arranger';
-import { SongSection } from './song-screen';
+import { SongArranger, SongSection } from '../services/song-arranger';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, normalizeInstrumentName } from '../services/audio-service';
 import 'human-engine';
 import type { HumanState } from 'human-engine';
@@ -1973,6 +1972,7 @@ export class LoopScreen extends LitElement {
       padding: 11px 14px max(16px, calc(10px + env(safe-area-inset-bottom, 0px)));
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 8px;
       z-index: 50;
       box-sizing: border-box;
@@ -4057,32 +4057,6 @@ export class LoopScreen extends LitElement {
           >
             ${this.playing ? 'Stop' : (this.activeView === 'song' ? `Play song · ${this.sections.length} sections` : 'Play loop')}
           </button>
-          <div style="flex: 1 1 30px; min-width: 24px;">
-            <div style="display: flex; gap: 2px; align-items: flex-end; height: 16px;">
-              ${this.activeView === 'song'
-                ? this.sections.map((_, si) => {
-                    const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
-                    return html`<div style="flex: 1; height: ${isCurrentSec ? 16 : 8}px; border-radius: 2px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'};"></div>`;
-                  })
-                : Array.from({ length: 16 }).map((_, i) => {
-                    const step = Math.floor(this.progressStep % (chords.length * 4));
-                    const isHead = this.playing && Math.floor((step / (chords.length * 4)) * 16) === i;
-                    const isBarStart = i % 4 === 0;
-                    return html`
-                      <div style="flex: 1; height: ${isHead ? 16 : (isBarStart ? 11 : 7)}px; border-radius: 2px; background: ${isHead ? '#F2735F' : (isBarStart ? 'rgba(46,39,31,0.3)' : 'rgba(46,39,31,0.14)')};"></div>
-                    `;
-                  })}
-            </div>
-            <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--cv-label); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-              ${this.playing
-                ? (this.activeView === 'song'
-                    ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
-                    : `Bar ${Math.floor(this.progressStep / 4) + 1} · beat ${(this.progressStep % 4) + 1}`)
-                : (this.activeView === 'song'
-                    ? `${this.sections.length} sections · stopped`
-                    : `${chords.length} bars · stopped`)}
-            </div>
-          </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <button aria-label="Try another progression" class="mobile-circle-btn" @click=${this.onReroll}>
               <svg width="19" height="19" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>

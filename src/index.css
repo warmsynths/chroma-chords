@@ -101,13 +101,6 @@ button {
   to { opacity: 1; transform: none; }
 }
 
-@container padgrid (min-width: 860px) {
-  .cv-padgrid[data-wide="1"] {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  }
-}
-
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

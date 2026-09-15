@@ -1,5 +1,11 @@
 import { Progression } from './chord-engine';
-import { SongSection } from '../components/song-screen';
+
+export interface SongSection {
+  name: string;
+  desc: string;
+  progression: Progression;
+  order: number[];
+}
 
 export interface SectionTemplate {
   name: string;

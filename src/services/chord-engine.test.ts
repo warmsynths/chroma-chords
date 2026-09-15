@@ -4,7 +4,6 @@ import * as path from 'path';
 import {
   generateProgression,
   getStartingDegreeWeight,
-  generateAlternatives,
   generateTheoryGroups,
   generateBorrowedChords,
   injectModes,
@@ -99,15 +98,7 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
     });
   });
 
-  describe('generateAlternatives, generateTheoryGroups, and generateBorrowedChords', () => {
-    it('returns chord substitution options including Darker, Tension, and Dreamier', () => {
-      const prog: Progression = generateProgression(chordData, 'Pop', 'Uplifting', { length: 4 });
-      const alts = generateAlternatives(chordData, prog, 1);
-      expect(alts.length).toBeGreaterThan(0);
-      const labels = alts.map(a => a.label);
-      expect(labels).toContain('Darker');
-    });
-
+  describe('generateTheoryGroups and generateBorrowedChords', () => {
     it('generates 4 rich theory groups each with 3 chord substitutions', () => {
       const prog: Progression = generateProgression(chordData, 'Pop', 'Uplifting', { length: 4, key: 'C' });
       const groups = generateTheoryGroups(chordData, prog, 0);

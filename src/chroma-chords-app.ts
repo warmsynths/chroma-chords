@@ -4,29 +4,17 @@ import { ProjectData, ProjectChord } from './services/project-service';
 import { projectStorage, SyncStatus } from './services/project-storage';
 import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
-import { SongArranger, SECTION_TEMPLATES } from './services/song-arranger';
-import {
-  loadChordData, generateProgression, RawChordData, Progression, ChordBlock, Alternative,
-  TheoryGroup, BorrowedChordRow, generateAlternatives, generateTheoryGroups, generateBorrowedChords, applyVoicingToChord,
-  notesForSymbol, preferFlatSpelling,
-} from './services/chord-engine';
+import { SongArranger, SongSection } from './services/song-arranger';
+import { loadChordData, generateProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
-import { NormalizedPrompt } from './services/freetext-schema';
 import { authService } from './services/auth-service';
 import './components/app-header';
-import './components/seed-screen';
 import './components/loop-screen';
-import './components/song-screen';
-import './components/play-along-screen';
 import './components/auth-modal';
-import { SongSection } from './components/song-screen';
-
-type Screen = 'seed' | 'loop' | 'song' | 'play-along';
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
-  @state() private screen: Screen = 'loop';
   @state() private libraryOpen = false;
   @state() private genre = 'Pop';
   @state() private mood = 'Dreamy';
@@ -34,24 +22,15 @@ export class ChromaChordsApp extends LitElement {
   @state() private activeIndex = 0;
   @state() private progressStep = 0;
   @state() private order: number[] = [0, 1, 2, 3];
-  @state() private keyOverride: string | null = null;
-  @state() private scaleOverride: string | null = null;
   @state() private playing = false;
   @state() private showTheory = false;
   @state() private instrument: string | null = null;
   @state() private playStyle: string | null = null;
-  @state() private sheetOpen = false;
-  @state() private sheetMode: 'swap' | 'voicing' = 'swap';
-  @state() private swapIndex: number | null = null;
-  @state() private alternatives: Alternative[] = [];
-  @state() private theoryGroups: TheoryGroup[] = [];
-  @state() private borrowedChords: BorrowedChordRow[] = [];
   @state() private length = 4;
   @state() private sections: SongSection[] = [];
   @state() private activeSectionIdx = 0;
   @state() private activePlayingSectionIdx = 0;
   @state() private totalSongSteps = 0;
-  @state() private pendingChordSuggestion: NormalizedPrompt | null = null;
   @state() private userEmail: string | null = null;
   @state() private isAuthenticated = false;
   @state() private syncStatus: SyncStatus = 'sign-in';
@@ -62,7 +41,6 @@ export class ChromaChordsApp extends LitElement {
 
   private currentProjectId: string | null = null;
   private activeSearchPrompt: string | null = null;
-  private previousScreenBeforeSets: Screen = 'loop';
   private unsubscribeAuth: (() => void) | null = null;
   private unsubscribeProjects: (() => void) | null = null;
   private unsubscribeSyncStatus: (() => void) | null = null;
@@ -224,7 +202,6 @@ export class ChromaChordsApp extends LitElement {
         this.order = Array.from({ length: this.length }, (_, i) => i);
         playbackEngine.setProgression(this.progression, this.order);
         this.sections = SongArranger.createInitialSong(this.progression, this.order);
-        this.screen = 'loop';
       }
     }).catch(err => {
       console.error('Failed to load chord data:', err);
@@ -253,9 +230,8 @@ export class ChromaChordsApp extends LitElement {
 
   private onGlobalKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      if (this.sheetOpen) {
-        this.sheetOpen = false;
-        this.swapIndex = null;
+      if (this.libraryOpen) {
+        this.libraryOpen = false;
         this.requestUpdate();
       }
     }
@@ -265,22 +241,6 @@ export class ChromaChordsApp extends LitElement {
     const hash = window.location.hash.replace(/^#/, '').toLowerCase();
     if (hash === 'sets' || hash === '11a') {
       this.libraryOpen = true;
-      this.screen = 'loop';
-    } else if (hash === 'play-along' || hash === '12a') {
-      this.screen = 'play-along';
-    } else if (hash === 'song' || hash === '5a') {
-      this.screen = 'song';
-      if (this.sections.length) playbackEngine.setSong(this.sections);
-    } else {
-      this.screen = 'loop';
-    }
-  }
-
-  private setScreen(nextScreen: Screen) {
-    this.screen = nextScreen;
-    const targetHash = `#${nextScreen}`;
-    if (window.location.hash !== targetHash) {
-      history.pushState(null, '', targetHash);
     }
   }
 
@@ -307,17 +267,13 @@ export class ChromaChordsApp extends LitElement {
     if (this.isGenerating) return;
     this.isGenerating = true;
     try {
-      this.keyOverride = null;
-      this.scaleOverride = null;
-
       const searchTerm = e?.detail?.promptText || this.activeSearchPrompt || undefined;
       const result = await PromptClassifier.resolvePrompt(
         this.chordData,
         this.genre,
         this.mood,
         this.length,
-        searchTerm,
-        this.pendingChordSuggestion
+        searchTerm
       );
 
       if (result.instrument) {
@@ -342,10 +298,8 @@ export class ChromaChordsApp extends LitElement {
       playbackEngine.setProgression(progression, this.order);
       playbackEngine.reset();
 
-      this.setScreen('loop');
       this.sections = SongArranger.createInitialSong(progression, this.order);
       this.activeSectionIdx = 0;
-      this.pendingChordSuggestion = null;
       this.activeSearchPrompt = null;
     } catch (err) {
       console.error('Failed to generate progression:', err);
@@ -363,8 +317,6 @@ export class ChromaChordsApp extends LitElement {
   private regenerate() {
     if (!this.chordData.scales || Object.keys(this.chordData.scales).length === 0) return;
     const progression = generateProgression(this.chordData, this.genre, this.mood, {
-      key: this.keyOverride ?? undefined,
-      scaleType: this.scaleOverride ?? undefined,
       length: this.length,
     });
     this.progression = progression;
@@ -434,7 +386,6 @@ export class ChromaChordsApp extends LitElement {
       playbackEngine.setFeelSettings(p.feel);
     }
     playbackEngine.setProgression(this.progression, this.order);
-    this.setScreen('loop');
     this.sections = SongArranger.createInitialSong(this.progression, this.order);
     this.activeSectionIdx = 0;
     this.showToast(`Loaded "${p.name}"`);
@@ -490,49 +441,6 @@ export class ChromaChordsApp extends LitElement {
   private onTogglePlaySong() {
     playbackEngine.setSong(this.sections);
     this.playing = playbackEngine.togglePlay();
-  }
-
-  private onChordTap(e: CustomEvent<number>) {
-    if (!this.progression) return;
-    if (this.playing) {
-      playbackEngine.stopAutoplay();
-      this.playing = false;
-    }
-    playbackEngine.clearABOverride();
-    this.swapIndex = e.detail;
-    this.sheetMode = 'swap';
-    this.alternatives = generateAlternatives(this.chordData, this.progression, e.detail);
-    this.theoryGroups = generateTheoryGroups(this.chordData, this.progression, e.detail);
-    this.borrowedChords = generateBorrowedChords(this.chordData, this.progression, e.detail);
-    this.sheetOpen = true;
-    playbackEngine.playChordAtIndex(e.detail, 0.8);
-  }
-
-  private onAuditionChord(e: CustomEvent<ChordBlock>) {
-    playbackEngine.auditionChord(e.detail, 0.8);
-  }
-
-  private onSelectAlternative(e: CustomEvent<Alternative>) {
-    if (!this.progression || this.swapIndex === null) return;
-    const alt = e.detail;
-    const oldChords = this.progression.chords;
-    const newChords = [...oldChords];
-    newChords[this.swapIndex] = alt.chord;
-
-    this.progression = {
-      ...this.progression,
-      chords: newChords,
-    };
-    playbackEngine.setProgression(this.progression, this.order);
-    this.sheetOpen = false;
-    this.swapIndex = null;
-    this.showToast(`Swapped in ${alt.chord.name}`);
-  }
-
-  private onSheetClose() {
-    this.sheetOpen = false;
-    this.swapIndex = null;
-    playbackEngine.clearABOverride();
   }
 
   private onProgressionChange(e: CustomEvent<Progression>) {
@@ -637,7 +545,7 @@ export class ChromaChordsApp extends LitElement {
           @request-logout=${this.onLogoutRequest}
           @sync-projects=${this.onSyncProjects}
           @view-sets=${() => { this.libraryOpen = true; }}
-          @brand-click=${() => { this.setScreen('loop'); }}
+          @brand-click=${() => { this.libraryOpen = false; }}
         ></app-header>
       </div>
 

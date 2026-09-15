@@ -1,6 +1,6 @@
 import { playChordForGenre, playSubNote, applyVoicingToNotes, FeelSettings } from './audio-service';
 import { Progression, ChordBlock, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
-import type { SongSection } from '../components/song-screen';
+import type { SongSection } from './song-arranger';
 
 export type PlaybackTickCallback = (
   activeIndex: number,

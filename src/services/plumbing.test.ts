@@ -16,7 +16,6 @@ vi.mock('tone', () => ({
 
 import { normalize } from './freetext-schema';
 import { presetIdToUserInstrumentName, matchRhythmStyleToPlayStyleName } from './audio-service';
-import { CapacityService, CAPACITY_MAX, RECHARGE_INTERVAL_MS } from './capacity-service';
 
 describe('LLM Payload Plumbing & Normalization', () => {
   const fallback = { genre: 'Pop', mood: 'Dreamy' };
@@ -144,77 +143,6 @@ describe('Hash Routing & Navigation Seam', () => {
   });
 });
 
-describe('Capacity Ring & Cooldown Rate Limiting (Ticket 02)', () => {
-  it('calculates restored charges accurately over time intervals', () => {
-    const calculateRestoration = (currentCharges: number, elapsedMs: number) => {
-      const restored = Math.floor(elapsedMs / RECHARGE_INTERVAL_MS);
-      const newCharges = Math.min(CAPACITY_MAX, currentCharges + restored);
-      const remainder = elapsedMs % RECHARGE_INTERVAL_MS;
-      const nextInSec = Math.max(1, Math.ceil((RECHARGE_INTERVAL_MS - remainder) / 1000));
-      return { newCharges, nextInSec };
-    };
-
-    // 0 elapsed -> 0 restored
-    expect(calculateRestoration(0, 0)).toEqual({ newCharges: 0, nextInSec: 45 });
-    // 20 seconds elapsed -> still 0 charges, 25s left
-    expect(calculateRestoration(0, 20000)).toEqual({ newCharges: 0, nextInSec: 25 });
-    // 45 seconds elapsed -> 1 charge restored, 45s left for next
-    expect(calculateRestoration(0, 45000)).toEqual({ newCharges: 1, nextInSec: 45 });
-    // 90 seconds elapsed -> 2 charges restored
-    expect(calculateRestoration(0, 90000)).toEqual({ newCharges: 2, nextInSec: 45 });
-    // 200 seconds elapsed from 0 -> all 4 charges capped
-    expect(calculateRestoration(0, 200000).newCharges).toBe(4);
-  });
-
-  it('manages capacity correctly in CapacityService instance', () => {
-    const service = new CapacityService();
-    expect(service.getCapacityMax()).toBe(4);
-    const initial = service.getCharges();
-    expect(initial).toBeGreaterThanOrEqual(0);
-
-    let observedCharges = -1;
-    const unsub = service.subscribe((st) => {
-      observedCharges = st.charges;
-    });
-    expect(observedCharges).toBe(service.getCharges());
-
-    // Test spending
-    if (service.getCharges() > 0) {
-      const before = service.getCharges();
-      const spent = service.spendCharge();
-      expect(spent).toBe(true);
-      expect(service.getCharges()).toBe(before - 1);
-      expect(observedCharges).toBe(before - 1);
-    }
-    unsub();
-  });
-
-  it('generates 4 discrete segmented conic gradient stops with gaps', () => {
-    const generateSegmentStops = (tokens: number) => {
-      const GAP = 8, SEG = 360 / CAPACITY_MAX;
-      const stops: string[] = [];
-      for (let i = 0; i < CAPACITY_MAX; i++) {
-        const from = i * SEG;
-        stops.push(`${i < tokens ? '#F2A79B' : 'rgba(46,39,31,0.13)'} ${from}deg ${from + SEG - GAP}deg`);
-        stops.push(`transparent ${from + SEG - GAP}deg ${from + SEG}deg`);
-      }
-      return stops;
-    };
-
-    const stops2 = generateSegmentStops(2);
-    expect(stops2).toHaveLength(8);
-    // Segment 1 (filled)
-    expect(stops2[0]).toBe('#F2A79B 0deg 82deg');
-    expect(stops2[1]).toBe('transparent 82deg 90deg');
-    // Segment 2 (filled)
-    expect(stops2[2]).toBe('#F2A79B 90deg 172deg');
-    // Segment 3 (empty)
-    expect(stops2[4]).toBe('rgba(46,39,31,0.13) 180deg 262deg');
-    // Segment 4 (empty)
-    expect(stops2[6]).toBe('rgba(46,39,31,0.13) 270deg 352deg');
-  });
-});
-
 describe('Motion Budget & Accessibility Standards (Ticket 06)', () => {
   it('enforces background drift ambient shape maximum budget <= 3', () => {
     const SHAPE_BUDGET = 3;
@@ -225,31 +153,4 @@ describe('Motion Budget & Accessibility Standards (Ticket 06)', () => {
     const placeholderOpacity = 0.55;
     expect(placeholderOpacity).toBeGreaterThanOrEqual(0.52);
   });
-
-  it('preserves working progression when navigating back from sets screen', () => {
-    let screen = 'loop';
-    let previousScreen = 'seed';
-    let progression: any = { chords: [{ name: 'C' }] };
-
-    // User navigates to sets
-    previousScreen = screen;
-    screen = 'sets';
-    expect(screen).toBe('sets');
-    expect(previousScreen).toBe('loop');
-
-    // User clicks back from sets
-    const onBackFromSets = () => {
-      if (progression) {
-        return previousScreen === 'song' ? 'song' : 'loop';
-      }
-      return 'seed';
-    };
-
-    screen = onBackFromSets();
-    expect(screen).toBe('loop');
-    expect(progression).not.toBeNull();
-  });
 });
-
-
-

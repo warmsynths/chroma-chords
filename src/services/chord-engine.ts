@@ -43,14 +43,6 @@ export interface Progression {
   searchTerm?: string;
 }
 
-export interface Alternative {
-  label: string;
-  sub: string;
-  chord: ChordBlock;
-  functionCaption: string;
-  rationale: string;
-}
-
 export interface TheoryGroupRow {
   name: string;
   roman: string;
@@ -796,23 +788,15 @@ export async function loadChordData(): Promise<RawChordData> {
   const base = (typeof import.meta !== 'undefined' && (import.meta as any).env?.BASE_URL) ? (import.meta as any).env.BASE_URL : '/';
   const cleanBase = base.endsWith('/') ? base : `${base}/`;
   const primaryUrl = `${cleanBase}chroma_chords_data.json`;
-  const fallbackUrl = `${cleanBase}chord_voyager_data.json`;
 
   let res = await fetch(primaryUrl).catch(() => null);
-  if (!res || !res.ok) {
-    res = await fetch(fallbackUrl).catch(() => null);
-  }
   if (!res || !res.ok) {
     res = await fetch('/chroma_chords_data.json').catch(() => null);
   }
   if (!res || !res.ok) {
-    res = await fetch('/chord_voyager_data.json').catch(() => null);
+    res = await fetch('./chroma_chords_data.json').catch(() => null);
   }
-  if (!res || !res.ok) {
-    const dataUrl = new URL('./chroma_chords_data.json', import.meta.url).href;
-    res = await fetch(dataUrl);
-  }
-  if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+  if (!res || !res.ok) throw new Error(`HTTP error: ${res ? res.status : 'failed to fetch chroma_chords_data.json'}`);
   const data = (await res.json()) as RawChordData;
   injectModes(data);
   return data;
@@ -1956,21 +1940,6 @@ export function generateBorrowedChords(data: RawChordData, progression: Progress
     { name: b4.name, sub: `in place of ${c4} · lands sideways, not home`, roman: '♭VII', notes: b4.notes, chord: b4, tension: 0.5 },
   ];
 }
-
-export function generateAlternatives(data: RawChordData, progression: Progression, chordIndex: number): Alternative[] {
-  const groups = generateTheoryGroups(data, progression, chordIndex);
-  return groups.map(g => {
-    const primaryRow = g.rows[0];
-    return {
-      label: g.name,
-      sub: g.sub,
-      chord: primaryRow.chord,
-      functionCaption: `${primaryRow.roman} · ${primaryRow.notes.join(' · ')}`,
-      rationale: primaryRow.sub,
-    };
-  });
-}
-
 
 export type ShareDevice = 'm8' | 'circuit';
 
