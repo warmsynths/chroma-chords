@@ -63,6 +63,10 @@ export class ChordSwapLane extends LitElement {
       font-family: var(--cv-font, sans-serif);
     }
 
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
     .lane-shell {
       position: relative;
       grid-column: 1 / -1;
@@ -156,6 +160,7 @@ export class ChordSwapLane extends LitElement {
 
     .feel-tile {
       border: none;
+      margin: 0;
       font-family: inherit;
       text-align: left;
       cursor: pointer;
@@ -164,7 +169,7 @@ export class ChordSwapLane extends LitElement {
       min-width: 0;
       transition: box-shadow 200ms ease, border-radius 200ms ease, background 200ms ease, transform 140ms ease;
     }
-    .feel-tile:active {
+    .feel-tile:not([data-sel="1"]):active {
       transform: scale(0.98);
     }
 
@@ -195,8 +200,8 @@ export class ChordSwapLane extends LitElement {
       position: absolute;
       z-index: 3;
       top: -11px;
-      height: 14px;
-      transition: left 300ms var(--cv-ease, ease), width 300ms var(--cv-ease, ease), background 200ms ease;
+      height: 15px;
+      transition: left 300ms var(--cv-ease, ease), right 300ms var(--cv-ease, ease), width 300ms var(--cv-ease, ease), background 200ms ease;
     }
 
     .chords-box {
@@ -208,7 +213,7 @@ export class ChordSwapLane extends LitElement {
       flex-wrap: wrap;
       border-radius: 12px;
       padding: 10px 11px;
-      transition: background 200ms ease;
+      transition: background 200ms ease, border-radius 200ms ease;
     }
 
     .chord-pill-btn {
@@ -318,6 +323,23 @@ export class ChordSwapLane extends LitElement {
     const feelCount = Math.max(1, this.feelings.length);
     const feelTrack = `calc((100% - ${7 * (feelCount - 1)}px) / ${feelCount})`;
 
+    const isFirstFeel = feelIdx === 0;
+    const isLastFeel = feelIdx === feelCount - 1;
+
+    let neckPositionStyle = `left: calc(${feelTrack} * ${feelIdx} + ${7 * feelIdx}px); width: ${feelTrack};`;
+    let boxRadius = '12px';
+
+    if (isFirstFeel && isLastFeel) {
+      neckPositionStyle = `left: 0; right: 0; width: 100%;`;
+      boxRadius = '0 0 12px 12px';
+    } else if (isFirstFeel) {
+      neckPositionStyle = `left: 0; width: ${feelTrack};`;
+      boxRadius = '0 12px 12px 12px';
+    } else if (isLastFeel) {
+      neckPositionStyle = `left: auto; right: 0; width: ${feelTrack};`;
+      boxRadius = '12px 0 12px 12px';
+    }
+
     const feelTension = currentFeel?.tension ?? 0.3;
     const feelColor = joinFill(roleForTension(feelTension).color);
 
@@ -382,13 +404,12 @@ export class ChordSwapLane extends LitElement {
               <div
                 class="chords-neck"
                 style="
-                  left: calc(${feelTrack} * ${feelIdx} + ${7 * feelIdx}px);
-                  width: ${feelTrack};
+                  ${neckPositionStyle}
                   background: ${feelColor};
                 "
               ></div>
 
-              <div class="chords-box" style="background: ${feelColor};">
+              <div class="chords-box" style="background: ${feelColor}; border-radius: ${boxRadius};">
                 ${(currentFeel?.rows || []).map((row) => {
                   const on = this.pickedChord?.name === row.name;
                   const rowTension = typeof row.tension === 'number' ? row.tension : feelTension;

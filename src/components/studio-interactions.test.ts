@@ -472,9 +472,35 @@ describe('Studio Component Interactions', () => {
     await el.updateComplete;
 
     // Verify chord-swap-lane exists in main stage pad grid
-    const swapLane = el.shadowRoot?.querySelector('chord-swap-lane') as HTMLElement;
+    const swapLane = el.shadowRoot?.querySelector('chord-swap-lane') as any;
     expect(swapLane).toBeTruthy();
-    expect((swapLane as any).swapIndex).toBe(0);
+    expect(swapLane.swapIndex).toBe(0);
+
+    await swapLane.updateComplete;
+    const chordsBox = swapLane.shadowRoot?.querySelector('.chords-box') as HTMLElement;
+    const chordsNeck = swapLane.shadowRoot?.querySelector('.chords-neck') as HTMLElement;
+
+    const firstFeel = swapLane.feelings[0]?.name;
+    const lastFeel = swapLane.feelings[swapLane.feelings.length - 1]?.name;
+    const middleFeel = swapLane.feelings[1]?.name;
+
+    // First feel (seamless left corner)
+    swapLane.activeFeel = firstFeel;
+    await swapLane.updateComplete;
+    expect(chordsBox.style.borderTopLeftRadius).toBe('0px');
+    expect(chordsNeck.style.left).toBe('0px');
+
+    // Last feel (seamless right corner, e.g. Borrowed)
+    swapLane.activeFeel = lastFeel;
+    await swapLane.updateComplete;
+    expect(chordsBox.style.borderTopRightRadius).toBe('0px');
+    expect(chordsNeck.style.right).toBe('0px');
+
+    // Middle feel (rounded on both top corners)
+    swapLane.activeFeel = middleFeel;
+    await swapLane.updateComplete;
+    expect(chordsBox.style.borderTopLeftRadius).toBe('12px');
+    expect(chordsBox.style.borderTopRightRadius).toBe('12px');
 
     // Verify right inspector shows harmonic context
     const inspector = el.shadowRoot?.querySelector('aside.inspector-right');
