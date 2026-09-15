@@ -53,7 +53,9 @@ describe('SongArranger Deep Module', () => {
     const verseUrl = buildDeviceShareUrl(verseSection.progression, 'm8', verseSection.order);
     const chorusUrl = buildDeviceShareUrl(chorusSection.progression, 'm8', chorusSection.order);
 
+    expect(verseUrl).toContain('m8hyper');
     expect(verseUrl).toContain('?p=C+F+G+Am');
+    expect(chorusUrl).toContain('m8hyper');
     expect(chorusUrl).toContain('?p=G+Am+C+F');
   });
 });

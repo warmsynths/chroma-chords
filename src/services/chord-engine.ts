@@ -1950,7 +1950,7 @@ export type ShareDevice = 'm8' | 'circuit';
 // and humanize state) that isn't part of this rebuild; this keeps the same "?p=" fallback
 // query scheme it used when that package wasn't available — a plain '+'-joined chord list.
 const DEVICE_BASE_URL: Record<ShareDevice, string> = {
-  m8: 'https://warmsynths.github.io/hypersyn-chord-helper/',
+  m8: 'https://warmsynths.github.io/m8hyper/',
   circuit: 'https://warmsynths.github.io/circuit-chords/',
 };
 

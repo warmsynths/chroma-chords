@@ -22,7 +22,7 @@ Opening a DAW, loading heavy virtual instruments, configuring MIDI routings, and
 * **Intuitive Swap Sheet:** Tap any chord card to view harmonic alternative suggestions (*Darker, More tension, Dreamier, Resolve home*) or customize exact voicings and extensions.
 * **Music Theory Made Visual:** Toggle theory mode to see Roman numeral notation, degree functions (*Tonic, Mediant, Dominant, etc.*), interactive staff notation, and harmonic tension maps.
 * **From Loop to Song:** Seamlessly transition from a 4-chord loop into a multi-section song structure (*Intro, Verse, Pre-Chorus, Chorus, Bridge, Outro*).
-* **Instant Hardware & DAW Helpers:** Export progressions directly into MIDI, studio WAV, Dirtywave M8 (`hypersyn-chord-helper`), and Novation Circuit (`circuit-chords`).
+* **Instant Hardware & DAW Helpers:** Export progressions directly into MIDI, studio WAV, Dirtywave M8 (`m8hyper`), and Novation Circuit (`circuit-chords`).
 
 ---
 
@@ -52,7 +52,7 @@ Opening a DAW, loading heavy virtual instruments, configuring MIDI routings, and
 ### ☁️ Cloud Sync & Export Workflows
 * **Standard MIDI (`.mid`) Export:** Download clean MIDI files with accurate velocities, duration, and humanized micro-timing ready for your DAW.
 * **Browser-Rendered WAV (`.wav`) Audio:** Offline 16-bit PCM WAV rendering directly inside the browser matching chosen instrument patches and play styles.
-* **Hardware & Web Share Links:** Generate instant load links for Dirtywave M8 (`hypersyn-chord-helper`), Novation Circuit (`circuit-chords`), and shareable web URLs.
+* **Hardware & Web Share Links:** Generate instant load links for Dirtywave M8 (`m8hyper`), Novation Circuit (`circuit-chords`), and shareable web URLs.
 * **Cloud Accounts & Project Sets:** Authenticate with Supabase to sync progression sets, project bookmarks, and access saved sets anywhere with offline fallback.
 
 ---
