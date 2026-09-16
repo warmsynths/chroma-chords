@@ -2128,6 +2128,10 @@ export class LoopScreen extends LitElement {
     .mobile-circle-btn:active {
       transform: scale(0.96);
     }
+    .mobile-circle-btn.active {
+      background: var(--cv-surface-2, #F1E4CC);
+      box-shadow: inset 0 0 0 2px var(--cv-ink, #2E271F);
+    }
     .mobile-chip-btn {
       border: none;
       font-family: inherit;
@@ -2280,10 +2284,14 @@ export class LoopScreen extends LitElement {
     this.requestUpdate();
   };
 
-  private toggleLibrary = () => {
-    this.libraryOpen = !this.libraryOpen;
-    this.dispatchEvent(new CustomEvent('library-open-change', { detail: this.libraryOpen, bubbles: true, composed: true }));
+  private setLibraryOpen = (open: boolean) => {
+    this.libraryOpen = open;
+    this.dispatchEvent(new CustomEvent('library-open-change', { detail: open, bubbles: true, composed: true }));
     this.requestUpdate();
+  };
+
+  private toggleLibrary = () => {
+    this.setLibraryOpen(!this.libraryOpen);
   };
 
   private toggleLibrarySelectMode = () => {
@@ -4123,7 +4131,7 @@ export class LoopScreen extends LitElement {
                   this.toggleSelectLoop(set.id);
                 } else {
                   this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
-                  this.libraryOpen = false;
+                  this.setLibraryOpen(false);
                 }
               }}
             >
@@ -4152,7 +4160,11 @@ export class LoopScreen extends LitElement {
           `;
         })}
         ${!visible.length ? html`
-          <div style="padding: 12px; font-size: 12px; color: var(--cv-ink-muted); text-align: center;">No loops match that.</div>
+          <div class="library-empty" style="padding: 16px 12px; font-size: 12.5px; line-height: 1.5; color: var(--cv-ink-muted); text-align: center;">
+            ${this.savedSets.length
+              ? 'No loops match that.'
+              : 'Nothing saved yet — tap the bookmark to keep a loop.'}
+          </div>
         ` : ''}
       </div>
     `;
@@ -4164,17 +4176,21 @@ export class LoopScreen extends LitElement {
       <div style="position: fixed; inset: 0; z-index: 80;">
         <div
           style="position: absolute; inset: 0; background: rgba(46, 39, 31, 0.5);"
-          @click=${() => {
-            this.libraryOpen = false;
-            this.dispatchEvent(new CustomEvent('library-open-change', { detail: false, bubbles: true, composed: true }));
-            this.requestUpdate();
-          }}
+          @click=${() => this.setLibraryOpen(false)}
         ></div>
         <div
           class="library-popover library-sheet-mobile"
-          style="position: absolute; left: 0; right: 0; bottom: 0; max-height: 80vh; overflow-y: auto; z-index: 81; background: var(--cv-cream, #FBF3E6); border-radius: 26px 26px 0 0; padding: 14px 18px 24px; box-shadow: 0 -20px 44px -26px rgba(46, 39, 31, 0.5); animation: cvfv-sheet-up 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)); box-sizing: border-box;"
+          style="position: absolute; left: 0; right: 0; bottom: 0; max-height: 80vh; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; z-index: 81; background: var(--cv-cream, #FBF3E6); border-radius: 26px 26px 0 0; padding: 14px 18px max(24px, calc(14px + env(safe-area-inset-bottom, 0px))); box-shadow: 0 -20px 44px -26px rgba(46, 39, 31, 0.5); animation: cvfv-sheet-up 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)); box-sizing: border-box;"
         >
-          <div style="width: 38px; height: 4px; border-radius: 3px; background: rgba(46, 39, 31, 0.18); margin: 0 auto 13px;"></div>
+          <div style="position: relative; display: flex; align-items: center; justify-content: center; min-height: 34px; margin-bottom: 8px;">
+            <div style="width: 38px; height: 4px; border-radius: 3px; background: rgba(46, 39, 31, 0.18);"></div>
+            <button
+              class="library-sheet-done"
+              @click=${() => this.setLibraryOpen(false)}
+              style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); border: none; font-family: inherit; background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink); border-radius: 100px; padding: 8px 14px; font-size: 12px; font-weight: 800; cursor: pointer;"
+              aria-label="Close your loops"
+            >Done</button>
+          </div>
           ${this.renderLibraryPopoverContent(moodColor)}
         </div>
       </div>
@@ -4532,7 +4548,12 @@ export class LoopScreen extends LitElement {
             <button aria-label="Keep this loop" class="mobile-circle-btn" @click=${() => this.dispatchEvent(new CustomEvent('save-set', { bubbles: true, composed: true }))}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
             </button>
-            <button aria-label="Loops library" class="mobile-circle-btn" @click=${() => this.libraryOpen = !this.libraryOpen}>
+            <button
+              aria-label="Your loops"
+              aria-expanded=${this.libraryOpen ? 'true' : 'false'}
+              class="mobile-circle-btn library-toggle ${this.libraryOpen ? 'active' : ''}"
+              @click=${this.toggleLibrary}
+            >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M19 4v10l-2.4-1.6L14.2 14V4z" fill="#2E271F" stroke="none"/></svg>
             </button>
             <button aria-label="Share this loop" class="mobile-circle-btn" @click=${() => this.shareOpen = true}>

@@ -313,6 +313,85 @@ describe('Studio Component Interactions', () => {
     document.body.removeChild(el);
   });
 
+  it('mobile loops button opens the sheet and keeps the host in sync', async () => {
+    (window as any).innerWidth = 390;
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const openChanges: boolean[] = [];
+    el.addEventListener('library-open-change', ((e: CustomEvent<boolean>) => {
+      openChanges.push(e.detail);
+    }) as EventListener);
+
+    const loopsBtn = el.shadowRoot?.querySelector(
+      '.mobile-bottom-transport-bar button[aria-label="Your loops"]'
+    ) as HTMLButtonElement;
+    expect(loopsBtn).toBeTruthy();
+    expect(loopsBtn.getAttribute('aria-expanded')).toBe('false');
+    expect(el.shadowRoot?.querySelector('.library-sheet-mobile')).toBeFalsy();
+
+    // Opening reports the new state to the host so header/toast entry points stay in sync.
+    loopsBtn.click();
+    await el.updateComplete;
+    expect(el.libraryOpen).toBe(true);
+    expect(openChanges).toEqual([true]);
+    expect(el.shadowRoot?.querySelector('.library-sheet-mobile')).toBeTruthy();
+    expect(loopsBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(loopsBtn.classList.contains('active')).toBe(true);
+
+    // The sheet covers the transport bar, so it carries its own close control.
+    const doneBtn = el.shadowRoot?.querySelector('.library-sheet-done') as HTMLButtonElement;
+    expect(doneBtn).toBeTruthy();
+    doneBtn.click();
+    await el.updateComplete;
+    expect(el.libraryOpen).toBe(false);
+    expect(openChanges).toEqual([true, false]);
+    expect(el.shadowRoot?.querySelector('.library-sheet-mobile')).toBeFalsy();
+
+    // A host-driven open (account menu "Your sets", save toast "View") still works afterwards.
+    el.libraryOpen = true;
+    await el.updateComplete;
+    expect(el.shadowRoot?.querySelector('.library-sheet-mobile')).toBeTruthy();
+
+    // Loading a loop closes the sheet and reports it too.
+    (el as any).savedSets = [{ id: 'loop-1', name: 'Chill Beats', genre: 'Lofi', mood: 'Warm', chords: [] }];
+    el.requestUpdate();
+    await el.updateComplete;
+    const item = el.shadowRoot?.querySelector('.library-sheet-mobile .library-loop-item') as HTMLElement;
+    expect(item).toBeTruthy();
+    item.click();
+    await el.updateComplete;
+    expect(el.libraryOpen).toBe(false);
+    expect(openChanges).toEqual([true, false, false]);
+
+    document.body.removeChild(el);
+    (window as any).innerWidth = 1024;
+  });
+
+  it('shows a first-run empty state when no loops are saved yet', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    el.libraryOpen = true;
+    document.body.appendChild(el);
+    (el as any).savedSets = [];
+    el.requestUpdate();
+    await el.updateComplete;
+
+    const empty = el.shadowRoot?.querySelector('.library-empty');
+    expect(empty?.textContent).toContain('Nothing saved yet');
+
+    // With loops saved, a search miss keeps the original wording.
+    (el as any).savedSets = [{ id: 'loop-1', name: 'Chill Beats', genre: 'Lofi', mood: 'Warm', chords: [] }];
+    (el as any).librarySearch = 'zzzz';
+    el.requestUpdate();
+    await el.updateComplete;
+    expect(el.shadowRoot?.querySelector('.library-empty')?.textContent).toContain('No loops match that.');
+
+    document.body.removeChild(el);
+  });
+
   it('renders interactive progression pads and triggers pad hold/play', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;
