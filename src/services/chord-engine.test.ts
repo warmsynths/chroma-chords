@@ -10,6 +10,7 @@ import {
   alignChordsToScale,
   transposeProgression,
   buildDeviceShareUrl,
+  applyVoicingToChord,
   RawChordData,
   Progression,
   ChordBlock,
@@ -374,6 +375,71 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
       expect(url).toContain('?p=Ebmaj9+Cm7+Fm9+Bb7');
       expect(url).not.toContain('v=');
       expect(url).not.toContain('key=');
+    });
+  });
+
+  describe('applyVoicingToChord: Preserving Harmonic Tension & Color', () => {
+    const baseChord: ChordBlock = {
+      name: 'C',
+      degree: 'TONIC',
+      roman: 'I',
+      tension: 0.04,
+      color: '#9cc0ec',
+      functionLabel: 'Tonic',
+      notes: ['C4', 'E4', 'G4'],
+      scaleKey: 'C',
+      scaleLabel: 'C Major',
+      desc: 'Tonic',
+      tag: 'home',
+    };
+
+    it('updates name and notes for 7th extension while preserving tonic tension and color', () => {
+      const extended = applyVoicingToChord(baseChord, 'Major', '7th (dom / m7)');
+      expect(extended.name).toBe('C7');
+      expect(extended.roman).toBe('I7');
+      expect(extended.notes).toEqual(['C', 'E', 'G', 'A#']);
+      expect(extended.tension).toBe(0.04);
+      expect(extended.color).toBe('#9cc0ec');
+    });
+
+    it('updates name and notes for Major 7th extension while preserving tonic tension and color', () => {
+      const extended = applyVoicingToChord(baseChord, 'Major', 'Major 7th (M7)');
+      expect(extended.name).toBe('Cmaj7');
+      expect(extended.roman).toBe('Imaj7');
+      expect(extended.notes).toEqual(['C', 'E', 'G', 'B']);
+      expect(extended.tension).toBe(0.04);
+      expect(extended.color).toBe('#9cc0ec');
+    });
+
+    it('updates name and notes for 9th extension while preserving tonic tension and color', () => {
+      const extended = applyVoicingToChord(baseChord, 'Major', '9th');
+      expect(extended.name).toBe('C9');
+      expect(extended.notes).toEqual(['C', 'E', 'G', 'A#', 'D']);
+      expect(extended.tension).toBe(0.04);
+      expect(extended.color).toBe('#9cc0ec');
+    });
+
+    it('retains baseline tension and color when resetting extension to None', () => {
+      const extended = applyVoicingToChord(baseChord, 'Major', '9th');
+      const resetChord = applyVoicingToChord(extended, 'Major', 'None');
+      expect(resetChord.name).toBe('C');
+      expect(resetChord.roman).toBe('I');
+      expect(resetChord.tension).toBe(0.04);
+      expect(resetChord.color).toBe('#9cc0ec');
+    });
+
+    it('recovers pristine tension from initialChord if previous chord was mutated', () => {
+      const corruptedChord: ChordBlock = {
+        ...baseChord,
+        name: 'Cmaj9',
+        tension: 2.5,
+        color: '#f2735f',
+        initialChord: baseChord,
+      };
+
+      const fixed = applyVoicingToChord(corruptedChord, 'Major', 'None');
+      expect(fixed.tension).toBe(0.04);
+      expect(fixed.color).toBe('#9cc0ec');
     });
   });
 });

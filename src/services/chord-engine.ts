@@ -1750,13 +1750,8 @@ export function applyVoicingToChord(chord: ChordBlock, quality: string, extensio
     }
   }
 
-  let tension = chord.tension ?? 1;
-  if (quality === 'Diminished') tension = Math.max(tension, 3);
-  else if (quality === 'Suspended (sus)') tension = Math.max(tension, 2);
-  else if (extension === '7th (dom / m7)') tension = Math.max(tension, 2.5);
-  else if (extension === '9th' || extension === 'Major 7th (M7)') tension = Math.max(tension, 2);
-
-  const color = colorForTension(tension);
+  const tension = chord.initialChord?.tension ?? chord.tension ?? 0.1;
+  const color = chord.initialChord?.color ?? chord.color ?? colorForTension(tension);
 
   return {
     ...chord,

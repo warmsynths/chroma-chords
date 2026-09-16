@@ -610,6 +610,8 @@ describe('Studio Component Interactions', () => {
     expect(el.progression.chords[0].name).toBe('Cmaj9');
     expect(el.progression.chords[0].voicing).toBe('up an octave');
     expect(el.progression.chords[0].initialChord?.name).toBe('C');
+    expect(el.progression.chords[0].tension).toBe(0.1);
+    expect(el.progression.chords[0].color).toBe('#F2A79B');
 
     document.body.removeChild(el);
   });
