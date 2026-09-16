@@ -134,7 +134,7 @@ const ROLE_PLAIN: Record<string, string> = {
 
 const ROLE_SHORT: Record<string, string> = ROLE_PLAIN;
 
-const PAD_KEYS = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K'];
+const PAD_KEYS = ['A', 'S', 'D', 'F', 'Z', 'X', 'C', 'V'];
 const ZONE_NAMES = ['Octave up', '1st inversion', 'Low root'];
 
 function zoneForVoicing(v?: string): number {
@@ -2234,6 +2234,7 @@ export class LoopScreen extends LitElement {
       }
       return;
     }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const idx = PAD_KEYS.map(k => k.toLowerCase()).indexOf((e.key || '').toLowerCase());
     const chords = this.progression?.chords || [];
     if (idx >= 0 && idx < chords.length) {
@@ -2266,6 +2267,7 @@ export class LoopScreen extends LitElement {
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const idx = PAD_KEYS.map(k => k.toLowerCase()).indexOf((e.key || '').toLowerCase());
     if (idx >= 0) {
       this.padFlash = -1;
@@ -3962,7 +3964,7 @@ export class LoopScreen extends LitElement {
         </button>
 
         <div class="pad-top-row" style="display: flex; align-items: center; gap: 6px;">
-          <div style="display: inline-flex; align-items: flex-start; justify-content: center; width: 20px; height: 20px; padding: 1.5px 1.5px 3.5px; border-radius: 5px; background: rgba(46,39,31,0.16); box-shadow: 0 1px 0 rgba(46,39,31,0.18); flex-shrink: 0;">
+          <div class="pad-key-badge" style="display: inline-flex; align-items: flex-start; justify-content: center; width: 20px; height: 20px; padding: 1.5px 1.5px 3.5px; border-radius: 5px; background: rgba(46,39,31,0.16); box-shadow: 0 1px 0 rgba(46,39,31,0.18); flex-shrink: 0;">
             <span style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 3.5px; background: rgba(255,255,255,0.62); box-shadow: inset 0 -1px 0 rgba(46,39,31,0.12); font-size: 10.5px; font-weight: 800; color: #2E271F;">${(PAD_KEYS[i] || '').toUpperCase()}</span>
           </div>
           ${this.showTheory && c.roman ? html`<span class="pad-roman-badge">${c.roman}</span>` : ''}

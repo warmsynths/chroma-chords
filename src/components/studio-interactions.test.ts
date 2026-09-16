@@ -759,5 +759,62 @@ describe('Studio Component Interactions', () => {
 
     document.body.removeChild(el);
   });
+
+  it('triggers chords 5, 6, 7, 8 using keys z, x, c, v and renders correct badges', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    const eightChords = [
+      { name: 'C', tag: 'I', roman: 'I', color: '#F2A79B', functionLabel: 'Tonic', notes: ['C4', 'E4', 'G4'], scaleLabel: 'C Maj', desc: '', degree: '1', scaleKey: 'C', tension: 0.1 },
+      { name: 'G', tag: 'V', roman: 'V', color: '#F6D98B', functionLabel: 'Dominant', notes: ['G4', 'B4', 'D5'], scaleLabel: 'G Maj', desc: '', degree: '5', scaleKey: 'G', tension: 0.8 },
+      { name: 'Am', tag: 'vi', roman: 'vi', color: '#9CC0EC', functionLabel: 'Submediant', notes: ['A4', 'C5', 'E5'], scaleLabel: 'A Min', desc: '', degree: '6', scaleKey: 'A', tension: 0.3 },
+      { name: 'F', tag: 'IV', roman: 'IV', color: '#C9A9E0', functionLabel: 'Subdominant', notes: ['F4', 'A4', 'C5'], scaleLabel: 'F Maj', desc: '', degree: '4', scaleKey: 'F', tension: 0.4 },
+      { name: 'Dm', tag: 'ii', roman: 'ii', color: '#F2A79B', functionLabel: 'Supertonic', notes: ['D4', 'F4', 'A4'], scaleLabel: 'D Min', desc: '', degree: '2', scaleKey: 'D', tension: 0.3 },
+      { name: 'Em', tag: 'iii', roman: 'iii', color: '#F6D98B', functionLabel: 'Mediant', notes: ['E4', 'G4', 'B4'], scaleLabel: 'E Min', desc: '', degree: '3', scaleKey: 'E', tension: 0.4 },
+      { name: 'Fmaj7', tag: 'IV', roman: 'IV', color: '#C9A9E0', functionLabel: 'Subdominant', notes: ['F4', 'A4', 'C5', 'E5'], scaleLabel: 'F Maj', desc: '', degree: '4', scaleKey: 'F', tension: 0.5 },
+      { name: 'G7', tag: 'V', roman: 'V', color: '#F6D98B', functionLabel: 'Dominant', notes: ['G4', 'B4', 'D5', 'F5'], scaleLabel: 'G Maj', desc: '', degree: '5', scaleKey: 'G', tension: 0.9 },
+    ];
+    el.progression = {
+      ...sampleProgression,
+      chords: eightChords,
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    // Check badges for all 8 pads
+    const badges = el.shadowRoot?.querySelectorAll('.pad-cell .pad-key-badge span');
+    expect(badges?.length).toBe(8);
+    const expectedKeys = ['A', 'S', 'D', 'F', 'Z', 'X', 'C', 'V'];
+    badges?.forEach((badge, idx) => {
+      expect(badge.textContent?.trim()).toBe(expectedKeys[idx]);
+    });
+
+    const { playbackEngine } = await import('../services/playback-engine');
+    const playNotesSpy = vi.spyOn(playbackEngine, 'playChordNotes');
+
+    // Test keys 'z', 'x', 'c', 'v' trigger chords 4, 5, 6, 7
+    const testKeys = ['z', 'x', 'c', 'v'];
+    for (let k = 0; k < testKeys.length; k++) {
+      playNotesSpy.mockClear();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: testKeys[k] }));
+      await el.updateComplete;
+
+      expect(playNotesSpy).toHaveBeenCalledTimes(1);
+      expect(playNotesSpy).toHaveBeenCalledWith(
+        eightChords[4 + k].notes,
+        0.85,
+        expect.anything(),
+        expect.any(Number)
+      );
+    }
+
+    // Test modifier keys are ignored (e.g. Ctrl+Z, Ctrl+C should not trigger chord playback)
+    playNotesSpy.mockClear();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', metaKey: true }));
+    await el.updateComplete;
+    expect(playNotesSpy).not.toHaveBeenCalled();
+
+    document.body.removeChild(el);
+  });
 });
+
 

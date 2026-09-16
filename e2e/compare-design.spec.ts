@@ -117,7 +117,7 @@ test.describe('Visual & Structural Parity: App vs Design Mockup', () => {
     for (let i = 0; i < appMetrics.padsData.length; i++) {
       expect(appMetrics.padsData[i].borderRadius).toBe('20px');
       const keyLabel = appMetrics.padsData[i].text[0];
-      expect(['A', 'S', 'D', 'F']).toContain(keyLabel);
+      expect(['A', 'S', 'D', 'F', 'Z', 'X', 'C', 'V']).toContain(keyLabel);
     }
   });
 
