@@ -395,7 +395,6 @@ export class LoopScreen extends LitElement {
   @state() auditionBar: number = 0;
 
   private gridTimer: number | null = null;
-  private lastCenterTap: { index: number; time: number } | null = null;
   private pendingLatch: {
     index: number;
     reach?: number;
@@ -2243,7 +2242,6 @@ export class LoopScreen extends LitElement {
     let voicing = chord.voicing || '1st inversion';
     let zone = zoneForVoicing(voicing);
     let reach: number | undefined = undefined;
-    let isCenter = false;
 
     const lad = this.getChordLadder(chord);
     const rung = this.getLadderHome(chord);
@@ -2253,61 +2251,24 @@ export class LoopScreen extends LitElement {
       const xRatio = Math.min(0.999, Math.max(0, (e.clientX - rect.left) / (rect.width || 1)));
       const yRatio = Math.min(0.999, Math.max(0, (e.clientY - rect.top) / (rect.height || 1)));
 
-      isCenter = xRatio >= 0.25 && xRatio <= 0.75 && yRatio >= 0.33 && yRatio <= 0.67;
-
-      if (!isCenter) {
-        if (yRatio < 0.34) {
-          zone = 0;
-          voicing = 'up an octave';
-        } else if (yRatio > 0.67) {
-          zone = 2;
-          voicing = 'low, root position';
-        } else {
-          zone = 1;
-          voicing = '1st inversion';
-        }
-
-        if (lad.length > 0) {
-          reach = Math.min(lad.length - 1, Math.floor(xRatio * lad.length));
-        }
+      if (yRatio < 0.34) {
+        zone = 0;
+        voicing = 'up an octave';
+      } else if (yRatio > 0.67) {
+        zone = 2;
+        voicing = 'low, root position';
+      } else {
+        zone = 1;
+        voicing = '1st inversion';
       }
-    }
 
-    const now = Date.now();
-
-    // Check double-click in center sweet spot
-    if (isCenter && this.lastCenterTap && this.lastCenterTap.index === index && (now - this.lastCenterTap.time) < 350) {
-      // Tap 2: SILENT REVERT
-      this.lastCenterTap = null;
-      this.pendingLatch = null;
-
-      if (chord.initialChord) {
-        const updatedChords = [...chords];
-        const restored = { ...chord.initialChord };
-        delete restored.initialChord;
-        updatedChords[index] = restored;
-
-        const newProg = { ...this.progression, chords: updatedChords };
-        this.progression = newProg;
-        this.dispatchEvent(new CustomEvent('progression-change', {
-          detail: newProg,
-          bubbles: true,
-          composed: true,
-        }));
-        playbackEngine.setProgression(newProg, this.order);
-
-        this.padFlash = -1;
-        this.padHeld = -1;
-        this.lastPad = null;
-        this.requestUpdate();
-        return; // Silent revert: no audio trigger
+      if (lad.length > 0) {
+        reach = Math.min(lad.length - 1, Math.floor(xRatio * lad.length));
       }
-    }
 
-    if (isCenter) {
-      this.lastCenterTap = { index, time: now };
-    } else {
-      this.lastCenterTap = null;
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      } catch (_) {}
     }
 
     const targetChordName = (reach !== undefined && lad[reach]) ? lad[reach] : chord.name;
@@ -2330,21 +2291,71 @@ export class LoopScreen extends LitElement {
 
     playbackEngine.playChordNotes(notes, 0.85, voicing, vel);
 
-    if (!isCenter && (reach !== undefined || voicing !== (chord.voicing || '1st inversion'))) {
-      this.pendingLatch = {
-        index,
-        reach,
-        voicing,
-        targetChordName,
-      };
-    } else {
-      this.pendingLatch = null;
-    }
+    this.pendingLatch = {
+      index,
+      reach,
+      voicing,
+      targetChordName,
+    };
 
     this.requestUpdate();
   }
 
-  private handlePadPointerUp() {
+  private handlePadPointerMove(e: PointerEvent, index: number) {
+    if (this.padHeld !== index) return;
+    const chords = this.progression?.chords;
+    const chord = chords ? chords[index] : null;
+    if (!chord) return;
+
+    if (e.currentTarget && typeof (e.currentTarget as HTMLElement).getBoundingClientRect === 'function') {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const xRatio = Math.min(0.999, Math.max(0, (e.clientX - rect.left) / (rect.width || 1)));
+      const yRatio = Math.min(0.999, Math.max(0, (e.clientY - rect.top) / (rect.height || 1)));
+
+      let zone = 1;
+      let voicing = '1st inversion';
+      if (yRatio < 0.34) {
+        zone = 0;
+        voicing = 'up an octave';
+      } else if (yRatio > 0.67) {
+        zone = 2;
+        voicing = 'low, root position';
+      }
+
+      const lad = this.getChordLadder(chord);
+      const rung = this.getLadderHome(chord);
+      const reach = lad.length > 0 ? Math.min(lad.length - 1, Math.floor(xRatio * lad.length)) : undefined;
+
+      const targetChordName = (reach !== undefined && lad[reach]) ? lad[reach] : chord.name;
+      const showsReach = reach !== undefined && reach !== rung && !!lad[reach];
+
+      if (this.pendingLatch?.reach !== reach || this.pendingLatch?.voicing !== voicing) {
+        this.pendingLatch = {
+          index,
+          reach,
+          voicing,
+          targetChordName,
+        };
+
+        const key = this.progression?.key || 'C';
+        const scaleType = this.progression?.scaleType || 'MAJOR';
+        const notes = notesForSymbol(targetChordName, preferFlatSpelling(key, scaleType));
+        const vel = 88 + (index % 3) * 6;
+        const meta = showsReach ? ('→ ' + targetChordName) : (zone === 0 ? 'UP AN OCTAVE' : (zone === 1 ? '1ST INVERSION' : 'ROOT POSITION'));
+        this.lastPad = { idx: index, voicing, vel, zone, reach, meta };
+
+        playbackEngine.playChordNotes(notes, 0.65, voicing, vel);
+        this.requestUpdate();
+      }
+    }
+  }
+
+  private handlePadPointerUp(e?: PointerEvent) {
+    if (e && e.currentTarget) {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+      } catch (_) {}
+    }
     this.padFlash = -1;
     this.padHeld = -1;
     if (this.gridTimer) {
@@ -2387,7 +2398,12 @@ export class LoopScreen extends LitElement {
           if (voicing) {
             updated.voicing = voicing;
           }
-          updated.initialChord = initialChord;
+
+          if (updated.name === initialChord.name && (!initialChord.voicing || updated.voicing === initialChord.voicing)) {
+            delete updated.initialChord;
+          } else {
+            updated.initialChord = initialChord;
+          }
 
           const updatedChords = [...this.progression.chords];
           updatedChords[index] = updated;
@@ -3720,9 +3736,10 @@ export class LoopScreen extends LitElement {
         role="button"
         aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || c.functionLabel} — press to play it; press nearer the top for a higher voicing"
         @pointerdown=${(e: PointerEvent) => this.handlePadPointerDown(e, i)}
-        @pointerup=${() => this.handlePadPointerUp()}
-        @pointercancel=${() => this.handlePadPointerUp()}
-        @pointerleave=${() => this.handlePadPointerUp()}
+        @pointermove=${(e: PointerEvent) => this.handlePadPointerMove(e, i)}
+        @pointerup=${(e: PointerEvent) => this.handlePadPointerUp(e)}
+        @pointercancel=${(e: PointerEvent) => this.handlePadPointerUp(e)}
+        @pointerleave=${(e: PointerEvent) => this.handlePadPointerUp(e)}
       >
         <div class="pad-voicing-grid ${this.gridFor === i ? 'active' : ''}">
           ${lad.slice(1).map((_, li) => html`

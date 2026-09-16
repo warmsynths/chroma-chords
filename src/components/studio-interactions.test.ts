@@ -616,7 +616,7 @@ describe('Studio Component Interactions', () => {
     document.body.removeChild(el);
   });
 
-  it('silently reverts latched chord to baseline on double-click in center', async () => {
+  it('latches to another zone when pressing another zone on a locked chord', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = {
       ...sampleProgression,
@@ -639,23 +639,22 @@ describe('Studio Component Interactions', () => {
     expect(el.progression.chords[0].name).toBe('Cmaj9');
     expect(el.progression.chords[0].initialChord?.name).toBe('C');
 
-    // Tap 1 in the center sweet spot (x=100, y=75)
+    // Press on Zone 2 (x=100, y=75 -> 7th / C7)
     pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 75, bubbles: true, composed: true }));
     pad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
     await el.updateComplete;
 
-    // Tap 2 in the center sweet spot (double-click within 200ms)
-    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 75, bubbles: true, composed: true }));
-    await el.updateComplete;
-
-    // Chord should be reverted to baseline 'C'
-    expect(el.progression.chords[0].name).toBe('C');
-    expect(el.progression.chords[0].initialChord).toBeUndefined();
+    // Chord should now be latched to C7
+    expect(el.progression.chords[0].name).toBe('C7');
+    expect(el.progression.chords[0].voicing).toBe('1st inversion');
+    expect(el.progression.chords[0].initialChord?.name).toBe('C');
+    expect(el.progression.chords[0].tension).toBe(0.1);
+    expect(el.progression.chords[0].color).toBe('#F2A79B');
 
     document.body.removeChild(el);
   });
 
-  it('plays current chord without altering extension on single click in center', async () => {
+  it('latches back to baseline triad when pressing zone 0 on a locked chord', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = {
       ...sampleProgression,
@@ -677,13 +676,49 @@ describe('Studio Component Interactions', () => {
     await el.updateComplete;
     expect(el.progression.chords[0].name).toBe('Cmaj9');
 
-    // Single click in center sweet spot (x=100, y=75)
-    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 100, clientY: 75, bubbles: true, composed: true }));
+    // Press on Zone 0 (x=20, y=75 -> root triad C)
+    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 20, clientY: 75, bubbles: true, composed: true }));
     pad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
     await el.updateComplete;
 
-    // Chord remains Cmaj9
-    expect(el.progression.chords[0].name).toBe('Cmaj9');
+    // Chord should latch back to baseline C
+    expect(el.progression.chords[0].name).toBe('C');
+    expect(el.progression.chords[0].voicing).toBe('1st inversion');
+    expect(el.progression.chords[0].initialChord).toBeUndefined();
+
+    document.body.removeChild(el);
+  });
+
+  it('slides across zones and latches target zone on pointerup', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = {
+      ...sampleProgression,
+      chords: sampleProgression.chords.map(c => ({ ...c })),
+    };
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const pad = el.shadowRoot?.querySelector('.pad-cells-grid .pad-cell') as HTMLElement;
+    expect(pad).toBeTruthy();
+
+    pad.getBoundingClientRect = () => ({
+      left: 0, top: 0, width: 200, height: 150, right: 200, bottom: 150, x: 0, y: 0, toJSON: () => {}
+    } as DOMRect);
+
+    // Pointer down at Zone 1 (x=60, y=75 -> C6)
+    pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: 60, clientY: 75, bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Slide pointer across to Zone 3 (x=140, y=75 -> Cmaj7)
+    pad.dispatchEvent(new PointerEvent('pointermove', { clientX: 140, clientY: 75, bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Release pointer
+    pad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
+    await el.updateComplete;
+
+    // Chord should latch to Cmaj7
+    expect(el.progression.chords[0].name).toBe('Cmaj7');
 
     document.body.removeChild(el);
   });
