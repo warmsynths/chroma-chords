@@ -11,6 +11,13 @@ import {
   analyzeVoiceLeading, VoiceLeadingLink,
   PITCH_CLASS,
   transposeProgression,
+  shiftProgressionScale,
+  SCALE_LABEL,
+  SCALE_ABBREV,
+  SCALE_DEGREE_NAMES,
+  SCALE_DEGREE_SEMITONES,
+  SCALE_DEGREE_QUALITIES,
+  ROMAN_BY_SCALE,
 } from '../services/chord-engine';
 import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
@@ -193,6 +200,116 @@ export const FEEL_DEFAULTS = { swing: 0, spread: 50, density: 50, tone: 'Warm' }
 export const TONES = ['Warm', 'Glassy', 'Dusty'];
 export const KEYS = ['C min', 'A min', 'F min', 'D min', 'G min', 'E♭ maj', 'C maj', 'G maj', 'F maj'];
 export const SCALE_NOTE_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+
+export interface RootOption {
+  root: string;
+  label: string;
+}
+
+export const ROOT_OPTIONS: RootOption[] = [
+  { root: 'C', label: 'C' },
+  { root: 'Db', label: 'C♯ / D♭' },
+  { root: 'D', label: 'D' },
+  { root: 'Eb', label: 'D♯ / E♭' },
+  { root: 'E', label: 'E' },
+  { root: 'F', label: 'F' },
+  { root: 'F#', label: 'F♯ / G♭' },
+  { root: 'G', label: 'G' },
+  { root: 'Ab', label: 'G♯ / A♭' },
+  { root: 'A', label: 'A' },
+  { root: 'Bb', label: 'A♯ / B♭' },
+  { root: 'B', label: 'B' },
+];
+
+export interface ScaleOption {
+  type: string;
+  label: string;
+  abbrev: string;
+}
+
+export const SCALE_OPTIONS: ScaleOption[] = [
+  { type: 'MAJOR', label: 'Major', abbrev: 'Maj' },
+  { type: 'NATURAL_MINOR', label: 'Minor', abbrev: 'Min' },
+  { type: 'DORIAN', label: 'Dorian', abbrev: 'Dor' },
+  { type: 'MIXOLYDIAN', label: 'Mixolydian', abbrev: 'Mix' },
+  { type: 'LYDIAN', label: 'Lydian', abbrev: 'Lyd' },
+  { type: 'PHRYGIAN', label: 'Phrygian', abbrev: 'Phr' },
+  { type: 'HARMONIC_MINOR', label: 'Harmonic Min', abbrev: 'Harm' },
+  { type: 'MELODIC_MINOR', label: 'Melodic Min', abbrev: 'Mel' },
+  { type: 'LOCRIAN', label: 'Locrian', abbrev: 'Loc' },
+];
+
+const THEORY_SCALES: Record<string, {
+  steps: number[];
+  romans: string[];
+  quals: string[];
+  fns: string[];
+  name: string;
+}> = {
+  MAJOR: {
+    steps: [0, 2, 4, 5, 7, 9, 11],
+    romans: ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'],
+    quals: ['', 'm', 'm', '', '', 'm', 'dim'],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Leading tone'],
+    name: 'major',
+  },
+  NATURAL_MINOR: {
+    steps: [0, 2, 3, 5, 7, 8, 10],
+    romans: ['i', 'ii°', '♭III', 'iv', 'v', '♭VI', '♭VII'],
+    quals: ['m', 'dim', '', 'm', 'm', '', ''],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Subtonic'],
+    name: 'natural minor',
+  },
+  DORIAN: {
+    steps: [0, 2, 3, 5, 7, 9, 10],
+    romans: ['i', 'ii', '♭III', 'IV', 'v', 'vi°', '♭VII'],
+    quals: ['m', 'm', '', '', 'm', 'dim', ''],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Subtonic'],
+    name: 'Dorian',
+  },
+  PHRYGIAN: {
+    steps: [0, 1, 3, 5, 7, 8, 10],
+    romans: ['i', '♭II', '♭III', 'iv', 'v°', '♭VI', '♭vii'],
+    quals: ['m', '', '', 'm', 'dim', '', 'm'],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Subtonic'],
+    name: 'Phrygian',
+  },
+  LYDIAN: {
+    steps: [0, 2, 4, 6, 7, 9, 11],
+    romans: ['I', 'II', 'iii', 'iv°', 'V', 'vi', 'vii'],
+    quals: ['', '', 'm', 'dim', '', 'm', 'm'],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Leading tone'],
+    name: 'Lydian',
+  },
+  MIXOLYDIAN: {
+    steps: [0, 2, 4, 5, 7, 9, 10],
+    romans: ['I', 'ii', 'iii°', 'IV', 'v', 'vi', '♭VII'],
+    quals: ['', 'm', 'dim', '', 'm', 'm', ''],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Subtonic'],
+    name: 'Mixolydian',
+  },
+  LOCRIAN: {
+    steps: [0, 1, 3, 5, 6, 8, 10],
+    romans: ['i°', '♭II', '♭iii', 'iv', '♭V', '♭VI', '♭vii'],
+    quals: ['dim', '', 'm', 'm', '', '', 'm'],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Subtonic'],
+    name: 'Locrian',
+  },
+  HARMONIC_MINOR: {
+    steps: [0, 2, 3, 5, 7, 8, 11],
+    romans: ['i', 'ii°', '♭III+', 'iv', 'V', '♭VI', 'vii°'],
+    quals: ['m', 'dim', 'aug', 'm', '', '', 'dim'],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Leading tone'],
+    name: 'Harmonic minor',
+  },
+  MELODIC_MINOR: {
+    steps: [0, 2, 3, 5, 7, 9, 11],
+    romans: ['i', 'ii', '♭III+', 'IV', 'V', 'vi°', 'vii°'],
+    quals: ['m', 'm', 'aug', '', '', 'dim', 'dim'],
+    fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Leading tone'],
+    name: 'Melodic minor',
+  },
+};
 
 export const GROUP_NOTES: Record<string, [string, string]> = {
   Darker: [
@@ -383,7 +500,6 @@ export class LoopScreen extends LitElement {
   @state() private expandedInstrument = false;
   @state() private expandedPlayStyle = false;
   @state() barsPerChord = 1;
-  @state() keyIdx = 0;
   @state() swing = 0;
   @state() spread = 50;
   @state() density = 50;
@@ -2929,14 +3045,54 @@ export class LoopScreen extends LitElement {
     this.requestUpdate();
   }
 
+  private getCurrentScaleAbbrev(): string {
+    const scale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+    const opt = SCALE_OPTIONS.find(s => s.type === scale || (s.type === 'NATURAL_MINOR' && scale === 'MINOR'));
+    return opt ? opt.abbrev : 'Maj';
+  }
+
+  private getCurrentScaleLabel(): string {
+    const scale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+    const opt = SCALE_OPTIONS.find(s => s.type === scale || (s.type === 'NATURAL_MINOR' && scale === 'MINOR'));
+    return opt ? opt.label : 'Major';
+  }
+
+  private selectRoot(rootStr: string) {
+    if (!this.progression) return;
+    const targetScale = this.progression.scaleType || 'MAJOR';
+    const transposed = transposeProgression(this.progression, rootStr, targetScale);
+    this.progression = transposed;
+    playbackEngine.setProgression(transposed);
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: transposed, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: `Transposed to ${transposed.key} ${this.getCurrentScaleLabel()}`,
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private selectScale(scaleType: string) {
+    if (!this.progression) return;
+    const shifted = shiftProgressionScale(this.progression, scaleType);
+    this.progression = shifted;
+    playbackEngine.setProgression(shifted);
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: shifted, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: `Scale shifted to ${shifted.key} ${this.getCurrentScaleLabel()}`,
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
   private selectKey(keyStr: string) {
-    this.keyIdx = KEYS.indexOf(keyStr);
     if (!this.progression) return;
     const transposed = transposeProgression(this.progression, keyStr);
     this.progression = transposed;
     playbackEngine.setProgression(transposed);
     this.dispatchEvent(new CustomEvent('progression-change', { detail: transposed, bubbles: true, composed: true }));
-    this.dispatchEvent(new CustomEvent('toast', { detail: `Transposed to ${transposed.key} ${transposed.scaleType === 'NATURAL_MINOR' ? 'minor' : 'major'}`, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('toast', { detail: `Transposed to ${transposed.key} ${this.getCurrentScaleLabel()}`, bubbles: true, composed: true }));
     this.requestUpdate();
   }
 
@@ -2979,15 +3135,11 @@ export class LoopScreen extends LitElement {
   }
 
   private getTheoryData(chords: ChordBlock[]) {
-    const keyIsMinor = (this.progression?.scaleType || '').toUpperCase().includes('MINOR') || (this.progression?.key || '').includes('m');
+    const curScaleType = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+    const SCALE = THEORY_SCALES[curScaleType] || THEORY_SCALES[curScaleType.includes('MINOR') ? 'NATURAL_MINOR' : 'MAJOR'] || THEORY_SCALES.MAJOR;
     const keyTonicName = this.progression?.key || 'C';
-    const keyTonicPc = PITCH_CLASS[keyTonicName.replace('b', 'b').replace('♭', 'b')] ?? 0;
-
-    const SCALE = keyIsMinor
-      ? { steps: [0, 2, 3, 5, 7, 8, 10], romans: ['i', 'ii°', '♭III', 'iv', 'v', '♭VI', '♭VII'], quals: ['m', 'dim', '', 'm', 'm', '', ''],
-          fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Subtonic'], name: 'natural minor' }
-      : { steps: [0, 2, 4, 5, 7, 9, 11], romans: ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'], quals: ['', 'm', 'm', '', '', 'm', 'dim'],
-          fns: ['Tonic', 'Supertonic', 'Mediant', 'Subdominant', 'Dominant', 'Submediant', 'Leading tone'], name: 'major' };
+    const keyTonicPc = PITCH_CLASS[keyTonicName.replace(/♭/g, 'b').replace(/♯/g, '#').trim()] ?? 0;
+    const preferFlat = preferFlatSpelling(keyTonicName, curScaleType);
 
     const scaleName = keyTonicName.replace('b', '♭') + ' ' + SCALE.name;
     const loopRootPcs = chords.map(c => {
@@ -3021,7 +3173,7 @@ export class LoopScreen extends LitElement {
       : (this.auditionBar ? `${this.auditionName} · bar ${this.auditionBar} of the loop` : `${this.auditionName} · not in this loop`);
 
     const romanFormula = chords.map(c => c.roman || SCALE.romans[Math.max(0, degIndexOf(PITCH_CLASS[parseChordSymbol(c.name).root] ?? 0))]).join(' – ');
-    const keyModeLine = keyTonicName.replace('b', '♭') + ' ' + (keyIsMinor ? 'minor' : 'major');
+    const keyModeLine = keyTonicName.replace('b', '♭') + ' ' + SCALE.name;
     const cadences = detectProgressionCadences(chords);
     const voiceLinks = analyzeVoiceLeading(chords);
     const setNote = (this.progression as any)?.note || '';
@@ -3078,7 +3230,7 @@ export class LoopScreen extends LitElement {
     if (!this.tempoOpen) return '';
     const bpmVal = this.progression?.bpm || 84;
     return html`
-      <div class="tempo-popover-desktop" style="background: var(--cv-cream); border-radius: 16px; padding: 14px 16px; margin-top: 11px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 18px;">
+      <div class="tempo-popover-desktop" style="background: var(--cv-cream); border-radius: 16px; padding: 14px 16px; margin-top: 11px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px;">
         <div>
           <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Tempo</div>
           <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px;">
@@ -3116,20 +3268,44 @@ export class LoopScreen extends LitElement {
             `)}
           </div>
         </div>
-        <div style="flex: 1; min-width: 240px;">
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Key</div>
-          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
-            ${KEYS.map((k, i) => {
-              const active = this.keyIdx === i || this.progression?.key === k.replace(' min', '').replace(' maj', '').replace('♭', 'b');
-              return html`
-                <button
-                  style="border: none; font-family: inherit; padding: 8px 12px; border-radius: 100px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                  @click=${() => this.selectKey(k)}
-                >
-                  ${k}
-                </button>
-              `;
-            })}
+        <div style="flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 12px;">
+          <div>
+            <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Key Root</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+              ${ROOT_OPTIONS.map(opt => {
+                const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+                const curPc = PITCH_CLASS[curKey] ?? 0;
+                const optPc = PITCH_CLASS[opt.root] ?? 0;
+                const active = curPc === optPc;
+                return html`
+                  <button
+                    style="border: none; font-family: inherit; padding: 7px 11px; border-radius: 100px; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                    @click=${() => this.selectRoot(opt.root)}
+                    aria-label="Root note ${opt.label}"
+                  >
+                    ${opt.label}
+                  </button>
+                `;
+              })}
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Scale / Mode</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+              ${SCALE_OPTIONS.map(opt => {
+                const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+                const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
+                return html`
+                  <button
+                    style="border: none; font-family: inherit; padding: 7px 11px; border-radius: 100px; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                    @click=${() => this.selectScale(opt.type)}
+                    aria-label="Scale ${opt.label}"
+                  >
+                    ${opt.label}
+                  </button>
+                `;
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -3288,16 +3464,36 @@ export class LoopScreen extends LitElement {
               </button>
             `)}
           </div>
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); margin-top: 15px;">Key</div>
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); margin-top: 15px;">Key Root</div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
-            ${KEYS.map((k, i) => {
-              const active = this.keyIdx === i || this.progression?.key === k.replace(' min', '').replace(' maj', '').replace('♭', 'b');
+            ${ROOT_OPTIONS.map(opt => {
+              const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+              const curPc = PITCH_CLASS[curKey] ?? 0;
+              const optPc = PITCH_CLASS[opt.root] ?? 0;
+              const active = curPc === optPc;
               return html`
                 <button
                   style="border: none; font-family: inherit; padding: 8px 12px; border-radius: 100px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                  @click=${() => this.selectKey(k)}
+                  @click=${() => this.selectRoot(opt.root)}
+                  aria-label="Root note ${opt.label}"
                 >
-                  ${k}
+                  ${opt.label}
+                </button>
+              `;
+            })}
+          </div>
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); margin-top: 15px;">Scale / Mode</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+            ${SCALE_OPTIONS.map(opt => {
+              const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+              const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
+              return html`
+                <button
+                  style="border: none; font-family: inherit; padding: 8px 12px; border-radius: 100px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                  @click=${() => this.selectScale(opt.type)}
+                  aria-label="Scale ${opt.label}"
+                >
+                  ${opt.label}
                 </button>
               `;
             })}
@@ -4045,7 +4241,7 @@ export class LoopScreen extends LitElement {
 
               <div style="display: flex; gap: 7px; margin-top: 12px;">
                 <button class="mobile-chip-btn" @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) this.feelOpen = false; }} aria-label="Key, tempo and length">
-                  ${this.progression?.key || 'C'} · ${this.progression?.bpm || 84}
+                  ${this.progression?.key || 'C'} ${this.getCurrentScaleAbbrev()} · ${this.progression?.bpm || 84}
                 </button>
                 <button class="mobile-chip-btn" @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }}>Feel &amp; tone</button>
                 <button
@@ -4427,7 +4623,7 @@ export class LoopScreen extends LitElement {
                     aria-label="Key, tempo and loop length"
                     style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.tempoOpen ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.tempoOpen ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
                   >
-                    ${this.progression?.key || 'C'} · ${this.progression?.bpm || 84}
+                    ${this.progression?.key || 'C'} ${this.getCurrentScaleAbbrev()} · ${this.progression?.bpm || 84}
                   </button>
                   <button
                     class="feel-chip ${this.feelOpen ? 'open' : ''}"

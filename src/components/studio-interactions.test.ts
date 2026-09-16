@@ -395,23 +395,33 @@ describe('Studio Component Interactions', () => {
     el.tempoOpen = true;
     await el.updateComplete;
 
-    // Test Transposition via key button
+    // Test Transposition via Root button
     const keyButtons = Array.from(el.shadowRoot?.querySelectorAll('.tempo-popover-desktop button') || []);
-    const gMajBtn = keyButtons.find(b => b.textContent?.trim() === 'G maj') as HTMLElement;
-    expect(gMajBtn).toBeTruthy();
+    const gBtn = keyButtons.find(b => b.textContent?.trim() === 'G') as HTMLElement;
+    expect(gBtn).toBeTruthy();
 
     const toastSpy = vi.fn();
     const progChangeSpy = vi.fn();
     el.addEventListener('toast', (e: any) => toastSpy(e.detail));
     el.addEventListener('progression-change', (e: any) => progChangeSpy(e.detail));
 
-    gMajBtn.click();
+    gBtn.click();
     await el.updateComplete;
 
     expect(el.progression.key).toBe('G');
     expect(el.progression.chords[0].name).toBe('G');
     expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('Transposed to G'));
     expect(progChangeSpy).toHaveBeenCalled();
+
+    // Test Scale shift via Scale button
+    const minorBtn = keyButtons.find(b => b.textContent?.trim() === 'Minor') as HTMLElement;
+    expect(minorBtn).toBeTruthy();
+    minorBtn.click();
+    await el.updateComplete;
+
+    expect(el.progression.scaleType).toBe('NATURAL_MINOR');
+    expect(el.progression.chords[0].name).toBe('Gm');
+    expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('Scale shifted to G Minor'));
 
     // Test Direct BPM input
     const bpmInput = el.shadowRoot?.querySelector('.tempo-popover-desktop input[type="number"]') as HTMLInputElement;

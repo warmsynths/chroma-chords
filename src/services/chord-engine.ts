@@ -140,7 +140,7 @@ const DEGREE_TENSION: Record<string, number> = {
   DOMINANT: 0.68,
 };
 
-const ROMAN_BY_SCALE: Record<string, Record<string, string>> = {
+export const ROMAN_BY_SCALE: Record<string, Record<string, string>> = {
   MAJOR: {
     TONIC: 'I',
     SUPERTONIC: 'ii',
@@ -286,14 +286,100 @@ export function parseChordSymbol(symbol: string): { root: string; quality: keyof
 
 export const SCALE_TYPES = Object.keys(ROMAN_BY_SCALE);
 
-const SCALE_LABEL: Record<string, string> = {
-  MAJOR: 'Ionian',
-  NATURAL_MINOR: 'Aeolian',
+export const SCALE_LABEL: Record<string, string> = {
+  MAJOR: 'Major',
+  NATURAL_MINOR: 'Minor',
   HARMONIC_MINOR: 'Harmonic minor',
   MELODIC_MINOR: 'Melodic minor',
   DORIAN: 'Dorian',
   MIXOLYDIAN: 'Mixolydian',
   LYDIAN: 'Lydian',
+  PHRYGIAN: 'Phrygian',
+  LOCRIAN: 'Locrian',
+};
+
+export const SCALE_ABBREV: Record<string, string> = {
+  MAJOR: 'Maj',
+  NATURAL_MINOR: 'Min',
+  HARMONIC_MINOR: 'Harm',
+  MELODIC_MINOR: 'Mel',
+  DORIAN: 'Dor',
+  MIXOLYDIAN: 'Mix',
+  LYDIAN: 'Lyd',
+  PHRYGIAN: 'Phr',
+  LOCRIAN: 'Loc',
+};
+
+export const SCALE_DEGREE_NAMES: Record<string, string[]> = {
+  MAJOR: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'LEADING-TONE'],
+  NATURAL_MINOR: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'SUBTONIC'],
+  DORIAN: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'SUBTONIC'],
+  PHRYGIAN: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'SUBTONIC'],
+  LYDIAN: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'LEADING-TONE'],
+  MIXOLYDIAN: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'SUBTONIC'],
+  LOCRIAN: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'SUBTONIC'],
+  HARMONIC_MINOR: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'LEADING-TONE'],
+  MELODIC_MINOR: ['TONIC', 'SUPERTONIC', 'MEDIANT', 'SUBDOMINANT', 'DOMINANT', 'SUBMEDIANT', 'LEADING-TONE'],
+};
+
+export const SCALE_DEGREE_SEMITONES: Record<string, Record<string, number>> = {
+  MAJOR: {
+    TONIC: 0, SUPERTONIC: 2, MEDIANT: 4, SUBDOMINANT: 5, DOMINANT: 7, SUBMEDIANT: 9, 'LEADING-TONE': 11,
+  },
+  NATURAL_MINOR: {
+    TONIC: 0, SUPERTONIC: 2, MEDIANT: 3, SUBDOMINANT: 5, DOMINANT: 7, SUBMEDIANT: 8, SUBTONIC: 10,
+  },
+  DORIAN: {
+    TONIC: 0, SUPERTONIC: 2, MEDIANT: 3, SUBDOMINANT: 5, DOMINANT: 7, SUBMEDIANT: 9, SUBTONIC: 10,
+  },
+  PHRYGIAN: {
+    TONIC: 0, SUPERTONIC: 1, MEDIANT: 3, SUBDOMINANT: 5, DOMINANT: 7, SUBMEDIANT: 8, SUBTONIC: 10,
+  },
+  LYDIAN: {
+    TONIC: 0, SUPERTONIC: 2, MEDIANT: 4, SUBDOMINANT: 6, DOMINANT: 7, SUBMEDIANT: 9, 'LEADING-TONE': 11,
+  },
+  MIXOLYDIAN: {
+    TONIC: 0, SUPERTONIC: 2, MEDIANT: 4, SUBDOMINANT: 5, DOMINANT: 7, SUBMEDIANT: 9, SUBTONIC: 10,
+  },
+  LOCRIAN: {
+    TONIC: 0, SUPERTONIC: 1, MEDIANT: 3, SUBDOMINANT: 5, DOMINANT: 6, SUBMEDIANT: 8, SUBTONIC: 10,
+  },
+  HARMONIC_MINOR: {
+    TONIC: 0, SUPERTONIC: 2, MEDIANT: 3, SUBDOMINANT: 5, DOMINANT: 7, SUBMEDIANT: 8, 'LEADING-TONE': 11,
+  },
+  MELODIC_MINOR: {
+    TONIC: 0, SUPERTONIC: 2, MEDIANT: 3, SUBDOMINANT: 5, DOMINANT: 7, SUBMEDIANT: 9, 'LEADING-TONE': 11,
+  },
+};
+
+export const SCALE_DEGREE_QUALITIES: Record<string, Record<string, string>> = {
+  MAJOR: {
+    TONIC: 'maj', SUPERTONIC: 'min', MEDIANT: 'min', SUBDOMINANT: 'maj', DOMINANT: 'maj', SUBMEDIANT: 'min', 'LEADING-TONE': 'dim',
+  },
+  NATURAL_MINOR: {
+    TONIC: 'min', SUPERTONIC: 'dim', MEDIANT: 'maj', SUBDOMINANT: 'min', DOMINANT: 'min', SUBMEDIANT: 'maj', SUBTONIC: 'maj',
+  },
+  DORIAN: {
+    TONIC: 'min', SUPERTONIC: 'min', MEDIANT: 'maj', SUBDOMINANT: 'maj', DOMINANT: 'min', SUBMEDIANT: 'dim', SUBTONIC: 'maj',
+  },
+  PHRYGIAN: {
+    TONIC: 'min', SUPERTONIC: 'maj', MEDIANT: 'maj', SUBDOMINANT: 'min', DOMINANT: 'dim', SUBMEDIANT: 'maj', SUBTONIC: 'min',
+  },
+  LYDIAN: {
+    TONIC: 'maj', SUPERTONIC: 'maj', MEDIANT: 'min', SUBDOMINANT: 'dim', DOMINANT: 'maj', SUBMEDIANT: 'min', 'LEADING-TONE': 'min',
+  },
+  MIXOLYDIAN: {
+    TONIC: 'maj', SUPERTONIC: 'min', MEDIANT: 'dim', SUBDOMINANT: 'maj', DOMINANT: 'min', SUBMEDIANT: 'min', SUBTONIC: 'maj',
+  },
+  LOCRIAN: {
+    TONIC: 'dim', SUPERTONIC: 'maj', MEDIANT: 'min', SUBDOMINANT: 'min', DOMINANT: 'maj', SUBMEDIANT: 'maj', SUBTONIC: 'min',
+  },
+  HARMONIC_MINOR: {
+    TONIC: 'min', SUPERTONIC: 'dim', MEDIANT: 'aug', SUBDOMINANT: 'min', DOMINANT: 'maj', SUBMEDIANT: 'maj', 'LEADING-TONE': 'dim',
+  },
+  MELODIC_MINOR: {
+    TONIC: 'min', SUPERTONIC: 'min', MEDIANT: 'aug', SUBDOMINANT: 'maj', DOMINANT: 'maj', SUBMEDIANT: 'dim', 'LEADING-TONE': 'dim',
+  },
 };
 
 // Canonical genre list/order — also drives the seed-screen pill grid, so this is the one
@@ -1413,16 +1499,7 @@ export function transposeProgression(
   const scaleKey = `${newKey}_${newScaleType}`;
 
   // Scale degree semitone offsets from tonic
-  const degreeSemitones: Record<string, number> = {
-    TONIC: 0,
-    SUPERTONIC: 2,
-    MEDIANT: (newScaleType.includes('MINOR') || newScaleType === 'DORIAN') ? 3 : 4,
-    SUBDOMINANT: 5,
-    DOMINANT: 7,
-    SUBMEDIANT: (newScaleType === 'MAJOR' || newScaleType === 'DORIAN') ? 9 : 8,
-    SUBTONIC: 10,
-    'LEADING-TONE': 11,
-  };
+  const degreeSemitones = SCALE_DEGREE_SEMITONES[newScaleType] || SCALE_DEGREE_SEMITONES.MAJOR;
 
   const transposedChords: ChordBlock[] = progression.chords.map(chord => {
     const newName = transposeChordName(chord.name, delta, preferFlat);
@@ -1482,6 +1559,208 @@ export function transposeProgression(
     key: newKey,
     scaleType: newScaleType,
     chords: transposedChords,
+  };
+}
+
+function adaptChordQuality(originalQuality: string, newTriadQuality: string, degree: string, scaleType?: string): string {
+  if (originalQuality === 'sus4' || originalQuality === 'sus2' || originalQuality === 'sus7' || originalQuality === 'sus9') {
+    return originalQuality;
+  }
+  const isSeventh = originalQuality.includes('7');
+  const isNinth = originalQuality.includes('9');
+  const isSixth = originalQuality.includes('6');
+
+  if (newTriadQuality === 'min') {
+    if (isNinth) return 'min9';
+    if (isSeventh) {
+      if (degree === 'TONIC' && (scaleType === 'HARMONIC_MINOR' || scaleType === 'MELODIC_MINOR') && (originalQuality === 'maj7' || originalQuality === 'mmaj7')) {
+        return 'mmaj7';
+      }
+      return 'min7';
+    }
+    if (isSixth) return 'min6';
+    return 'min';
+  } else if (newTriadQuality === 'maj') {
+    if (isNinth) return degree === 'DOMINANT' ? 'dom9' : 'maj9';
+    if (isSeventh) return degree === 'DOMINANT' ? 'dom7' : 'maj7';
+    if (isSixth) return 'maj6';
+    return 'maj';
+  } else if (newTriadQuality === 'dim') {
+    if (isSeventh) return 'dim7';
+    return 'dim';
+  } else if (newTriadQuality === 'aug') {
+    return 'aug';
+  }
+  return newTriadQuality;
+}
+
+function formatChordName(root: string, quality: string): string {
+  switch (quality) {
+    case 'maj': return root;
+    case 'min': return `${root}m`;
+    case 'dim': return `${root}dim`;
+    case 'aug': return `${root}aug`;
+    case 'dom7': return `${root}7`;
+    case 'min7': return `${root}m7`;
+    case 'maj7': return `${root}maj7`;
+    case 'dim7': return `${root}dim7`;
+    case 'sus4': return `${root}sus4`;
+    case 'sus2': return `${root}sus2`;
+    case 'dom9': return `${root}9`;
+    case 'maj9': return `${root}maj9`;
+    case 'min9': return `${root}m9`;
+    case 'maj6': return `${root}6`;
+    case 'min6': return `${root}m6`;
+    case 'mmaj7': return `${root}m(maj7)`;
+    case 'sus7': return `${root}7sus4`;
+    case 'sus9': return `${root}9sus4`;
+    default: return `${root}${quality}`;
+  }
+}
+
+/**
+ * Performs a parallel mode shift on a progression (e.g. C Major -> C Minor),
+ * adapting diatonic chords to the new scale degrees while keeping the root key intact.
+ */
+export function shiftProgressionScale(
+  progression: Progression,
+  targetScaleType: string
+): Progression {
+  if (!progression || !progression.chords || progression.chords.length === 0) {
+    return progression;
+  }
+
+  const oldScaleType = (progression.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+  const newScaleType = (targetScaleType || oldScaleType).toUpperCase().replace(/\s+/g, '_');
+  const key = (progression.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+  const keyPc = PITCH_CLASS[key] ?? 0;
+  const preferFlat = preferFlatSpelling(key, newScaleType);
+  const scaleKey = `${key}_${newScaleType}`;
+
+  const oldDegrees = SCALE_DEGREE_NAMES[oldScaleType] || SCALE_DEGREE_NAMES.MAJOR;
+  const oldSemitones = SCALE_DEGREE_SEMITONES[oldScaleType] || SCALE_DEGREE_SEMITONES.MAJOR;
+
+  const newDegrees = SCALE_DEGREE_NAMES[newScaleType] || SCALE_DEGREE_NAMES.MAJOR;
+  const newSemitones = SCALE_DEGREE_SEMITONES[newScaleType] || SCALE_DEGREE_SEMITONES.MAJOR;
+  const newQualities = SCALE_DEGREE_QUALITIES[newScaleType] || SCALE_DEGREE_QUALITIES.MAJOR;
+
+  const shiftedChords: ChordBlock[] = progression.chords.map(chord => {
+    const { root: origRoot, quality: origQuality } = parseChordSymbol(chord.name);
+    const origRootPc = PITCH_CLASS[origRoot] ?? 0;
+    const semitonesFromKey = ((origRootPc - keyPc) % 12 + 12) % 12;
+
+    // Determine degree index (0 to 6)
+    let degreeIdx = -1;
+    if (chord.degree && chord.degree !== 'BORROWED') {
+      degreeIdx = oldDegrees.indexOf(chord.degree);
+    }
+    if (degreeIdx === -1) {
+      // Find degree by semitone offset from tonic in old scale
+      for (let i = 0; i < oldDegrees.length; i++) {
+        const degName = oldDegrees[i];
+        if (oldSemitones[degName] === semitonesFromKey) {
+          degreeIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (degreeIdx >= 0 && degreeIdx < newDegrees.length) {
+      // Diatonic mapping in parallel scale
+      const newDegName = newDegrees[degreeIdx];
+      const targetDegSemi = newSemitones[newDegName];
+      const newRootPc = (keyPc + targetDegSemi) % 12;
+      const newChordRoot = noteName(newRootPc, preferFlat);
+      const newBaseQuality = newQualities[newDegName] || 'maj';
+      const adaptedQuality = adaptChordQuality(origQuality, newBaseQuality, newDegName, newScaleType);
+      const newName = formatChordName(newChordRoot, adaptedQuality);
+      const newNotes = notesForSymbol(newName, preferFlat);
+
+      const scaleRoman = ROMAN_BY_SCALE[newScaleType]?.[newDegName];
+      let roman: string;
+      if (scaleRoman) {
+        if (adaptedQuality === 'maj' || adaptedQuality === 'min') {
+          roman = scaleRoman;
+        } else {
+          const cleanBase = scaleRoman.replace(/[°+]/g, '');
+          roman = formatQualityRoman(cleanBase, adaptedQuality as any);
+        }
+      } else {
+        roman = formatDegreeRoman(newDegName, adaptedQuality as any);
+      }
+
+      const functionLabel = DEGREE_FUNCTION[newDegName] || newDegName;
+      const tag = DEGREE_TAG[newDegName] || chord.tag || 'move';
+      const tension = DEGREE_TENSION[newDegName] ?? chord.tension;
+
+      return {
+        ...chord,
+        name: newName,
+        roman,
+        functionLabel,
+        tag,
+        notes: newNotes,
+        degree: newDegName,
+        scaleKey,
+        scaleLabel: `${key} ${SCALE_LABEL[newScaleType] || newScaleType}`,
+        desc: describeChord(functionLabel, SCALE_LABEL[newScaleType] || newScaleType, newName),
+        tension,
+      };
+    } else {
+      // Non-diatonic / borrowed chord: evaluate against new scale
+      let matchedNewDegree: string | null = null;
+      for (const [degName, degSemi] of Object.entries(newSemitones)) {
+        if (degSemi === semitonesFromKey) {
+          matchedNewDegree = degName;
+          break;
+        }
+      }
+
+      if (matchedNewDegree) {
+        const roman = formatDegreeRoman(matchedNewDegree, origQuality);
+        const functionLabel = DEGREE_FUNCTION[matchedNewDegree] || matchedNewDegree;
+        const tag = DEGREE_TAG[matchedNewDegree] || chord.tag || 'move';
+        const tension = DEGREE_TENSION[matchedNewDegree] ?? chord.tension;
+        const newNotes = notesForSymbol(chord.name, preferFlat);
+
+        return {
+          ...chord,
+          roman,
+          functionLabel,
+          tag,
+          notes: newNotes,
+          degree: matchedNewDegree,
+          scaleKey,
+          scaleLabel: `${key} ${SCALE_LABEL[newScaleType] || newScaleType}`,
+          desc: describeChord(functionLabel, SCALE_LABEL[newScaleType] || newScaleType, chord.name),
+          tension,
+        };
+      } else {
+        // Still borrowed in new scale
+        const roman = formatBorrowedRoman(semitonesFromKey, origQuality);
+        const borrowed = getBorrowedInfo(semitonesFromKey, origQuality, key, preferFlat);
+        const newNotes = notesForSymbol(chord.name, preferFlat);
+
+        return {
+          ...chord,
+          roman,
+          functionLabel: borrowed.functionLabel,
+          tag: borrowed.tag || chord.tag,
+          tension: borrowed.tension || 0.45,
+          notes: newNotes,
+          degree: 'BORROWED',
+          scaleKey,
+          scaleLabel: 'Borrowed',
+          desc: `${chord.name} borrows its color from outside the current key.`,
+        };
+      }
+    }
+  });
+
+  return {
+    ...progression,
+    scaleType: newScaleType,
+    chords: shiftedChords,
   };
 }
 
@@ -1547,6 +1826,7 @@ const MAJOR_KEY_SIGNATURES: Record<string, string[]> = {
 // explicit accidental on the raised 7th wherever it occurs, not its own signature.
 const MODE_PARENT_OFFSET: Record<string, number> = {
   MAJOR: 0, LYDIAN: 5, MIXOLYDIAN: 7, DORIAN: 2, NATURAL_MINOR: 9, HARMONIC_MINOR: 9,
+  PHRYGIAN: 4, LOCRIAN: 11, MELODIC_MINOR: 9,
 };
 
 const CANONICAL_ROOT_BY_PC: Record<number, string> = {};
@@ -1558,7 +1838,8 @@ ROOT_KEYS.forEach(r => { CANONICAL_ROOT_BY_PC[PITCH_CLASS[r]] = r; });
 // should be spelled with sharps or flats (a mode's notes must use its parent's spelling, not
 // whatever the mode's own tonic letter would suggest — e.g. C Dorian's notes are Eb/Bb, not D#/A#).
 function parentMajorKeyFor(key: string, scaleType: string): string {
-  const offset = MODE_PARENT_OFFSET[scaleType] ?? 0;
+  const normScale = (scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+  const offset = MODE_PARENT_OFFSET[normScale] ?? 0;
   const rootPc = PITCH_CLASS[key] ?? 0;
   const parentPc = ((rootPc - offset) % 12 + 12) % 12;
   return CANONICAL_ROOT_BY_PC[parentPc] ?? 'C';

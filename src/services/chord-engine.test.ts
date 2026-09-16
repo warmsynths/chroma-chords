@@ -9,6 +9,7 @@ import {
   injectModes,
   alignChordsToScale,
   transposeProgression,
+  shiftProgressionScale,
   buildDeviceShareUrl,
   applyVoicingToChord,
   RawChordData,
@@ -342,6 +343,71 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
       expect(transposedA.key).toBe('A');
       expect(transposedA.scaleType).toBe('NATURAL_MINOR');
       expect(transposedA.chords.map(c => c.name)).toEqual(['Am', 'Dm', 'E7', 'Am']);
+    });
+  });
+
+  describe('shiftProgressionScale: Parallel Mode Shifting', () => {
+    it('shifts C Major (I-vi-IV-V) to C Natural Minor (i-bVI-iv-v)', () => {
+      const initialProg = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj' },
+          { root: 'A', quality: 'min' },
+          { root: 'F', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+        ],
+        'Pop',
+        'Warm'
+      )!;
+
+      const shifted = shiftProgressionScale(initialProg, 'NATURAL_MINOR');
+      expect(shifted.key).toBe('C');
+      expect(shifted.scaleType).toBe('NATURAL_MINOR');
+      expect(shifted.chords.map(c => c.name)).toEqual(['Cm', 'Ab', 'Fm', 'Gm']);
+      expect(shifted.chords.map(c => c.roman)).toEqual(['i', '♭VI', 'iv', 'v']);
+    });
+
+    it('shifts C Major to C Dorian and adapts diatonic degrees', () => {
+      const initialProg = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj' },
+          { root: 'A', quality: 'min' },
+          { root: 'F', quality: 'maj' },
+          { root: 'G', quality: 'maj' },
+        ],
+        'Lo-fi/Chill',
+        'Chill'
+      )!;
+
+      const shifted = shiftProgressionScale(initialProg, 'DORIAN');
+      expect(shifted.key).toBe('C');
+      expect(shifted.scaleType).toBe('DORIAN');
+      expect(shifted.chords.map(c => c.name)).toEqual(['Cm', 'Adim', 'F', 'Gm']);
+      expect(shifted.chords.map(c => c.roman)).toEqual(['i', 'vi°', 'IV', 'v']);
+    });
+
+    it('preserves 7th extensions during parallel mode shifts', () => {
+      const initialProg = alignChordsToScale(
+        chordData,
+        'C',
+        'MAJOR',
+        [
+          { root: 'C', quality: 'maj7' },
+          { root: 'A', quality: 'min7' },
+          { root: 'F', quality: 'maj7' },
+          { root: 'G', quality: 'dom7' },
+        ],
+        'Jazz-ish',
+        'Warm'
+      )!;
+
+      const shifted = shiftProgressionScale(initialProg, 'NATURAL_MINOR');
+      expect(shifted.chords.map(c => c.name)).toEqual(['Cm7', 'Abmaj7', 'Fm7', 'Gm7']);
     });
   });
 
