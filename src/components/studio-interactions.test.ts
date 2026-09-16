@@ -214,6 +214,105 @@ describe('Studio Component Interactions', () => {
     document.body.removeChild(el);
   });
 
+  it('handles loops library select mode, select all, item selection, and deletion', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    el.libraryOpen = true;
+    const testSets = [
+      { id: 'loop-1', name: 'Chill Beats', genre: 'Lofi', mood: 'Warm', chords: [] },
+      { id: 'loop-2', name: 'Jazz Glow', genre: 'Jazz', mood: 'Soulful', chords: [] },
+    ];
+    document.body.appendChild(el);
+    (el as any).savedSets = testSets;
+    el.requestUpdate();
+    await el.updateComplete;
+
+    const popover = el.shadowRoot?.querySelector('.library-popover');
+    expect(popover).toBeTruthy();
+
+    // 1. Initial state: "Select" button present, select-all control not visible
+    const selectBtn = popover?.querySelector('.library-select-btn') as HTMLButtonElement;
+    expect(selectBtn).toBeTruthy();
+    expect(selectBtn.textContent?.trim()).toBe('Select');
+    expect(popover?.querySelector('.library-select-all-btn')).toBeFalsy();
+
+    // 2. Click "Select" button -> enters select mode
+    selectBtn.click();
+    await el.updateComplete;
+
+    expect(selectBtn.textContent?.trim()).toBe('Done');
+    const selectAllCheckbox = popover?.querySelector('.library-select-all-checkbox') as HTMLInputElement;
+    const selectAllBtn = popover?.querySelector('.library-select-all-btn') as HTMLButtonElement;
+    expect(selectAllCheckbox).toBeTruthy();
+    expect(selectAllBtn).toBeTruthy();
+    expect(selectAllBtn.textContent?.trim()).toBe('Select all');
+    expect(selectAllCheckbox.checked).toBe(false);
+
+    const itemCheckboxes = popover?.querySelectorAll('.loop-item-checkbox') as NodeListOf<HTMLInputElement>;
+    expect(itemCheckboxes.length).toBe(2);
+
+    // 3. Click first loop row -> selects it
+    const items = popover?.querySelectorAll('.library-loop-item') as NodeListOf<HTMLElement>;
+    expect(items.length).toBe(2);
+    items[0].click();
+    await el.updateComplete;
+
+    expect((el as any).librarySelected).toEqual(['loop-1']);
+    expect(items[0].classList.contains('selected')).toBe(true);
+    expect(itemCheckboxes[0].checked).toBe(true);
+
+    const deleteBtn = popover?.querySelector('.library-delete-btn') as HTMLButtonElement;
+    expect(deleteBtn).toBeTruthy();
+    expect(deleteBtn.textContent).toContain('Delete (1)');
+
+    // 4. Click "Select all" button -> selects both
+    selectAllBtn.click();
+    await el.updateComplete;
+
+    expect((el as any).librarySelected.length).toBe(2);
+    expect((el as any).librarySelected).toContain('loop-1');
+    expect((el as any).librarySelected).toContain('loop-2');
+    expect(selectAllCheckbox.checked).toBe(true);
+    expect(selectAllBtn.textContent?.trim()).toBe('Deselect all');
+    expect(deleteBtn.textContent).toContain('Delete (2)');
+
+    // 5. Click "Deselect all" button -> clears selection
+    selectAllBtn.click();
+    await el.updateComplete;
+
+    expect((el as any).librarySelected.length).toBe(0);
+    expect(selectAllCheckbox.checked).toBe(false);
+    expect(selectAllBtn.textContent?.trim()).toBe('Select all');
+    expect(popover?.querySelector('.library-delete-btn')).toBeFalsy();
+
+    // 6. Test Select all checkbox change
+    selectAllCheckbox.checked = true;
+    selectAllCheckbox.dispatchEvent(new Event('change'));
+    await el.updateComplete;
+
+    expect((el as any).librarySelected.length).toBe(2);
+
+    // 7. Test delete selected
+    const deleteProjectEvents: string[] = [];
+    el.addEventListener('delete-project', ((e: CustomEvent<string>) => {
+      deleteProjectEvents.push(e.detail);
+    }) as EventListener);
+
+    const activeDeleteBtn = popover?.querySelector('.library-delete-btn') as HTMLButtonElement;
+    expect(activeDeleteBtn).toBeTruthy();
+    activeDeleteBtn.click();
+    await el.updateComplete;
+
+    expect(deleteProjectEvents).toEqual(['loop-1', 'loop-2']);
+    expect((el as any).librarySelected.length).toBe(0);
+
+    // 8. Deleting all loops automatically exits select mode
+    expect((el as any).librarySelectMode).toBe(false);
+    expect(selectBtn.textContent?.trim()).toBe('Select');
+
+    document.body.removeChild(el);
+  });
+
   it('renders interactive progression pads and triggers pad hold/play', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;

@@ -2286,6 +2286,59 @@ export class LoopScreen extends LitElement {
     this.requestUpdate();
   };
 
+  private toggleLibrarySelectMode = () => {
+    this.librarySelectMode = !this.librarySelectMode;
+    if (!this.librarySelectMode) {
+      this.librarySelected = [];
+    }
+    this.requestUpdate();
+  };
+
+  private toggleSelectLoop = (id: string) => {
+    if (this.librarySelected.includes(id)) {
+      this.librarySelected = this.librarySelected.filter(item => item !== id);
+    } else {
+      this.librarySelected = [...this.librarySelected, id];
+    }
+    this.requestUpdate();
+  };
+
+  private toggleSelectAllVisible = () => {
+    const q = this.librarySearch.trim().toLowerCase();
+    const visible = this.savedSets.filter(s => !q || (s.name + ' ' + s.genre + ' ' + s.mood).toLowerCase().includes(q));
+    const visibleIds = visible.map(s => s.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => this.librarySelected.includes(id));
+
+    if (allVisibleSelected) {
+      this.librarySelected = this.librarySelected.filter(id => !visibleIds.includes(id));
+    } else {
+      const set = new Set([...this.librarySelected, ...visibleIds]);
+      this.librarySelected = Array.from(set);
+    }
+    this.requestUpdate();
+  };
+
+  private deleteSelectedLoops = () => {
+    const toDelete = [...this.librarySelected];
+    if (!toDelete.length) return;
+    const count = toDelete.length;
+    for (const id of toDelete) {
+      projectStorage.deleteProject(id);
+      this.dispatchEvent(new CustomEvent('delete-project', { detail: id, bubbles: true, composed: true }));
+    }
+    this.savedSets = projectStorage.getProjects();
+    this.librarySelected = [];
+    if (!this.savedSets.length) {
+      this.librarySelectMode = false;
+    }
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: `Deleted ${count} loop${count > 1 ? 's' : ''}`,
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  };
+
   private getVibeSummary(): string {
     const parts = [this.progression?.genre || 'Pop', (this.progression?.mood || 'Warm').toLowerCase()];
     if (this.selectedBand) parts.push(this.selectedBand);
@@ -3993,25 +4046,65 @@ export class LoopScreen extends LitElement {
   private renderLibraryPopoverContent(moodColor: string) {
     const q = this.librarySearch.trim().toLowerCase();
     const visible = this.savedSets.filter(s => !q || (s.name + ' ' + s.genre + ' ' + s.mood).toLowerCase().includes(q));
+    const visibleIds = visible.map(s => s.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => this.librarySelected.includes(id));
+    const someVisibleSelected = visibleIds.some(id => this.librarySelected.includes(id));
 
     return html`
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 6px 8px;">
         <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">
-          Your loops (${this.savedSets.length})
+          ${this.librarySelectMode && this.librarySelected.length > 0
+            ? `${this.librarySelected.length} of ${this.savedSets.length} selected`
+            : `Your loops (${this.savedSets.length})`}
         </div>
-        <button
-          style="border: none; background: transparent; font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted); cursor: pointer;"
-          @click=${() => { this.librarySelectMode = !this.librarySelectMode; this.requestUpdate(); }}
-        >
-          ${this.librarySelectMode ? 'Done' : 'Select'}
-        </button>
+        <div class="library-select-toolbar" style="display: flex; align-items: center; gap: 8px;">
+          ${this.librarySelectMode && visible.length > 0 ? html`
+            <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted);">
+              <input
+                type="checkbox"
+                class="library-select-all-checkbox"
+                style="accent-color: var(--cv-ink, #2E271F); cursor: pointer; margin: 0; width: 14px; height: 14px;"
+                .checked=${allVisibleSelected}
+                .indeterminate=${someVisibleSelected && !allVisibleSelected}
+                @change=${this.toggleSelectAllVisible}
+                aria-label="Select all loops"
+              />
+              <button
+                type="button"
+                class="library-select-all-btn"
+                style="border: none; background: transparent; font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted); cursor: pointer; padding: 0;"
+                @click=${(e: Event) => { e.stopPropagation(); this.toggleSelectAllVisible(); }}
+              >
+                ${allVisibleSelected ? 'Deselect all' : 'Select all'}
+              </button>
+            </label>
+          ` : ''}
+          ${this.librarySelectMode && this.librarySelected.length > 0 ? html`
+            <button
+              class="library-delete-btn"
+              style="border: none; background: transparent; font-size: 11.5px; font-weight: 800; color: #C0392B; cursor: pointer; padding: 0;"
+              @click=${this.deleteSelectedLoops}
+              title="Delete selected loops"
+            >
+              Delete (${this.librarySelected.length})
+            </button>
+          ` : ''}
+          <button
+            class="library-select-btn"
+            style="border: none; background: transparent; font-size: 11.5px; font-weight: 800; color: ${this.librarySelectMode ? 'var(--cv-ink, #2E271F)' : 'var(--cv-ink-muted)'}; cursor: pointer; padding: 0;"
+            @click=${this.toggleLibrarySelectMode}
+            aria-label="${this.librarySelectMode ? 'Finish selecting loops' : 'Select loops'}"
+          >
+            ${this.librarySelectMode ? 'Done' : 'Select'}
+          </button>
+        </div>
       </div>
 
       <div style="padding: 0 4px 9px;">
         <input
           type="text"
           class="cv-vibe-input"
-          style="width: 100%; border: none; background: var(--cv-surface); border-radius: 12px; padding: 9px 12px; font-size: 12.5px; outline: none;"
+          style="width: 100%; border: none; background: var(--cv-surface); border-radius: 12px; padding: 9px 12px; font-size: 12.5px; outline: none; box-sizing: border-box;"
           .value=${this.librarySearch}
           @input=${(e: Event) => { this.librarySearch = (e.target as HTMLInputElement).value; }}
           placeholder="Search loops"
@@ -4019,29 +4112,71 @@ export class LoopScreen extends LitElement {
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 4px;">
-        ${visible.map(set => html`
-          <div
-            style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; cursor: pointer; background: var(--cv-surface);"
-            @click=${() => {
-              this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
-              this.libraryOpen = false;
-            }}
-          >
-            <div style="display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
-              ${(set.chords || []).map((c: any) => {
-                const role = roleForTension(c.tension ?? 0);
-                return html`<span style="display:inline-block;width:7px;height:7px;border-radius:${Math.round(role.radius * 0.25)}px;background:${role.color};flex-shrink:0;"></span>`;
-              })}
+        ${visible.map(set => {
+          const isSelected = this.librarySelected.includes(set.id);
+          return html`
+            <div
+              class="library-loop-item ${this.librarySelectMode ? 'select-mode' : ''} ${isSelected ? 'selected' : ''}"
+              style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; cursor: pointer; background: ${isSelected ? 'var(--cv-surface-2, #F1E4CC)' : 'var(--cv-surface)'}; transition: background 120ms ease;"
+              @click=${() => {
+                if (this.librarySelectMode) {
+                  this.toggleSelectLoop(set.id);
+                } else {
+                  this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
+                  this.libraryOpen = false;
+                }
+              }}
+            >
+              ${this.librarySelectMode ? html`
+                <input
+                  type="checkbox"
+                  class="loop-item-checkbox"
+                  .checked=${isSelected}
+                  @click=${(e: Event) => e.stopPropagation()}
+                  @change=${() => this.toggleSelectLoop(set.id)}
+                  style="accent-color: var(--cv-ink, #2E271F); cursor: pointer; margin: 0; width: 14px; height: 14px; flex-shrink: 0;"
+                  aria-label="Select ${set.name}"
+                />
+              ` : ''}
+              <div style="display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
+                ${(set.chords || []).map((c: any) => {
+                  const role = roleForTension(c.tension ?? 0);
+                  return html`<span style="display:inline-block;width:7px;height:7px;border-radius:${Math.round(role.radius * 0.25)}px;background:${role.color};flex-shrink:0;"></span>`;
+                })}
+              </div>
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-size: 13.5px; font-weight: 800; color: var(--cv-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${set.name}</div>
+                <div style="font-size: 11px; color: var(--cv-ink-muted);">${set.genre} · ${set.mood}</div>
+              </div>
             </div>
-            <div style="flex: 1; min-width: 0;">
-              <div style="font-size: 13.5px; font-weight: 800; color: var(--cv-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${set.name}</div>
-              <div style="font-size: 11px; color: var(--cv-ink-muted);">${set.genre} · ${set.mood}</div>
-            </div>
-          </div>
-        `)}
+          `;
+        })}
         ${!visible.length ? html`
           <div style="padding: 12px; font-size: 12px; color: var(--cv-ink-muted); text-align: center;">No loops match that.</div>
         ` : ''}
+      </div>
+    `;
+  }
+
+  private renderLibrarySheetMobile(moodColor: string) {
+    if (!this.libraryOpen) return '';
+    return html`
+      <div style="position: fixed; inset: 0; z-index: 80;">
+        <div
+          style="position: absolute; inset: 0; background: rgba(46, 39, 31, 0.5);"
+          @click=${() => {
+            this.libraryOpen = false;
+            this.dispatchEvent(new CustomEvent('library-open-change', { detail: false, bubbles: true, composed: true }));
+            this.requestUpdate();
+          }}
+        ></div>
+        <div
+          class="library-popover library-sheet-mobile"
+          style="position: absolute; left: 0; right: 0; bottom: 0; max-height: 80vh; overflow-y: auto; z-index: 81; background: var(--cv-cream, #FBF3E6); border-radius: 26px 26px 0 0; padding: 14px 18px 24px; box-shadow: 0 -20px 44px -26px rgba(46, 39, 31, 0.5); animation: cvfv-sheet-up 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)); box-sizing: border-box;"
+        >
+          <div style="width: 38px; height: 4px; border-radius: 3px; background: rgba(46, 39, 31, 0.18); margin: 0 auto 13px;"></div>
+          ${this.renderLibraryPopoverContent(moodColor)}
+        </div>
       </div>
     `;
   }
@@ -4408,6 +4543,7 @@ export class LoopScreen extends LitElement {
 
           ${this.renderTempoSheetMobile()}
           ${this.renderFeelSheetMobile()}
+          ${this.renderLibrarySheetMobile(moodColor)}
           <share-modal
             .open=${this.shareOpen}
             .progression=${this.progression}

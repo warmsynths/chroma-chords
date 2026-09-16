@@ -585,6 +585,7 @@ export class ChromaChordsApp extends LitElement {
             @select-section=${this.onSelectSection}
             @save-set=${this.onSaveSet}
             @load-project=${this.onLoadProject}
+            @delete-project=${this.onDeleteProject}
             @view-sets=${() => { this.libraryOpen = true; }}
             @request-login=${this.onLoginRequest}
             @request-logout=${this.onLogoutRequest}
