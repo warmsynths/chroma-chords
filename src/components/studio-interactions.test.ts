@@ -993,6 +993,58 @@ describe('Studio Component Interactions', () => {
 
     document.body.removeChild(el);
   });
+
+  it('does not trigger card chords or toggle playback when typing in search or text inputs', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    el.libraryOpen = true;
+    el.vibeOpen = true;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const { playbackEngine } = await import('../services/playback-engine');
+    const playNotesSpy = vi.spyOn(playbackEngine, 'playChordNotes');
+    const togglePlaySpy = vi.fn();
+    el.addEventListener('toggle-play', togglePlaySpy);
+
+    // Find vibe search input
+    const vibeInput = el.shadowRoot?.querySelector('.vibe-text-input') as HTMLInputElement;
+    expect(vibeInput).toBeTruthy();
+
+    // Chord keys: A, S, D, F, Z, X, C, V and Space
+    const testKeys = ['a', 's', 'd', 'f', 'z', 'x', 'c', 'v', ' '];
+    for (const key of testKeys) {
+      playNotesSpy.mockClear();
+      togglePlaySpy.mockClear();
+
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, composed: true });
+      const defaultPrevented = !vibeInput.dispatchEvent(event);
+      await el.updateComplete;
+
+      expect(playNotesSpy).not.toHaveBeenCalled();
+      expect(togglePlaySpy).not.toHaveBeenCalled();
+      expect(defaultPrevented).toBe(false);
+    }
+
+    // Also test library search input
+    const librarySearchInput = el.shadowRoot?.querySelector('input[placeholder="Search loops"]') as HTMLInputElement;
+    expect(librarySearchInput).toBeTruthy();
+
+    for (const key of testKeys) {
+      playNotesSpy.mockClear();
+      togglePlaySpy.mockClear();
+
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, composed: true });
+      const defaultPrevented = !librarySearchInput.dispatchEvent(event);
+      await el.updateComplete;
+
+      expect(playNotesSpy).not.toHaveBeenCalled();
+      expect(togglePlaySpy).not.toHaveBeenCalled();
+      expect(defaultPrevented).toBe(false);
+    }
+
+    document.body.removeChild(el);
+  });
 });
 
 

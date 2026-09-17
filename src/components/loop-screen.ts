@@ -2284,21 +2284,47 @@ export class LoopScreen extends LitElement {
     if (this.unsubscribeProjects) this.unsubscribeProjects();
   }
 
-  private handleKeyDown = (e: KeyboardEvent) => {
-    const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
-    if (e.key === ' ' || e.code === 'Space') {
-      e.preventDefault();
-      this.togglePlay();
-      return;
+  private isEditableTarget(e: KeyboardEvent): boolean {
+    const isElementEditable = (el: unknown): boolean => {
+      if (!el || typeof el !== 'object') return false;
+      const htmlEl = el as HTMLElement;
+      const tag = (htmlEl.tagName || '').toUpperCase();
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(htmlEl.isContentEditable);
+    };
+
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+    for (const el of path) {
+      if (isElementEditable(el)) {
+        return true;
+      }
     }
+
+    let active: Element | null = typeof document !== 'undefined' ? document.activeElement : null;
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+      active = active.shadowRoot.activeElement;
+    }
+    if (isElementEditable(active)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      e.preventDefault();
-      if (this.tempoOpen || this.feelOpen) {
+      if (this.vibeOpen || this.tempoOpen || this.feelOpen) {
+        e.preventDefault();
+        this.vibeOpen = false;
         this.tempoOpen = false;
         this.feelOpen = false;
         this.requestUpdate();
+        return;
       }
+    }
+    if (this.isEditableTarget(e)) return;
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      this.togglePlay();
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -2334,6 +2360,7 @@ export class LoopScreen extends LitElement {
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
+    if (this.isEditableTarget(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const idx = PAD_KEYS.map(k => k.toLowerCase()).indexOf((e.key || '').toLowerCase());
     if (idx >= 0) {
