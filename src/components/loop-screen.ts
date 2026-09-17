@@ -1433,10 +1433,13 @@ export class LoopScreen extends LitElement {
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: background 150ms ease;
+      transition: background 150ms ease, transform 100ms ease;
     }
     .stepper-btn:hover {
       background: var(--cv-surface-2, #F1E4CC);
+    }
+    .stepper-btn:active {
+      transform: scale(0.94);
     }
     .stepper-count {
       font-size: 12px;
@@ -1445,6 +1448,44 @@ export class LoopScreen extends LitElement {
       white-space: nowrap;
       min-width: 58px;
       text-align: center;
+    }
+    .length-presets {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      margin-left: 2px;
+      padding-left: 6px;
+      border-left: 1px solid rgba(46, 39, 31, 0.12);
+    }
+    .preset-btn {
+      border: 1px solid rgba(46, 39, 31, 0.1);
+      font-family: inherit;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink-muted, #6B5F50);
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 150ms ease, color 150ms ease, border-color 150ms ease, transform 100ms ease;
+    }
+    .preset-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-ink, #2E271F);
+    }
+    .preset-btn:active {
+      transform: scale(0.94);
+    }
+    .preset-btn.active {
+      background: var(--cv-ink, #2E271F);
+      color: #FAF4EB;
+      border-color: var(--cv-ink, #2E271F);
+      font-weight: 800;
     }
     .try-another-btn {
       border: none;
@@ -3008,6 +3049,13 @@ export class LoopScreen extends LitElement {
     const curLen = this.progression?.chords.length || 4;
     if (curLen < MAX_PROGRESSION_LENGTH) {
       this.dispatchEvent(new CustomEvent('set-length', { detail: curLen + 1, bubbles: true, composed: true }));
+    }
+  };
+
+  private onSetLength = (len: number) => {
+    const curLen = this.progression?.chords.length || 4;
+    if (curLen !== len) {
+      this.dispatchEvent(new CustomEvent('set-length', { detail: len, bubbles: true, composed: true }));
     }
   };
 
@@ -5188,6 +5236,20 @@ export class LoopScreen extends LitElement {
               <button class="stepper-btn" @click=${this.onDecLength} aria-label="Fewer chords">−</button>
               <span class="stepper-count">${chords.length} chords</span>
               <button class="stepper-btn" @click=${this.onIncLength} aria-label="More chords">+</button>
+              <div class="length-presets">
+                <button
+                  class="preset-btn ${chords.length === 4 ? 'active' : ''}"
+                  @click=${() => this.onSetLength(4)}
+                  aria-label="4 chords preset"
+                  aria-pressed="${chords.length === 4}"
+                >4</button>
+                <button
+                  class="preset-btn ${chords.length === 8 ? 'active' : ''}"
+                  @click=${() => this.onSetLength(8)}
+                  aria-label="8 chords preset"
+                  aria-pressed="${chords.length === 8}"
+                >8</button>
+              </div>
             </div>
             <button class="try-another-btn dice-reroll-btn" @click=${this.onReroll} aria-label="Try another progression">
               <svg width="15" height="15" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>

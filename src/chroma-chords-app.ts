@@ -5,7 +5,7 @@ import { projectStorage, SyncStatus } from './services/project-storage';
 import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
 import { SongArranger, SongSection } from './services/song-arranger';
-import { loadChordData, generateProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling } from './services/chord-engine';
+import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
 import { authService } from './services/auth-service';
 import './components/app-header';
@@ -38,6 +38,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private toastMessage: string | null = null;
   @state() private toastUndoId: string | null = null;
   @state() private isGenerating = false;
+  @state() private chordLengthCache: ChordBlock[] = [];
 
   private currentProjectId: string | null = null;
   private activeSearchPrompt: string | null = null;
@@ -294,6 +295,7 @@ export class ChromaChordsApp extends LitElement {
       this.activeIndex = 0;
       this.progressStep = 0;
       this.playing = false;
+      this.chordLengthCache = [];
 
       playbackEngine.setProgression(progression, this.order);
       playbackEngine.reset();
@@ -310,12 +312,36 @@ export class ChromaChordsApp extends LitElement {
   }
 
   private onLengthChange(e: CustomEvent<number>) {
-    this.length = e.detail;
-    this.regenerate();
+    const targetLength = e.detail;
+    if (!this.progression) return;
+    if (targetLength === this.length) return;
+
+    const result = extendProgression(
+      this.progression,
+      targetLength,
+      this.chordData,
+      this.chordLengthCache
+    );
+
+    this.progression = result.progression;
+    this.chordLengthCache = result.cachedTailChords;
+    this.length = this.progression.chords.length;
+    this.order = Array.from({ length: this.length }, (_, i) => i);
+
+    playbackEngine.setProgression(this.progression, this.order);
+
+    if (this.sections.length > 0) {
+      this.sections = SongArranger.syncActiveSection(this.sections, this.activeSectionIdx, this.progression, this.order);
+    } else {
+      this.sections = SongArranger.createInitialSong(this.progression, this.order);
+    }
+
+    this.requestUpdate();
   }
 
   private regenerate() {
     if (!this.chordData.scales || Object.keys(this.chordData.scales).length === 0) return;
+    this.chordLengthCache = [];
     const progression = generateProgression(this.chordData, this.genre, this.mood, {
       length: this.length,
     });
@@ -377,6 +403,7 @@ export class ChromaChordsApp extends LitElement {
     };
     this.order = Array.from({ length: this.progression.chords.length }, (_, i) => i);
     this.length = this.progression.chords.length;
+    this.chordLengthCache = [];
     this.showTheory = p.showTheory ?? this.showTheory;
     
     if (p.barsPerChord) {

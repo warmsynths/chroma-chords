@@ -160,6 +160,15 @@ describe('Studio Component Interactions', () => {
     diceBtn?.click();
     expect(rerollSpy).toHaveBeenCalled();
 
+    // Test quick preset buttons (4 and 8)
+    const presetBtns = el.shadowRoot?.querySelectorAll('.preset-btn') as NodeListOf<HTMLButtonElement>;
+    expect(presetBtns.length).toBe(2);
+    expect(presetBtns[0].classList.contains('active')).toBe(true);
+    expect(presetBtns[1].classList.contains('active')).toBe(false);
+
+    presetBtns[1].click(); // Click '8' preset
+    expect(lenSpy).toHaveBeenCalledWith(8);
+
     document.body.removeChild(el);
   });
 

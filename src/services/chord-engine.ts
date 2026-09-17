@@ -1125,6 +1125,135 @@ export function generateProgression(data: RawChordData, genre: string, mood: str
   return { genre, mood, key: root, scaleType, bpm: bpmForGenreMood(genre, mood), chords };
 }
 
+export function extendProgression(
+  progression: Progression,
+  targetLength: number,
+  chordData: RawChordData,
+  cachedTailChords: ChordBlock[] = []
+): { progression: Progression; cachedTailChords: ChordBlock[] } {
+  const currentLength = progression.chords.length;
+  const clampedTarget = Math.max(MIN_PROGRESSION_LENGTH, Math.min(MAX_PROGRESSION_LENGTH, targetLength));
+
+  if (clampedTarget === currentLength) {
+    return {
+      progression,
+      cachedTailChords: [...cachedTailChords],
+    };
+  }
+
+  // 1. Reducing length: preserve first clampedTarget chords and push chopped tail chords to cache
+  if (clampedTarget < currentLength) {
+    const retained = progression.chords.slice(0, clampedTarget);
+    const chopped = progression.chords.slice(clampedTarget);
+    return {
+      progression: {
+        ...progression,
+        chords: retained,
+      },
+      cachedTailChords: [...chopped, ...cachedTailChords],
+    };
+  }
+
+  // 2. Extending length: retain existing chords and fill needed slots
+  const existingChords = [...progression.chords];
+  const cache = [...cachedTailChords];
+  const needed = clampedTarget - currentLength;
+
+  // Restore as many chords from cache as possible first
+  const restoredFromCache: ChordBlock[] = [];
+  while (restoredFromCache.length < needed && cache.length > 0) {
+    restoredFromCache.push(cache.shift()!);
+  }
+
+  const chordsAfterCache = [...existingChords, ...restoredFromCache];
+  const stillNeeded = clampedTarget - chordsAfterCache.length;
+
+  if (stillNeeded <= 0) {
+    return {
+      progression: {
+        ...progression,
+        chords: chordsAfterCache,
+      },
+      cachedTailChords: cache,
+    };
+  }
+
+  // Resolve scale
+  const root = progression.key || 'C';
+  const scaleType = progression.scaleType || 'MAJOR';
+  let scaleKey = `${root}_${scaleType}`;
+  let scale = chordData.scales?.[scaleKey];
+  if (!scale && chordData.scales && Object.keys(chordData.scales).length > 0) {
+    const fallbackKey = Object.keys(chordData.scales).find(k => k.endsWith(`_${scaleType}`)) || Object.keys(chordData.scales)[0];
+    scale = chordData.scales[fallbackKey];
+    scaleKey = fallbackKey;
+  }
+
+  if (!scale) {
+    return {
+      progression: {
+        ...progression,
+        chords: chordsAfterCache,
+      },
+      cachedTailChords: cache,
+    };
+  }
+
+  const preferFlat = preferFlatSpelling(scale.root || root, scaleType);
+  const degreeOrder = Object.keys(scale.degrees);
+  let candidates = degreeOrder.filter(d => scale.degrees[d]);
+  if (!candidates.length) candidates = degreeOrder;
+
+  const findDegree = (chord?: ChordBlock): string => {
+    if (!chord) return 'TONIC';
+    if (chord.degree && scale.degrees[chord.degree]) return chord.degree;
+    for (const [deg, prof] of Object.entries(scale.degrees)) {
+      if (prof.chord_name === chord.name) return deg;
+    }
+    return 'TONIC';
+  };
+
+  const lastChord = chordsAfterCache[chordsAfterCache.length - 1];
+  let currentDegree = findDegree(lastChord);
+
+  const firstChord = chordsAfterCache[0];
+  const firstDegree = findDegree(firstChord);
+
+  const newChords: ChordBlock[] = [];
+
+  for (let step = 0; step < stillNeeded; step++) {
+    const isLast = step === stillNeeded - 1;
+
+    const nonDuplicates = candidates.filter(d => d !== currentDegree);
+    const pool = nonDuplicates.length ? nonDuplicates : candidates;
+
+    let pickedDegree: string;
+    if (isLast) {
+      pickedDegree = pickWeighted(pool, d => {
+        const transitionToFirst = getMarkovTransitionWeight(d, firstDegree, scale.type, progression.genre, progression.mood);
+        const transitionFromCurrent = getMarkovTransitionWeight(currentDegree, d, scale.type, progression.genre, progression.mood);
+        return transitionToFirst * transitionFromCurrent;
+      }) || pool[0];
+    } else {
+      pickedDegree = pickWeighted(pool, d =>
+        getMarkovTransitionWeight(currentDegree, d, scale.type, progression.genre, progression.mood)
+      ) || pool[0];
+    }
+
+    currentDegree = pickedDegree;
+    newChords.push(buildChordBlock(scaleKey, pickedDegree, scale, preferFlat));
+  }
+
+  return {
+    progression: {
+      ...progression,
+      chords: [...chordsAfterCache, ...newChords],
+    },
+    cachedTailChords: cache,
+  };
+}
+
+
 const DEGREE_ROMAN_MAP: Record<string, { upper: string; lower: string }> = {
   TONIC: { upper: 'I', lower: 'i' },
   SUPERTONIC: { upper: 'II', lower: 'ii' },
