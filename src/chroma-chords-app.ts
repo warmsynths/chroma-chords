@@ -481,9 +481,31 @@ export class ChromaChordsApp extends LitElement {
 
   private onAddSection() {
     if (!this.progression) return;
-    const res = SongArranger.addSection(this.sections, this.progression);
+    const res = SongArranger.addSection(this.sections, this.progression, this.chordData);
     this.sections = res.sections;
     this.activeSectionIdx = res.activeIndex;
+    const activeSec = this.sections[this.activeSectionIdx];
+    if (activeSec) {
+      this.progression = activeSec.progression;
+      this.order = activeSec.order.slice();
+      playbackEngine.setProgression(this.progression, this.order);
+    }
+    playbackEngine.setSong(this.sections);
+    this.requestUpdate();
+  }
+
+  private onRemoveSection(e: CustomEvent<number>) {
+    const idx = e.detail;
+    const res = SongArranger.removeSection(this.sections, idx);
+    this.sections = res.sections;
+    this.activeSectionIdx = res.activeIndex;
+    const activeSec = this.sections[this.activeSectionIdx];
+    if (activeSec) {
+      this.progression = activeSec.progression;
+      this.order = activeSec.order.slice();
+      playbackEngine.setProgression(this.progression, this.order);
+    }
+    playbackEngine.setSong(this.sections);
     this.requestUpdate();
   }
 
@@ -491,8 +513,9 @@ export class ChromaChordsApp extends LitElement {
     this.activeSectionIdx = e.detail;
     const sec = this.sections[e.detail];
     if (sec) {
+      this.progression = sec.progression;
       this.order = sec.order.slice();
-      playbackEngine.setOrder(this.order);
+      playbackEngine.setProgression(this.progression, this.order);
     }
     this.requestUpdate();
   }
@@ -610,6 +633,7 @@ export class ChromaChordsApp extends LitElement {
             @reroll=${this.onReroll}
             @add-section=${this.onAddSection}
             @select-section=${this.onSelectSection}
+            @remove-section=${this.onRemoveSection}
             @save-set=${this.onSaveSet}
             @load-project=${this.onLoadProject}
             @delete-project=${this.onDeleteProject}

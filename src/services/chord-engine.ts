@@ -107,7 +107,7 @@ const QUALITY_INTERVALS: Record<string, number[]> = {
 
 export const CHORD_QUALITIES = Object.keys(QUALITY_INTERVALS);
 
-const DEGREE_TAG: Record<string, string> = {
+export const DEGREE_TAG: Record<string, string> = {
   TONIC: 'home',
   SUPERTONIC: 'rise',
   MEDIANT: 'glow',
@@ -118,7 +118,7 @@ const DEGREE_TAG: Record<string, string> = {
   SUBTONIC: 'drift',
 };
 
-const DEGREE_FUNCTION: Record<string, string> = {
+export const DEGREE_FUNCTION: Record<string, string> = {
   TONIC: 'Tonic',
   SUPERTONIC: 'Supertonic',
   MEDIANT: 'Mediant',
@@ -129,7 +129,7 @@ const DEGREE_FUNCTION: Record<string, string> = {
   SUBTONIC: 'Subtonic',
 };
 
-const DEGREE_TENSION: Record<string, number> = {
+export const DEGREE_TENSION: Record<string, number> = {
   TONIC: 0.04,
   SUBMEDIANT: 0.24,
   MEDIANT: 0.34,
@@ -233,7 +233,7 @@ export const ROMAN_BY_SCALE: Record<string, Record<string, string>> = {
   },
 };
 
-function noteName(pc: number, preferFlat: boolean): string {
+export function noteName(pc: number, preferFlat: boolean): string {
   const idx = ((pc % 12) + 12) % 12;
   return preferFlat ? NOTE_FLAT[idx] : NOTE_SHARP[idx];
 }
@@ -666,7 +666,7 @@ function degreeBiasWeight(template: ProgressionTemplate, bias: string[]): number
   return 1 + template.degrees.filter(d => bias.includes(d)).length * 0.6;
 }
 
-function pickWeighted<T>(items: T[], weight: (item: T) => number): T {
+export function pickWeighted<T>(items: T[], weight: (item: T) => number): T {
   const total = items.reduce((sum, item) => sum + weight(item), 0);
   let r = Math.random() * total;
   for (const item of items) {
@@ -1018,7 +1018,7 @@ function describeChord(functionLabel: string, scaleLabel: string, name: string):
   return templates[functionLabel] || `${name} colors the progression as the ${functionLabel.toLowerCase()} of ${scaleLabel}.`;
 }
 
-function buildChordBlock(scaleKey: string, degree: string, scale: ScaleProfile, preferFlat: boolean): ChordBlock {
+export function buildChordBlock(scaleKey: string, degree: string, scale: ScaleProfile, preferFlat: boolean): ChordBlock {
   const degProfile = scale.degrees[degree];
   const name = degProfile.chord_name;
   const tension = DEGREE_TENSION[degree] ?? 0.5;

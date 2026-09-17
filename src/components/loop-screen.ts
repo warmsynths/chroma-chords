@@ -22,7 +22,7 @@ import {
 import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
 import { ProjectData } from '../services/project-service';
-import { SongArranger, SongSection } from '../services/song-arranger';
+import { SongArranger, SongSection, SECTION_TEMPLATES } from '../services/song-arranger';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, GENRE_HUMANIZE, setMasterTone, normalizeInstrumentName } from '../services/audio-service';
 import 'human-engine';
 import type { HumanState } from 'human-engine';
@@ -1315,70 +1315,195 @@ export class LoopScreen extends LitElement {
       background: rgba(46, 39, 31, 0.12);
       margin: 0 4px;
     }
-    .song-track-container {
-      display: flex;
-      gap: 14px;
-      margin-top: 18px;
-      overflow-x: auto;
-      padding-bottom: 12px;
-      align-items: stretch;
+    .song-section-view {
+      padding: 12px 0 28px;
+      max-width: 660px;
     }
-    @media (max-width: 768px) {
-      .song-track-container {
-        flex-direction: column;
-        overflow-x: visible;
-      }
+    .song-section-lead {
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-bottom: 20px;
     }
-    .song-track-card {
-      flex: 1;
-      min-width: 190px;
-      background: var(--cv-surface, #F6EADB);
-      border-radius: 18px;
-      padding: 18px;
+    .song-section-list {
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      cursor: pointer;
-      transition: transform 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), box-shadow 150ms ease;
-      box-sizing: border-box;
+      gap: 12px;
     }
+    .song-section-row,
+    .song-track-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 20px;
+      padding: 18px 22px;
+      cursor: pointer;
+      box-sizing: border-box;
+      transition: transform 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), box-shadow 150ms ease;
+    }
+    .song-section-row:hover,
     .song-track-card:hover {
       transform: translateY(-2px);
-      box-shadow: 0 12px 24px -14px rgba(46, 39, 31, 0.35);
+      box-shadow: 0 8px 22px -8px rgba(46, 39, 31, 0.28);
     }
+    .song-section-row.active,
     .song-track-card.active {
-      box-shadow: inset 0 0 0 2px var(--cv-ink, #2E271F);
+      box-shadow: inset 0 0 0 2px rgba(46, 39, 31, 0.22);
     }
+    .song-section-index {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+      flex-shrink: 0;
+      min-width: 90px;
+    }
+    .song-section-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .song-section-title {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: var(--cv-ink, #2E271F);
+      line-height: 1.2;
+    }
+    .song-section-desc {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-top: 3px;
+    }
+    .song-section-chips,
     .song-card-chips {
       display: flex;
-      gap: 5px;
-      margin-top: 6px;
-      flex-wrap: wrap;
+      gap: 6px;
       align-items: center;
+      flex-shrink: 0;
     }
-    .add-section-card {
-      min-width: 180px;
-      border-radius: 18px;
-      border: 1.5px dashed rgba(46, 39, 31, 0.25);
-      padding: 18px;
+    .song-section-chips .song-chord-chip,
+    .song-chord-chip {
+      width: 22px;
+      height: 20px;
+      border-radius: 7px;
+      flex-shrink: 0;
+      transition: transform 120ms ease;
+    }
+    .song-section-row:hover .song-chord-chip {
+      transform: scale(1.06);
+    }
+    .song-section-delete-btn {
+      background: transparent;
+      border: none;
+      color: var(--cv-ink-muted, #6B5F50);
+      opacity: 0.45;
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 8px;
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+    }
+    .song-section-delete-btn:hover {
+      opacity: 1;
+      color: #C0392B;
+      background: rgba(192, 57, 43, 0.08);
+    }
+    .song-add-section-card,
+    .add-section-card {
+      width: 100%;
+      border-radius: 18px;
+      border: 1.5px dashed rgba(46, 39, 31, 0.28);
+      background: transparent;
+      padding: 16px 20px;
+      display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
       color: var(--cv-label, #8A6B3F);
-      font-weight: 800;
-      font-size: 13px;
+      font-weight: 700;
+      font-size: 14.5px;
       cursor: pointer;
-      transition: transform 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), background 150ms ease;
       box-sizing: border-box;
+      transition: transform 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), background 150ms ease, border-color 150ms ease;
     }
+    .song-add-section-card:hover,
     .add-section-card:hover {
       background: rgba(46, 39, 31, 0.03);
-      transform: translateY(-2px);
+      border-color: rgba(46, 39, 31, 0.45);
+      transform: translateY(-1px);
     }
+    .song-add-section-card:active,
     .add-section-card:active {
-      transform: scale(0.98);
+      transform: scale(0.99);
+    }
+    .song-add-section-card.disabled {
+      opacity: 0.6;
+      cursor: default;
+      border-style: solid;
+      border-color: rgba(46, 39, 31, 0.14);
+      transform: none;
+    }
+    .song-add-section-card .plus-glyph {
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .song-play-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+    .song-transport-btn {
+      border: none;
+      min-height: 42px;
+      padding: 0 22px;
+      border-radius: 100px;
+      font-weight: 800;
+      font-size: 13.5px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: transform 120ms ease, box-shadow 120ms ease;
+    }
+    .song-transport-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 14px -6px rgba(46, 39, 31, 0.3);
+    }
+    .song-transport-status {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+    @media (max-width: 540px) {
+      .song-section-row,
+      .song-track-card {
+        padding: 14px 16px;
+        gap: 12px;
+      }
+      .song-section-index {
+        min-width: 74px;
+        font-size: 10px;
+      }
+      .song-section-title {
+        font-size: 15px;
+      }
+      .song-section-desc {
+        font-size: 11.5px;
+      }
+      .song-section-chips .song-chord-chip,
+      .song-chord-chip {
+        width: 18px;
+        height: 16px;
+      }
     }
     .share-btn {
       margin-left: auto;
@@ -3852,6 +3977,127 @@ export class LoopScreen extends LitElement {
     `;
   }
 
+  private onSelectSectionCard(index: number) {
+    this.activeSectionIdx = index;
+    this.activeView = 'loop';
+    this.dispatchEvent(new CustomEvent('select-section', {
+      detail: index,
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private renderSongSectionList(moodColor: string) {
+    const canAddSection = this.sections.length < SECTION_TEMPLATES.length;
+    return html`
+      <div class="song-view-wrap song-section-view">
+        <div class="song-section-lead">
+          Each section reuses the loop, related but never identical. Press play below to hear the whole thing.
+        </div>
+
+        <div class="song-section-list">
+          ${this.sections.map((sec, i) => {
+            const isActive = this.activeSectionIdx === i;
+            return html`
+              <div
+                class="song-section-row ${isActive ? 'active' : ''}"
+                @click=${() => this.onSelectSectionCard(i)}
+                role="button"
+                tabindex="0"
+                aria-label="Edit section ${i + 1} ${sec.name}"
+              >
+                <div class="song-section-index">SECTION ${i + 1}</div>
+                <div class="song-section-info">
+                  <div class="song-section-title">${sec.name}</div>
+                  <div class="song-section-desc">${sec.desc}</div>
+                </div>
+                <div class="song-section-chips">
+                  ${sec.progression.chords.map(c => {
+                    const role = roleForTension(c.tension);
+                    return html`
+                      <div
+                        class="song-chord-chip"
+                        style="background: ${role.color};"
+                        title="${c.name} (${c.functionLabel || c.tag})"
+                      ></div>
+                    `;
+                  })}
+                </div>
+                ${this.sections.length > 1 ? html`
+                  <button
+                    class="song-section-delete-btn"
+                    title="Remove ${sec.name}"
+                    aria-label="Remove ${sec.name}"
+                    @click=${(e: Event) => {
+                      e.stopPropagation();
+                      this.dispatchEvent(new CustomEvent('remove-section', { detail: i, bubbles: true, composed: true }));
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                ` : ''}
+              </div>
+            `;
+          })}
+
+          ${canAddSection ? html`
+            <button
+              class="song-add-section-card"
+              @click=${() => this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }))}
+              aria-label="Add a related section"
+            >
+              <span class="plus-glyph">+</span>
+              <span>Add a related section</span>
+            </button>
+          ` : html`
+            <div class="song-add-section-card disabled" aria-disabled="true">
+              <span>All song parts added</span>
+            </div>
+          `}
+        </div>
+
+        <!-- Song Play Transport Strip Below Sections -->
+        <div class="loop-strip-header song-play-row" style="margin-top: 24px;">
+          <button
+            class="loop-play-btn song-transport-btn"
+            @click=${() => this.dispatchEvent(new CustomEvent('toggle-play-song', { bubbles: true, composed: true }))}
+            style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'};"
+            aria-label="${this.playing ? 'Stop song' : `Play song · ${this.sections.length} sections`}"
+          >
+            ${this.playing ? html`
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+              <span>Stop song</span>
+            ` : html`
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Play song · ${this.sections.length} sections</span>
+            `}
+          </button>
+          <div class="strip-timeline-wrap">
+            <div class="strip-cells-bar loop-beat-cells">
+              ${this.sections.map((_, si) => {
+                const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
+                return html`
+                  <div
+                    class="strip-cell"
+                    style="height: ${isCurrentSec ? 20 : 10}px; border-radius: 3px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'}; flex: 1;"
+                  ></div>
+                `;
+              })}
+            </div>
+            <div class="strip-labels-row">
+              <div class="strip-status-label song-transport-status">
+                ${this.playing
+                  ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
+                  : `${this.sections.length} sections · stopped`}
+              </div>
+              <div class="strip-space-hint">Space plays the song</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   private renderFeelSheetMobile() {
     if (!this.feelOpen) return '';
     const feelScopeNote = this.fScopeBar === null
@@ -4742,41 +4988,7 @@ export class LoopScreen extends LitElement {
                   ${this.renderTheoryStrip(theoryData)}
                 </div>
               ` : ''}
-            ` : this.activeView === 'song' ? html`
-              <div class="song-track-list" style="display: flex; flex-direction: column; gap: 12px; padding: 4px 0 20px;">
-                <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); margin-bottom: 4px;">
-                  Each section reuses the loop, related but never identical. Tap a section to edit its chords, or press play to hear the whole arrangement.
-                </div>
-                ${this.sections.map((sec, i) => {
-                  const isActive = this.activeSectionIdx === i;
-                  return html`
-                    <div
-                      class="song-track-card ${isActive ? 'active' : ''}"
-                      style="width: 100%; box-sizing: border-box; cursor: pointer;"
-                      @click=${() => { this.activeSectionIdx = i; this.activeView = 'loop'; }}
-                    >
-                      <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Section ${i + 1}</div>
-                      <div style="font-size: 18px; font-weight: 800; letter-spacing: -0.01em; color: var(--cv-ink); margin-top: 4px;">${sec.name}</div>
-                      <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); margin-top: 4px;">${sec.desc}</div>
-                      <div class="song-card-chips" style="display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap;">
-                        ${sec.progression.chords.map(c => {
-                          const role = roleForTension(c.tension);
-                          return html`<div class="song-chord-chip" style="width: 16px; height: 16px; border-radius: ${Math.round(role.radius * 0.4)}px; background: ${role.color}; flex-shrink: 0;" title="${c.name}"></div>`;
-                        })}
-                      </div>
-                    </div>
-                  `;
-                })}
-                <button
-                  class="add-section-card"
-                  style="width: 100%; min-height: 60px; border: 2px dashed rgba(46,39,31,0.18); border-radius: 20px; background: transparent; color: var(--cv-ink-muted); font-size: 13.5px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: border-color 150ms ease, color 150ms ease;"
-                  @click=${() => this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }))}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-                  Add a related section
-                </button>
-              </div>
-            ` : html`
+            ` : this.activeView === 'song' ? this.renderSongSectionList(moodColor) : html`
               <div class="play-it-wrap" style="padding: 16px 4px 26px;">
                 <div style="background: var(--cv-surface); border-radius: 20px; padding: 15px 15px 17px; margin-bottom: 18px;">
                   <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.4px; color: var(--cv-label); text-transform: uppercase;">Instrument</div>
@@ -5126,78 +5338,7 @@ export class LoopScreen extends LitElement {
                   </div>
                 ` : ''}
               </div>
-            ` : this.activeView === 'song' ? html`
-              <div class="song-view-wrap" style="padding: 10px 4px 24px;">
-                <!-- Song Play Transport Strip -->
-                <div class="loop-strip-header" style="margin-bottom: 20px;">
-                  <button
-                    class="loop-play-btn"
-                    @click=${() => this.dispatchEvent(new CustomEvent('toggle-play-song', { bubbles: true, composed: true }))}
-                    style="background: ${this.playing ? '#2E271F' : moodColor}; color: ${this.playing ? '#FBF3E6' : '#2E271F'}; min-height: 42px; padding: 0 18px; border-radius: 100px; font-weight: 800; font-size: 13px; border: none; cursor: pointer; white-space: nowrap;"
-                    aria-label="${this.playing ? 'Stop' : `Play song · ${this.sections.length} sections`}"
-                  >
-                    ${this.playing ? 'Stop' : `Play song · ${this.sections.length} sections`}
-                  </button>
-                  <div class="strip-timeline-wrap">
-                    <div class="strip-cells-bar loop-beat-cells">
-                      ${this.sections.map((_, si) => {
-                        const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
-                        return html`
-                          <div
-                            class="strip-cell"
-                            style="height: ${isCurrentSec ? 20 : 10}px; border-radius: 3px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'}; flex: 1;"
-                          ></div>
-                        `;
-                      })}
-                    </div>
-                    <div class="strip-labels-row">
-                      <div class="strip-status-label">
-                        ${this.playing
-                          ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
-                          : `${this.sections.length} sections · stopped`}
-                      </div>
-                      <div class="strip-space-hint">Space plays the song</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div style="font-size: 13px; line-height: 1.6; color: var(--cv-ink-muted); max-width: 600px;">
-                  Each section reuses the loop, related but never identical. Tap a section to edit its chords, or press play to hear the whole arrangement.
-                </div>
-
-                <!-- Desktop / Wide Horizontal Track -->
-                <div class="song-track-container">
-                  ${this.sections.map((sec, i) => {
-                    const isActive = this.activeSectionIdx === i;
-                    return html`
-                      <div
-                        class="song-track-card ${isActive ? 'active' : ''}"
-                        @click=${() => { this.activeSectionIdx = i; this.activeView = 'loop'; }}
-                      >
-                        <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Section ${i + 1}</div>
-                        <div style="font-size: 18px; font-weight: 800; letter-spacing: -0.01em; color: var(--cv-ink);">${sec.name}</div>
-                        <div style="font-size: 12px; line-height: 1.5; color: var(--cv-ink-muted); flex: 1;">${sec.desc}</div>
-                        <div class="song-card-chips">
-                          ${sec.progression.chords.map(c => {
-                            const role = roleForTension(c.tension);
-                            return html`<div class="song-chord-chip" style="width: 16px; height: 16px; border-radius: ${Math.round(role.radius * 0.4)}px; background: ${role.color}; flex-shrink: 0;" title="${c.name}"></div>`;
-                          })}
-                        </div>
-                      </div>
-                    `;
-                  })}
-                  <div
-                    class="add-section-card"
-                    @click=${() => this.dispatchEvent(new CustomEvent('add-section', { bubbles: true, composed: true }))}
-                    role="button"
-                    tabindex="0"
-                  >
-                    <span style="font-size: 24px; line-height: 1; font-weight: 700;">+</span>
-                    <span>Add a related section</span>
-                  </div>
-                </div>
-              </div>
-            ` : html`
+            ` : this.activeView === 'song' ? this.renderSongSectionList(moodColor) : html`
               <div class="play-it-wrap" style="padding: 18px 24px 32px;">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
                   <div style="font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; color: var(--cv-label); text-transform: uppercase;">Piano</div>
