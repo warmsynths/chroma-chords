@@ -18,6 +18,7 @@ import {
   SCALE_DEGREE_SEMITONES,
   SCALE_DEGREE_QUALITIES,
   ROMAN_BY_SCALE,
+  MOODS,
 } from '../services/chord-engine';
 import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
@@ -110,17 +111,10 @@ export const BANDS: BandArchetype[] = [
 
 const GENRE_PRIMARY = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Synthwave', 'Indie/Folk', 'Rock', 'Jazz-ish', 'Cinematic'];
 const GENRE_ALL = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Rock', 'Cinematic', 'Ambient/Drone', 'House/Dance', 'Reggae/Dub', 'Gospel'];
-const MOOD_ALL = ['Uplifting', 'Melancholy', 'Dreamy', 'Tense', 'Warm', 'Nostalgic'];
-const MOOD_PRIMARY = ['Uplifting', 'Melancholy', 'Dreamy'];
+const MOOD_ALL = MOODS.map(m => m.name);
+const MOOD_PRIMARY = MOOD_ALL;
 
-const MOOD_ICONS: Record<string, string> = {
-  Uplifting: 'M4 18 C 8 18 8 11 12 11 C 16 11 16 5 20 5',
-  Melancholy: 'M3 9 Q 8 9 9 14 T 15 17 Q 19 18 21 15',
-  Dreamy: 'M4 15 a4 4 0 1 1 8 0 a4 4 0 1 1 8 0',
-  Tense: 'M3 12 L7 6 L11 16 L15 6 L19 16 L21 12',
-  Warm: 'M12 4 a6.5 6.5 0 1 0 6.5 6.5',
-  Nostalgic: 'M3 12 C 7 6 9 18 13 12 C 17 6 19 18 21 12',
-};
+const MOOD_ICONS: Record<string, string> = Object.fromEntries(MOODS.map(m => [m.name, m.iconPath]));
 
 const ROLE_PLAIN: Record<string, string> = {
   Tonic: 'home',
@@ -2245,14 +2239,71 @@ export class LoopScreen extends LitElement {
     .mobile-vibe-toggle {
       width: 100%;
       border: none;
+      font-family: inherit;
       background: var(--cv-surface, #F6EADB);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.08);
       border-radius: 16px;
-      padding: 12px 14px;
+      padding: 10px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
       cursor: pointer;
+      transition: background 180ms ease, box-shadow 180ms ease;
+      box-sizing: border-box;
+    }
+    .mobile-vibe-toggle:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .mobile-vibe-toggle.open {
+      background: var(--cv-surface, #F6EADB);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.14);
+    }
+    .mobile-vibe-toggle .vibe-toggle-chevron {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--cv-cream, #FBF3E6);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: transform 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      transform: rotate(0deg);
+    }
+    .mobile-vibe-toggle.open .vibe-toggle-chevron {
+      transform: rotate(180deg);
+    }
+    .mobile-vibe-drawer {
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 20px;
+      padding: 16px 15px 18px;
+      margin-top: 8px;
+      border: 1px solid rgba(46, 39, 31, 0.08);
+      box-shadow: 0 12px 28px -12px rgba(46, 39, 31, 0.22);
+      animation: cvfv-panel 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      box-sizing: border-box;
+    }
+    .mobile-vibe-drawer .popover-input-row {
+      background: var(--cv-cream, #FBF3E6);
+      border: 1.5px solid rgba(46, 39, 31, 0.12);
+      border-radius: 16px;
+      margin-top: 0;
+      margin-bottom: 4px;
+    }
+    .mobile-vibe-drawer .pill {
+      background: var(--cv-cream, #FBF3E6);
+    }
+    .mobile-vibe-drawer .pill:hover {
+      background: #FFFFFF;
+    }
+    .mobile-vibe-drawer .pill.active {
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+    }
+    .mobile-vibe-drawer .pill.mood-pill.active {
+      color: #2E271F;
     }
     .mobile-swap-sheet {
       position: fixed;
@@ -4895,16 +4946,27 @@ export class LoopScreen extends LitElement {
         <div class="mobile-stage-wrap" style="--mood-color: ${moodColor};">
           <!-- Top Vibe Dropdown Button -->
           <div style="padding: 12px 18px 0;">
-            <button class="mobile-vibe-toggle" @click=${this.toggleVibe}>
-              <div style="text-align: left;">
-                <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">The Vibe</div>
-                <div style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink); margin-top: 2px;">${this.getVibeSummary()}</div>
+            <button
+              class="mobile-vibe-toggle ${this.vibeOpen ? 'open' : ''}"
+              @click=${this.toggleVibe}
+              aria-label="Vibe, genre and mood"
+              aria-expanded=${this.vibeOpen}
+            >
+              <div style="flex: 1; min-width: 0; text-align: left;">
+                <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label, #8A6B3F); text-transform: uppercase;">
+                  ${this.vibeOpen ? 'The Vibe' : 'The Vibe · tap to change'}
+                </div>
+                <div style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink, #2E271F); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  ${this.getVibeSummary()}
+                </div>
               </div>
-              <span style="font-size: 16px; font-weight: 800; color: var(--cv-ink-muted);">${this.vibeOpen ? '⌃' : '⌄'}</span>
+              <span class="vibe-toggle-chevron">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
             </button>
 
             ${this.vibeOpen ? html`
-              <div style="background: var(--cv-surface); border-radius: 20px; padding: 16px 15px; margin-top: 8px;">
+              <div class="mobile-vibe-drawer">
                 <form class="popover-input-row" @submit=${this.onVibeSubmit}>
                   <input
                     type="text"
@@ -4913,7 +4975,7 @@ export class LoopScreen extends LitElement {
                     @input=${(e: Event) => { this.freeText = (e.target as HTMLInputElement).value; }}
                     placeholder=${this.vibeExamples[this.vibePlaceholderIdx]}
                   />
-                  <button type="submit" class="vibe-submit-btn" style="background: ${moodColor};">
+                  <button type="submit" class="vibe-submit-btn" style="background: ${moodColor};" aria-label="Generate loop from vibe">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
                   </button>
                 </form>
@@ -4927,8 +4989,32 @@ export class LoopScreen extends LitElement {
 
                 <div class="popover-kicker spaced">Mood</div>
                 <div class="pills-group">
-                  ${MOOD_PRIMARY.map(m => html`
-                    <button class="pill mood-pill ${this.progression?.mood === m ? 'active' : ''}" @click=${() => this.onMoodClick(m)}>${m}</button>
+                  ${MOODS.map(mDef => {
+                    const m = mDef.name;
+                    const mCol = mDef.dot;
+                    const isActive = this.progression?.mood === m;
+                    return html`
+                      <button
+                        class="pill mood-pill ${isActive ? 'active' : ''}"
+                        style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}"
+                        @click=${() => this.onMoodClick(m)}
+                      >
+                        <span class="mood-badge" style="background: ${isActive ? 'rgba(46, 39, 31, 0.12)' : mCol + '33'};">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round"><path d="${mDef.iconPath}"/></svg>
+                        </span>
+                        ${m}
+                      </button>
+                    `;
+                  })}
+                </div>
+
+                <div class="popover-kicker spaced" style="display: flex; align-items: baseline; gap: 7px;">
+                  <span>Band</span>
+                  <span style="font-size: 11px; font-weight: 700; color: rgba(46,39,31,0.38); text-transform: lowercase;">optional</span>
+                </div>
+                <div class="pills-group">
+                  ${BANDS.map(b => html`
+                    <button class="pill ${this.selectedBand === b.name ? 'active' : ''}" style="font-family: ${b.font}; font-weight: ${b.weight || 800};" @click=${() => this.onBandClick(b.name)}>${b.name}</button>
                   `)}
                 </div>
               </div>
@@ -5267,13 +5353,14 @@ export class LoopScreen extends LitElement {
 
             <div class="popover-kicker spaced">Mood</div>
             <div class="pills-group">
-              ${MOOD_PRIMARY.map(m => {
-                const mCol = getMoodColor(m);
+              ${MOODS.map(mDef => {
+                const m = mDef.name;
+                const mCol = mDef.dot;
                 const isActive = this.progression?.mood === m;
                 return html`
                   <button class="pill mood-pill ${isActive ? 'active' : ''}" style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}" @click=${() => this.onMoodClick(m)}>
                     <span class="mood-badge" style="background: ${isActive ? 'rgba(46, 39, 31, 0.12)' : mCol + '33'};">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round"><path d="${MOOD_ICONS[m] || 'M12 4 a6.5 6.5 0 1 0 6.5 6.5'}"/></svg>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round"><path d="${mDef.iconPath}"/></svg>
                     </span>
                     ${m}
                   </button>

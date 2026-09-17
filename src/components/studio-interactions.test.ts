@@ -85,22 +85,72 @@ describe('Studio Component Interactions', () => {
     document.body.removeChild(el);
   });
 
-  it('handles Mood pill click', async () => {
+  it('renders all 11 moods with mood-badge and handles Mood pill click in desktop', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;
     document.body.appendChild(el);
+    (el as any).isMobile = false;
     el.vibeOpen = true;
     await el.updateComplete;
 
     const setMoodSpy = vi.fn();
     el.addEventListener('set-mood', (e: any) => setMoodSpy(e.detail));
 
-    const moodPills = el.shadowRoot?.querySelectorAll('.pills-group .pill');
+    const popover = el.shadowRoot?.querySelector('.vibe-popover-desktop');
+    expect(popover).toBeTruthy();
+
+    const moodPills = popover?.querySelectorAll('.mood-pill');
+    expect(moodPills?.length).toBe(11);
+
     const dreamPill = Array.from(moodPills || []).find(p => p.textContent?.includes('Dreamy')) as HTMLElement;
-    if (dreamPill) {
-      dreamPill.click();
-      expect(setMoodSpy).toHaveBeenCalledWith('Dreamy');
-    }
+    expect(dreamPill).toBeTruthy();
+    expect(dreamPill.querySelector('.mood-badge svg path')).toBeTruthy();
+
+    dreamPill.click();
+    expect(setMoodSpy).toHaveBeenCalledWith('Dreamy');
+
+    document.body.removeChild(el);
+  });
+
+  it('renders styled mobile vibe toggle button and drawer with all 11 moods', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    (el as any).isMobile = true;
+    el.vibeOpen = false;
+    await el.updateComplete;
+
+    const toggleBtn = el.shadowRoot?.querySelector('.mobile-vibe-toggle') as HTMLElement;
+    expect(toggleBtn).toBeTruthy();
+    expect(toggleBtn.querySelector('.vibe-toggle-chevron svg')).toBeTruthy();
+    expect(toggleBtn.textContent).toContain('The Vibe · tap to change');
+
+    // Click toggle to open mobile vibe drawer
+    toggleBtn.click();
+    await el.updateComplete;
+
+    expect(el.vibeOpen).toBe(true);
+    expect(toggleBtn.classList.contains('open')).toBe(true);
+    expect(toggleBtn.textContent).toContain('The Vibe');
+
+    const drawer = el.shadowRoot?.querySelector('.mobile-vibe-drawer');
+    expect(drawer).toBeTruthy();
+
+    const moodPills = drawer?.querySelectorAll('.mood-pill');
+    expect(moodPills?.length).toBe(11);
+
+    // Each mood pill should have mood-badge with svg icon
+    moodPills?.forEach(pill => {
+      expect(pill.querySelector('.mood-badge svg path')).toBeTruthy();
+    });
+
+    const setMoodSpy = vi.fn();
+    el.addEventListener('set-mood', (e: any) => setMoodSpy(e.detail));
+
+    const warmPill = Array.from(moodPills || []).find(p => p.textContent?.includes('Warm')) as HTMLElement;
+    expect(warmPill).toBeTruthy();
+    warmPill.click();
+    expect(setMoodSpy).toHaveBeenCalledWith('Warm');
 
     document.body.removeChild(el);
   });
