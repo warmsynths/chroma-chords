@@ -34,6 +34,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private userEmail: string | null = null;
   @state() private isAuthenticated = false;
   @state() private syncStatus: SyncStatus = 'sign-in';
+  @state() private syncError: string | null = null;
   @state() private authModalOpen = false;
   @state() private toastMessage: string | null = null;
   @state() private toastUndoId: string | null = null;
@@ -174,7 +175,13 @@ export class ChromaChordsApp extends LitElement {
     });
 
     this.unsubscribeSyncStatus = projectStorage.subscribeSyncStatus((status) => {
+      const prevStatus = this.syncStatus;
       this.syncStatus = status;
+      this.syncError = projectStorage.getLastSyncError();
+      if (status === 'offline' && prevStatus !== 'offline') {
+        const err = this.syncError || 'Cloud sync failed';
+        this.showToast(`Sync failed: ${err}`);
+      }
       this.requestUpdate();
     });
 
@@ -591,6 +598,7 @@ export class ChromaChordsApp extends LitElement {
           .userEmail=${this.userEmail}
           .savedCount=${projectStorage.getProjects().length}
           .syncStatus=${this.syncStatus}
+          .syncError=${this.syncError}
           @request-login=${this.onLoginRequest}
           @request-logout=${this.onLogoutRequest}
           @sync-projects=${this.onSyncProjects}

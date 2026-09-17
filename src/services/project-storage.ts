@@ -9,7 +9,7 @@ export type SyncStatusChangeCallback = (status: SyncStatus) => void;
 
 const DELETED_PROJECTS_KEY = 'chroma_chords_deleted_projects';
 const LAST_SYNC_KEY = 'chroma_chords_last_sync_time';
-const DEFAULT_WORKER_URL = 'https://chroma-chords-api.warmsynths.workers.dev';
+const DEFAULT_WORKER_URL = 'https://chroma-chords-classifier.warmsynthsiloveyou.workers.dev';
 
 function getWorkerUrl(): string {
   try {
@@ -45,6 +45,7 @@ export class ProjectStorageManager {
   private syncTimeout: ReturnType<typeof setTimeout> | null = null;
   private syncQueued = false;
   private syncStatus: SyncStatus = 'sign-in';
+  private lastSyncError: string | null = null;
   private authStateCallbacks = new Set<AuthStateCallback>();
   private projectsChangeCallbacks = new Set<ProjectsChangeCallback>();
   private syncStatusCallbacks = new Set<SyncStatusChangeCallback>();
@@ -63,6 +64,9 @@ export class ProjectStorageManager {
       this.userEmail = state.user?.email || null;
       this.authenticated = state.isAuthenticated;
       this.syncStatus = this.authenticated ? 'synced' : 'sign-in';
+      if (!this.authenticated) {
+        this.lastSyncError = null;
+      }
       this.notifyAuthState();
       this.notifySyncStatus();
 
@@ -291,8 +295,14 @@ export class ProjectStorageManager {
       const localProjects = ProjectService.getProjects();
       const tombstones = this.getTombstones();
       const lastSyncTime = this.getLastSyncTime();
+      const lastSyncMs = lastSyncTime ? new Date(lastSyncTime).getTime() : 0;
 
-      const clientSets: ClientSet[] = localProjects.map((p) => ({
+      // Only upload sets that are unsynced or modified after lastSyncTime
+      const dirtyProjects = lastSyncTime
+        ? localProjects.filter((p) => !p.syncedToCloud || (p.lastModified && p.lastModified > lastSyncMs))
+        : localProjects;
+
+      const clientSets: ClientSet[] = dirtyProjects.map((p) => ({
         ...p,
         deletedAt: null,
       }));
@@ -361,10 +371,12 @@ export class ProjectStorageManager {
         this.setLastSyncTime(res.lastSyncTime || res.syncedAt!);
       }
 
+      this.lastSyncError = null;
       this.syncStatus = 'synced';
       this.notifySyncStatus();
       this.notifyProjectsChanged();
     } catch (err) {
+      this.lastSyncError = err instanceof Error ? err.message : String(err);
       console.warn('Cloud sync encountered an error, transitioning to offline status:', err);
       this.syncStatus = 'offline';
       this.notifySyncStatus();
@@ -375,6 +387,10 @@ export class ProjectStorageManager {
         this.scheduleCloudSync();
       }
     }
+  }
+
+  public getLastSyncError(): string | null {
+    return this.lastSyncError;
   }
 
   // Legacy compatibility helpers

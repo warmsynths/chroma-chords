@@ -392,12 +392,22 @@ describe('ProjectStorageManager', () => {
     await manager.syncWithCloud('https://api.example.com');
 
     expect(manager.getSyncStatus()).toBe('offline');
+    expect(manager.getLastSyncError()).toBe('Network error');
 
     // Data must remain intact in local storage
     expect(manager.getProjects()).toHaveLength(1);
     expect(manager.getProjects()[0].id).toBe('offline-proj');
     expect(manager.getTombstones()).toHaveLength(1);
     expect(manager.getTombstones()[0].id).toBe('offline-deleted-id');
+
+    // Upon successful sync, lastSyncError should clear
+    vi.spyOn(syncEngine, 'sync').mockResolvedValue({
+      sets: [],
+      lastSyncTime: '2026-08-18T10:00:00Z',
+    });
+    await manager.syncWithCloud('https://api.example.com');
+    expect(manager.getSyncStatus()).toBe('synced');
+    expect(manager.getLastSyncError()).toBeNull();
   });
 
   it('tracks sync status state machine through sign-in, syncing, synced, and offline', async () => {

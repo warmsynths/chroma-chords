@@ -125,30 +125,38 @@ export class SyncEngine {
     this.applyAuthHeaders(headers, authToken);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-    const res = await fetch(`${formatted}/api/sync`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+    try {
+      const res = await fetch(`${formatted}/api/sync`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
 
-    if (!res.ok) {
-      let errDetail = '';
-      try {
-        const errJson = await res.json();
-        errDetail = errJson.error || errJson.message || '';
-      } catch {
-        errDetail = await res.text().catch(() => '');
+      if (!res.ok) {
+        let errDetail = '';
+        try {
+          const errJson = await res.json();
+          errDetail = errJson.error || errJson.message || '';
+        } catch {
+          errDetail = await res.text().catch(() => '');
+        }
+        throw new Error(
+          `Cloud sync failed (${res.status}): ${errDetail || res.statusText || 'Unknown error'}`
+        );
       }
-      throw new Error(
-        `Cloud sync failed (${res.status}): ${errDetail || res.statusText || 'Unknown error'}`
-      );
-    }
 
-    return (await res.json()) as SyncResponsePayload;
+      return (await res.json()) as SyncResponsePayload;
+    } catch (err: unknown) {
+      clearTimeout(timeoutId);
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new Error('Cloud sync request timed out (45s limit)');
+      }
+      throw err;
+    }
   }
 }
 

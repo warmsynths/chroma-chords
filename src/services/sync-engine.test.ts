@@ -133,5 +133,15 @@ describe('SyncEngine', () => {
         syncEngine.sync('https://api.example.com', 'token', { sets: [] })
       ).rejects.toThrow('Cloud sync failed (500): Database connection timeout');
     });
+
+    it('throws formatted timeout error when AbortError occurs', async () => {
+      const abortErr = new Error('signal is aborted without reason');
+      abortErr.name = 'AbortError';
+      globalThis.fetch = vi.fn().mockRejectedValue(abortErr);
+
+      await expect(
+        syncEngine.sync('https://api.example.com', 'token', { sets: [] })
+      ).rejects.toThrow('Cloud sync request timed out (45s limit)');
+    });
   });
 });

@@ -94,8 +94,10 @@ export class D1Client {
       }
     }
 
-    if (statements.length > 0) {
-      await this.db.batch(statements);
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < statements.length; i += BATCH_SIZE) {
+      const chunk = statements.slice(i, i + BATCH_SIZE);
+      await this.db.batch(chunk);
     }
   }
 
@@ -116,8 +118,10 @@ export class D1Client {
       statements.push(deleteChordsStmt);
     }
 
-    if (statements.length > 0) {
-      await this.db.batch(statements);
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < statements.length; i += BATCH_SIZE) {
+      const chunk = statements.slice(i, i + BATCH_SIZE);
+      await this.db.batch(chunk);
     }
   }
 
@@ -153,15 +157,29 @@ export class D1Client {
     }
 
     const activeSetIds = activeSetRows.map((r) => r.id);
-    const placeholders = activeSetIds.map(() => '?').join(',');
-    const chordsQuery = `SELECT * FROM set_chords WHERE user_id = ? AND set_id IN (${placeholders}) ORDER BY set_id, position ASC`;
-    
-    const chordsResult = await this.db
-      .prepare(chordsQuery)
-      .bind(this.userId, ...activeSetIds)
-      .all<D1SetChordRow>();
+    const CHUNK_SIZE = 50;
+    const chordRows: D1SetChordRow[] = [];
 
-    const chordRows = chordsResult.results || [];
+    const chordQueries: Promise<{ results?: D1SetChordRow[] }>[] = [];
+    for (let i = 0; i < activeSetIds.length; i += CHUNK_SIZE) {
+      const chunk = activeSetIds.slice(i, i + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const chordsQuery = `SELECT * FROM set_chords WHERE user_id = ? AND set_id IN (${placeholders}) ORDER BY set_id, position ASC`;
+      
+      chordQueries.push(
+        this.db
+          .prepare(chordsQuery)
+          .bind(this.userId, ...chunk)
+          .all<D1SetChordRow>()
+      );
+    }
+
+    const chunkResults = await Promise.all(chordQueries);
+    for (const res of chunkResults) {
+      if (res.results) {
+        chordRows.push(...res.results);
+      }
+    }
 
     // Group chords by set_id
     const chordsBySet = new Map<string, ClientChord[]>();
