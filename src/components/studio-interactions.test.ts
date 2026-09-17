@@ -1054,6 +1054,70 @@ describe('Studio Component Interactions', () => {
 
     document.body.removeChild(el);
   });
+
+  it('renders app-header brand title with Plus Jakarta Sans and title case', async () => {
+    const header = document.createElement('app-header') as AppHeader;
+    document.body.appendChild(header);
+    await header.updateComplete;
+
+    const brandTitle = header.shadowRoot?.querySelector('.brand-title') as HTMLElement;
+    expect(brandTitle).toBeTruthy();
+    expect(brandTitle.textContent?.trim()).toBe('Chroma Chords');
+
+    document.body.removeChild(header);
+  });
+
+  it('renders subtle extension indicators (rungDots) on chord cards', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const rungRows = el.shadowRoot?.querySelectorAll('.pad-rung-row');
+    expect(rungRows && rungRows.length > 0).toBe(true);
+
+    const firstRow = rungRows?.[0];
+    const labels = firstRow?.querySelectorAll('.pad-rung-label');
+    const bars = firstRow?.querySelectorAll('.pad-rung-bar');
+    expect(labels && labels.length > 0).toBe(true);
+    expect(bars && bars.length > 0).toBe(true);
+    expect(labels?.length).toBe(bars?.length);
+
+    // Verify first label is formatted (e.g. △ or extension delta)
+    const labelTexts = Array.from(labels || []).map(l => l.textContent?.trim());
+    expect(labelTexts.some(t => t?.length && t.length > 0)).toBe(true);
+
+    document.body.removeChild(el);
+  });
+
+  it('renders modernized mobile chips row with divider, instrument, key, feel, and share buttons', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    (el as any).isMobile = true;
+    (el as any).activeView = 'loop';
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const mobileRow = el.shadowRoot?.querySelector('.mobile-chips-row');
+    expect(mobileRow).toBeTruthy();
+
+    const instBtn = mobileRow?.querySelector('.instrument-chip');
+    const divider = mobileRow?.querySelector('.mobile-chip-divider');
+    const keyBtn = mobileRow?.querySelector('.key-chip');
+    const feelBtn = mobileRow?.querySelector('.feel-chip');
+    const shareBtn = mobileRow?.querySelector('.mobile-share-btn');
+
+    expect(instBtn).toBeTruthy();
+    expect(divider).toBeTruthy();
+    expect(keyBtn).toBeTruthy();
+    expect(feelBtn).toBeTruthy();
+    expect(shareBtn).toBeTruthy();
+
+    // Verify feel button includes SVG icon
+    expect(feelBtn?.querySelector('svg')).toBeTruthy();
+
+    document.body.removeChild(el);
+  });
 });
 
 

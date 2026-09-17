@@ -2335,6 +2335,56 @@ export class LoopScreen extends LitElement {
       background: var(--cv-surface-2, #F1E4CC);
       box-shadow: inset 0 0 0 2px var(--cv-ink, #2E271F);
     }
+    .mobile-chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 8px;
+      row-gap: 10px;
+      margin-top: 16px;
+    }
+    .mobile-chip {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: #5B5145;
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 150ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 150ms ease, transform 150ms ease;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .mobile-chip:hover {
+      background: var(--cv-surface, #F6EADB);
+    }
+    .mobile-chip.open, .mobile-chip.active {
+      background: var(--cv-surface, #F6EADB);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.16);
+    }
+    .mobile-chip-divider {
+      width: 1px;
+      align-self: stretch;
+      min-height: 28px;
+      background: rgba(46, 39, 31, 0.12);
+      margin: 0 4px;
+    }
+    .mobile-chip.mobile-share-btn {
+      margin-left: auto;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink, #2E271F);
+      font-weight: 800;
+      padding: 0 18px;
+    }
+    .mobile-chip.mobile-share-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
     .mobile-chip-btn {
       border: none;
       font-family: inherit;
@@ -4555,6 +4605,24 @@ export class LoopScreen extends LitElement {
       ? (showsReach ? ('→ ' + lad[reached]) : (ZONE_NAMES[this.lastPad?.zone ?? 1] || this.lastPad?.voicing || ''))
       : (c.voicing && c.voicing !== '1st inversion' ? c.voicing.toUpperCase() : '');
 
+    // Labels read as deltas off the first rung: the shared stem (sus4, m, dim) is
+    // dropped from the rest so each label stays short enough not to clip.
+    const sfx = lad.map(nm => String(nm).replace(/^[A-G][#b]?/, ''));
+    const stem = sfx[0];
+    let rungLabels = sfx.slice();
+    if (stem && sfx.every((s, idx) => idx === 0 || s.indexOf(stem) === 0)) {
+      rungLabels = sfx.map((s, idx) => idx ? s.slice(stem.length) : s);
+    } else if (stem && sfx.every((s, idx) => idx === 0 || s.slice(-stem.length) === stem)) {
+      rungLabels = sfx.map((s, idx) => idx ? s.slice(0, s.length - stem.length) : s);
+    }
+    rungLabels = rungLabels.map(s => (s === '' ? 'maj' : s).replace(/maj/gi, '\u25B3'));
+    const rungDots = lad.map((_, li) => ({
+      label: rungLabels[li],
+      wrapStyle: 'flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;',
+      labelStyle: `font-size: 8.5px; font-weight: 800; letter-spacing: 0.2px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: clip; color: ${li === dotAt ? (showsReach ? moodColor : 'rgba(46,39,31,0.78)') : 'rgba(46,39,31,0.3)'}; transition: color 180ms cubic-bezier(0.23,1,0.32,1);`,
+      barStyle: `width: 100%; height: 4px; border-radius: 3px; background: ${li === dotAt ? (showsReach ? moodColor : 'rgba(46,39,31,0.5)') : 'rgba(46,39,31,0.16)'}; transition: width 200ms cubic-bezier(0.23,1,0.32,1), background 180ms ease;`,
+    }));
+
     return html`
       <div
         class="pad-cell ${isDesktop ? 'chord-item-wrap' : ''} ${isHeld ? 'pad-held' : ''} ${isSelected ? 'selected' : ''} ${isLit ? 'pad-lit' : ''}"
@@ -4612,9 +4680,12 @@ export class LoopScreen extends LitElement {
             </div>
           ` : ''}
           ${metaLabel ? html`<div class="pad-meta-voicing">${metaLabel}</div>` : ''}
-          <div style="display: flex; gap: 3px; margin-top: 7px;">
-            ${lad.map((_, li) => html`
-              <div style="width: ${li === dotAt ? 16 : 6}px; height: 4px; border-radius: 3px; background: ${li === dotAt ? (showsReach ? moodColor : 'rgba(46,39,31,0.55)') : 'rgba(46,39,31,0.16)'}; transition: width 200ms cubic-bezier(0.23,1,0.32,1), background 180ms ease;"></div>
+          <div class="pad-rung-row" style="display: flex; gap: 4px; margin-top: 7px;">
+            ${rungDots.map(d => html`
+              <div class="pad-rung-col" style="${d.wrapStyle}">
+                <div class="pad-rung-label" style="${d.labelStyle}">${d.label}</div>
+                <div class="pad-rung-bar" style="${d.barStyle}"></div>
+              </div>
             `)}
           </div>
         </div>
@@ -4914,50 +4985,63 @@ export class LoopScreen extends LitElement {
                 ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, true) : ''}
               </div>
 
-              <!-- Quick chips -->
-              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px;">
-                <button class="instrument-chip" @click=${this.toggleInstrumentExpand} aria-label="Change instrument">
+              <!-- Unified Mobile Quick Chips Row -->
+              <div class="mobile-chips-row">
+                <button
+                  class="mobile-chip instrument-chip ${this.expandedInstrument ? 'open' : ''}"
+                  @click=${this.toggleInstrumentExpand}
+                  aria-label="Change instrument"
+                >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                  ${normalizeInstrumentName(this.instrument)} <span style="opacity:0.6;">⌄</span>
+                  <span>${normalizeInstrumentName(this.instrument)}</span>
+                </button>
+                <div class="mobile-chip-divider"></div>
+                <button
+                  class="mobile-chip key-chip ${this.tempoOpen ? 'open' : ''}"
+                  @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) this.feelOpen = false; }}
+                  aria-label="Key, tempo and loop length"
+                >
+                  ${this.progression?.key || 'C'} ${this.getCurrentScaleAbbrev()} · ${this.progression?.bpm || 84}
+                </button>
+                <button
+                  class="mobile-chip feel-chip ${this.feelOpen ? 'open' : ''}"
+                  @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }}
+                  aria-label="Feel"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
+                  <span>${this.feelChipLabel}</span>
+                </button>
+                <button
+                  class="mobile-chip mobile-share-btn"
+                  @click=${() => { this.shareOpen = true; }}
+                  aria-label="Share this loop"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/></svg>
+                  <span>Share</span>
                 </button>
               </div>
 
               ${this.expandedInstrument ? html`
-                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
-                  ${USER_INSTRUMENTS.map(i => html`
-                    <button
-                      class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
-                      @click=${() => {
-                        this.instrument = i.name;
-                        playbackEngine.setInstrument(i.name);
-                        this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
-                        this.expandedInstrument = false;
-                        this.requestUpdate();
-                      }}
-                    >
-                      <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
-                    </button>
-                  `)}
+                <div class="mobile-instrument-drawer" style="animation: cvfv-panel 200ms var(--cv-ease, ease); background: var(--cv-cream, #FBF3E6); border-radius: 16px; padding: 14px 16px; margin-top: 11px;">
+                  <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label, #8A6B3F);">Instrument</div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                    ${USER_INSTRUMENTS.map(i => html`
+                      <button
+                        class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
+                        @click=${() => {
+                          this.instrument = i.name;
+                          playbackEngine.setInstrument(i.name);
+                          this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+                          this.expandedInstrument = false;
+                          this.requestUpdate();
+                        }}
+                      >
+                        <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
+                      </button>
+                    `)}
+                  </div>
                 </div>
               ` : ''}
-
-              <div style="display: flex; gap: 7px; margin-top: 12px;">
-                <button class="mobile-chip-btn" @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) this.feelOpen = false; }} aria-label="Key, tempo and length">
-                  ${this.progression?.key || 'C'} ${this.getCurrentScaleAbbrev()} · ${this.progression?.bpm || 84}
-                </button>
-                <button class="mobile-chip-btn feel-chip" @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }} aria-label="Feel">
-                  ${this.feelChipLabel}
-                </button>
-                <button
-                  class="mobile-chip-btn mobile-share-btn"
-                  @click=${() => { this.shareOpen = true; }}
-                  aria-label="Share this loop"
-                  style="display: inline-flex; align-items: center; justify-content: center; gap: 6px;"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/></svg>
-                  Share
-                </button>
-              </div>
 
               <div class="mobile-theory-toggle" @click=${this.onTheoryToggle}>
                 <div class="toggle-track ${this.showTheory ? 'active' : ''}">

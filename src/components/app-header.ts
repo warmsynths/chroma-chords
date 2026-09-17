@@ -50,12 +50,18 @@ export class AppHeader extends LitElement {
       user-select: none;
     }
     .brand-title {
-      font-family: 'Anton', sans-serif;
-      font-size: 20px;
-      letter-spacing: 0.04em;
+      font-family: var(--cv-font, 'Plus Jakarta Sans', sans-serif);
+      font-size: 15.5px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
       color: var(--cv-ink, #2E271F);
-      text-transform: uppercase;
       line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .header-wrap.compact .brand-title {
+      font-size: 13.5px;
     }
     .right-actions {
       display: flex;
