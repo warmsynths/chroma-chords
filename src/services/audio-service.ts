@@ -49,11 +49,15 @@ function getLimiter(): Tone.Compressor {
 }
 
 export interface FeelSettings {
+  playStyle?: string;
   swing?: number;
   spread?: number;
   density?: number;
+  humanise?: number;
   tone?: string;
   humanState?: any;
+  barFeel?: Record<number, Partial<FeelSettings>>;
+  advOverride?: Record<string, number>;
 }
 
 let activeToneName = 'Warm';
@@ -1381,7 +1385,8 @@ export function playChordForGenre(
   // when unset, playback falls back to the existing per-genre auto-selection untouched.
   const normalized = opts?.instrument ? normalizeInstrumentName(opts.instrument) : undefined;
   const userInstrument = normalized ? USER_INSTRUMENTS.find(i => i.name.toLowerCase() === normalized.toLowerCase()) : undefined;
-  const userPlayStyle = opts?.playStyle ? USER_PLAY_STYLES.find(p => p.name === opts.playStyle) : undefined;
+  const effectivePlayStyle = opts?.playStyle || opts?.feelSettings?.playStyle;
+  const userPlayStyle = effectivePlayStyle ? USER_PLAY_STYLES.find(p => p.name === effectivePlayStyle) : undefined;
 
   const instrument = userInstrument?.instrument ?? GENRE_INSTRUMENT[safeGenre] ?? 'piano';
   const profile = GENRE_HUMANIZE[safeGenre] || {};
@@ -1395,19 +1400,27 @@ export function playChordForGenre(
   // Calculate feel overrides
   const feelPatch: Record<string, unknown> = {};
   if (opts?.feelSettings) {
-    const { spread, swing, humanState: customHuman } = opts.feelSettings;
+    const { spread, swing, humanise, humanState: customHuman, advOverride } = opts.feelSettings;
     if (customHuman) {
       Object.assign(feelPatch, customHuman);
     } else {
       if (typeof spread === 'number') {
-        // Map 0-100 to 0.05 - 1.6
-        feelPatch.spread = parseFloat(((spread / 100) * 1.5).toFixed(2));
+        feelPatch.spread = parseFloat((spread / 100).toFixed(2));
       }
-      if (typeof swing === 'number') {
-        // Map swing to microTiming and humanVariance
-        feelPatch.microTiming = parseFloat(((swing / 100) * 0.9).toFixed(2));
-        feelPatch.humanVariance = parseFloat(((swing / 100) * 0.6).toFixed(2));
+      if (typeof humanise === 'number') {
+        feelPatch.humanVariance = parseFloat((humanise / 100).toFixed(2));
       }
+      if (typeof swing === 'number' || typeof humanise === 'number') {
+        const sw = typeof swing === 'number' ? swing : 0;
+        const hu = typeof humanise === 'number' ? humanise : 45;
+        feelPatch.microTiming = parseFloat(((sw / 100) * 0.5 + (hu / 100) * 0.3).toFixed(2));
+      }
+    }
+    if (advOverride) {
+      if (typeof advOverride.spread === 'number') feelPatch.spread = advOverride.spread;
+      if (typeof advOverride.duration === 'number') feelPatch.duration = advOverride.duration;
+      if (typeof advOverride.variance === 'number') feelPatch.humanVariance = advOverride.variance;
+      if (typeof advOverride.micro === 'number') feelPatch.microTiming = advOverride.micro;
     }
   }
 
@@ -1420,7 +1433,9 @@ export function playChordForGenre(
   };
 
   const baseDuration = opts?.duration ?? profile.duration ?? 0.9;
-  const duration = stylePatch.durationMultiplier ? baseDuration * stylePatch.durationMultiplier : baseDuration;
+  const duration = (typeof feelPatch.duration === 'number')
+    ? (feelPatch.duration as number)
+    : (stylePatch.durationMultiplier ? baseDuration * stylePatch.durationMultiplier : baseDuration);
 
   // Apply density filtering to notes
   const density = opts?.feelSettings?.density ?? 50;

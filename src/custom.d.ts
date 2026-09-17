@@ -54,6 +54,9 @@ declare module 'human-engine' {
     showInfo: boolean;
     mode: string;
     humanSlider: number;
+    layout?: 'full' | 'embedded';
+    parameterOverrides?: Record<string, number>;
+    sourceLabels?: Record<string, string>;
   }
 }
 
@@ -64,5 +67,7 @@ declare global {
   interface HTMLElementEventMap {
     'human-change': CustomEvent<import('human-engine').HumanState>;
     'human-preview': CustomEvent<import('human-engine').HumanState>;
+    'parameter-override': CustomEvent<{ param: string; value: number }>;
+    'parameter-relink': CustomEvent<{ param: string }>;
   }
 }

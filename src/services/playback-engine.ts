@@ -281,12 +281,15 @@ export class PlaybackEngine {
           ? chord.notes 
           : notesForSymbol(chord.name, preferFlatSpelling(sec.progression.key, sec.progression.scaleType));
         const pitchedNotes = pitchNotesAscending(notes, 4);
+        const activeFeel = (chordIndex !== undefined && this.feelSettings?.barFeel && this.feelSettings.barFeel[chordIndex])
+          ? { ...this.feelSettings, ...this.feelSettings.barFeel[chordIndex] }
+          : this.feelSettings;
         playChordForGenre(pitchedNotes, sec.progression.genre, {
           bpm: sec.progression.bpm,
           duration: (this.getStepIntervalMs() / 1000) * 0.85,
           instrument: this.instrument ?? undefined,
-          playStyle: this.playStyle ?? undefined,
-          feelSettings: this.feelSettings,
+          playStyle: activeFeel?.playStyle ?? this.playStyle ?? undefined,
+          feelSettings: activeFeel,
         });
       }
     } else {
@@ -354,7 +357,7 @@ export class PlaybackEngine {
     }
   }
 
-  public playChordNotes(notes: string[], duration?: number, voicing?: string, velocity?: number): void {
+  public playChordNotes(notes: string[], duration?: number, voicing?: string, velocity?: number, chordIndex?: number): void {
     if (!this.progression) return;
     
     const validNotes = Array.isArray(notes) ? notes.filter(n => typeof n === 'string' && n.trim().length > 0) : [];
@@ -364,13 +367,20 @@ export class PlaybackEngine {
       ? applyVoicingToNotes(validNotes, voicing)
       : pitchNotesAscending(validNotes, 4);
 
+    const effectiveIndex = chordIndex !== undefined
+      ? chordIndex
+      : (this.playing ? (this.order[this.activeIndex] ?? 0) : undefined);
+    const activeFeel = (effectiveIndex !== undefined && this.feelSettings?.barFeel && this.feelSettings.barFeel[effectiveIndex])
+      ? { ...this.feelSettings, ...this.feelSettings.barFeel[effectiveIndex] }
+      : this.feelSettings;
+
     playChordForGenre(pitchedNotes, this.progression.genre || 'Unknown', {
       bpm: this.progression.bpm || 120,
       duration: duration || (this.getStepIntervalMs() / 1000) * 0.85,
       instrument: this.instrument ?? undefined,
-      playStyle: this.playStyle ?? undefined,
+      playStyle: activeFeel?.playStyle ?? this.playStyle ?? undefined,
       velocity,
-      feelSettings: this.feelSettings,
+      feelSettings: activeFeel,
     });
   }
 

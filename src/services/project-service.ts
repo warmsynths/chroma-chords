@@ -126,7 +126,9 @@ export class ProjectService {
     let projects = this.getProjects();
     projects = projects.filter(p => p.id !== id);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+      if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+      }
     } catch (e) {
       console.error('Failed to delete project from localStorage:', e);
     }

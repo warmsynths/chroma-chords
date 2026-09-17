@@ -160,7 +160,19 @@ export const CHORD_EXTENSIONS = [
   { label: '9th', sub: 'wide, colorful' },
 ];
 
-export const FEEL_DEFS = [
+export const FEEL_AXES = [
+  {
+    k: 'playStyle' as const,
+    label: 'Pattern',
+    hint: 'How the notes are laid out in time',
+    steps: [
+      { v: 'Block chords', name: 'Block' },
+      { v: 'Arpeggio', name: 'Arp' },
+      { v: 'Strum', name: 'Strum' },
+      { v: 'Broken (swing)', name: 'Broken' },
+      { v: 'Half-time', name: 'Half-time' },
+    ],
+  },
   {
     k: 'swing' as const,
     label: 'Swing',
@@ -194,9 +206,30 @@ export const FEEL_DEFS = [
       { v: 95, name: 'Busy' },
     ],
   },
+  {
+    k: 'humanise' as const,
+    label: 'Humanise',
+    hint: 'How loose the timing and touch are',
+    steps: [
+      { v: 0, name: 'Machine' },
+      { v: 45, name: 'Natural' },
+      { v: 80, name: 'Loose' },
+    ],
+  },
+  {
+    k: 'tone' as const,
+    label: 'Tone',
+    hint: 'The colour of the instrument',
+    steps: [
+      { v: 'Warm', name: 'Warm' },
+      { v: 'Glassy', name: 'Glassy' },
+      { v: 'Dusty', name: 'Dusty' },
+    ],
+  },
 ];
 
-export const FEEL_DEFAULTS = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
+export const FEEL_DEFS = FEEL_AXES;
+export const FEEL_DEFAULTS = { playStyle: 'Block chords', swing: 0, spread: 50, density: 50, humanise: 45, tone: 'Warm' };
 export const TONES = ['Warm', 'Glassy', 'Dusty'];
 export const KEYS = ['C min', 'A min', 'F min', 'D min', 'G min', 'E♭ maj', 'C maj', 'G maj', 'F maj'];
 export const SCALE_NOTE_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
@@ -451,7 +484,7 @@ export class LoopScreen extends LitElement {
   @property({ type: Boolean }) playing = false;
   @property({ type: Boolean }) showTheory = false;
   @property({ type: String }) instrument: string | null = null;
-  @property({ type: String }) playStyle: string | null = null;
+  @property({ type: String }) playStyle: string = 'Block chords';
   @property({ type: Boolean }) isAuthenticated = false;
   @property({ type: String }) userEmail: string | null = null;
   @property({ type: Array }) sections: SongSection[] = [];
@@ -498,12 +531,16 @@ export class LoopScreen extends LitElement {
   @state() feelOpen = false;
   @state() shareOpen = false;
   @state() private expandedInstrument = false;
-  @state() private expandedPlayStyle = false;
   @state() barsPerChord = 1;
   @state() swing = 0;
   @state() spread = 50;
   @state() density = 50;
+  @state() humanise = 45;
   @state() tone = 'Warm';
+  @state() private feelScope: 'loop' | number = 'loop';
+  @state() private barFeel: Record<number, Record<string, any>> = {};
+  @state() private advOverride: Record<string, number> = {};
+  @state() private advOpen = false;
   @state() private showAdvancedFeel = false;
   @state() private humanEngineState: any = null;
   @state() auditionDeg: number | null = null;
@@ -2188,21 +2225,47 @@ export class LoopScreen extends LitElement {
           })
         : null;
 
-    playbackEngine.setFeelSettings({ swing: this.swing, spread: this.spread, density: this.density, tone: this.tone });
+    playbackEngine.setFeelSettings({
+      playStyle: this.playStyle,
+      swing: this.swing,
+      spread: this.spread,
+      density: this.density,
+      humanise: this.humanise,
+      tone: this.tone,
+      barFeel: this.barFeel,
+      advOverride: this.advOverride,
+    });
     playbackEngine.setBarsPerChord(this.barsPerChord);
     setMasterTone(this.tone);
   }
 
   updated(changed: PropertyValues) {
     super.updated(changed);
-    if (changed.has('swing') || changed.has('spread') || changed.has('density') || changed.has('tone') || changed.has('humanEngineState')) {
+    if (
+      changed.has('swing') ||
+      changed.has('spread') ||
+      changed.has('density') ||
+      changed.has('humanise') ||
+      changed.has('playStyle') ||
+      changed.has('tone') ||
+      changed.has('barFeel') ||
+      changed.has('advOverride') ||
+      changed.has('humanEngineState')
+    ) {
       playbackEngine.setFeelSettings({
+        playStyle: this.playStyle,
         swing: this.swing,
         spread: this.spread,
         density: this.density,
+        humanise: this.humanise,
         tone: this.tone,
+        barFeel: this.barFeel,
+        advOverride: this.advOverride,
         humanState: this.humanEngineState,
       });
+      if (changed.has('playStyle')) {
+        playbackEngine.setPlayStyle(this.playStyle);
+      }
       if (changed.has('tone')) {
         setMasterTone(this.tone);
       }
@@ -2933,13 +2996,6 @@ export class LoopScreen extends LitElement {
 
   private toggleInstrumentExpand = () => {
     this.expandedInstrument = !this.expandedInstrument;
-    this.expandedPlayStyle = false;
-    this.requestUpdate();
-  };
-
-  private togglePlayStyleExpand = () => {
-    this.expandedPlayStyle = !this.expandedPlayStyle;
-    this.expandedInstrument = false;
     this.requestUpdate();
   };
 
@@ -3057,28 +3113,124 @@ export class LoopScreen extends LitElement {
   }
 
   private get feelChanged(): boolean {
-    return this.swing !== FEEL_DEFAULTS.swing ||
+    return this.playStyle !== FEEL_DEFAULTS.playStyle ||
+           this.swing !== FEEL_DEFAULTS.swing ||
            this.spread !== FEEL_DEFAULTS.spread ||
            this.density !== FEEL_DEFAULTS.density ||
-           this.tone !== FEEL_DEFAULTS.tone;
+           this.humanise !== FEEL_DEFAULTS.humanise ||
+           this.tone !== FEEL_DEFAULTS.tone ||
+           Object.keys(this.barFeel).length > 0 ||
+           Object.keys(this.advOverride).length > 0;
   }
 
   private resetFeel() {
+    this.playStyle = FEEL_DEFAULTS.playStyle;
     this.swing = FEEL_DEFAULTS.swing;
     this.spread = FEEL_DEFAULTS.spread;
     this.density = FEEL_DEFAULTS.density;
+    this.humanise = FEEL_DEFAULTS.humanise;
     this.tone = FEEL_DEFAULTS.tone;
+    this.barFeel = {};
+    this.advOverride = {};
     this.humanEngineState = null;
+    playbackEngine.setPlayStyle(this.playStyle);
     playbackEngine.setFeelSettings({
+      playStyle: this.playStyle,
       swing: this.swing,
       spread: this.spread,
       density: this.density,
+      humanise: this.humanise,
       tone: this.tone,
+      barFeel: {},
+      advOverride: {},
       humanState: undefined,
     });
     setMasterTone(this.tone);
     this.requestUpdate();
   }
+
+  private get fScopeBar(): number | null {
+    return typeof this.feelScope === 'number' ? this.feelScope : null;
+  }
+
+  private fget(k: string): any {
+    const bar = this.fScopeBar;
+    if (bar !== null && this.barFeel[bar] && this.barFeel[bar][k] !== undefined) {
+      return this.barFeel[bar][k];
+    }
+    return (this as any)[k];
+  }
+
+  private fset(k: string, v: any) {
+    const bar = this.fScopeBar;
+    if (bar === null) {
+      (this as any)[k] = v;
+      if (k === 'playStyle') {
+        playbackEngine.setPlayStyle(v);
+        this.dispatchEvent(new CustomEvent('set-play-style', { detail: v, bubbles: true, composed: true }));
+      } else if (k === 'tone') {
+        playbackEngine.setFeelSettings({ tone: v });
+        setMasterTone(v);
+      } else {
+        playbackEngine.setFeelSettings({ [k]: v });
+      }
+    } else {
+      const bf = { ...this.barFeel };
+      bf[bar] = { ...(bf[bar] || {}), [k]: v };
+      this.barFeel = bf;
+      playbackEngine.setFeelSettings({ barFeel: bf });
+    }
+    this.requestUpdate();
+  }
+
+  private getPatternShortName(val?: string): string {
+    const pattern = val || this.fget('playStyle') || this.playStyle || 'Block chords';
+    const match = FEEL_AXES[0].steps.find(s => s.v === pattern);
+    return match ? match.name : 'Block';
+  }
+
+  private get feelChipLabel(): string {
+    return `Feel · ${this.getPatternShortName()}`;
+  }
+
+  private getDerivedParams() {
+    const numOf = (k: string) => {
+      const v = this.fget(k);
+      return typeof v === 'number' ? v : 0;
+    };
+    return {
+      spread: +(numOf('spread') / 100).toFixed(2),
+      duration: +(this.fget('playStyle') === 'Half-time' ? 1.6 : (numOf('density') > 70 ? 0.65 : 1)).toFixed(2),
+      humanVariance: +(numOf('humanise') / 100).toFixed(2),
+      microTiming: +((numOf('swing') / 100) * 0.5 + (numOf('humanise') / 100) * 0.3).toFixed(2),
+    };
+  }
+
+  private get activeEngineParams() {
+    const derived = this.getDerivedParams();
+    return {
+      spread: this.advOverride.spread !== undefined ? this.advOverride.spread : derived.spread,
+      duration: this.advOverride.duration !== undefined ? this.advOverride.duration : derived.duration,
+      humanVariance: this.advOverride.humanVariance !== undefined ? this.advOverride.humanVariance : derived.humanVariance,
+      microTiming: this.advOverride.microTiming !== undefined ? this.advOverride.microTiming : derived.microTiming,
+    };
+  }
+
+  private onParameterOverride = (e: CustomEvent<{ param: string; value: number }>) => {
+    const { param, value } = e.detail;
+    this.advOverride = { ...this.advOverride, [param]: value };
+    playbackEngine.setFeelSettings({ advOverride: this.advOverride });
+    this.requestUpdate();
+  };
+
+  private onParameterRelink = (e: CustomEvent<{ param: string }>) => {
+    const { param } = e.detail;
+    const next = { ...this.advOverride };
+    delete next[param];
+    this.advOverride = next;
+    playbackEngine.setFeelSettings({ advOverride: this.advOverride });
+    this.requestUpdate();
+  };
 
   private nudgeBpm(d: number) {
     const cur = this.progression?.bpm || 84;
@@ -3377,46 +3529,81 @@ export class LoopScreen extends LitElement {
 
   private renderFeelDrawerDesktop() {
     if (!this.feelOpen) return '';
+    const feelScopeNote = this.fScopeBar === null
+      ? 'Everything below applies to every chord in the loop.'
+      : `Only ${this.progression?.chords?.[this.fScopeBar]?.name || 'this chord'} plays this way — the rest keep the loop feel.`;
+
     return html`
-      <div class="feel-popover-desktop" style="background: var(--cv-cream); border-radius: 18px; padding: 14px 16px 16px; margin-top: 11px;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); flex: 1; min-width: 0;">Feel &amp; tone</div>
+      <div class="feel-popover-desktop" style="animation: cvfv-panel 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)); background: var(--cv-cream); border-radius: 18px; padding: 14px 16px 16px; margin-top: 11px;">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); flex-shrink: 0;">Feel</div>
+          <div style="display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0;">
+            <button
+              type="button"
+              style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${this.fScopeBar === null ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${this.fScopeBar === null ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+              @click=${() => { this.feelScope = 'loop'; }}
+              aria-label="Whole loop feel"
+            >
+              Whole loop
+            </button>
+            ${(this.progression?.chords || []).map((c, ci) => {
+              const on = this.fScopeBar === ci;
+              const dirty = !!this.barFeel[ci];
+              return html`
+                <button
+                  type="button"
+                  style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                  @click=${() => { this.feelScope = ci; }}
+                  aria-label="${c.name}, ${on ? 'editing' : 'edit feel'}"
+                >
+                  ${c.name}
+                  <span style="width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: ${on ? 'var(--cv-cream, #FBF3E6)' : '#9E5D53'}; opacity: ${dirty ? 1 : 0}; transition: opacity 150ms ease;"></span>
+                </button>
+              `;
+            })}
+          </div>
           ${this.feelChanged ? html`
             <button
+              type="button"
               @click=${this.resetFeel}
-              style="border: none; font-family: inherit; background: transparent; color: var(--cv-ink-muted); font-size: 11.5px; font-weight: 800; cursor: pointer; padding: 6px 8px; border-radius: 9px;"
+              style="border: none; font-family: inherit; background: transparent; color: var(--cv-ink-muted, #6B5F50); font-size: 11.5px; font-weight: 800; cursor: pointer; padding: 6px 8px; border-radius: 9px;"
             >Reset</button>
           ` : ''}
           <button
+            type="button"
             @click=${() => { this.feelOpen = false; }}
             aria-label="Close feel and tone"
             style="border: none; font-family: inherit; background: transparent; color: rgba(46,39,31,0.5); width: 30px; height: 30px; border-radius: 50%; font-size: 16px; font-weight: 800; cursor: pointer; flex-shrink: 0;"
           >×</button>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px 22px; margin-top: 8px;">
-          ${FEEL_DEFS.map(d => {
-            const curVal = this[d.k];
+        <div style="font-size: 11.5px; font-weight: 700; line-height: 1.45; color: rgba(46,39,31,0.5); margin-top: 7px; text-wrap: pretty;">
+          ${feelScopeNote}
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin-top: 10px;">
+          ${FEEL_AXES.map(d => {
+            const cur = this.fget(d.k);
             let nearest = d.steps[0];
-            d.steps.forEach(s => {
-              if (Math.abs(s.v - curVal) < Math.abs(nearest.v - curVal)) nearest = s;
-            });
+            if (typeof cur !== 'number') {
+              nearest = d.steps.find(s => s.v === cur) || d.steps[0];
+            } else {
+              d.steps.forEach(s => {
+                if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
+              });
+            }
             return html`
               <div style="display: flex; align-items: center; gap: 14px; padding: 5px 0; min-width: 0;">
                 <div style="width: 104px; flex-shrink: 0;">
                   <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink);">${d.label}</div>
                   <div style="font-size: 10.5px; font-weight: 700; line-height: 1.35; color: rgba(46,39,31,0.45); margin-top: 1px; text-wrap: pretty;">${d.hint}</div>
                 </div>
-                <div style="display: flex; gap: 5px; flex: 1; min-width: 0;">
+                <div style="display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0;">
                   ${d.steps.map(s => {
-                    const on = s === nearest;
+                    const on = s.v === nearest.v;
                     return html`
                       <button
-                        style="border: none; font-family: inherit; flex: 1; min-width: 0; min-height: 44px; padding: 0 6px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                        @click=${() => {
-                          this[d.k] = s.v;
-                          playbackEngine.setFeelSettings({ [d.k]: s.v });
-                          this.requestUpdate();
-                        }}
+                        type="button"
+                        style="border: none; font-family: inherit; flex: 1 1 auto; min-width: fit-content; min-height: 44px; padding: 0 11px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                        @click=${() => this.fset(d.k, s.v)}
                         aria-label="${d.label}: ${s.name}"
                       >
                         ${s.name}
@@ -3427,49 +3614,37 @@ export class LoopScreen extends LitElement {
               </div>
             `;
           })}
-          <div style="display: flex; align-items: center; gap: 14px; padding: 5px 0; min-width: 0;">
-            <div style="width: 104px; flex-shrink: 0;">
-              <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink);">Tone</div>
-              <div style="font-size: 10.5px; font-weight: 700; line-height: 1.35; color: rgba(46,39,31,0.45); margin-top: 1px;">The colour of the instrument</div>
-            </div>
-            <div style="display: flex; gap: 5px; flex: 1; min-width: 0;">
-              ${TONES.map(t => html`
-                <button
-                  style="flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 12px; font-size: 12px; font-weight: 800; cursor: pointer; border: none; font-family: inherit; transition: background 150ms ease, color 150ms ease; background: ${this.tone === t ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${this.tone === t ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                  @click=${() => {
-                    this.tone = t;
-                    playbackEngine.setFeelSettings({ tone: t });
-                    setMasterTone(t);
-                    this.requestUpdate();
-                  }}
-                >
-                  ${t}
-                </button>
-              `)}
-            </div>
-          </div>
-          <div style="grid-column: 1 / -1; margin-top: 10px; padding-top: 12px; border-top: 1px dashed rgba(46, 39, 31, 0.18);">
-            <button
-              @click=${() => { this.showAdvancedFeel = !this.showAdvancedFeel; }}
-              style="border: 1px solid rgba(46, 39, 31, 0.18); background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink); font-family: inherit; font-size: 11.5px; font-weight: 800; padding: 7px 14px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background 150ms ease;"
-            >
-              <span>${this.showAdvancedFeel ? '▲ Hide Advanced Fine-Tuning' : '▼ Advanced Fine-Tuning…'}</span>
-            </button>
-            ${this.showAdvancedFeel ? html`
-              <div class="advanced-feel-wrap" style="margin-top: 10px; max-height: 480px; overflow-y: auto; border-radius: 12px; padding: 4px;">
-                <human-panel
-                  .chordSequence=${this.progression?.chords?.map(c => c.name).join(' ') || 'Cmaj7 Dm7 G7 Cmaj'}
-                  .bpm=${this.progression?.bpm || 80}
-                  ?hideInput=${true}
-                  heading="Human Expression Engine"
-                  style="--human-bg: var(--cv-cream, #FBF3E6); --human-surface: var(--cv-surface, #F6EADB); --human-border: rgba(46,39,31,0.15); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: var(--cv-ink-muted, #6B5F50); --human-accent: var(--cv-action, #9B7CA8); --human-accent-hover: var(--cv-action-hover, #84698F); max-width: 100%; min-width: 0; box-shadow: none;"
-                  @human-change=${this.onHumanChange}
-                  @human-preview=${this.onHumanPreview}
-                ></human-panel>
-              </div>
-            ` : ''}
-          </div>
         </div>
+        <button
+          type="button"
+          @click=${() => { this.advOpen = !this.advOpen; }}
+          style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: transparent; color: var(--cv-ink-muted, #6B5F50); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; padding: 8px 10px; margin: 10px 0 0 -10px; border-radius: 9px;"
+          aria-label="Show the engine parameters these choices set"
+        >
+          Engine parameters <span style="font-size: 9px;">${this.advOpen ? '▲' : '▼'}</span>
+        </button>
+        ${this.advOpen ? html`
+          <div style="animation: cvfv-panel 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)); border-top: 1px solid rgba(46,39,31,0.1); padding-top: 13px; margin-top: 6px;">
+            <human-panel
+              layout="embedded"
+              .spread=${this.activeEngineParams.spread}
+              .duration=${this.activeEngineParams.duration}
+              .humanVariance=${this.activeEngineParams.humanVariance}
+              .microTiming=${this.activeEngineParams.microTiming}
+              .parameterOverrides=${this.advOverride}
+              .sourceLabels=${{
+                spread: 'Spread',
+                duration: 'Pattern + Density',
+                humanVariance: 'Humanise',
+                microTiming: 'Swing + Humanise',
+              }}
+              style="--human-bg: transparent; --human-surface: var(--cv-surface, #F6EADB); --human-surface-2: var(--cv-surface-2, #F1E4CC); --human-border: rgba(46,39,31,0.12); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: rgba(46,39,31,0.45); --human-accent: #9E5D53; --human-accent-hover: #804A41; width: 100%; min-width: 0; box-shadow: none;"
+              @parameter-override=${this.onParameterOverride}
+              @parameter-relink=${this.onParameterRelink}
+              @human-change=${this.onHumanChange}
+            ></human-panel>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -3568,48 +3743,83 @@ export class LoopScreen extends LitElement {
 
   private renderFeelSheetMobile() {
     if (!this.feelOpen) return '';
+    const feelScopeNote = this.fScopeBar === null
+      ? 'Everything below applies to every chord in the loop.'
+      : `Only ${this.progression?.chords?.[this.fScopeBar]?.name || 'this chord'} plays this way — the rest keep the loop feel.`;
+
     return html`
       <div style="position: fixed; inset: 0; z-index: 80;">
         <div style="position: absolute; inset: 0; background: rgba(46, 39, 31, 0.5);" @click=${() => { this.feelOpen = false; }}></div>
-        <div style="position: absolute; left: 0; right: 0; bottom: 0; z-index: 81; background: var(--cv-surface); border-radius: 26px 26px 0 0; padding: 14px 18px 24px; box-shadow: 0 -20px 44px -26px rgba(46, 39, 31, 0.5); animation: cvfv-sheet-up 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));">
-          <div style="width: 38px; height: 4px; border-radius: 3px; background: rgba(46, 39, 31, 0.18); margin: 0 auto 13px;"></div>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="font-size: 15.5px; font-weight: 800; letter-spacing: -0.01em; color: var(--cv-ink); flex: 1; min-width: 0;">Feel &amp; tone</div>
-            ${this.feelChanged ? html`
+        <div style="position: absolute; left: 0; right: 0; bottom: 0; z-index: 81; max-height: calc(100% - 24px); overflow-y: auto; overscroll-behavior: contain; background: var(--cv-surface, #F6EADB); border-radius: 26px 26px 0 0; padding: 0 18px 24px; box-shadow: 0 -20px 44px -26px rgba(46, 39, 31, 0.5); animation: cvfv-sheet-up 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));">
+          <div style="position: sticky; top: 0; z-index: 2; background: var(--cv-surface, #F6EADB); padding: 14px 0 10px;">
+            <div style="width: 38px; height: 4px; border-radius: 3px; background: rgba(46, 39, 31, 0.18); margin: 0 auto 13px;"></div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="font-size: 15.5px; font-weight: 800; letter-spacing: -0.01em; color: var(--cv-ink, #2E271F); flex: 1; min-width: 0;">Feel</div>
+              ${this.feelChanged ? html`
+                <button
+                  type="button"
+                  @click=${this.resetFeel}
+                  style="border: none; font-family: inherit; background: transparent; color: var(--cv-ink-muted, #6B5F50); font-size: 12px; font-weight: 800; cursor: pointer; padding: 8px 10px; border-radius: 10px;"
+                >Reset</button>
+              ` : ''}
               <button
-                @click=${this.resetFeel}
-                style="border: none; font-family: inherit; background: transparent; color: var(--cv-ink-muted); font-size: 12px; font-weight: 800; cursor: pointer; padding: 8px 10px; border-radius: 10px;"
-              >Reset</button>
-            ` : ''}
+                type="button"
+                @click=${() => { this.feelOpen = false; }}
+                style="border: none; font-family: inherit; background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink, #2E271F); border-radius: 100px; padding: 8px 14px; font-size: 12px; font-weight: 800; cursor: pointer;"
+              >Done</button>
+            </div>
+          </div>
+          <div style="display: flex; gap: 5px; overflow-x: auto; margin-top: 2px; padding-bottom: 2px;">
             <button
-              @click=${() => { this.feelOpen = false; }}
-              style="border: none; font-family: inherit; background: var(--cv-surface-2); color: var(--cv-ink); border-radius: 100px; padding: 8px 14px; font-size: 12px; font-weight: 800; cursor: pointer;"
-            >Done</button>
+              type="button"
+              style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; background: ${this.fScopeBar === null ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${this.fScopeBar === null ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+              @click=${() => { this.feelScope = 'loop'; }}
+            >
+              Whole loop
+            </button>
+            ${(this.progression?.chords || []).map((c, ci) => {
+              const on = this.fScopeBar === ci;
+              const dirty = !!this.barFeel[ci];
+              return html`
+                <button
+                  type="button"
+                  style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                  @click=${() => { this.feelScope = ci; }}
+                >
+                  ${c.name}
+                  <span style="width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: ${on ? 'var(--cv-cream, #FBF3E6)' : '#9E5D53'}; opacity: ${dirty ? 1 : 0};"></span>
+                </button>
+              `;
+            })}
+          </div>
+          <div style="font-size: 11.5px; font-weight: 700; line-height: 1.45; color: rgba(46,39,31,0.5); margin-top: 8px; text-wrap: pretty;">
+            ${feelScopeNote}
           </div>
           <div style="display: flex; flex-direction: column; gap: 13px; margin-top: 14px;">
-            ${FEEL_DEFS.map(d => {
-              const curVal = this[d.k];
+            ${FEEL_AXES.map(d => {
+              const cur = this.fget(d.k);
               let nearest = d.steps[0];
-              d.steps.forEach(s => {
-                if (Math.abs(s.v - curVal) < Math.abs(nearest.v - curVal)) nearest = s;
-              });
+              if (typeof cur !== 'number') {
+                nearest = d.steps.find(s => s.v === cur) || d.steps[0];
+              } else {
+                d.steps.forEach(s => {
+                  if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
+                });
+              }
               return html`
                 <div>
                   <div style="display: flex; align-items: baseline; gap: 9px;">
-                    <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink); flex: 1; min-width: 0;">${d.label}</div>
+                    <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink, #2E271F); flex: 1; min-width: 0;">${d.label}</div>
                     <div style="font-size: 11px; font-weight: 700; color: rgba(46,39,31,0.45); text-align: right;">${d.hint}</div>
                   </div>
-                  <div style="display: flex; gap: 5px; margin-top: 7px;">
+                  <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px;">
                     ${d.steps.map(s => {
-                      const on = s === nearest;
+                      const on = s.v === nearest.v;
                       return html`
                         <button
-                          style="border: none; font-family: inherit; flex: 1; min-width: 0; min-height: 44px; padding: 0 6px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                          @click=${() => {
-                            this[d.k] = s.v;
-                            playbackEngine.setFeelSettings({ [d.k]: s.v });
-                            this.requestUpdate();
-                          }}
+                          type="button"
+                          style="border: none; font-family: inherit; flex: 1 1 auto; min-width: fit-content; min-height: 44px; padding: 0 11px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                          @click=${() => this.fset(d.k, s.v)}
                           aria-label="${d.label}: ${s.name}"
                         >
                           ${s.name}
@@ -3621,43 +3831,36 @@ export class LoopScreen extends LitElement {
               `;
             })}
           </div>
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); margin-top: 16px;">Tone</div>
-          <div style="display: flex; gap: 6px; margin-top: 8px;">
-            ${TONES.map(t => html`
-              <button
-                style="flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; justify-content: center; text-align: center; border-radius: 12px; font-size: 12px; font-weight: 800; cursor: pointer; border: none; font-family: inherit; transition: background 150ms ease, color 150ms ease; background: ${this.tone === t ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${this.tone === t ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
-                @click=${() => {
-                  this.tone = t;
-                  playbackEngine.setFeelSettings({ tone: t });
-                  setMasterTone(t);
-                  this.requestUpdate();
+          <button
+            type="button"
+            @click=${() => { this.advOpen = !this.advOpen; }}
+            style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: transparent; color: var(--cv-ink-muted, #6B5F50); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; padding: 8px 10px; margin: 10px 0 0 -10px; border-radius: 9px;"
+            aria-label="Show the engine parameters these choices set"
+          >
+            Engine parameters <span style="font-size: 9px;">${this.advOpen ? '▲' : '▼'}</span>
+          </button>
+          ${this.advOpen ? html`
+            <div style="animation: cvfv-panel 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)); border-top: 1px solid rgba(46,39,31,0.1); padding-top: 13px; margin-top: 6px;">
+              <human-panel
+                layout="embedded"
+                .spread=${this.activeEngineParams.spread}
+                .duration=${this.activeEngineParams.duration}
+                .humanVariance=${this.activeEngineParams.humanVariance}
+                .microTiming=${this.activeEngineParams.microTiming}
+                .parameterOverrides=${this.advOverride}
+                .sourceLabels=${{
+                  spread: 'Spread',
+                  duration: 'Pattern + Density',
+                  humanVariance: 'Humanise',
+                  microTiming: 'Swing + Humanise',
                 }}
-              >
-                ${t}
-              </button>
-            `)}
-          </div>
-          <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed rgba(46, 39, 31, 0.18);">
-            <button
-              @click=${() => { this.showAdvancedFeel = !this.showAdvancedFeel; }}
-              style="border: 1px solid rgba(46, 39, 31, 0.18); background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink); font-family: inherit; font-size: 11.5px; font-weight: 800; padding: 7px 14px; border-radius: 9px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: background 150ms ease;"
-            >
-              <span>${this.showAdvancedFeel ? '▲ Hide Advanced Fine-Tuning' : '▼ Advanced Fine-Tuning…'}</span>
-            </button>
-            ${this.showAdvancedFeel ? html`
-              <div class="advanced-feel-wrap" style="margin-top: 10px; max-height: 400px; overflow-y: auto; border-radius: 12px; padding: 4px;">
-                <human-panel
-                  .chordSequence=${this.progression?.chords?.map(c => c.name).join(' ') || 'Cmaj7 Dm7 G7 Cmaj'}
-                  .bpm=${this.progression?.bpm || 80}
-                  ?hideInput=${true}
-                  heading="Human Expression Engine"
-                  style="--human-bg: var(--cv-cream, #FBF3E6); --human-surface: var(--cv-surface, #F6EADB); --human-border: rgba(46,39,31,0.15); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: var(--cv-ink-muted, #6B5F50); --human-accent: var(--cv-action, #9B7CA8); --human-accent-hover: var(--cv-action-hover, #84698F); max-width: 100%; min-width: 0; box-shadow: none;"
-                  @human-change=${this.onHumanChange}
-                  @human-preview=${this.onHumanPreview}
-                ></human-panel>
-              </div>
-            ` : ''}
-          </div>
+                style="--human-bg: transparent; --human-surface: var(--cv-surface, #F6EADB); --human-surface-2: var(--cv-surface-2, #F1E4CC); --human-border: rgba(46,39,31,0.12); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: rgba(46,39,31,0.45); --human-accent: #9E5D53; --human-accent-hover: #804A41; width: 100%; min-width: 0; box-shadow: none;"
+                @parameter-override=${this.onParameterOverride}
+                @parameter-relink=${this.onParameterRelink}
+                @human-change=${this.onHumanChange}
+              ></human-panel>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
@@ -4348,10 +4551,6 @@ export class LoopScreen extends LitElement {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
                   ${normalizeInstrumentName(this.instrument)} <span style="opacity:0.6;">⌄</span>
                 </button>
-                <button class="play-style-chip" @click=${this.togglePlayStyleExpand} aria-label="Change playing style">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
-                  ${this.playStyle || 'Block chords'} <span style="opacity:0.6;">⌄</span>
-                </button>
               </div>
 
               ${this.expandedInstrument ? html`
@@ -4373,30 +4572,13 @@ export class LoopScreen extends LitElement {
                 </div>
               ` : ''}
 
-              ${this.expandedPlayStyle ? html`
-                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
-                  ${USER_PLAY_STYLES.map(s => html`
-                    <button
-                      class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
-                      @click=${() => {
-                        this.playStyle = s.name;
-                        playbackEngine.setPlayStyle(s.name);
-                        this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
-                        this.expandedPlayStyle = false;
-                        this.requestUpdate();
-                      }}
-                    >
-                      <span style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${s.name}
-                    </button>
-                  `)}
-                </div>
-              ` : ''}
-
               <div style="display: flex; gap: 7px; margin-top: 12px;">
                 <button class="mobile-chip-btn" @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) this.feelOpen = false; }} aria-label="Key, tempo and length">
                   ${this.progression?.key || 'C'} ${this.getCurrentScaleAbbrev()} · ${this.progression?.bpm || 84}
                 </button>
-                <button class="mobile-chip-btn" @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }}>Feel &amp; tone</button>
+                <button class="mobile-chip-btn feel-chip" @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }} aria-label="Feel">
+                  ${this.feelChipLabel}
+                </button>
                 <button
                   class="mobile-chip-btn mobile-share-btn"
                   @click=${() => { this.shareOpen = true; }}
@@ -4766,19 +4948,10 @@ export class LoopScreen extends LitElement {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
                     ${normalizeInstrumentName(this.instrument)}
                   </button>
-                  <button
-                    class="play-style-chip ${this.expandedPlayStyle ? 'open' : ''}"
-                    @click=${this.togglePlayStyleExpand}
-                    aria-label="Change playing style"
-                    style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.expandedPlayStyle ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.expandedPlayStyle ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
-                    ${this.playStyle || 'Block chords'}
-                  </button>
                   <div style="width: 1px; align-self: stretch; min-height: 28px; background: rgba(46,39,31,0.12); margin: 0 4px;"></div>
                   <button
                     class="tempo-chip ${this.tempoOpen ? 'open' : ''}"
-                    @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) { this.feelOpen = false; this.expandedInstrument = false; this.expandedPlayStyle = false; } }}
+                    @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) { this.feelOpen = false; this.expandedInstrument = false; } }}
                     aria-label="Key, tempo and loop length"
                     style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.tempoOpen ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.tempoOpen ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
                   >
@@ -4786,11 +4959,12 @@ export class LoopScreen extends LitElement {
                   </button>
                   <button
                     class="feel-chip ${this.feelOpen ? 'open' : ''}"
-                    @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) { this.tempoOpen = false; this.expandedInstrument = false; this.expandedPlayStyle = false; } }}
-                    aria-label="Feel and tone"
+                    @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) { this.tempoOpen = false; this.expandedInstrument = false; } }}
+                    aria-label="Feel"
                     style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: ${this.feelOpen ? 'var(--cv-surface)' : 'var(--cv-surface-2)'}; color: #5B5145; min-height: 38px; padding: 0 16px; border-radius: 100px; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background 150ms var(--cv-ease); flex-shrink: 0; white-space: nowrap; box-shadow: ${this.feelOpen ? 'inset 0 0 0 1.5px rgba(46,39,31,0.16)' : 'none'};"
                   >
-                    Feel &amp; tone
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
+                    ${this.feelChipLabel}
                   </button>
                   <button
                     class="share-btn"
@@ -4823,30 +4997,6 @@ export class LoopScreen extends LitElement {
                           }}
                         >
                           <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
-                        </button>
-                      `)}
-                    </div>
-                  </div>
-                ` : ''}
-
-                <!-- Play style tray if expanded -->
-                ${this.expandedPlayStyle ? html`
-                  <div style="animation: cvfv-panel 200ms var(--cv-ease); background: var(--cv-cream); border-radius: 16px; padding: 14px 16px; margin-top: 11px;">
-                    <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Play style</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
-                      ${USER_PLAY_STYLES.map(s => html`
-                        <button
-                          class="pill ${(this.playStyle || 'Block chords') === s.name ? 'active' : ''}"
-                          style="border: none; font-family: inherit; display: inline-flex; align-items: center; background: ${(this.playStyle || 'Block chords') === s.name ? 'var(--cv-ink)' : 'var(--cv-surface)'}; color: ${(this.playStyle || 'Block chords') === s.name ? 'var(--cv-cream)' : 'var(--cv-ink)'}; border-radius: 100px; min-height: 34px; padding: 0 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: transform 120ms ease;"
-                          @click=${() => {
-                            this.playStyle = s.name;
-                            playbackEngine.setPlayStyle(s.name);
-                            this.dispatchEvent(new CustomEvent('set-play-style', { detail: s.name, bubbles: true, composed: true }));
-                            this.expandedPlayStyle = false;
-                            this.requestUpdate();
-                          }}
-                        >
-                          <span style="background:${s.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${s.name}
                         </button>
                       `)}
                     </div>

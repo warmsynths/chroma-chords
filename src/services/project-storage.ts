@@ -20,20 +20,20 @@ function getWorkerUrl(): string {
 }
 
 function getLocalStorageItem(key: string): string | null {
-  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
     return localStorage.getItem(key);
   }
   return null;
 }
 
 function setLocalStorageItem(key: string, value: string): void {
-  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
     localStorage.setItem(key, value);
   }
 }
 
 function removeLocalStorageItem(key: string): void {
-  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
     localStorage.removeItem(key);
   }
 }
