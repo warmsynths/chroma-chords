@@ -23,7 +23,7 @@ import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
 import { ProjectData } from '../services/project-service';
 import { SongArranger, SongSection } from '../services/song-arranger';
-import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, normalizeInstrumentName } from '../services/audio-service';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES, GENRE_HUMANIZE, setMasterTone, normalizeInstrumentName } from '../services/audio-service';
 import 'human-engine';
 import type { HumanState } from 'human-engine';
 import './share-modal';
@@ -539,7 +539,7 @@ export class LoopScreen extends LitElement {
   @state() tone = 'Warm';
   @state() private feelScope: 'loop' | number = 'loop';
   @state() private barFeel: Record<number, Record<string, any>> = {};
-  @state() private advOverride: Record<string, number> = {};
+  @state() private advOverride: Record<string, any> = {};
   @state() private advOpen = false;
   @state() private showAdvancedFeel = false;
   @state() private humanEngineState: any = null;
@@ -3225,11 +3225,23 @@ export class LoopScreen extends LitElement {
       const v = this.fget(k);
       return typeof v === 'number' ? v : 0;
     };
+    const currentPattern = this.fget('playStyle') || this.playStyle || 'Block chords';
+    const styleObj = USER_PLAY_STYLES.find(p => p.name === currentPattern);
+    const patch = (styleObj?.patch ?? {}) as Record<string, any>;
+    const genre = this.progression?.genre ?? 'Pop';
+    const profile = GENRE_HUMANIZE[genre] ?? {};
+
     return {
       spread: +(numOf('spread') / 100).toFixed(2),
-      duration: +(this.fget('playStyle') === 'Half-time' ? 1.6 : (numOf('density') > 70 ? 0.65 : 1)).toFixed(2),
+      duration: +(currentPattern === 'Half-time' ? 1.6 : (numOf('density') > 70 ? 0.65 : 1)).toFixed(2),
       humanVariance: +(numOf('humanise') / 100).toFixed(2),
       microTiming: +((numOf('swing') / 100) * 0.5 + (numOf('humanise') / 100) * 0.3).toFixed(2),
+      arpMode: (patch.arpMode as string) ?? (profile.arpMode as string) ?? 'off',
+      arpRate: (patch.arpRate as string) ?? (profile.arpRate as string) ?? '1/16',
+      arpRange: (patch.arpRange as number) ?? (profile.arpRange as number) ?? 1,
+      arpGate: 0.85,
+      minVelocity: (profile.minVelocity as number) ?? 60,
+      maxVelocity: (profile.maxVelocity as number) ?? 110,
     };
   }
 
@@ -3240,10 +3252,16 @@ export class LoopScreen extends LitElement {
       duration: this.advOverride.duration !== undefined ? this.advOverride.duration : derived.duration,
       humanVariance: this.advOverride.humanVariance !== undefined ? this.advOverride.humanVariance : derived.humanVariance,
       microTiming: this.advOverride.microTiming !== undefined ? this.advOverride.microTiming : derived.microTiming,
+      arpMode: this.advOverride.arpMode !== undefined ? this.advOverride.arpMode : derived.arpMode,
+      arpRate: this.advOverride.arpRate !== undefined ? this.advOverride.arpRate : derived.arpRate,
+      arpRange: this.advOverride.arpRange !== undefined ? this.advOverride.arpRange : derived.arpRange,
+      arpGate: this.advOverride.arpGate !== undefined ? this.advOverride.arpGate : derived.arpGate,
+      minVelocity: this.advOverride.minVelocity !== undefined ? this.advOverride.minVelocity : derived.minVelocity,
+      maxVelocity: this.advOverride.maxVelocity !== undefined ? this.advOverride.maxVelocity : derived.maxVelocity,
     };
   }
 
-  private onParameterOverride = (e: CustomEvent<{ param: string; value: number }>) => {
+  private onParameterOverride = (e: CustomEvent<{ param: string; value: number | string }>) => {
     const { param, value } = e.detail;
     this.advOverride = { ...this.advOverride, [param]: value };
     playbackEngine.setFeelSettings({ advOverride: this.advOverride });
@@ -3342,10 +3360,13 @@ export class LoopScreen extends LitElement {
     if (e.detail) {
       this.humanEngineState = e.detail;
       playbackEngine.setFeelSettings({
+        playStyle: this.playStyle,
         swing: this.swing,
         spread: this.spread,
         density: this.density,
         tone: this.tone,
+        barFeel: this.barFeel,
+        advOverride: this.advOverride,
         humanState: e.detail,
       });
     }
@@ -3355,10 +3376,13 @@ export class LoopScreen extends LitElement {
     if (e.detail) {
       this.humanEngineState = e.detail;
       playbackEngine.setFeelSettings({
+        playStyle: this.playStyle,
         swing: this.swing,
         spread: this.spread,
         density: this.density,
         tone: this.tone,
+        barFeel: this.barFeel,
+        advOverride: this.advOverride,
         humanState: e.detail,
       });
     }
@@ -3658,12 +3682,24 @@ export class LoopScreen extends LitElement {
               .duration=${this.activeEngineParams.duration}
               .humanVariance=${this.activeEngineParams.humanVariance}
               .microTiming=${this.activeEngineParams.microTiming}
+              .arpMode=${this.activeEngineParams.arpMode}
+              .arpRate=${this.activeEngineParams.arpRate}
+              .arpRange=${this.activeEngineParams.arpRange}
+              .arpGate=${this.activeEngineParams.arpGate}
+              .minVelocity=${this.activeEngineParams.minVelocity}
+              .maxVelocity=${this.activeEngineParams.maxVelocity}
               .parameterOverrides=${this.advOverride}
               .sourceLabels=${{
                 spread: 'Spread',
                 duration: 'Pattern + Density',
                 humanVariance: 'Humanise',
                 microTiming: 'Swing + Humanise',
+                arpMode: 'Pattern',
+                arpRate: 'Pattern',
+                arpRange: 'Pattern',
+                arpGate: 'Pattern',
+                minVelocity: 'Genre',
+                maxVelocity: 'Genre',
               }}
               style="--human-bg: transparent; --human-surface: var(--cv-surface, #F6EADB); --human-surface-2: var(--cv-surface-2, #F1E4CC); --human-border: rgba(46,39,31,0.12); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: rgba(46,39,31,0.45); --human-accent: #9E5D53; --human-accent-hover: #804A41; width: 100%; min-width: 0; box-shadow: none;"
               @parameter-override=${this.onParameterOverride}
@@ -3874,12 +3910,24 @@ export class LoopScreen extends LitElement {
                 .duration=${this.activeEngineParams.duration}
                 .humanVariance=${this.activeEngineParams.humanVariance}
                 .microTiming=${this.activeEngineParams.microTiming}
+                .arpMode=${this.activeEngineParams.arpMode}
+                .arpRate=${this.activeEngineParams.arpRate}
+                .arpRange=${this.activeEngineParams.arpRange}
+                .arpGate=${this.activeEngineParams.arpGate}
+                .minVelocity=${this.activeEngineParams.minVelocity}
+                .maxVelocity=${this.activeEngineParams.maxVelocity}
                 .parameterOverrides=${this.advOverride}
                 .sourceLabels=${{
                   spread: 'Spread',
                   duration: 'Pattern + Density',
                   humanVariance: 'Humanise',
                   microTiming: 'Swing + Humanise',
+                  arpMode: 'Pattern',
+                  arpRate: 'Pattern',
+                  arpRange: 'Pattern',
+                  arpGate: 'Pattern',
+                  minVelocity: 'Genre',
+                  maxVelocity: 'Genre',
                 }}
                 style="--human-bg: transparent; --human-surface: var(--cv-surface, #F6EADB); --human-surface-2: var(--cv-surface-2, #F1E4CC); --human-border: rgba(46,39,31,0.12); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: rgba(46,39,31,0.45); --human-accent: #9E5D53; --human-accent-hover: #804A41; width: 100%; min-width: 0; box-shadow: none;"
                 @parameter-override=${this.onParameterOverride}

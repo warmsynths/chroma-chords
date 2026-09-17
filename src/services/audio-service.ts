@@ -57,7 +57,7 @@ export interface FeelSettings {
   tone?: string;
   humanState?: any;
   barFeel?: Record<number, Partial<FeelSettings>>;
-  advOverride?: Record<string, number>;
+  advOverride?: Record<string, any>;
 }
 
 let activeToneName = 'Warm';
@@ -762,7 +762,8 @@ export const USER_PLAY_STYLES: { name: string; color: string; patch: Record<stri
     "patch": {
       "arpMode": "up",
       "arpRate": "1/32",
-      "arpRange": 1
+      "arpRange": 1,
+      "isStrum": true
     }
   },
   {
@@ -1244,8 +1245,10 @@ export function playChord(
       const count = noteNames.length;
       const densityScaling = count <= 1 ? 1 : Math.max(0.4, 1 / Math.sqrt(count));
       const now = Tone.now();
+      const isGuitar = instrument === 'guitar' || instrument === 'jazz-guitar';
+      const isJazzGuitar = instrument === 'jazz-guitar';
 
-      // --- Arpeggiator mode ---
+      // --- Arpeggiator / Strum mode ---
       if (humanState && humanState.arpMode && humanState.arpMode !== 'off') {
         const bpm = humanState.bpm ?? 80;
         const arpRate = humanState.arpRate ?? '1/16';
@@ -1265,25 +1268,55 @@ export function playChord(
           return densityScaling;
         };
 
-        // Note duration: slightly shorter than interval for a crisp arp feel
-        const noteDur = humanState.duration
-          ? humanState.duration * (1.0 + (Math.random() - 0.5) * 0.1 * (humanState.humanVariance ?? 0))
-          : Math.max(0.05, interval * 0.9);
+        // Check if this is a strum feel (rapid roll with sustained chord ring-out)
+        // versus a running rhythmic arpeggio (step-gated pulses)
+        const isStrum = (humanState.isStrum === true ||
+          humanState.playStyle === 'Strum' ||
+          arpRate === '1/32') && (arpRate === '1/32' || humanState.isStrum === true);
+
+        // Note duration:
+        // - For strums: notes sustain for the full chord duration so the rolled chord rings out naturally.
+        // - For running arps: notes gate to the step interval (interval * gateRatio) for crisp, distinct pulses.
+        const gateRatio = typeof humanState.arpGate === 'number'
+          ? Math.max(0.1, Math.min(2.0, humanState.arpGate))
+          : 0.85;
+        const varianceFactor = 1.0 + (Math.random() - 0.5) * 0.1 * (humanState.humanVariance ?? 0);
+
+        const chordDur = (typeof humanState.duration === 'number' && humanState.duration > 0)
+          ? humanState.duration
+          : duration;
+
+        // Natural strum roll interval: 20ms - 45ms per note depending on spread,
+        // or standard rhythmic interval for running arpeggios
+        const strumStep = typeof humanState.spread === 'number' && humanState.spread > 0
+          ? Math.min(0.045, Math.max(0.02, humanState.spread * 0.04))
+          : 0.028;
+        const stepInterval = isStrum ? strumStep : interval;
+
+        // Note sustain length:
+        // Strum notes ring out across the full chord (at least 1.4s on audition, or full chord duration)
+        const strumDur = Math.max(1.4, chordDur) * (1.0 + (Math.random() - 0.5) * 0.1 * (humanState.humanVariance ?? 0));
+        const arpDur = Math.max(0.04, interval * gateRatio * varianceFactor);
 
         ordered.forEach((noteName, index) => {
-          // Optional micro-timing jitter on each arp step
+          // Micro-timing jitter: subtle on strum to preserve clean roll direction, normal on arp
           const jitter = humanState.microTiming
-            ? (Math.random() - 0.5) * humanState.microTiming * 0.02
+            ? (Math.random() - 0.5) * humanState.microTiming * (isStrum ? 0.005 : 0.02)
             : 0;
-          voice.triggerAttackRelease(noteName, noteDur, now + index * interval + jitter, getVel());
+
+          const noteDur = isStrum ? strumDur : arpDur;
+          let vel = getVel();
+          if (isStrum && isGuitar && index === 0) {
+            vel = Math.min(1, vel * (isJazzGuitar ? 1.05 : 1.1));
+          }
+
+          voice.triggerAttackRelease(noteName, noteDur, now + index * stepInterval + jitter, vel);
         });
 
         return;
       }
 
       // --- Standard humanized chord playback ---
-      const isGuitar = instrument === 'guitar' || instrument === 'jazz-guitar';
-      const isJazzGuitar = instrument === 'jazz-guitar';
       // If guitar, sort notes lowest to highest for natural down-strum roll
       const sortedNotes = isGuitar
         ? [...noteNames].sort((a, b) => {
@@ -1419,9 +1452,35 @@ export function playChordForGenre(
     if (advOverride) {
       if (typeof advOverride.spread === 'number') feelPatch.spread = advOverride.spread;
       if (typeof advOverride.duration === 'number') feelPatch.duration = advOverride.duration;
+      if (typeof advOverride.humanVariance === 'number') feelPatch.humanVariance = advOverride.humanVariance;
       if (typeof advOverride.variance === 'number') feelPatch.humanVariance = advOverride.variance;
+      if (typeof advOverride.microTiming === 'number') feelPatch.microTiming = advOverride.microTiming;
       if (typeof advOverride.micro === 'number') feelPatch.microTiming = advOverride.micro;
+      if (typeof advOverride.arpMode === 'string') feelPatch.arpMode = advOverride.arpMode;
+      if (typeof advOverride.arpRate === 'string') feelPatch.arpRate = advOverride.arpRate;
+      if (typeof advOverride.arpRange === 'number') feelPatch.arpRange = advOverride.arpRange;
+      if (typeof advOverride.arpGate === 'number') feelPatch.arpGate = advOverride.arpGate;
+      if (typeof advOverride.minVelocity === 'number') feelPatch.minVelocity = advOverride.minVelocity;
+      if (typeof advOverride.maxVelocity === 'number') feelPatch.maxVelocity = advOverride.maxVelocity;
     }
+  }
+
+  // Protect pattern arp settings if no explicit user override was placed on arpMode
+  if (stylePatch.arpMode && stylePatch.arpMode !== 'off') {
+    const hasManualArpMode = opts?.feelSettings?.advOverride && opts.feelSettings.advOverride.arpMode !== undefined;
+    if (!hasManualArpMode) {
+      feelPatch.arpMode = stylePatch.arpMode;
+      if (stylePatch.arpRate && (!opts?.feelSettings?.advOverride || opts.feelSettings.advOverride.arpRate === undefined)) {
+        feelPatch.arpRate = stylePatch.arpRate;
+      }
+      if (stylePatch.arpRange !== undefined && (!opts?.feelSettings?.advOverride || opts.feelSettings.advOverride.arpRange === undefined)) {
+        feelPatch.arpRange = stylePatch.arpRange;
+      }
+    }
+  }
+
+  if (stylePatch.isStrum !== undefined && (!opts?.feelSettings?.advOverride || opts.feelSettings.advOverride.isStrum === undefined)) {
+    feelPatch.isStrum = stylePatch.isStrum;
   }
 
   const humanState = {
@@ -1429,6 +1488,7 @@ export function playChordForGenre(
     ...stylePatch,
     ...feelPatch,
     bpm: opts?.bpm ?? profile.bpm ?? 90,
+    playStyle: effectivePlayStyle,
     ...(typeof opts?.velocity === 'number' ? { velocity: opts.velocity } : {}),
   };
 

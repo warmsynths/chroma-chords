@@ -11,6 +11,7 @@ declare module 'human-engine' {
     arpMode?: string;
     arpRate?: string;
     arpRange?: number;
+    arpGate?: number;
     strum?: number;
     swing?: number;
     humanVelocity?: number;
@@ -49,13 +50,14 @@ declare module 'human-engine' {
     arpMode: string;
     arpRate: string;
     arpRange: number;
+    arpGate: number;
     debugExpanded: boolean;
     arpExpanded: boolean;
     showInfo: boolean;
     mode: string;
     humanSlider: number;
     layout?: 'full' | 'embedded';
-    parameterOverrides?: Record<string, number>;
+    parameterOverrides?: Record<string, any>;
     sourceLabels?: Record<string, string>;
   }
 }
@@ -67,7 +69,7 @@ declare global {
   interface HTMLElementEventMap {
     'human-change': CustomEvent<import('human-engine').HumanState>;
     'human-preview': CustomEvent<import('human-engine').HumanState>;
-    'parameter-override': CustomEvent<{ param: string; value: number }>;
+    'parameter-override': CustomEvent<{ param: string; value: number | string }>;
     'parameter-relink': CustomEvent<{ param: string }>;
   }
 }

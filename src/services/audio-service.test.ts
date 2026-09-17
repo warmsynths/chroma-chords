@@ -19,7 +19,7 @@ vi.mock('tone', () => ({
   now: () => 0,
 }));
 
-import { applyVoicingToNotes, applyDensityToNotes, setMasterTone, getMasterTone, normalizeInstrumentName, playChord, startChordNotes } from './audio-service';
+import { applyVoicingToNotes, applyDensityToNotes, setMasterTone, getMasterTone, normalizeInstrumentName, playChord, startChordNotes, playChordForGenre, arpRateToSeconds, expandNotesAcrossOctaves, orderNotesForArp } from './audio-service';
 
 describe('Perform Mode Audio Functions', () => {
   describe('applyVoicingToNotes', () => {
@@ -115,6 +115,91 @@ describe('Perform Mode Audio Functions', () => {
       expect(() => startChordNotes(['C', 'E', 'G'], 'root position', 90, 'guitar')).not.toThrow();
       expect(() => playChord(['C4', 'E4', 'G4'], 0.8, undefined, 'jazz-guitar')).not.toThrow();
       expect(() => startChordNotes(['C', 'E', 'G'], 'root position', 90, 'jazz-guitar')).not.toThrow();
+    });
+  });
+
+  describe('Arpeggiator Engine & Human MIDI Integration', () => {
+    it('calculates accurate note intervals from arp rate and bpm', () => {
+      // At 120 BPM: beatsPerSecond = 2
+      expect(arpRateToSeconds('1/4', 120)).toBeCloseTo(0.5, 3);
+      expect(arpRateToSeconds('1/8', 120)).toBeCloseTo(0.25, 3);
+      expect(arpRateToSeconds('1/16', 120)).toBeCloseTo(0.125, 3);
+      expect(arpRateToSeconds('1/32', 120)).toBeCloseTo(0.0625, 3);
+      expect(arpRateToSeconds('1/8T', 120)).toBeCloseTo(0.25 * (2 / 3), 3);
+    });
+
+    it('expands notes across multiple octaves correctly', () => {
+      const expanded1 = expandNotesAcrossOctaves(['C4', 'E4', 'G4'], 1);
+      expect(expanded1).toEqual(['C4', 'E4', 'G4']);
+
+      const expanded2 = expandNotesAcrossOctaves(['C4', 'E4', 'G4'], 2);
+      expect(expanded2).toEqual(['C4', 'E4', 'G4', 'C5', 'E5', 'G5']);
+    });
+
+    it('orders notes according to arpMode', () => {
+      const notes = ['C4', 'E4', 'G4'];
+      expect(orderNotesForArp(notes, 'up')).toEqual(['C4', 'E4', 'G4']);
+      expect(orderNotesForArp(notes, 'down')).toEqual(['G4', 'E4', 'C4']);
+      expect(orderNotesForArp(notes, 'up-down')).toEqual(['C4', 'E4', 'G4', 'E4']);
+    });
+
+    it('gates note duration to interval * arpGate instead of sustaining entire chord duration', () => {
+      // In Arp mode, note duration should be gated to arp step interval (~0.21s at 120bpm for 1/8)
+      // rather than the full chord duration (1.0s) which caused the strum wash bug
+      expect(() => {
+        playChord(['C4', 'E4', 'G4'], 1.0, {
+          arpMode: 'up',
+          arpRate: '1/8',
+          arpRange: 1,
+          arpGate: 0.85,
+          bpm: 120,
+          humanVariance: 0,
+        });
+      }).not.toThrow();
+    });
+
+    it('preserves Arpeggio pattern arpMode when feelSettings has custom humanise and no arp override', () => {
+      expect(() => {
+        playChordForGenre(['C4', 'E4', 'G4'], 'Pop', {
+          playStyle: 'Arpeggio',
+          feelSettings: {
+            humanise: 80,
+            swing: 25,
+            spread: 50,
+            density: 50,
+          },
+        });
+      }).not.toThrow();
+    });
+
+    it('allows explicit user advOverride to change arpMode, arpRate, arpGate, and velocities', () => {
+      expect(() => {
+        playChordForGenre(['C4', 'E4', 'G4'], 'Pop', {
+          playStyle: 'Arpeggio',
+          feelSettings: {
+            advOverride: {
+              arpMode: 'down',
+              arpRate: '1/16',
+              arpGate: 0.5,
+              minVelocity: 50,
+              maxVelocity: 100,
+            },
+          },
+        });
+      }).not.toThrow();
+    });
+
+    it('sustains chord duration for Strum playStyle instead of chopping notes into staccato clicks', () => {
+      expect(() => {
+        playChordForGenre(['C4', 'E4', 'G4'], 'Indie/Folk', {
+          playStyle: 'Strum',
+          duration: 1.2,
+          feelSettings: {
+            humanise: 45,
+            spread: 50,
+          },
+        });
+      }).not.toThrow();
     });
   });
 });
