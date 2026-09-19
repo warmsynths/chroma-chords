@@ -488,6 +488,12 @@ export class ChromaChordsApp extends LitElement {
 
   private onProgressionChange(e: CustomEvent<Progression>) {
     this.progression = e.detail;
+    if (this.progression) {
+      this.length = this.progression.chords.length;
+      if (this.order.length !== this.length || this.order.some(idx => idx >= this.length)) {
+        this.order = Array.from({ length: this.length }, (_, i) => i);
+      }
+    }
     playbackEngine.setProgression(this.progression, this.order);
     if (this.sections.length > 0) {
       this.sections = SongArranger.syncActiveSection(this.sections, this.activeSectionIdx, this.progression, this.order);

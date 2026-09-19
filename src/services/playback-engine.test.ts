@@ -215,6 +215,46 @@ describe('PlaybackEngine Deep Module', () => {
       expect(feel.density).toBe(75);
       expect(feel.tone).toBe('Glassy');
     });
+
+    it('auto-sanitizes mismatched order when setting an 8-chord progression', () => {
+      const eightChordProg: Progression = {
+        genre: 'Rock',
+        mood: 'Anthemic',
+        key: 'C',
+        scaleType: 'MAJOR',
+        bpm: 120,
+        chords: [
+          { name: 'C', tag: 'I', roman: 'I', color: '#fff', functionLabel: 'Tonic', notes: ['C'], scaleLabel: 'C', desc: '', degree: '1', scaleKey: 'C', tension: 0.1 },
+          { name: 'G', tag: 'V', roman: 'V', color: '#fff', functionLabel: 'Dominant', notes: ['G'], scaleLabel: 'C', desc: '', degree: '5', scaleKey: 'C', tension: 0.8 },
+          { name: 'Am', tag: 'vi', roman: 'vi', color: '#fff', functionLabel: 'Submediant', notes: ['A'], scaleLabel: 'C', desc: '', degree: '6', scaleKey: 'C', tension: 0.3 },
+          { name: 'E7', tag: 'III7', roman: 'III7', color: '#fff', functionLabel: 'Dominant', notes: ['E'], scaleLabel: 'C', desc: '', degree: '3', scaleKey: 'C', tension: 0.9 },
+          { name: 'F', tag: 'IV', roman: 'IV', color: '#fff', functionLabel: 'Subdominant', notes: ['F'], scaleLabel: 'C', desc: '', degree: '4', scaleKey: 'C', tension: 0.4 },
+          { name: 'G', tag: 'V', roman: 'V', color: '#fff', functionLabel: 'Dominant', notes: ['G'], scaleLabel: 'C', desc: '', degree: '5', scaleKey: 'C', tension: 0.8 },
+          { name: 'C', tag: 'I', roman: 'I', color: '#fff', functionLabel: 'Tonic', notes: ['C'], scaleLabel: 'C', desc: '', degree: '1', scaleKey: 'C', tension: 0.1 },
+          { name: 'C', tag: 'I', roman: 'I', color: '#fff', functionLabel: 'Tonic', notes: ['C'], scaleLabel: 'C', desc: '', degree: '1', scaleKey: 'C', tension: 0.1 },
+        ],
+      };
+
+      // Pass an outdated 4-chord order
+      engine.setProgression(eightChordProg, [0, 1, 2, 3]);
+      expect(engine.getTotalSteps()).toBe(8);
+
+      const steps: number[] = [];
+      engine.subscribeTick((_idx, step) => {
+        steps.push(step);
+      });
+
+      engine.togglePlay();
+      expect(engine.isPlaying()).toBe(true);
+
+      // Advance through 8 full steps
+      for (let i = 0; i < 8; i++) {
+        vi.advanceTimersByTime(2000);
+      }
+
+      // Should emit initial step 0, then 1, 2, 3, 4, 5, 6, 7, and loop back to 0
+      expect(steps).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 0]);
+    });
   });
 });
 
