@@ -2737,7 +2737,7 @@ export class LoopScreen extends LitElement {
     e.preventDefault();
     const prompt = this.freeText.trim();
     if (!prompt) return;
-    this.dispatchEvent(new CustomEvent('freetext-generate', { detail: prompt, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('freetext-generate', { detail: { promptText: prompt }, bubbles: true, composed: true }));
     this.vibeOpen = false;
     this.requestUpdate();
   }

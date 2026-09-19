@@ -271,11 +271,15 @@ export class ChromaChordsApp extends LitElement {
     this.regenerate();
   }
 
-  private async onGenerate(e?: CustomEvent<{ promptText?: string }>) {
+  private async onGenerate(e?: CustomEvent<{ promptText?: string } | string>) {
     if (this.isGenerating) return;
     this.isGenerating = true;
     try {
-      const searchTerm = e?.detail?.promptText || this.activeSearchPrompt || undefined;
+      const detailPrompt = typeof e?.detail === 'string' ? e.detail : e?.detail?.promptText;
+      const searchTerm = detailPrompt || this.activeSearchPrompt || undefined;
+      if (searchTerm) {
+        this.showToast('Composing chords with AI...');
+      }
       const result = await PromptClassifier.resolvePrompt(
         this.chordData,
         this.genre,
@@ -297,6 +301,8 @@ export class ChromaChordsApp extends LitElement {
 
       const progression = result.progression;
       this.progression = progression;
+      if (progression.genre) this.genre = progression.genre;
+      if (progression.mood) this.mood = progression.mood;
       this.order = Array.from({ length: progression.chords.length }, (_, i) => i);
       this.length = progression.chords.length;
       this.activeIndex = 0;
@@ -310,6 +316,9 @@ export class ChromaChordsApp extends LitElement {
       this.sections = SongArranger.createInitialSong(progression, this.order);
       this.activeSectionIdx = 0;
       this.activeSearchPrompt = null;
+      if (searchTerm) {
+        this.showToast(`Composed from "${searchTerm}"`);
+      }
     } catch (err) {
       console.error('Failed to generate progression:', err);
       this.showToast('Failed to generate progression. Please try again.');

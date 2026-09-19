@@ -1168,6 +1168,33 @@ describe('Studio Component Interactions', () => {
 
     document.body.removeChild(el);
   });
+
+  it('dispatches freetext-generate with promptText detail when vibe form is submitted', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    el.vibeOpen = true;
+    await el.updateComplete;
+
+    const freetextSpy = vi.fn();
+    el.addEventListener('freetext-generate', (e: any) => freetextSpy(e.detail));
+
+    const input = el.shadowRoot?.querySelector('.cv-vibe-input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    input.value = 'chill rainy day';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await el.updateComplete;
+
+    const form = el.shadowRoot?.querySelector('form.popover-input-row') as HTMLFormElement;
+    expect(form).toBeTruthy();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await el.updateComplete;
+
+    expect(freetextSpy).toHaveBeenCalledWith({ promptText: 'chill rainy day' });
+    expect(el.vibeOpen).toBe(false);
+
+    document.body.removeChild(el);
+  });
 });
 
 
