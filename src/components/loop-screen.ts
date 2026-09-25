@@ -18,12 +18,26 @@ import {
   SCALE_DEGREE_SEMITONES,
   SCALE_DEGREE_QUALITIES,
   ROMAN_BY_SCALE,
+  MOODS,
 } from '../services/chord-engine';
 import { playbackEngine } from '../services/playback-engine';
 import { projectStorage } from '../services/project-storage';
 import { ProjectData } from '../services/project-service';
 import { SongArranger, SongSection, SECTION_TEMPLATES } from '../services/song-arranger';
-import { USER_INSTRUMENTS, USER_PLAY_STYLES, GENRE_HUMANIZE, setMasterTone, normalizeInstrumentName } from '../services/audio-service';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES, GENRE_HUMANIZE, setMasterTone, normalizeInstrumentName, presetIdToUserInstrumentName, matchRhythmStyleToPlayStyleName } from '../services/audio-service';
+import {
+  BAND_LIST,
+  getBandById,
+  generateBandProgression,
+  getBandTrickCandidates,
+  BandArchetype as ServiceBandArchetype,
+  BandTrickCandidate,
+  splitChordRootAndSuffix,
+  BAND_WORDMARKS,
+  BAND_MOVES,
+  getBandMoveForChord,
+  ResolvedBandMove,
+} from '../services/band-dna-service';
 import 'human-engine';
 import type { HumanState } from 'human-engine';
 import './share-modal';
@@ -31,96 +45,15 @@ import './chord-swap-lane';
 import './chord-pad-cycler';
 import type { SwapFeelItem } from './chord-swap-lane';
 
-export interface BandArchetype {
-  name: string;
-  color: string;
-  r: number;
-  plain: string;
-  theory: string;
-  hoist: string[];
-  font: string;
-  weight?: number;
-  italic?: boolean;
-  pillFs: number;
-  pillTrack: string;
-}
-
-export const BANDS: BandArchetype[] = [
-  {
-    name: 'Oasis',
-    color: '#F6D98B',
-    r: 10,
-    plain: 'leans on a bright chord that shouldn’t fit, then walks home',
-    theory: 'borrowed major ♭III, plagal IV–I, sus4 held over a static root',
-    hoist: ['E♭maj7', 'Fmaj7', 'A♭'],
-    font: 'Anton, sans-serif',
-    pillFs: 13,
-    pillTrack: '0.08em',
-  },
-  {
-    name: 'Radiohead',
-    color: '#C9A9E0',
-    r: 3,
-    plain: 'swaps a chord for its stranger neighbour a third away',
-    theory: 'chromatic mediants and modal mixture — ♭VI and ♭III against a major tonic',
-    hoist: ['A♭maj7', 'E♭maj7', 'Em7'],
-    font: "'Space Mono', monospace",
-    weight: 700,
-    pillFs: 12.5,
-    pillTrack: '0.02em',
-  },
-  {
-    name: 'Nirvana',
-    color: '#F2A79B',
-    r: 2,
-    plain: 'moves the root in big jumps and leaves the middle empty',
-    theory: 'power-chord roots by minor third and tritone — no thirds, so major or minor stays open',
-    hoist: ['A♭', 'E♭maj7', 'B♭'],
-    font: "'Plus Jakarta Sans', sans-serif",
-    weight: 800,
-    pillFs: 12,
-    pillTrack: '0.04em',
-  },
-  {
-    name: 'Steely Dan',
-    color: '#9CC0EC',
-    r: 13,
-    plain: 'adds one note that makes a plain chord sound expensive',
-    theory: 'major triad plus 9th with no 7th, ii–V chains, tritone substitution',
-    hoist: ['Cmaj9', 'D♭7', 'Fm7'],
-    font: "'Plus Jakarta Sans', sans-serif",
-    weight: 800,
-    italic: true,
-    pillFs: 13,
-    pillTrack: '0.01em',
-  },
-  {
-    name: 'Mac DeMarco',
-    color: '#B8CC9E',
-    r: 7,
-    plain: 'two lush chords looped loose, bass sliding underneath',
-    theory: 'maj7 vamp with chromatic bass motion, no real resolution',
-    hoist: ['Fmaj7', 'Cmaj9', 'Em7'],
-    font: "'Plus Jakarta Sans', sans-serif",
-    weight: 800,
-    pillFs: 12,
-    pillTrack: '-0.01em',
-  },
-];
+export type BandArchetype = ServiceBandArchetype;
+export const BANDS = BAND_LIST;
 
 const GENRE_PRIMARY = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Synthwave', 'Indie/Folk', 'Rock', 'Jazz-ish', 'Cinematic'];
 const GENRE_ALL = ['Pop', 'Lo-fi/Chill', 'R&B/Soul', 'Indie/Folk', 'Synthwave', 'Jazz-ish', 'Rock', 'Cinematic', 'Ambient/Drone', 'House/Dance', 'Reggae/Dub', 'Gospel'];
-const MOOD_ALL = ['Uplifting', 'Melancholy', 'Dreamy', 'Tense', 'Warm', 'Nostalgic'];
-const MOOD_PRIMARY = ['Uplifting', 'Melancholy', 'Dreamy'];
+const MOOD_ALL = MOODS.map(m => m.name);
+const MOOD_PRIMARY = MOOD_ALL;
 
-const MOOD_ICONS: Record<string, string> = {
-  Uplifting: 'M4 18 C 8 18 8 11 12 11 C 16 11 16 5 20 5',
-  Melancholy: 'M3 9 Q 8 9 9 14 T 15 17 Q 19 18 21 15',
-  Dreamy: 'M4 15 a4 4 0 1 1 8 0 a4 4 0 1 1 8 0',
-  Tense: 'M3 12 L7 6 L11 16 L15 6 L19 16 L21 12',
-  Warm: 'M12 4 a6.5 6.5 0 1 0 6.5 6.5',
-  Nostalgic: 'M3 12 C 7 6 9 18 13 12 C 17 6 19 18 21 12',
-};
+const MOOD_ICONS: Record<string, string> = Object.fromEntries(MOODS.map(m => [m.name, m.iconPath]));
 
 const ROLE_PLAIN: Record<string, string> = {
   Tonic: 'home',
@@ -501,7 +434,8 @@ export class LoopScreen extends LitElement {
   @state() vibeOpen = false;
   @state() private showSaveModal = false;
   @state() private pendingSaveName = '';
-  @state() private selectedBand: string | null = null;
+  @property({ type: String }) selectedBand: string | null = null;
+  @state() private bandSwaps: Record<number, { originalChord: ChordBlock; move: ResolvedBandMove }> = {};
   @state() private freeText = '';
   @state() private vibePlaceholderIdx = 0;
   @state() private expandedGenre = false;
@@ -647,6 +581,49 @@ export class LoopScreen extends LitElement {
     }
     .band-bar-close:hover {
       background: var(--cv-cream, #FBF3E6);
+    }
+
+    /* Studio Band DNA Strip */
+    .band-dna-studio-strip {
+      background: var(--cv-surface-2, rgba(46, 39, 31, 0.04));
+      border: 1px solid rgba(46, 39, 31, 0.07);
+      border-radius: 16px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+      transition: all 180ms ease;
+    }
+    .band-dna-studio-strip .pill {
+      font-size: 11.5px;
+      padding: 5px 11px;
+      border-radius: 100px;
+      background: var(--cv-surface, #FAF4EB);
+      border: 1px solid rgba(46, 39, 31, 0.12);
+      color: var(--cv-ink, #2E271F);
+      cursor: pointer;
+      transition: all 140ms ease;
+    }
+    .band-dna-studio-strip .pill:hover {
+      border-color: rgba(46, 39, 31, 0.3);
+      transform: translateY(-1px);
+    }
+    .band-dna-studio-strip .pill.active {
+      font-weight: 800;
+      transform: translateY(-1px);
+    }
+    .band-gen-btn:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.05);
+    }
+    .band-gen-btn:active {
+      transform: translateY(0);
+    }
+    .band-trick-chip:hover {
+      border-color: rgba(46, 39, 31, 0.35) !important;
+      background: #FFFFFF !important;
+      transform: translateY(-1px);
+    }
+    .band-trick-chip:active {
+      transform: translateY(0);
     }
 
     /* Studio Shell */
@@ -2254,14 +2231,71 @@ export class LoopScreen extends LitElement {
     .mobile-vibe-toggle {
       width: 100%;
       border: none;
+      font-family: inherit;
       background: var(--cv-surface, #F6EADB);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.08);
       border-radius: 16px;
-      padding: 12px 14px;
+      padding: 10px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 10px;
       cursor: pointer;
+      transition: background 180ms ease, box-shadow 180ms ease;
+      box-sizing: border-box;
+    }
+    .mobile-vibe-toggle:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .mobile-vibe-toggle.open {
+      background: var(--cv-surface, #F6EADB);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.14);
+    }
+    .mobile-vibe-toggle .vibe-toggle-chevron {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--cv-cream, #FBF3E6);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: transform 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      transform: rotate(0deg);
+    }
+    .mobile-vibe-toggle.open .vibe-toggle-chevron {
+      transform: rotate(180deg);
+    }
+    .mobile-vibe-drawer {
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 20px;
+      padding: 16px 15px 18px;
+      margin-top: 8px;
+      border: 1px solid rgba(46, 39, 31, 0.08);
+      box-shadow: 0 12px 28px -12px rgba(46, 39, 31, 0.22);
+      animation: cvfv-panel 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      box-sizing: border-box;
+    }
+    .mobile-vibe-drawer .popover-input-row {
+      background: var(--cv-cream, #FBF3E6);
+      border: 1.5px solid rgba(46, 39, 31, 0.12);
+      border-radius: 16px;
+      margin-top: 0;
+      margin-bottom: 4px;
+    }
+    .mobile-vibe-drawer .pill {
+      background: var(--cv-cream, #FBF3E6);
+    }
+    .mobile-vibe-drawer .pill:hover {
+      background: #FFFFFF;
+    }
+    .mobile-vibe-drawer .pill.active {
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
+    }
+    .mobile-vibe-drawer .pill.mood-pill.active {
+      color: #2E271F;
     }
     .mobile-swap-sheet {
       position: fixed;
@@ -2343,6 +2377,56 @@ export class LoopScreen extends LitElement {
     .mobile-circle-btn.active {
       background: var(--cv-surface-2, #F1E4CC);
       box-shadow: inset 0 0 0 2px var(--cv-ink, #2E271F);
+    }
+    .mobile-chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 8px;
+      row-gap: 10px;
+      margin-top: 16px;
+    }
+    .mobile-chip {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: #5B5145;
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 150ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 150ms ease, transform 150ms ease;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .mobile-chip:hover {
+      background: var(--cv-surface, #F6EADB);
+    }
+    .mobile-chip.open, .mobile-chip.active {
+      background: var(--cv-surface, #F6EADB);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.16);
+    }
+    .mobile-chip-divider {
+      width: 1px;
+      align-self: stretch;
+      min-height: 28px;
+      background: rgba(46, 39, 31, 0.12);
+      margin: 0 4px;
+    }
+    .mobile-chip.mobile-share-btn {
+      margin-left: auto;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink, #2E271F);
+      font-weight: 800;
+      padding: 0 18px;
+    }
+    .mobile-chip.mobile-share-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
     }
     .mobile-chip-btn {
       border: none;
@@ -2475,14 +2559,14 @@ export class LoopScreen extends LitElement {
     this.savedSets = projectStorage.getProjects();
     this.unsubscribeProjects = typeof projectStorage.subscribeProjects === 'function'
       ? projectStorage.subscribeProjects(() => {
+        this.savedSets = projectStorage.getProjects();
+        this.requestUpdate();
+      })
+      : typeof (projectStorage as any).subscribe === 'function'
+        ? (projectStorage as any).subscribe(() => {
           this.savedSets = projectStorage.getProjects();
           this.requestUpdate();
         })
-      : typeof (projectStorage as any).subscribe === 'function'
-        ? (projectStorage as any).subscribe(() => {
-            this.savedSets = projectStorage.getProjects();
-            this.requestUpdate();
-          })
         : null;
 
     playbackEngine.setFeelSettings({
@@ -2832,23 +2916,275 @@ export class LoopScreen extends LitElement {
   }
 
   private onBandClick(bandName: string) {
+    this.bandSwaps = {};
     if (this.selectedBand === bandName) {
       this.selectedBand = null;
-    } else {
-      this.selectedBand = bandName;
+      this.requestUpdate();
+      return;
     }
-    const band = BANDS.find(b => b.name === this.selectedBand);
+    this.selectedBand = bandName;
+    const band = getBandById(bandName);
     if (band) {
-      this.dispatchEvent(new CustomEvent('toast', { detail: `Active artist DNA: ${band.name}`, bubbles: true, composed: true }));
+      const userInst = presetIdToUserInstrumentName(band.presetId);
+      const userPlay = matchRhythmStyleToPlayStyleName(band.rhythmStyle);
+      if (userInst) {
+        this.instrument = userInst;
+        playbackEngine.setInstrument(userInst);
+        this.dispatchEvent(new CustomEvent('set-instrument', { detail: userInst, bubbles: true, composed: true }));
+      }
+      if (userPlay) {
+        this.playStyle = userPlay;
+        playbackEngine.setPlayStyle(userPlay);
+        this.dispatchEvent(new CustomEvent('set-play-style', { detail: userPlay, bubbles: true, composed: true }));
+      }
+      if (band.defaultBpm) {
+        this.setDirectBpm(band.defaultBpm);
+      }
+      this.dispatchEvent(new CustomEvent('toast', {
+        detail: `Artist DNA: ${band.name} · ${userInst || ''} · ${band.defaultBpm} BPM`,
+        bubbles: true,
+        composed: true,
+      }));
     }
     this.requestUpdate();
+  }
+
+  private onWriteBandLoop(band: ServiceBandArchetype) {
+    this.bandSwaps = {};
+    this.onGenerateBandProgression(band.name);
+  }
+
+  private onGenerateBandProgression(bandName: string) {
+    if (!this.progression || !this.chordData) return;
+    this.bandSwaps = {};
+    const key = this.progression.key || 'C';
+    const scaleType = this.progression.scaleType || 'MAJOR';
+    const newProg = generateBandProgression(this.chordData, bandName, key, scaleType);
+    if (newProg) {
+      const band = getBandById(bandName);
+      if (band) {
+        const userInst = presetIdToUserInstrumentName(band.presetId);
+        const userPlay = matchRhythmStyleToPlayStyleName(band.rhythmStyle);
+        if (userInst) {
+          this.instrument = userInst;
+          playbackEngine.setInstrument(userInst);
+          this.dispatchEvent(new CustomEvent('set-instrument', { detail: userInst, bubbles: true, composed: true }));
+        }
+        if (userPlay) {
+          this.playStyle = userPlay;
+          playbackEngine.setPlayStyle(userPlay);
+          this.dispatchEvent(new CustomEvent('set-play-style', { detail: userPlay, bubbles: true, composed: true }));
+        }
+        if (band.defaultBpm) {
+          this.setDirectBpm(band.defaultBpm);
+        }
+      }
+      this.progression = newProg;
+      this.order = Array.from({ length: newProg.chords.length }, (_, i) => i);
+      playbackEngine.setProgression(newProg, this.order);
+      this.dispatchEvent(new CustomEvent('progression-change', { detail: newProg, bubbles: true, composed: true }));
+      this.dispatchEvent(new CustomEvent('toast', {
+        detail: `Generated ${bandName} progression in ${key} ${this.getCurrentScaleLabel()}`,
+        bubbles: true,
+        composed: true,
+      }));
+      this.requestUpdate();
+    }
+  }
+
+  private applyBandMove(index: number, move: ResolvedBandMove, band: ServiceBandArchetype) {
+    if (!this.progression) return;
+    const oldChord = this.progression.chords[index];
+    if (!oldChord) return;
+
+    this.bandSwaps = {
+      ...this.bandSwaps,
+      [index]: { originalChord: { ...oldChord }, move },
+    };
+
+    const newChord: ChordBlock = {
+      ...oldChord,
+      name: move.chord,
+      roman: move.roman,
+      functionLabel: `${band.name} Move`,
+      desc: `${band.name} signature move (${move.name})`,
+      tension: oldChord.tension,
+      tag: 'glow',
+      color: roleForTension(oldChord.tension).color,
+    };
+
+    const chords = [...this.progression.chords];
+    chords[index] = newChord;
+    const newProg: Progression = { ...this.progression, chords };
+    this.progression = newProg;
+    playbackEngine.setProgression(newProg, this.order);
+    playbackEngine.auditionChord(newChord, 0.8);
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: newProg, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: `${band.name} move: ${move.name} applied to Bar ${index + 1}`,
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private revertBandMove(index: number) {
+    if (!this.progression || !this.bandSwaps[index]) return;
+    const { originalChord } = this.bandSwaps[index];
+
+    const nextSwaps = { ...this.bandSwaps };
+    delete nextSwaps[index];
+    this.bandSwaps = nextSwaps;
+
+    const chords = [...this.progression.chords];
+    chords[index] = originalChord;
+    const newProg: Progression = { ...this.progression, chords };
+    this.progression = newProg;
+    playbackEngine.setProgression(newProg, this.order);
+    playbackEngine.auditionChord(originalChord, 0.8);
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: newProg, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: `Reverted Bar ${index + 1} to ${originalChord.name}`,
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private onApplyBandTrick(trickCandidate: BandTrickCandidate, targetIndex?: number) {
+    if (!this.progression || !this.chordData) return;
+    const idx = (targetIndex !== undefined)
+      ? targetIndex
+      : (this.swapIndex !== null ? this.swapIndex : (this.progression.chords.length > 2 ? 2 : 0));
+
+    const oldChord = this.progression.chords[idx];
+    if (!oldChord) return;
+
+    const newChord: ChordBlock = {
+      ...oldChord,
+      name: trickCandidate.chordName,
+      roman: trickCandidate.roman,
+      notes: trickCandidate.notes,
+      functionLabel: `${this.selectedBand || 'Artist'} Trick`,
+      desc: trickCandidate.plain,
+      tension: trickCandidate.tension,
+      tag: 'glow',
+      color: roleForTension(trickCandidate.tension).color,
+    };
+
+    const chords = [...this.progression.chords];
+    chords[idx] = newChord;
+    const newProg: Progression = { ...this.progression, chords };
+    this.progression = newProg;
+    playbackEngine.setProgression(newProg, this.order);
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: newProg, bubbles: true, composed: true }));
+    playbackEngine.auditionChord(newChord, 0.8);
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: `Injected ${trickCandidate.trick.name} (${trickCandidate.chordName}) at Bar ${idx + 1}`,
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private renderTopBandBar() {
+    const activeBand = this.selectedBand ? getBandById(this.selectedBand) : null;
+    if (!activeBand) return '';
+    const w = BAND_WORDMARKS[activeBand.name] || { font: activeBand.font, pillFs: 13, pillTrack: '0' };
+
+    return html`
+      <div class="band-bar band-bar-sticky" style="background: ${activeBand.color}4D; border-bottom: 1.5px solid rgba(46,39,31,0.09);">
+        <div style="display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 0 4px; box-sizing: border-box;">
+          <div style="width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; background: ${activeBand.color};"></div>
+          <div style="font-family: ${w.font}; font-weight: ${w.weight || 400}; font-style: ${w.italic ? 'italic' : 'normal'}; font-size: ${w.pillFs + 1}px; letter-spacing: ${w.pillTrack}; line-height: 1.2; color: #2E271F; flex-shrink: 0;">
+            ${activeBand.name}
+          </div>
+          <div style="flex: 1; min-width: 0;"></div>
+          <button
+            class="band-write-loop-btn band-bar-write-btn"
+            style="border: none; font-family: inherit; flex-shrink: 0; background: #2E271F; color: #F4EBDB; border-radius: 100px; min-height: 32px; padding: 0 14px; font-size: 11.5px; font-weight: 800; letter-spacing: 0.2px; cursor: pointer; transition: transform 120ms ease;"
+            @click=${() => this.onWriteBandLoop(activeBand)}
+            aria-label="Write a loop in ${activeBand.name}'s style"
+          >
+            Write loop
+          </button>
+          <button
+            class="band-bar-close band-bar-dismiss-btn"
+            style="width: 30px; height: 30px; border-radius: 50%; border: none; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #2E271F; background: rgba(251,243,230,0.7); cursor: pointer;"
+            @click=${() => this.onBandClick(activeBand.name)}
+            aria-label="Stop following ${activeBand.name}"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderBandLegend() {
+    const activeBand = this.selectedBand ? getBandById(this.selectedBand) : null;
+    if (!activeBand) return '';
+
+    return html`
+      <div class="band-legend-box" style="position: relative; z-index: 2; flex-shrink: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 14px; animation: cvfv-sheet-up 180ms var(--cv-ease, ease-out);">
+        <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+          <div style="width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: ${activeBand.color};"></div>
+          <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); flex-shrink: 0;">
+            ${activeBand.name} moves
+          </div>
+        </div>
+        <div style="flex: 1 1 220px; min-width: 0; font-size: 11px; font-weight: 700; line-height: 1.45; color: var(--cv-ink-muted); text-wrap: pretty;">
+          ${this.showTheory ? activeBand.theory : activeBand.plain} — tap a move on any chord to use it.
+        </div>
+      </div>
+    `;
+  }
+
+  private renderBandInspectorCard(activeBand: ServiceBandArchetype) {
+    const w = BAND_WORDMARKS[activeBand.name] || {
+      font: activeBand.font,
+      weight: activeBand.weight || 400,
+      italic: activeBand.italic,
+      pillFs: activeBand.pillFs || 13,
+      pillTrack: activeBand.pillTrack || '0',
+    };
+
+    return html`
+      <div class="band-card" style="background: var(--cv-cream); border: 1px solid rgba(46,39,31,0.08); border-radius: 16px; padding: 13px 15px 15px; margin-bottom: 14px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; background: ${activeBand.color}; box-shadow: 0 0 0 2px rgba(46,39,31,0.06);"></div>
+            <div style="font-family: ${w.font}; font-weight: ${w.weight || 400}; font-style: ${w.italic ? 'italic' : 'normal'}; font-size: ${(w.pillFs || 12) + 1}px; letter-spacing: ${w.pillTrack || '0'}; line-height: 1.15; color: #2E271F;">
+              ${activeBand.name}
+            </div>
+          </div>
+          <span style="font-size: 9.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: var(--cv-label);">Band DNA</span>
+        </div>
+        ${activeBand.sig && activeBand.sig.length ? html`
+          <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 10px;">
+            ${activeBand.sig.map((s, i) => html`
+              <div style="${i ? 'padding-top: 10px; border-top: 1px solid rgba(46,39,31,0.07);' : ''}">
+                <div style="font-size: 9px; font-weight: 800; letter-spacing: 1.1px; text-transform: uppercase; color: var(--cv-label);">${s.k}</div>
+                <div style="font-size: 11.5px; font-weight: 600; line-height: 1.45; color: var(--cv-ink); margin-top: 2px; text-wrap: pretty;">${s.v}</div>
+              </div>
+            `)}
+          </div>
+        ` : html`
+          <div style="font-size: 12px; font-weight: 700; color: var(--cv-ink); margin-top: 8px; line-height: 1.45;">${this.showTheory ? activeBand.theory : activeBand.plain}</div>
+        `}
+      </div>
+    `;
+  }
+
+  private renderBandDnaBar(_moodColor?: string) {
+    return this.renderBandLegend();
   }
 
   private onVibeSubmit(e: Event) {
     e.preventDefault();
     const prompt = this.freeText.trim();
     if (!prompt) return;
-    this.dispatchEvent(new CustomEvent('freetext-generate', { detail: prompt, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('freetext-generate', { detail: { promptText: prompt }, bubbles: true, composed: true }));
     this.vibeOpen = false;
     this.requestUpdate();
   }
@@ -2858,7 +3194,7 @@ export class LoopScreen extends LitElement {
   };
 
   private onJumpBar(index: number) {
-    this.progressStep = index * 4;
+    this.progressStep = index;
     playbackEngine.playFromBar(index);
     if (!this.playing) {
       this.dispatchEvent(new CustomEvent('toggle-play', { bubbles: true, composed: true }));
@@ -2872,8 +3208,8 @@ export class LoopScreen extends LitElement {
     const root = (n.match(/^[A-G][#b]?/) || ['C'])[0];
     const suf = /sus/.test(n) ? ['sus4', '7sus4', '9sus4', 'maj7sus4']
       : (/dim/.test(n) ? ['dim', 'dim7', 'dim9']
-      : (/^[A-G][#b]?m(?!aj)/.test(n) ? ['m', 'm6', 'm7', 'm9', 'mMaj7']
-      : ['', '6', '7', 'maj7', 'maj9']));
+        : (/^[A-G][#b]?m(?!aj)/.test(n) ? ['m', 'm6', 'm7', 'm9', 'mMaj7']
+          : ['', '6', '7', 'maj7', 'maj9']));
     return suf.map(s => root + s);
   }
 
@@ -2915,7 +3251,7 @@ export class LoopScreen extends LitElement {
 
       try {
         (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const targetChordName = (reach !== undefined && lad[reach]) ? lad[reach] : chord.name;
@@ -3001,7 +3337,7 @@ export class LoopScreen extends LitElement {
     if (e && e.currentTarget) {
       try {
         (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-      } catch (_) {}
+      } catch (_) { }
     }
     this.padFlash = -1;
     this.padHeld = -1;
@@ -3120,7 +3456,37 @@ export class LoopScreen extends LitElement {
 
     const ordered = feels.filter(f => f.name !== 'Borrowed').sort((a, b) => a.tension - b.tension);
     const borrowed = feels.filter(f => f.name === 'Borrowed');
-    return [...ordered, ...borrowed];
+    const allGroups = [...ordered, ...borrowed];
+
+    const activeBand = this.selectedBand ? getBandById(this.selectedBand) : null;
+    if (activeBand) {
+      const candidates = getBandTrickCandidates(
+        this.progression.key || 'C',
+        this.progression.scaleType || 'MAJOR',
+        activeBand.name
+      );
+      const trickMap = new Map(candidates.map(c => [c.chordName, c]));
+
+      allGroups.forEach(group => {
+        const rows = group.rows.map(r => {
+          const trick = trickMap.get(r.name);
+          if (trick) {
+            return {
+              ...r,
+              bandTag: `${activeBand.name} move`,
+              bandColor: activeBand.color,
+              sub: this.showTheory ? trick.theory : trick.plain,
+            };
+          }
+          return r;
+        });
+        const hoisted = rows.filter(r => r.bandTag);
+        const normal = rows.filter(r => !r.bandTag);
+        group.rows = [...hoisted, ...normal];
+      });
+    }
+
+    return allGroups;
   }
 
   private handleSwapAudition(detail: {
@@ -3397,6 +3763,10 @@ export class LoopScreen extends LitElement {
   };
 
   private onReroll = () => {
+    if (this.selectedBand) {
+      this.onGenerateBandProgression(this.selectedBand);
+      return;
+    }
     this.dispatchEvent(new CustomEvent('reroll', { bubbles: true, composed: true }));
   };
 
@@ -3511,28 +3881,28 @@ export class LoopScreen extends LitElement {
       <div class="detail-mini-keyboard">
         <div style="display: flex;">
           ${whiteKeys.map(k => {
-            const on = highlightPcs.has(k.pc);
-            return html`<div class="white-key ${on ? 'active' : ''}">${k.note}</div>`;
-          })}
+      const on = highlightPcs.has(k.pc);
+      return html`<div class="white-key ${on ? 'active' : ''}">${k.note}</div>`;
+    })}
         </div>
         ${blackKeys.map(bk => {
-          const left = (bk.after + 1) * whitePct - blackPct / 2;
-          const on = highlightPcs.has(bk.pc);
-          return html`<div class="black-key ${on ? 'active' : ''}" style="left: ${left}%;"></div>`;
-        })}
+      const left = (bk.after + 1) * whitePct - blackPct / 2;
+      const on = highlightPcs.has(bk.pc);
+      return html`<div class="black-key ${on ? 'active' : ''}" style="left: ${left}%;"></div>`;
+    })}
       </div>
     `;
   }
 
   private get feelChanged(): boolean {
     return this.playStyle !== FEEL_DEFAULTS.playStyle ||
-           this.swing !== FEEL_DEFAULTS.swing ||
-           this.spread !== FEEL_DEFAULTS.spread ||
-           this.density !== FEEL_DEFAULTS.density ||
-           this.humanise !== FEEL_DEFAULTS.humanise ||
-           this.tone !== FEEL_DEFAULTS.tone ||
-           Object.keys(this.barFeel).length > 0 ||
-           Object.keys(this.advOverride).length > 0;
+      this.swing !== FEEL_DEFAULTS.swing ||
+      this.spread !== FEEL_DEFAULTS.spread ||
+      this.density !== FEEL_DEFAULTS.density ||
+      this.humanise !== FEEL_DEFAULTS.humanise ||
+      this.tone !== FEEL_DEFAULTS.tone ||
+      Object.keys(this.barFeel).length > 0 ||
+      Object.keys(this.advOverride).length > 0;
   }
 
   private resetFeel() {
@@ -3924,11 +4294,11 @@ export class LoopScreen extends LitElement {
             <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Key Root</div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
               ${ROOT_OPTIONS.map(opt => {
-                const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
-                const curPc = PITCH_CLASS[curKey] ?? 0;
-                const optPc = PITCH_CLASS[opt.root] ?? 0;
-                const active = curPc === optPc;
-                return html`
+      const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+      const curPc = PITCH_CLASS[curKey] ?? 0;
+      const optPc = PITCH_CLASS[opt.root] ?? 0;
+      const active = curPc === optPc;
+      return html`
                   <button
                     style="border: none; font-family: inherit; padding: 7px 11px; border-radius: 100px; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
                     @click=${() => this.selectRoot(opt.root)}
@@ -3937,16 +4307,16 @@ export class LoopScreen extends LitElement {
                     ${opt.label}
                   </button>
                 `;
-              })}
+    })}
             </div>
           </div>
           <div>
             <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Scale / Mode</div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
               ${SCALE_OPTIONS.map(opt => {
-                const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
-                const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
-                return html`
+      const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+      const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
+      return html`
                   <button
                     style="border: none; font-family: inherit; padding: 7px 11px; border-radius: 100px; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
                     @click=${() => this.selectScale(opt.type)}
@@ -3955,7 +4325,7 @@ export class LoopScreen extends LitElement {
                     ${opt.label}
                   </button>
                 `;
-              })}
+    })}
             </div>
           </div>
         </div>
@@ -3983,9 +4353,9 @@ export class LoopScreen extends LitElement {
               Whole loop
             </button>
             ${(this.progression?.chords || []).map((c, ci) => {
-              const on = this.fScopeBar === ci;
-              const dirty = !!this.barFeel[ci];
-              return html`
+      const on = this.fScopeBar === ci;
+      const dirty = !!this.barFeel[ci];
+      return html`
                 <button
                   type="button"
                   style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
@@ -3996,7 +4366,7 @@ export class LoopScreen extends LitElement {
                   <span style="width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: ${on ? 'var(--cv-cream, #FBF3E6)' : '#9E5D53'}; opacity: ${dirty ? 1 : 0}; transition: opacity 150ms ease;"></span>
                 </button>
               `;
-            })}
+    })}
           </div>
           ${this.feelChanged ? html`
             <button
@@ -4017,16 +4387,16 @@ export class LoopScreen extends LitElement {
         </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin-top: 10px;">
           ${FEEL_AXES.map(d => {
-            const cur = this.fget(d.k);
-            let nearest = d.steps[0];
-            if (typeof cur !== 'number') {
-              nearest = d.steps.find(s => s.v === cur) || d.steps[0];
-            } else {
-              d.steps.forEach(s => {
-                if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
-              });
-            }
-            return html`
+      const cur = this.fget(d.k);
+      let nearest = d.steps[0];
+      if (typeof cur !== 'number') {
+        nearest = d.steps.find(s => s.v === cur) || d.steps[0];
+      } else {
+        d.steps.forEach(s => {
+          if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
+        });
+      }
+      return html`
               <div style="display: flex; align-items: center; gap: 14px; padding: 5px 0; min-width: 0;">
                 <div style="width: 104px; flex-shrink: 0;">
                   <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink);">${d.label}</div>
@@ -4034,8 +4404,8 @@ export class LoopScreen extends LitElement {
                 </div>
                 <div style="display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0;">
                   ${d.steps.map(s => {
-                    const on = s.v === nearest.v;
-                    return html`
+        const on = s.v === nearest.v;
+        return html`
                       <button
                         type="button"
                         style="border: none; font-family: inherit; flex: 1 1 auto; min-width: fit-content; min-height: 44px; padding: 0 11px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
@@ -4045,11 +4415,11 @@ export class LoopScreen extends LitElement {
                         ${s.name}
                       </button>
                     `;
-                  })}
+      })}
                 </div>
               </div>
             `;
-          })}
+    })}
         </div>
         <button
           type="button"
@@ -4075,17 +4445,17 @@ export class LoopScreen extends LitElement {
               .maxVelocity=${this.activeEngineParams.maxVelocity}
               .parameterOverrides=${this.advOverride}
               .sourceLabels=${{
-                spread: 'Spread',
-                duration: 'Pattern + Density',
-                humanVariance: 'Humanise',
-                microTiming: 'Swing + Humanise',
-                arpMode: 'Pattern',
-                arpRate: 'Pattern',
-                arpRange: 'Pattern',
-                arpGate: 'Pattern',
-                minVelocity: 'Genre',
-                maxVelocity: 'Genre',
-              }}
+          spread: 'Spread',
+          duration: 'Pattern + Density',
+          humanVariance: 'Humanise',
+          microTiming: 'Swing + Humanise',
+          arpMode: 'Pattern',
+          arpRate: 'Pattern',
+          arpRange: 'Pattern',
+          arpGate: 'Pattern',
+          minVelocity: 'Genre',
+          maxVelocity: 'Genre',
+        }}
               style="--human-bg: transparent; --human-surface: var(--cv-surface, #F6EADB); --human-surface-2: var(--cv-surface-2, #F1E4CC); --human-border: rgba(46,39,31,0.12); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: rgba(46,39,31,0.45); --human-accent: #9E5D53; --human-accent-hover: #804A41; width: 100%; min-width: 0; box-shadow: none;"
               @parameter-override=${this.onParameterOverride}
               @parameter-relink=${this.onParameterRelink}
@@ -4153,11 +4523,11 @@ export class LoopScreen extends LitElement {
           <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); margin-top: 15px;">Key Root</div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
             ${ROOT_OPTIONS.map(opt => {
-              const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
-              const curPc = PITCH_CLASS[curKey] ?? 0;
-              const optPc = PITCH_CLASS[opt.root] ?? 0;
-              const active = curPc === optPc;
-              return html`
+      const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+      const curPc = PITCH_CLASS[curKey] ?? 0;
+      const optPc = PITCH_CLASS[opt.root] ?? 0;
+      const active = curPc === optPc;
+      return html`
                 <button
                   style="border: none; font-family: inherit; padding: 8px 12px; border-radius: 100px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
                   @click=${() => this.selectRoot(opt.root)}
@@ -4166,14 +4536,14 @@ export class LoopScreen extends LitElement {
                   ${opt.label}
                 </button>
               `;
-            })}
+    })}
           </div>
           <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); margin-top: 15px;">Scale / Mode</div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
             ${SCALE_OPTIONS.map(opt => {
-              const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
-              const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
-              return html`
+      const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+      const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
+      return html`
                 <button
                   style="border: none; font-family: inherit; padding: 8px 12px; border-radius: 100px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
                   @click=${() => this.selectScale(opt.type)}
@@ -4182,7 +4552,7 @@ export class LoopScreen extends LitElement {
                   ${opt.label}
                 </button>
               `;
-            })}
+    })}
           </div>
         </div>
       </div>
@@ -4209,8 +4579,8 @@ export class LoopScreen extends LitElement {
 
         <div class="song-section-list">
           ${this.sections.map((sec, i) => {
-            const isActive = this.activeSectionIdx === i;
-            return html`
+      const isActive = this.activeSectionIdx === i;
+      return html`
               <div
                 class="song-section-row ${isActive ? 'active' : ''}"
                 @click=${() => this.onSelectSectionCard(i)}
@@ -4225,15 +4595,15 @@ export class LoopScreen extends LitElement {
                 </div>
                 <div class="song-section-chips">
                   ${sec.progression.chords.map(c => {
-                    const role = roleForTension(c.tension);
-                    return html`
+        const role = roleForTension(c.tension);
+        return html`
                       <div
                         class="song-chord-chip"
                         style="background: ${role.color};"
                         title="${c.name} (${c.functionLabel || c.tag})"
                       ></div>
                     `;
-                  })}
+      })}
                 </div>
                 ${this.sections.length > 1 ? html`
                   <button
@@ -4241,16 +4611,16 @@ export class LoopScreen extends LitElement {
                     title="Remove ${sec.name}"
                     aria-label="Remove ${sec.name}"
                     @click=${(e: Event) => {
-                      e.stopPropagation();
-                      this.dispatchEvent(new CustomEvent('remove-section', { detail: i, bubbles: true, composed: true }));
-                    }}
+            e.stopPropagation();
+            this.dispatchEvent(new CustomEvent('remove-section', { detail: i, bubbles: true, composed: true }));
+          }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 ` : ''}
               </div>
             `;
-          })}
+    })}
 
           ${canAddSection ? html`
             <button
@@ -4287,20 +4657,20 @@ export class LoopScreen extends LitElement {
           <div class="strip-timeline-wrap">
             <div class="strip-cells-bar loop-beat-cells">
               ${this.sections.map((_, si) => {
-                const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
-                return html`
+      const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
+      return html`
                   <div
                     class="strip-cell"
                     style="height: ${isCurrentSec ? 20 : 10}px; border-radius: 3px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'}; flex: 1;"
                   ></div>
                 `;
-              })}
+    })}
             </div>
             <div class="strip-labels-row">
               <div class="strip-status-label song-transport-status">
                 ${this.playing
-                  ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
-                  : `${this.sections.length} sections · stopped`}
+        ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
+        : `${this.sections.length} sections · stopped`}
               </div>
               <div class="strip-space-hint">Space plays the song</div>
             </div>
@@ -4347,9 +4717,9 @@ export class LoopScreen extends LitElement {
               Whole loop
             </button>
             ${(this.progression?.chords || []).map((c, ci) => {
-              const on = this.fScopeBar === ci;
-              const dirty = !!this.barFeel[ci];
-              return html`
+      const on = this.fScopeBar === ci;
+      const dirty = !!this.barFeel[ci];
+      return html`
                 <button
                   type="button"
                   style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
@@ -4359,23 +4729,23 @@ export class LoopScreen extends LitElement {
                   <span style="width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: ${on ? 'var(--cv-cream, #FBF3E6)' : '#9E5D53'}; opacity: ${dirty ? 1 : 0};"></span>
                 </button>
               `;
-            })}
+    })}
           </div>
           <div style="font-size: 11.5px; font-weight: 700; line-height: 1.45; color: rgba(46,39,31,0.5); margin-top: 8px; text-wrap: pretty;">
             ${feelScopeNote}
           </div>
           <div style="display: flex; flex-direction: column; gap: 13px; margin-top: 14px;">
             ${FEEL_AXES.map(d => {
-              const cur = this.fget(d.k);
-              let nearest = d.steps[0];
-              if (typeof cur !== 'number') {
-                nearest = d.steps.find(s => s.v === cur) || d.steps[0];
-              } else {
-                d.steps.forEach(s => {
-                  if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
-                });
-              }
-              return html`
+      const cur = this.fget(d.k);
+      let nearest = d.steps[0];
+      if (typeof cur !== 'number') {
+        nearest = d.steps.find(s => s.v === cur) || d.steps[0];
+      } else {
+        d.steps.forEach(s => {
+          if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
+        });
+      }
+      return html`
                 <div>
                   <div style="display: flex; align-items: baseline; gap: 9px;">
                     <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink, #2E271F); flex: 1; min-width: 0;">${d.label}</div>
@@ -4383,8 +4753,8 @@ export class LoopScreen extends LitElement {
                   </div>
                   <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px;">
                     ${d.steps.map(s => {
-                      const on = s.v === nearest.v;
-                      return html`
+        const on = s.v === nearest.v;
+        return html`
                         <button
                           type="button"
                           style="border: none; font-family: inherit; flex: 1 1 auto; min-width: fit-content; min-height: 44px; padding: 0 11px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
@@ -4394,11 +4764,11 @@ export class LoopScreen extends LitElement {
                           ${s.name}
                         </button>
                       `;
-                    })}
+      })}
                   </div>
                 </div>
               `;
-            })}
+    })}
           </div>
           <button
             type="button"
@@ -4424,17 +4794,17 @@ export class LoopScreen extends LitElement {
                 .maxVelocity=${this.activeEngineParams.maxVelocity}
                 .parameterOverrides=${this.advOverride}
                 .sourceLabels=${{
-                  spread: 'Spread',
-                  duration: 'Pattern + Density',
-                  humanVariance: 'Humanise',
-                  microTiming: 'Swing + Humanise',
-                  arpMode: 'Pattern',
-                  arpRate: 'Pattern',
-                  arpRange: 'Pattern',
-                  arpGate: 'Pattern',
-                  minVelocity: 'Genre',
-                  maxVelocity: 'Genre',
-                }}
+          spread: 'Spread',
+          duration: 'Pattern + Density',
+          humanVariance: 'Humanise',
+          microTiming: 'Swing + Humanise',
+          arpMode: 'Pattern',
+          arpRate: 'Pattern',
+          arpRange: 'Pattern',
+          arpGate: 'Pattern',
+          minVelocity: 'Genre',
+          maxVelocity: 'Genre',
+        }}
                 style="--human-bg: transparent; --human-surface: var(--cv-surface, #F6EADB); --human-surface-2: var(--cv-surface-2, #F1E4CC); --human-border: rgba(46,39,31,0.12); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: rgba(46,39,31,0.45); --human-accent: #9E5D53; --human-accent-hover: #804A41; width: 100%; min-width: 0; box-shadow: none;"
                 @parameter-override=${this.onParameterOverride}
                 @parameter-relink=${this.onParameterRelink}
@@ -4534,8 +4904,8 @@ export class LoopScreen extends LitElement {
       </div>
       <div class="quality-chips-grid">
         ${CHORD_QUALITIES.map(q => {
-          const isSel = q.label === curQuality;
-          return html`
+      const isSel = q.label === curQuality;
+      return html`
             <button
               class="chord-mod-chip quality-chip ${isSel ? 'selected active' : ''}"
               @click=${() => this.changeChordQuality(q.label)}
@@ -4546,7 +4916,7 @@ export class LoopScreen extends LitElement {
               <div class="chip-desc">${q.sub}</div>
             </button>
           `;
-        })}
+    })}
       </div>
 
       <div class="detail-kicker" style="margin-top: 20px;">Extension</div>
@@ -4556,8 +4926,8 @@ export class LoopScreen extends LitElement {
       </div>
       <div class="ext-chips-grid">
         ${CHORD_EXTENSIONS.map(e => {
-          const isSel = e.label === curExt;
-          return html`
+      const isSel = e.label === curExt;
+      return html`
             <button
               class="chord-mod-chip extension-chip ${isSel ? 'selected active' : ''}"
               @click=${() => this.changeChordExtension(e.label)}
@@ -4568,7 +4938,7 @@ export class LoopScreen extends LitElement {
               <div class="chip-desc">${e.sub}</div>
             </button>
           `;
-        })}
+    })}
       </div>
     `;
   }
@@ -4757,6 +5127,12 @@ export class LoopScreen extends LitElement {
     const isHeld = this.padFlash === i || this.padHeld === i;
     const isSelected = this.swapIndex === i;
 
+    const activeBand = this.selectedBand ? getBandById(this.selectedBand) : null;
+    const padKey = this.progression?.key || 'C';
+    const padScaleType = this.progression?.scaleType || 'MAJOR';
+    const bandMove = activeBand ? getBandMoveForChord(c, activeBand.name, padKey, padScaleType) : null;
+    const isBandMoveApplied = Boolean(this.bandSwaps[i]);
+
     const lad = this.getChordLadder(c);
     const rung = this.getLadderHome(c);
     const lastHere = this.lastPad?.idx === i;
@@ -4766,6 +5142,24 @@ export class LoopScreen extends LitElement {
     const metaLabel = lastHere
       ? (showsReach ? ('→ ' + lad[reached]) : (ZONE_NAMES[this.lastPad?.zone ?? 1] || this.lastPad?.voicing || ''))
       : (c.voicing && c.voicing !== '1st inversion' ? c.voicing.toUpperCase() : '');
+
+    // Labels read as deltas off the first rung: the shared stem (sus4, m, dim) is
+    // dropped from the rest so each label stays short enough not to clip.
+    const sfx = lad.map(nm => String(nm).replace(/^[A-G][#b]?/, ''));
+    const stem = sfx[0];
+    let rungLabels = sfx.slice();
+    if (stem && sfx.every((s, idx) => idx === 0 || s.indexOf(stem) === 0)) {
+      rungLabels = sfx.map((s, idx) => idx ? s.slice(stem.length) : s);
+    } else if (stem && sfx.every((s, idx) => idx === 0 || s.slice(-stem.length) === stem)) {
+      rungLabels = sfx.map((s, idx) => idx ? s.slice(0, s.length - stem.length) : s);
+    }
+    rungLabels = rungLabels.map(s => (s === '' ? 'maj' : s).replace(/maj/gi, '\u25B3'));
+    const rungDots = lad.map((_, li) => ({
+      label: rungLabels[li],
+      wrapStyle: 'flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px;',
+      labelStyle: `font-size: 8.5px; font-weight: 800; letter-spacing: 0.2px; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: clip; color: ${li === dotAt ? (showsReach ? moodColor : 'rgba(46,39,31,0.78)') : 'rgba(46,39,31,0.3)'}; transition: color 180ms cubic-bezier(0.23,1,0.32,1);`,
+      barStyle: `width: 100%; height: 4px; border-radius: 3px; background: ${li === dotAt ? (showsReach ? moodColor : 'rgba(46,39,31,0.5)') : 'rgba(46,39,31,0.16)'}; transition: width 200ms cubic-bezier(0.23,1,0.32,1), background 180ms ease;`,
+    }));
 
     return html`
       <div
@@ -4808,7 +5202,7 @@ export class LoopScreen extends LitElement {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
 
-        <div class="pad-top-row" style="display: flex; align-items: center; gap: 6px;">
+        <div class="pad-top-row">
           <div class="pad-key-badge" style="display: inline-flex; align-items: flex-start; justify-content: center; width: 20px; height: 20px; padding: 1.5px 1.5px 3.5px; border-radius: 5px; background: rgba(46,39,31,0.16); box-shadow: 0 1px 0 rgba(46,39,31,0.18); flex-shrink: 0;">
             <span style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border-radius: 3.5px; background: rgba(255,255,255,0.62); box-shadow: inset 0 -1px 0 rgba(46,39,31,0.12); font-size: 10.5px; font-weight: 800; color: #2E271F;">${(PAD_KEYS[i] || '').toUpperCase()}</span>
           </div>
@@ -4824,11 +5218,59 @@ export class LoopScreen extends LitElement {
             </div>
           ` : ''}
           ${metaLabel ? html`<div class="pad-meta-voicing">${metaLabel}</div>` : ''}
-          <div style="display: flex; gap: 3px; margin-top: 7px;">
-            ${lad.map((_, li) => html`
-              <div style="width: ${li === dotAt ? 16 : 6}px; height: 4px; border-radius: 3px; background: ${li === dotAt ? (showsReach ? moodColor : 'rgba(46,39,31,0.55)') : 'rgba(46,39,31,0.16)'}; transition: width 200ms cubic-bezier(0.23,1,0.32,1), background 180ms ease;"></div>
+          <div class="pad-rung-row" style="display: flex; gap: 4px; margin-top: 7px;">
+            ${rungDots.map(d => html`
+              <div class="pad-rung-col" style="${d.wrapStyle}">
+                <div class="pad-rung-label" style="${d.labelStyle}">${d.label}</div>
+                <div class="pad-rung-bar" style="${d.barStyle}"></div>
+              </div>
             `)}
           </div>
+
+          ${(bandMove || isBandMoveApplied) && activeBand ? html`
+            <div style="margin-top: 8px;">
+              <button
+                class="pad-band-move-chip ${isBandMoveApplied ? 'applied' : ''}"
+                style="
+                  border: none;
+                  font-family: inherit;
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 6px;
+                  max-width: 100%;
+                  min-height: 28px;
+                  padding: 0 11px;
+                  border-radius: 100px;
+                  background: ${isBandMoveApplied ? '#2E271F' : activeBand.color};
+                  box-shadow: ${isBandMoveApplied ? 'none' : '0 0 0 1.5px rgba(251,243,230,0.9)'};
+                  color: ${isBandMoveApplied ? '#F4EBDB' : '#2E271F'};
+                  font-size: 10.5px;
+                  font-weight: 800;
+                  letter-spacing: 0.2px;
+                  white-space: nowrap;
+                  overflow: hidden;
+                  cursor: pointer;
+                  z-index: 3;
+                  transition: transform 120ms ease, background 120ms ease;
+                "
+                @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                @click=${(e: MouseEvent) => {
+          e.stopPropagation();
+          if (isBandMoveApplied) {
+            this.revertBandMove(i);
+          } else if (bandMove) {
+            this.applyBandMove(i, bandMove, activeBand);
+          }
+        }}
+                aria-label="${isBandMoveApplied ? `Undo ${this.bandSwaps[i]?.move.name} — put ${this.bandSwaps[i]?.originalChord.name} back` : `${bandMove?.name} — change ${c.name} to ${bandMove?.chord}`}"
+              >
+                ${this.showTheory && !isBandMoveApplied && bandMove?.roman ? html`
+                  <span style="font-size: 9.5px; font-weight: 800; letter-spacing: 0.5px; opacity: 0.7;">${bandMove.roman}</span>
+                ` : ''}
+                <span>${isBandMoveApplied ? 'Revert' : bandMove?.name}</span>
+              </button>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
@@ -4846,8 +5288,8 @@ export class LoopScreen extends LitElement {
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 6px 8px;">
         <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">
           ${this.librarySelectMode && this.librarySelected.length > 0
-            ? `${this.librarySelected.length} of ${this.savedSets.length} selected`
-            : `Your loops (${this.savedSets.length})`}
+        ? `${this.librarySelected.length} of ${this.savedSets.length} selected`
+        : `Your loops (${this.savedSets.length})`}
         </div>
         <div class="library-select-toolbar" style="display: flex; align-items: center; gap: 8px;">
           ${this.librarySelectMode && visible.length > 0 ? html`
@@ -4913,13 +5355,13 @@ export class LoopScreen extends LitElement {
               class="library-loop-item ${this.librarySelectMode ? 'select-mode' : ''} ${isSelected ? 'selected' : ''}"
               style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; cursor: pointer; background: ${isSelected ? 'var(--cv-surface-2, #F1E4CC)' : 'var(--cv-surface)'}; transition: background 120ms ease;"
               @click=${() => {
-                if (this.librarySelectMode) {
-                  this.toggleSelectLoop(set.id);
-                } else if (!isRenaming && !isConfirmingDelete) {
-                  this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
-                  this.setLibraryOpen(false);
-                }
-              }}
+              if (this.librarySelectMode) {
+                this.toggleSelectLoop(set.id);
+              } else if (!isRenaming && !isConfirmingDelete) {
+                this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
+                this.setLibraryOpen(false);
+              }
+            }}
             >
               ${this.librarySelectMode ? html`
                 <input
@@ -4934,10 +5376,10 @@ export class LoopScreen extends LitElement {
               ` : ''}
               <div style="display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
                 ${(set.chords || []).map((c: any) => {
-                  const tensionVal = typeof c === 'object' && c !== null ? (c.tension ?? 0) : 0.2;
-                  const role = roleForTension(tensionVal);
-                  return html`<span style="display:inline-block;width:7px;height:7px;border-radius:${Math.round(role.radius * 0.25)}px;background:${role.color};flex-shrink:0;"></span>`;
-                })}
+              const tensionVal = typeof c === 'object' && c !== null ? (c.tension ?? 0) : 0.2;
+              const role = roleForTension(tensionVal);
+              return html`<span style="display:inline-block;width:7px;height:7px;border-radius:${Math.round(role.radius * 0.25)}px;background:${role.color};flex-shrink:0;"></span>`;
+            })}
               </div>
               <div style="flex: 1; min-width: 0;">
                 ${isRenaming ? html`
@@ -4947,9 +5389,9 @@ export class LoopScreen extends LitElement {
                     .value=${this.draftName}
                     @input=${(e: Event) => { this.draftName = (e.target as HTMLInputElement).value; }}
                     @keydown=${(e: KeyboardEvent) => {
-                      if (e.key === 'Enter') this.commitRename(set);
-                      if (e.key === 'Escape') this.cancelRename();
-                    }}
+                if (e.key === 'Enter') this.commitRename(set);
+                if (e.key === 'Escape') this.cancelRename();
+              }}
                     @blur=${() => this.commitRename(set)}
                     @click=${(e: Event) => e.stopPropagation()}
                     style="width: 100%; box-sizing: border-box; border: none; background: var(--cv-cream, #FBF3E6); box-shadow: inset 0 0 0 1.5px rgba(46,39,31,0.16); border-radius: 9px; outline: none; font-family: inherit; font-size: 13px; font-weight: 800; color: var(--cv-ink); padding: 5px 8px;"
@@ -5012,8 +5454,8 @@ export class LoopScreen extends LitElement {
         ${!visible.length ? html`
           <div class="library-empty" style="padding: 16px 12px; font-size: 12.5px; line-height: 1.5; color: var(--cv-ink-muted); text-align: center;">
             ${this.savedSets.length
-              ? 'No loops match that.'
-              : 'Nothing saved yet — tap the bookmark to keep a loop.'}
+          ? 'No loops match that.'
+          : 'Nothing saved yet — tap the bookmark to keep a loop.'}
           </div>
         ` : ''}
       </div>
@@ -5096,27 +5538,26 @@ export class LoopScreen extends LitElement {
     const isRising = tensions.every((v, i) => i === 0 || v >= tensions[i - 1]);
     const arcTitle = (maxTension - minTension) < 0.28 ? 'Stays close to home'
       : isRising ? 'A steady climb'
-      : (tensions[tensions.length - 1] < 0.25 && peakIdx < tensions.length - 1) ? 'Away, then home'
-      : 'Drifts, then settles';
+        : (tensions[tensions.length - 1] < 0.25 && peakIdx < tensions.length - 1) ? 'Away, then home'
+          : 'Drifts, then settles';
 
-    const arcSentence = `Opens ${ROLE_PLAIN[chords[0]?.functionLabel] || 'home'} and ${
-      (maxTension - minTension) < 0.28
+    const arcSentence = `Opens ${ROLE_PLAIN[chords[0]?.functionLabel] || 'home'} and ${(maxTension - minTension) < 0.28
         ? 'never strays far — every chord sits in about the same place, so the loop feels calm and repeatable.'
         : isRising
-        ? `tightens chord by chord, peaking on ${chords[peakIdx]?.name || 'the peak'}. Looping back does the resolving.`
-        : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before easing back down home.`
-    }`;
+          ? `tightens chord by chord, peaking on ${chords[peakIdx]?.name || 'the peak'}. Looping back does the resolving.`
+          : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before easing back down home.`
+      }`;
 
     // Alternative substitution candidate rows
     let familyRows: { name: string; roman?: string; notes?: string[]; sub: string; chord: ChordBlock; tension: number }[] = [];
     let familyNote = '';
     const isMinor = this.progression?.scaleType?.includes('MINOR') ?? false;
 
-    if (this.swapIndex !== null && this.progression && this.chordData.scales) {
-      if (this.activeSwapFamily === 'Borrowed') {
+    if (this.swapIndex !== null && this.progression) {
+      if (this.activeSwapFamily === 'Borrowed' && this.chordData?.scales) {
         familyRows = generateBorrowedChords(this.chordData, this.progression, this.swapIndex);
         familyNote = `Four chords from the ${isMinor ? 'major' : 'minor'} version of this key.`;
-      } else {
+      } else if (this.chordData?.scales) {
         const groups = generateTheoryGroups(this.chordData, this.progression, this.swapIndex);
         const matchedGroup = groups.find(g => g.name === this.activeSwapFamily) || groups[0];
         familyRows = matchedGroup?.rows || [];
@@ -5124,9 +5565,27 @@ export class LoopScreen extends LitElement {
       }
 
       if (activeBand) {
-        const hoisted = familyRows.filter(r => activeBand.hoist.includes(r.name));
-        const rest = familyRows.filter(r => !activeBand.hoist.includes(r.name));
-        familyRows = [...hoisted, ...rest];
+        const candidates = getBandTrickCandidates(
+          this.progression.key || 'C',
+          this.progression.scaleType || 'MAJOR',
+          activeBand.name
+        );
+        const trickMap = new Map(candidates.map(c => [c.chordName, c]));
+        familyRows = familyRows.map(r => {
+          const trick = trickMap.get(r.name);
+          if (trick) {
+            return {
+              ...r,
+              sub: this.showTheory ? trick.theory : trick.plain,
+              bandTag: `${activeBand.name} move`,
+              bandColor: activeBand.color,
+            } as any;
+          }
+          return r;
+        });
+        const hoisted = familyRows.filter(r => (r as any).bandTag);
+        const normal = familyRows.filter(r => !(r as any).bandTag);
+        familyRows = [...hoisted, ...normal];
       }
     }
 
@@ -5134,19 +5593,31 @@ export class LoopScreen extends LitElement {
 
     if (this.isMobile) {
       return html`
+        ${this.renderTopBandBar()}
         <div class="mobile-stage-wrap" style="--mood-color: ${moodColor};">
           <!-- Top Vibe Dropdown Button -->
           <div style="padding: 12px 18px 0;">
-            <button class="mobile-vibe-toggle" @click=${this.toggleVibe}>
-              <div style="text-align: left;">
-                <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">The Vibe</div>
-                <div style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink); margin-top: 2px;">${this.getVibeSummary()}</div>
+            <button
+              class="mobile-vibe-toggle ${this.vibeOpen ? 'open' : ''}"
+              @click=${this.toggleVibe}
+              aria-label="Vibe, genre and mood"
+              aria-expanded=${this.vibeOpen}
+            >
+              <div style="flex: 1; min-width: 0; text-align: left;">
+                <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label, #8A6B3F); text-transform: uppercase;">
+                  ${this.vibeOpen ? 'The Vibe' : 'The Vibe · tap to change'}
+                </div>
+                <div style="font-size: 14.5px; font-weight: 800; color: var(--cv-ink, #2E271F); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  ${this.getVibeSummary()}
+                </div>
               </div>
-              <span style="font-size: 16px; font-weight: 800; color: var(--cv-ink-muted);">${this.vibeOpen ? '⌃' : '⌄'}</span>
+              <span class="vibe-toggle-chevron">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
             </button>
 
             ${this.vibeOpen ? html`
-              <div style="background: var(--cv-surface); border-radius: 20px; padding: 16px 15px; margin-top: 8px;">
+              <div class="mobile-vibe-drawer">
                 <form class="popover-input-row" @submit=${this.onVibeSubmit}>
                   <input
                     type="text"
@@ -5155,7 +5626,7 @@ export class LoopScreen extends LitElement {
                     @input=${(e: Event) => { this.freeText = (e.target as HTMLInputElement).value; }}
                     placeholder=${this.vibeExamples[this.vibePlaceholderIdx]}
                   />
-                  <button type="submit" class="vibe-submit-btn" style="background: ${moodColor};">
+                  <button type="submit" class="vibe-submit-btn" style="background: ${moodColor};" aria-label="Generate loop from vibe">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2E271F" stroke-width="2.6" stroke-linecap="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
                   </button>
                 </form>
@@ -5169,9 +5640,43 @@ export class LoopScreen extends LitElement {
 
                 <div class="popover-kicker spaced">Mood</div>
                 <div class="pills-group">
-                  ${MOOD_PRIMARY.map(m => html`
-                    <button class="pill mood-pill ${this.progression?.mood === m ? 'active' : ''}" @click=${() => this.onMoodClick(m)}>${m}</button>
-                  `)}
+                  ${MOODS.map(mDef => {
+        const m = mDef.name;
+        const mCol = mDef.dot;
+        const isActive = this.progression?.mood === m;
+        return html`
+                      <button
+                        class="pill mood-pill ${isActive ? 'active' : ''}"
+                        style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}"
+                        @click=${() => this.onMoodClick(m)}
+                      >
+                        <span class="mood-badge" style="background: ${isActive ? 'rgba(46, 39, 31, 0.12)' : mCol + '33'};">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round"><path d="${mDef.iconPath}"/></svg>
+                        </span>
+                        ${m}
+                      </button>
+                    `;
+      })}
+                </div>
+
+                <div class="popover-kicker spaced" style="display: flex; align-items: baseline; gap: 7px;">
+                  <span>Band</span>
+                  <span style="font-size: 11px; font-weight: 700; color: rgba(46,39,31,0.38); text-transform: lowercase;">optional</span>
+                </div>
+                <div class="pills-group">
+                  ${BANDS.map(b => {
+        const w = BAND_WORDMARKS[b.name] || { font: b.font, pillFs: 12.5, pillTrack: '0' };
+        const isActive = this.selectedBand === b.name;
+        return html`
+                      <button
+                        class="pill ${isActive ? 'active' : ''}"
+                        style="font-family: ${w.font}; font-weight: ${w.weight || 400}; font-style: ${w.italic ? 'italic' : 'normal'}; font-size: ${w.pillFs}px; letter-spacing: ${w.pillTrack}; ${isActive ? `background: ${b.color}; color: #2E271F; border-color: ${b.color}; box-shadow: 0 2px 8px -2px rgba(46,39,31,0.3);` : ''}"
+                        @click=${() => this.onBandClick(b.name)}
+                      >
+                        ${b.name}
+                      </button>
+                    `;
+      })}
                 </div>
               </div>
             ` : ''}
@@ -5190,13 +5695,15 @@ export class LoopScreen extends LitElement {
           <div style="padding: 14px 18px 24px; flex: 1;">
             ${this.activeView === 'loop' ? html`
               <div class="stage-card" style="padding: 18px 14px;">
+                ${this.renderBandDnaBar(moodColor)}
+
                 <!-- 2-column pad cells grid -->
                 <div class="pad-cells-grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
                   ${chords.map((chord, idx) => {
-                    if (this.swapIndex === idx) {
-                      const role = roleForTension(chord.tension || 0.1);
-                      const isLit = this.activeIndex === idx && this.playing;
-                      return html`
+        if (this.swapIndex === idx) {
+          const role = roleForTension(chord.tension || 0.1);
+          const isLit = this.activeIndex === idx && this.playing;
+          return html`
                         <div
                           class="pad-cell pad-cell-cycler ${isLit ? 'pad-lit' : ''}"
                           style="
@@ -5219,58 +5726,71 @@ export class LoopScreen extends LitElement {
                           ></chord-pad-cycler>
                         </div>
                       `;
-                    }
-                    return this.renderChordPad(chord, idx, moodColor, false);
-                  })}
+        }
+        return this.renderChordPad(chord, idx, moodColor, false);
+      })}
                 </div>
 
                 ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, true) : ''}
               </div>
 
-              <!-- Quick chips -->
-              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px;">
-                <button class="instrument-chip" @click=${this.toggleInstrumentExpand} aria-label="Change instrument">
+              <!-- Unified Mobile Quick Chips Row -->
+              <div class="mobile-chips-row">
+                <button
+                  class="mobile-chip instrument-chip ${this.expandedInstrument ? 'open' : ''}"
+                  @click=${this.toggleInstrumentExpand}
+                  aria-label="Change instrument"
+                >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M8 7v10M13 7v10M18 7v10"/></svg>
-                  ${normalizeInstrumentName(this.instrument)} <span style="opacity:0.6;">⌄</span>
+                  <span>${normalizeInstrumentName(this.instrument)}</span>
+                </button>
+                <div class="mobile-chip-divider"></div>
+                <button
+                  class="mobile-chip key-chip ${this.tempoOpen ? 'open' : ''}"
+                  @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) this.feelOpen = false; }}
+                  aria-label="Key, tempo and loop length"
+                >
+                  ${this.progression?.key || 'C'} ${this.getCurrentScaleAbbrev()} · ${this.progression?.bpm || 84}
+                </button>
+                <button
+                  class="mobile-chip feel-chip ${this.feelOpen ? 'open' : ''}"
+                  @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }}
+                  aria-label="Feel"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 15V9M9 18V6M14 14v-4M19 17V7"/></svg>
+                  <span>${this.feelChipLabel}</span>
+                </button>
+                <button
+                  class="mobile-chip mobile-share-btn"
+                  @click=${() => { this.shareOpen = true; }}
+                  aria-label="Share this loop"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/></svg>
+                  <span>Share</span>
                 </button>
               </div>
 
               ${this.expandedInstrument ? html`
-                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;">
-                  ${USER_INSTRUMENTS.map(i => html`
-                    <button
-                      class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
-                      @click=${() => {
-                        this.instrument = i.name;
-                        playbackEngine.setInstrument(i.name);
-                        this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
-                        this.expandedInstrument = false;
-                        this.requestUpdate();
-                      }}
-                    >
-                      <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
-                    </button>
-                  `)}
+                <div class="mobile-instrument-drawer" style="animation: cvfv-panel 200ms var(--cv-ease, ease); background: var(--cv-cream, #FBF3E6); border-radius: 16px; padding: 14px 16px; margin-top: 11px;">
+                  <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label, #8A6B3F);">Instrument</div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                    ${USER_INSTRUMENTS.map(i => html`
+                      <button
+                        class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
+                        @click=${() => {
+          this.instrument = i.name;
+          playbackEngine.setInstrument(i.name);
+          this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+          this.expandedInstrument = false;
+          this.requestUpdate();
+        }}
+                      >
+                        <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
+                      </button>
+                    `)}
+                  </div>
                 </div>
               ` : ''}
-
-              <div style="display: flex; gap: 7px; margin-top: 12px;">
-                <button class="mobile-chip-btn" @click=${() => { this.tempoOpen = !this.tempoOpen; if (this.tempoOpen) this.feelOpen = false; }} aria-label="Key, tempo and length">
-                  ${this.progression?.key || 'C'} ${this.getCurrentScaleAbbrev()} · ${this.progression?.bpm || 84}
-                </button>
-                <button class="mobile-chip-btn feel-chip" @click=${() => { this.feelOpen = !this.feelOpen; if (this.feelOpen) this.tempoOpen = false; }} aria-label="Feel">
-                  ${this.feelChipLabel}
-                </button>
-                <button
-                  class="mobile-chip-btn mobile-share-btn"
-                  @click=${() => { this.shareOpen = true; }}
-                  aria-label="Share this loop"
-                  style="display: inline-flex; align-items: center; justify-content: center; gap: 6px;"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/></svg>
-                  Share
-                </button>
-              </div>
 
               <div class="mobile-theory-toggle" @click=${this.onTheoryToggle}>
                 <div class="toggle-track ${this.showTheory ? 'active' : ''}">
@@ -5285,16 +5805,16 @@ export class LoopScreen extends LitElement {
                   <div style="font-size: 18px; font-weight: 800; color: var(--cv-ink); margin-top: 5px; letter-spacing: -0.015em;">${arcTitle}</div>
                   <div class="mobile-arc-bars" style="display: flex; align-items: flex-end; gap: 6px; height: 132px; margin-top: 14px;">
                     ${chords.map(c => {
-                      const h = Math.round(28 + (c.tension || 0.1) * 85);
-                      const r = roleForTension(c.tension || 0.1);
-                      return html`
+          const h = Math.round(28 + (c.tension || 0.1) * 85);
+          const r = roleForTension(c.tension || 0.1);
+          return html`
                         <div style="flex: 1; display: flex; flex-direction: column; align-items: center; cursor: default;">
                           <div style="width: 100%; height: ${h}px; border-radius: 100px; background: ${r.color};"></div>
                           <div style="font-size: 12px; font-weight: 800; color: #2E271F; margin-top: 7px;">${c.name}</div>
                           <div style="font-size: 10px; font-weight: 700; color: var(--cv-ink-muted);">${ROLE_PLAIN[c.functionLabel] || ''}</div>
                         </div>
                       `;
-                    })}
+        })}
                   </div>
                   <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.2px; color: rgba(46, 39, 31, 0.42); margin-top: 8px;">Taller means more unresolved.</div>
                   <div style="font-size: 13.5px; line-height: 1.6; color: var(--cv-ink-muted); margin-top: 12px;">${arcSentence}</div>
@@ -5322,8 +5842,8 @@ export class LoopScreen extends LitElement {
                   </div>
                   <div style="font-size: 12px; line-height: 1.6; color: #8A7C6B; margin-top: 11px;">
                     ${this.playInstrument === 'Piano'
-                      ? 'One voicing per chord, root position — the red dot is the root, play left to right.'
-                      : 'Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.'}
+            ? 'One voicing per chord, root position — the red dot is the root, play left to right.'
+            : 'Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.'}
                   </div>
                 </div>
 
@@ -5415,27 +5935,15 @@ export class LoopScreen extends LitElement {
             .feelSettings=${{ swing: this.swing, spread: this.spread, density: this.density, tone: this.tone }}
             @close=${() => { this.shareOpen = false; }}
             @toast=${(e: CustomEvent<string>) => {
-              this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
-            }}
+          this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
+        }}
           ></share-modal>
       `;
     }
 
     // DESKTOP STUDIO LAYOUT
     return html`
-      ${activeBand ? html`
-        <div class="band-bar" style="background: ${activeBand.color}33;">
-          <div class="band-bar-content">
-            <span class="band-bar-kicker">Following Artist DNA</span>
-            <span class="band-bar-name" style="font-family: ${activeBand.font}; font-weight: ${activeBand.weight || 800};">
-              ${activeBand.name}
-            </span>
-            <span class="band-bar-trick">— ${this.showTheory ? activeBand.theory : activeBand.plain}</span>
-          </div>
-          <button class="band-bar-close" @click=${() => this.onBandClick(activeBand.name)} aria-label="Dismiss band DNA">×</button>
-        </div>
-      ` : ''}
-
+      ${this.renderTopBandBar()}
       <div class="studio-container" style="--mood-color: ${moodColor};">
         <!-- 1. Left Narrow Rail (62px) -->
         <nav class="rail-left" role="navigation">
@@ -5487,18 +5995,19 @@ export class LoopScreen extends LitElement {
 
             <div class="popover-kicker spaced">Mood</div>
             <div class="pills-group">
-              ${MOOD_PRIMARY.map(m => {
-                const mCol = getMoodColor(m);
-                const isActive = this.progression?.mood === m;
-                return html`
+              ${MOODS.map(mDef => {
+      const m = mDef.name;
+      const mCol = mDef.dot;
+      const isActive = this.progression?.mood === m;
+      return html`
                   <button class="pill mood-pill ${isActive ? 'active' : ''}" style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}" @click=${() => this.onMoodClick(m)}>
                     <span class="mood-badge" style="background: ${isActive ? 'rgba(46, 39, 31, 0.12)' : mCol + '33'};">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round"><path d="${MOOD_ICONS[m] || 'M12 4 a6.5 6.5 0 1 0 6.5 6.5'}"/></svg>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round"><path d="${mDef.iconPath}"/></svg>
                     </span>
                     ${m}
                   </button>
                 `;
-              })}
+    })}
             </div>
 
             <div class="popover-kicker spaced" style="display:flex;align-items:baseline;gap:7px;">
@@ -5506,9 +6015,19 @@ export class LoopScreen extends LitElement {
               <span style="font-size:11px;font-weight:700;color:rgba(46,39,31,0.38);text-transform:lowercase;">optional</span>
             </div>
             <div class="pills-group">
-              ${BANDS.map(b => html`
-                <button class="pill ${this.selectedBand === b.name ? 'active' : ''}" style="font-family: ${b.font}; font-weight: ${b.weight || 800};" @click=${() => this.onBandClick(b.name)}>${b.name}</button>
-              `)}
+              ${BANDS.map(b => {
+      const w = BAND_WORDMARKS[b.name] || { font: b.font, pillFs: 12.5, pillTrack: '0' };
+      const isActive = this.selectedBand === b.name;
+      return html`
+                  <button
+                    class="pill ${isActive ? 'active' : ''}"
+                    style="font-family: ${w.font}; font-weight: ${w.weight || 400}; font-style: ${w.italic ? 'italic' : 'normal'}; font-size: ${w.pillFs}px; letter-spacing: ${w.pillTrack}; ${isActive ? `background: ${b.color}; color: #2E271F; border-color: ${b.color}; box-shadow: 0 2px 8px -2px rgba(46,39,31,0.3);` : ''}"
+                    @click=${() => this.onBandClick(b.name)}
+                  >
+                    ${b.name}
+                  </button>
+                `;
+    })}
             </div>
           </div>
         ` : ''}
@@ -5534,6 +6053,8 @@ export class LoopScreen extends LitElement {
           <div class="stage-scroll-canvas">
             ${this.activeView === 'loop' ? html`
               <div class="stage-card stage-panel">
+                ${this.renderBandDnaBar(moodColor)}
+
                 <!-- Top Loop Play Button -->
                 <div style="position: relative; z-index: 2; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;">
                   <button
@@ -5557,9 +6078,9 @@ export class LoopScreen extends LitElement {
                 <!-- Pad Cells Grid -->
                 <div class="pad-cells-grid pad-cells-row cv-padgrid" data-padgrid="1" data-wide="1">
                   ${chords.map((c, i) => {
-                    const padColsNow = 4;
-                    const laneAfterIdx = Math.min(chords.length - 1, (Math.floor((this.swapIndex ?? 0) / padColsNow) + 1) * padColsNow - 1);
-                    return html`
+      const padColsNow = 4;
+      const laneAfterIdx = Math.min(chords.length - 1, (Math.floor((this.swapIndex ?? 0) / padColsNow) + 1) * padColsNow - 1);
+      return html`
                       ${this.renderChordPad(c, i, moodColor, true)}
                       ${this.swapIndex !== null && i === laneAfterIdx ? html`
                         <chord-swap-lane
@@ -5570,6 +6091,7 @@ export class LoopScreen extends LitElement {
                           .pickedChord=${this.abPick}
                           .padCols=${Math.min(chords.length, 4)}
                           .moodColor=${moodColor}
+                          .band=${activeBand ? { name: activeBand.name, color: activeBand.color, plain: this.showTheory ? activeBand.theory : activeBand.plain } : null}
                           @swap-feel-change=${(e: CustomEvent) => { this.activeSwapFamily = e.detail.feel; this.requestUpdate(); }}
                           @swap-audition=${(e: CustomEvent) => this.handleSwapAudition(e.detail)}
                           @swap-confirm=${this.confirmSwap}
@@ -5577,7 +6099,7 @@ export class LoopScreen extends LitElement {
                         ></chord-swap-lane>
                       ` : ''}
                     `;
-                  })}
+    })}
                 </div>
 
                 ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, false) : ''}
@@ -5634,12 +6156,12 @@ export class LoopScreen extends LitElement {
                           class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
                           style="border: none; font-family: inherit; display: inline-flex; align-items: center; background: ${(this.instrument || 'Piano') === i.name ? 'var(--cv-ink)' : 'var(--cv-surface)'}; color: ${(this.instrument || 'Piano') === i.name ? 'var(--cv-cream)' : 'var(--cv-ink)'}; border-radius: 100px; min-height: 34px; padding: 0 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: transform 120ms ease;"
                           @click=${() => {
-                            this.instrument = i.name;
-                            playbackEngine.setInstrument(i.name);
-                            this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
-                            this.expandedInstrument = false;
-                            this.requestUpdate();
-                          }}
+        this.instrument = i.name;
+        playbackEngine.setInstrument(i.name);
+        this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+        this.expandedInstrument = false;
+        this.requestUpdate();
+      }}
                         >
                           <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
                         </button>
@@ -5745,12 +6267,7 @@ export class LoopScreen extends LitElement {
             </div>
 
             <div class="inspector-body" style="padding: 16px 20px 22px;">
-              ${activeBand ? html`
-                <div style="background: var(--cv-cream); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px;">
-                  <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: var(--cv-label);">Band DNA · ${activeBand.name}</div>
-                  <div style="font-size: 12.5px; font-weight: 700; color: var(--cv-ink); margin-top: 4px;">${this.showTheory ? activeBand.theory : activeBand.plain}</div>
-                </div>
-              ` : ''}
+              ${activeBand ? this.renderBandInspectorCard(activeBand) : ''}
 
               ${this.abPick ? html`
                 <div style="animation: cvfv-pop 200ms ease-out; background: var(--cv-cream); border-radius: 16px; padding: 16px;">
@@ -5823,11 +6340,12 @@ export class LoopScreen extends LitElement {
             </div>
 
             <div class="inspector-body">
+              ${activeBand ? this.renderBandInspectorCard(activeBand) : ''}
               <div class="arc-bars-row">
                 ${chords.map((c, i) => {
-                  const r = roleForTension(c.tension || 0.1);
-                  const barH = Math.round(18 + (c.tension || 0.1) * 62);
-                  return html`
+        const r = roleForTension(c.tension || 0.1);
+        const barH = Math.round(18 + (c.tension || 0.1) * 62);
+        return html`
                     <button class="arc-bar-col" @click=${() => this.openSwap(i)} aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || ''}">
                       <div class="arc-bar-fill-wrap">
                         <div class="arc-bar-fill" style="height: ${barH}px; background: ${r.color};"></div>
@@ -5836,7 +6354,7 @@ export class LoopScreen extends LitElement {
                       <div class="arc-bar-feel">${ROLE_PLAIN[c.functionLabel] || ''}</div>
                     </button>
                   `;
-                })}
+      })}
               </div>
               <div class="arc-caption">Taller means more unresolved.</div>
               <div class="arc-sentence-text">${arcSentence}</div>
@@ -5864,8 +6382,8 @@ export class LoopScreen extends LitElement {
           .feelSettings=${{ swing: this.swing, spread: this.spread, density: this.density, tone: this.tone }}
           @close=${() => { this.shareOpen = false; }}
           @toast=${(e: CustomEvent<string>) => {
-            this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
-          }}
+        this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
+      }}
         ></share-modal>
         ${this.renderSaveModal()}
       </div>

@@ -9,6 +9,8 @@ export interface SwapFeelRow {
   sub: string;
   tension: number;
   chord?: ChordBlock;
+  bandTag?: string;
+  bandColor?: string;
 }
 
 export interface SwapFeelItem {
@@ -38,10 +40,9 @@ function relLum(hex: string): number {
 
 function joinFill(hex: string): string {
   const creamLum = 0.925;
-  let t = 0.3;
   let out = hex;
-  for (; t <= 0.86; t += 0.03) {
-    out = lerpColor(hex, '#2E271F', t);
+  for (let i = 1; i <= 20; i++) {
+    out = lerpColor(hex, '#2E271F', i * 0.05);
     if ((creamLum + 0.05) / (relLum(out) + 0.05) >= 4.7) break;
   }
   return out;
@@ -56,6 +57,7 @@ export class ChordSwapLane extends LitElement {
   @property({ type: Object }) pickedChord: ChordBlock | null = null;
   @property({ type: Number }) padCols = 4;
   @property({ type: String }) moodColor = '#9CC0EC';
+  @property({ type: Object }) band?: { name: string; color: string; tagline?: string; plain?: string; theory?: string } | null = null;
 
   static styles = css`
     :host {
@@ -374,6 +376,14 @@ export class ChordSwapLane extends LitElement {
               >×</button>
             </div>
 
+            ${this.band ? html`
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; color: #5B5145; background: ${this.band.color}3D; border-radius: 10px; padding: 6px 12px; margin-top: 9px; animation: cvfv-trayitem 300ms 200ms var(--cv-ease, ease) both;">
+                <div style="width: 7px; height: 7px; border-radius: 2px; background: ${this.band.color}; flex-shrink: 0;"></div>
+                <span>${this.band.name} mode — their moves first</span>
+                <span style="font-size: 10px; font-weight: 700; color: var(--cv-ink-muted); margin-left: auto;">${this.band.plain || ''}</span>
+              </div>
+            ` : ''}
+
             <!-- Feelings row -->
             <div class="feelings-row">
               ${this.feelings.map((f) => {
@@ -442,6 +452,22 @@ export class ChordSwapLane extends LitElement {
                           class="chord-pill-roman"
                           style="color: ${on ? 'rgba(251,246,236,0.7)' : 'var(--cv-label)'};"
                         >${row.roman}</span>
+                      ` : ''}
+                      ${row.bandTag ? html`
+                        <span
+                          style="
+                            font-size: 8.5px;
+                            font-weight: 800;
+                            letter-spacing: 0.7px;
+                            text-transform: uppercase;
+                            color: #2E271F;
+                            background: ${row.bandColor || '#F6D98B'};
+                            border-radius: 100px;
+                            padding: 2px 6px;
+                            margin-left: 4px;
+                            white-space: nowrap;
+                          "
+                        >${row.bandTag}</span>
                       ` : ''}
                     </button>
                   `;

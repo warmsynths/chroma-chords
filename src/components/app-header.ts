@@ -10,11 +10,13 @@ export class AppHeader extends LitElement {
   @property({ type: String }) userEmail: string | null = null;
   @property({ type: Number }) savedCount = 0;
   @property({ type: String }) syncStatus = 'synced';
+  @property({ type: String }) syncError: string | null = null;
   @property({ type: String }) title = 'Chroma Chords';
 
   @state() private accountMenuOpen = false;
 
   private unsubscribeProjects: (() => void) | null = null;
+  private unsubscribeSyncStatus: (() => void) | null = null;
 
   static styles = css`
     :host {
@@ -29,67 +31,64 @@ export class AppHeader extends LitElement {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 16px 24px;
+      height: 52px;
+      padding: 0 16px;
+      background: var(--cv-cream, #FBF3E6);
+      border-bottom: 1.5px solid rgba(46, 39, 31, 0.12);
       box-sizing: border-box;
-      width: 100%;
+      gap: 12px;
     }
-    :host([compact]) .header-wrap {
-      padding: 12px 16px;
+    .header-wrap.compact {
+      height: 46px;
+      padding: 0 12px;
     }
-    @media (max-width: 600px) {
-      .header-wrap {
-        padding: 12px 16px;
-      }
-    }
-
     .branding {
       display: flex;
       align-items: center;
-      gap: 9px;
-      min-width: 0;
+      gap: 8px;
       cursor: pointer;
       user-select: none;
-      text-decoration: none;
     }
     .brand-title {
-      font-size: 15px;
+      font-family: var(--cv-font, 'Plus Jakarta Sans', sans-serif);
+      font-size: 15.5px;
       font-weight: 800;
       letter-spacing: 0.2px;
       color: var(--cv-ink, #2E271F);
+      line-height: 1;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-
+    .header-wrap.compact .brand-title {
+      font-size: 13.5px;
+    }
     .right-actions {
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-shrink: 0;
+      gap: 10px;
       position: relative;
     }
 
     .sign-in-btn {
-      border: none;
-      font-family: inherit;
-      background: var(--cv-surface, #F6EADB);
+      border: 1.5px solid var(--cv-ink, #2E271F);
+      background: transparent;
       color: var(--cv-ink, #2E271F);
+      font-family: inherit;
       font-size: 12.5px;
       font-weight: 800;
-      padding: 7px 14px;
-      border-radius: 100px;
+      padding: 6px 14px;
+      border-radius: 999px;
       cursor: pointer;
-      transition: background 150ms ease, transform 100ms ease;
+      transition: background 150ms ease, color 150ms ease;
     }
     .sign-in-btn:hover {
-      background: var(--cv-surface-2, #F1E4CC);
-    }
-    .sign-in-btn:active {
-      transform: scale(0.96);
+      background: var(--cv-ink, #2E271F);
+      color: #FBF3E6;
     }
 
     .account-btn {
+      position: relative;
       border: none;
       font-family: inherit;
       width: 32px;
@@ -107,6 +106,22 @@ export class AppHeader extends LitElement {
     }
     .account-btn:hover {
       transform: scale(1.05);
+    }
+    .account-badge {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px var(--cv-cream, #FBF3E6);
+    }
+    .account-badge.offline {
+      background: #E07A5F;
+    }
+    .account-badge.syncing {
+      background: #D4A346;
+      animation: cv-pulse-dot 1.2s infinite ease-in-out;
     }
 
     .popover-panel {
@@ -132,7 +147,7 @@ export class AppHeader extends LitElement {
     }
 
     .account-menu-panel {
-      width: 240px;
+      width: 250px;
       padding: 8px;
     }
     .account-header-info {
@@ -157,11 +172,37 @@ export class AppHeader extends LitElement {
       font-weight: 700;
       color: #6F8F5C;
     }
+    .sync-status-line.syncing {
+      color: #B27B2B;
+    }
+    .sync-status-line.offline {
+      color: #C0392B;
+    }
     .sync-dot {
       width: 6px;
       height: 6px;
       border-radius: 50%;
       background: #7FA968;
+      flex-shrink: 0;
+    }
+    .sync-dot.syncing {
+      background: #D4A346;
+      animation: cv-pulse-dot 1.2s infinite ease-in-out;
+    }
+    .sync-dot.offline {
+      background: #E07A5F;
+    }
+    .sync-error-detail {
+      margin-top: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: #C0392B;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+    @keyframes cv-pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.75); }
     }
     .menu-action-btn {
       display: flex;
@@ -179,27 +220,35 @@ export class AppHeader extends LitElement {
       color: var(--cv-ink, #2E271F);
       text-align: left;
       cursor: pointer;
-      transition: background 150ms ease;
+      transition: background 120ms ease;
     }
     .menu-action-btn:hover {
       background: rgba(46, 39, 31, 0.06);
     }
+    .menu-action-btn.sign-out {
+      color: #8C4035;
+    }
+    .menu-action-btn.sign-out:hover {
+      background: rgba(140, 64, 53, 0.08);
+    }
     .saved-badge {
       margin-left: auto;
-      background: rgba(138, 107, 63, 0.18);
-      color: var(--cv-label, #8A6B3F);
-      border-radius: 100px;
-      padding: 2px 8px;
       font-size: 11px;
       font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(46, 39, 31, 0.08);
+      color: var(--cv-ink, #2E271F);
     }
     .menu-divider {
       height: 1px;
       background: rgba(46, 39, 31, 0.08);
-      margin: 6px 12px;
+      margin: 4px 6px;
     }
-    .menu-action-btn.sign-out {
-      color: var(--cv-ink-muted, #6B5F50);
+
+    @keyframes cvfv-sheet-up {
+      from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
   `;
 
@@ -207,15 +256,22 @@ export class AppHeader extends LitElement {
     super.connectedCallback();
     this.unsubscribeProjects = projectStorage.subscribeProjects(() => {
       this.savedCount = projectStorage.getProjects().length;
-      this.syncStatus = projectStorage.getSyncStatus();
+      this.requestUpdate();
+    });
+    this.unsubscribeSyncStatus = projectStorage.subscribeSyncStatus((status) => {
+      this.syncStatus = status;
+      this.syncError = projectStorage.getLastSyncError();
       this.requestUpdate();
     });
     this.savedCount = projectStorage.getProjects().length;
+    this.syncStatus = projectStorage.getSyncStatus();
+    this.syncError = projectStorage.getLastSyncError();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.unsubscribeProjects) this.unsubscribeProjects();
+    if (this.unsubscribeSyncStatus) this.unsubscribeSyncStatus();
   }
 
   private toggleAccountMenu(e: Event) {
@@ -238,15 +294,21 @@ export class AppHeader extends LitElement {
   }
 
   private onSyncNow() {
-    this.accountMenuOpen = false;
     this.dispatchEvent(new CustomEvent('sync-projects', { bubbles: true, composed: true }));
   }
 
+  private renderSyncStatusText(): string {
+    if (this.syncStatus === 'synced') return 'Synced with cloud';
+    if (this.syncStatus === 'syncing') return 'Syncing with cloud...';
+    if (this.syncStatus === 'offline') return 'Sync failed (offline)';
+    return 'Sign in to sync';
+  }
+
   render() {
-    const userInitial = (this.userEmail || 'U')[0].toUpperCase();
+    const userInitial = this.userEmail ? this.userEmail.charAt(0).toUpperCase() : 'U';
 
     return html`
-      <div class="header-wrap">
+      <div class="header-wrap ${this.compact ? 'compact' : ''}">
         <div class="branding" @click=${() => this.dispatchEvent(new CustomEvent('brand-click', { bubbles: true, composed: true }))}>
           <svg width="24" height="24" viewBox="0 0 30 30" style="flex-shrink:0;">
             <circle cx="11" cy="11" r="9" fill="#F2A79B"/>
@@ -259,17 +321,24 @@ export class AppHeader extends LitElement {
           ${!this.isAuthenticated ? html`
             <button class="sign-in-btn" @click=${this.onSignIn}>Sign in</button>
           ` : html`
-            <button class="account-btn" @click=${this.toggleAccountMenu} aria-haspopup="menu" aria-label="Account and saved sets">${userInitial}</button>
+            <button class="account-btn" @click=${this.toggleAccountMenu} aria-haspopup="menu" aria-label="Account and saved sets">
+              ${userInitial}
+              ${this.syncStatus === 'offline' ? html`<span class="account-badge offline" title="Cloud sync offline"></span>` : ''}
+              ${this.syncStatus === 'syncing' ? html`<span class="account-badge syncing" title="Syncing..."></span>` : ''}
+            </button>
           `}
 
           ${this.accountMenuOpen ? html`
             <div class="popover-panel account-menu-panel" role="menu">
               <div class="account-header-info">
                 <div class="account-email">${this.userEmail || 'Signed in'}</div>
-                <div class="sync-status-line">
-                  <span class="sync-dot"></span>
-                  <span>${this.syncStatus === 'synced' ? 'Synced with cloud' : 'Syncing...'}</span>
+                <div class="sync-status-line ${this.syncStatus}">
+                  <span class="sync-dot ${this.syncStatus}"></span>
+                  <span>${this.renderSyncStatusText()}</span>
                 </div>
+                ${this.syncStatus === 'offline' && this.syncError ? html`
+                  <div class="sync-error-detail">${this.syncError}</div>
+                ` : ''}
               </div>
               <button class="menu-action-btn" role="menuitem" @click=${this.onViewSets}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="#8A6B3F" style="flex-shrink:0;"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>

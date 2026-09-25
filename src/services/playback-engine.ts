@@ -71,7 +71,11 @@ export class PlaybackEngine {
     this.mode = 'single';
     this.progression = progression;
     if (progression) {
-      this.order = order || Array.from({ length: progression.chords.length }, (_, i) => i);
+      if (order && order.length === progression.chords.length && order.every(idx => idx < progression.chords.length)) {
+        this.order = order;
+      } else {
+        this.order = Array.from({ length: progression.chords.length }, (_, i) => i);
+      }
       if (this.order.length > 0) {
         if (this.activeIndex >= this.order.length) {
           this.activeIndex = this.activeIndex % this.order.length;

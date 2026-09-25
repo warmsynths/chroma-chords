@@ -85,22 +85,72 @@ describe('Studio Component Interactions', () => {
     document.body.removeChild(el);
   });
 
-  it('handles Mood pill click', async () => {
+  it('renders all 11 moods with mood-badge and handles Mood pill click in desktop', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;
     document.body.appendChild(el);
+    (el as any).isMobile = false;
     el.vibeOpen = true;
     await el.updateComplete;
 
     const setMoodSpy = vi.fn();
     el.addEventListener('set-mood', (e: any) => setMoodSpy(e.detail));
 
-    const moodPills = el.shadowRoot?.querySelectorAll('.pills-group .pill');
+    const popover = el.shadowRoot?.querySelector('.vibe-popover-desktop');
+    expect(popover).toBeTruthy();
+
+    const moodPills = popover?.querySelectorAll('.mood-pill');
+    expect(moodPills?.length).toBe(11);
+
     const dreamPill = Array.from(moodPills || []).find(p => p.textContent?.includes('Dreamy')) as HTMLElement;
-    if (dreamPill) {
-      dreamPill.click();
-      expect(setMoodSpy).toHaveBeenCalledWith('Dreamy');
-    }
+    expect(dreamPill).toBeTruthy();
+    expect(dreamPill.querySelector('.mood-badge svg path')).toBeTruthy();
+
+    dreamPill.click();
+    expect(setMoodSpy).toHaveBeenCalledWith('Dreamy');
+
+    document.body.removeChild(el);
+  });
+
+  it('renders styled mobile vibe toggle button and drawer with all 11 moods', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    (el as any).isMobile = true;
+    el.vibeOpen = false;
+    await el.updateComplete;
+
+    const toggleBtn = el.shadowRoot?.querySelector('.mobile-vibe-toggle') as HTMLElement;
+    expect(toggleBtn).toBeTruthy();
+    expect(toggleBtn.querySelector('.vibe-toggle-chevron svg')).toBeTruthy();
+    expect(toggleBtn.textContent).toContain('The Vibe · tap to change');
+
+    // Click toggle to open mobile vibe drawer
+    toggleBtn.click();
+    await el.updateComplete;
+
+    expect(el.vibeOpen).toBe(true);
+    expect(toggleBtn.classList.contains('open')).toBe(true);
+    expect(toggleBtn.textContent).toContain('The Vibe');
+
+    const drawer = el.shadowRoot?.querySelector('.mobile-vibe-drawer');
+    expect(drawer).toBeTruthy();
+
+    const moodPills = drawer?.querySelectorAll('.mood-pill');
+    expect(moodPills?.length).toBe(11);
+
+    // Each mood pill should have mood-badge with svg icon
+    moodPills?.forEach(pill => {
+      expect(pill.querySelector('.mood-badge svg path')).toBeTruthy();
+    });
+
+    const setMoodSpy = vi.fn();
+    el.addEventListener('set-mood', (e: any) => setMoodSpy(e.detail));
+
+    const warmPill = Array.from(moodPills || []).find(p => p.textContent?.includes('Warm')) as HTMLElement;
+    expect(warmPill).toBeTruthy();
+    warmPill.click();
+    expect(setMoodSpy).toHaveBeenCalledWith('Warm');
 
     document.body.removeChild(el);
   });
@@ -1098,6 +1148,41 @@ describe('Studio Component Interactions', () => {
     document.body.removeChild(el);
   });
 
+  it('renders app-header brand title with Plus Jakarta Sans and title case', async () => {
+    const header = document.createElement('app-header') as AppHeader;
+    document.body.appendChild(header);
+    await header.updateComplete;
+
+    const brandTitle = header.shadowRoot?.querySelector('.brand-title') as HTMLElement;
+    expect(brandTitle).toBeTruthy();
+    expect(brandTitle.textContent?.trim()).toBe('Chroma Chords');
+
+    document.body.removeChild(header);
+  });
+
+  it('renders subtle extension indicators (rungDots) on chord cards', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const rungRows = el.shadowRoot?.querySelectorAll('.pad-rung-row');
+    expect(rungRows && rungRows.length > 0).toBe(true);
+
+    const firstRow = rungRows?.[0];
+    const labels = firstRow?.querySelectorAll('.pad-rung-label');
+    const bars = firstRow?.querySelectorAll('.pad-rung-bar');
+    expect(labels && labels.length > 0).toBe(true);
+    expect(bars && bars.length > 0).toBe(true);
+    expect(labels?.length).toBe(bars?.length);
+
+    // Verify first label is formatted (e.g. △ or extension delta)
+    const labelTexts = Array.from(labels || []).map(l => l.textContent?.trim());
+    expect(labelTexts.some(t => t?.length && t.length > 0)).toBe(true);
+
+    document.body.removeChild(el);
+  });
+
   it('toggles saved loop: unsaves and dispatches unsave-set on desktop and mobile', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
     el.progression = sampleProgression;
@@ -1207,6 +1292,62 @@ describe('Studio Component Interactions', () => {
     await el.updateComplete;
 
     expect(deleteEvents).toEqual(['loop-alpha']);
+
+    document.body.removeChild(el);
+  });
+
+  it('renders modernized mobile chips row with divider, instrument, key, feel, and share buttons', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    (el as any).isMobile = true;
+    (el as any).activeView = 'loop';
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const mobileRow = el.shadowRoot?.querySelector('.mobile-chips-row');
+    expect(mobileRow).toBeTruthy();
+
+    const instBtn = mobileRow?.querySelector('.instrument-chip');
+    const divider = mobileRow?.querySelector('.mobile-chip-divider');
+    const keyBtn = mobileRow?.querySelector('.key-chip');
+    const feelBtn = mobileRow?.querySelector('.feel-chip');
+    const shareBtn = mobileRow?.querySelector('.mobile-share-btn');
+
+    expect(instBtn).toBeTruthy();
+    expect(divider).toBeTruthy();
+    expect(keyBtn).toBeTruthy();
+    expect(feelBtn).toBeTruthy();
+    expect(shareBtn).toBeTruthy();
+
+    // Verify feel button includes SVG icon
+    expect(feelBtn?.querySelector('svg')).toBeTruthy();
+
+    document.body.removeChild(el);
+  });
+
+  it('dispatches freetext-generate with promptText detail when vibe form is submitted', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    document.body.appendChild(el);
+    el.vibeOpen = true;
+    await el.updateComplete;
+
+    const freetextSpy = vi.fn();
+    el.addEventListener('freetext-generate', (e: any) => freetextSpy(e.detail));
+
+    const input = el.shadowRoot?.querySelector('.cv-vibe-input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    input.value = 'chill rainy day';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await el.updateComplete;
+
+    const form = el.shadowRoot?.querySelector('form.popover-input-row') as HTMLFormElement;
+    expect(form).toBeTruthy();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await el.updateComplete;
+
+    expect(freetextSpy).toHaveBeenCalledWith({ promptText: 'chill rainy day' });
+    expect(el.vibeOpen).toBe(false);
 
     document.body.removeChild(el);
   });

@@ -204,6 +204,96 @@ describe('worker/src/d1 - D1Client', () => {
     expect(delta.tombstones[0].id).toBe('set-tomb-1');
     expect(delta.tombstones[0].deletedAt).toBe('2026-08-28T11:05:00Z');
   });
+
+  it('chunks getDeltaSets chords queries into batches of at most 50 set IDs to prevent SQL variable overflow', async () => {
+    const d1 = new D1Client(mockDbHelper.mockDb, userId);
+
+    // Create 120 active sets
+    const mockSets = Array.from({ length: 120 }, (_, i) => ({
+      user_id: userId,
+      id: `set-bulk-${i}`,
+      name: `Progression ${i}`,
+      genre: 'Pop',
+      mood: 'Happy',
+      key: 'C',
+      scale_type: 'major',
+      bpm: 120,
+      show_theory: 1,
+      deleted_at: null,
+      updated_at: '2026-08-28T12:00:00Z',
+    }));
+
+    mockDbHelper.mockAllResults['SELECT * FROM sets'] = mockSets;
+    mockDbHelper.mockAllResults['SELECT * FROM set_chords'] = [
+      {
+        user_id: userId,
+        set_id: 'set-bulk-0',
+        position: 0,
+        name: 'C',
+        notes: JSON.stringify(['C4', 'E4', 'G4']),
+      },
+      {
+        user_id: userId,
+        set_id: 'set-bulk-119',
+        position: 0,
+        name: 'G',
+        notes: JSON.stringify(['G3', 'B3', 'D4']),
+      },
+    ];
+
+    const delta = await d1.getDeltaSets(null);
+
+    expect(delta.sets.length).toBe(120);
+
+    // Filter prepared statements for set_chords queries
+    const chordQueries = mockDbHelper.preparedStatements.filter((s) =>
+      s.query.includes('FROM set_chords')
+    );
+
+    // 120 sets chunked by 50 should yield 3 queries: 50 + 50 + 20
+    expect(chordQueries.length).toBe(3);
+
+    // Each query binding has userId + chunk of set IDs. None should exceed 51 (1 + 50)
+    chordQueries.forEach((q) => {
+      expect(q.bindings.length).toBeLessThanOrEqual(51);
+      expect(q.bindings[0]).toBe(userId);
+    });
+
+    expect(chordQueries[0].bindings.length).toBe(51); // 1 + 50
+    expect(chordQueries[1].bindings.length).toBe(51); // 1 + 50
+    expect(chordQueries[2].bindings.length).toBe(21); // 1 + 20
+  });
+
+  it('chunks large batches of statements in upsertSets and applyTombstones', async () => {
+    const d1 = new D1Client(mockDbHelper.mockDb, userId);
+
+    // 60 sets * 2 chords each = 60 * (1 upsert set + 1 delete chords + 2 insert chords) = 240 statements
+    const manySets: ClientSet[] = Array.from({ length: 60 }, (_, i) => ({
+      id: `bulk-set-${i}`,
+      name: `Bulk ${i}`,
+      chords: [
+        { name: 'C', notes: ['C4'] },
+        { name: 'G', notes: ['G4'] },
+      ],
+    }));
+
+    await d1.upsertSets(manySets);
+    // 240 statements chunked into batches of 200 -> 2 batches (200, 40)
+    expect(mockDbHelper.mockDb.batch).toHaveBeenCalledTimes(2);
+
+    // Reset mock call count
+    vi.mocked(mockDbHelper.mockDb.batch).mockClear();
+
+    // 120 tombstones = 120 * 2 statements = 240 statements
+    const manyTombstones: Tombstone[] = Array.from({ length: 120 }, (_, i) => ({
+      id: `tomb-${i}`,
+      deletedAt: '2026-08-28T12:00:00Z',
+    }));
+
+    await d1.applyTombstones(manyTombstones);
+    // 240 statements chunked into batches of 200 -> 2 batches
+    expect(mockDbHelper.mockDb.batch).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('worker/src/auth - verifyGoogleToken', () => {
