@@ -493,10 +493,14 @@ export class LoopScreen extends LitElement {
   @property({ type: Number }) totalSongSteps = 0;
   @property({ type: Boolean }) isGenerating = false;
   @property({ type: Boolean }) libraryOpen = false;
+  @property({ type: Boolean }) isSaved = false;
+  @property({ type: String }) currentProjectId: string | null = null;
 
   @state() private isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
   @state() private activeView: ViewTab = 'loop';
   @state() vibeOpen = false;
+  @state() private showSaveModal = false;
+  @state() private pendingSaveName = '';
   @state() private selectedBand: string | null = null;
   @state() private freeText = '';
   @state() private vibePlaceholderIdx = 0;
@@ -841,20 +845,25 @@ export class LoopScreen extends LitElement {
     /* Floating Loops Popover (Desktop) */
     .loops-popover-desktop {
       position: absolute;
-      left: 8px;
-      width: 300px;
-      bottom: 62px;
-      z-index: 30;
-      max-height: calc(100vh - 150px);
+      right: 0;
+      top: calc(100% + 8px);
+      width: 322px;
+      z-index: 45;
+      transform-origin: right top;
+      max-height: calc(100vh - 220px);
       overflow-y: auto;
       overscroll-behavior: contain;
       background: var(--cv-cream, #FBF3E6);
-      border: 1px solid rgba(46, 39, 31, 0.1);
-      border-radius: 16px;
-      padding: 10px;
-      box-shadow: 0 22px 44px -20px rgba(46, 39, 31, 0.5);
-      animation: cvfv-sheet-up 180ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      border: 1px solid rgba(46, 39, 31, 0.12);
+      border-radius: 20px;
+      padding: 12px 12px 14px;
+      box-shadow: 0 28px 54px -22px rgba(46, 39, 31, 0.55);
+      animation: cvfv-pop 180ms ease-out;
       box-sizing: border-box;
+    }
+    .library-action-btn:hover {
+      background: var(--cv-cream);
+      color: var(--cv-ink);
     }
 
     /* Pills Groups */
@@ -2368,6 +2377,91 @@ export class LoopScreen extends LitElement {
     .mobile-theory-panel {
       margin-top: 20px;
     }
+
+    /* Save & Loops Header Pills */
+    .save-pill-btn {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 13px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      color: var(--cv-ink, #2E271F);
+      background: var(--cv-surface, #F6EADB);
+      transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), transform 120ms ease;
+    }
+    .save-pill-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .save-pill-btn:active {
+      transform: scale(0.96);
+    }
+    .save-pill-btn.saved {
+      background: var(--mood-color, #9CC0EC);
+    }
+
+    .loops-pill-btn {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 13px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      color: var(--cv-ink, #2E271F);
+      background: var(--cv-surface, #F6EADB);
+      transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), transform 120ms ease;
+    }
+    .loops-pill-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .loops-pill-btn:active {
+      transform: scale(0.96);
+    }
+    .loops-pill-btn.active {
+      background: var(--cv-surface-2, #F1E4CC);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.18);
+    }
+
+    /* Save Modal */
+    .save-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(46, 39, 31, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 120;
+      padding: 24px;
+      box-sizing: border-box;
+      animation: cvfv-fade 180ms ease-out;
+    }
+    .save-modal-card {
+      background: #FBF6EC;
+      border-radius: 20px;
+      padding: 24px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+      animation: cvfv-sheet-up 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+    }
+    @keyframes cvfv-fade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes cvfv-pop {
+      from { transform: scale(0.97); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
   `;
 
   connectedCallback() {
@@ -2548,6 +2642,124 @@ export class LoopScreen extends LitElement {
 
   private toggleLibrary = () => {
     this.setLibraryOpen(!this.libraryOpen);
+  };
+
+  private getSuggestedLoopName(): string {
+    if (this.selectedBand) {
+      return `${this.selectedBand} vibe`;
+    }
+    const genre = this.progression?.genre || 'Loop';
+    const mood = this.progression?.mood ? this.progression.mood.toLowerCase() : '';
+    return mood ? `${genre} ${mood}` : `${genre} loop`;
+  }
+
+  private toggleSaved = () => {
+    if (this.isSaved) {
+      this.dispatchEvent(new CustomEvent('unsave-set', {
+        detail: this.currentProjectId,
+        bubbles: true,
+        composed: true,
+      }));
+    } else {
+      this.pendingSaveName = this.getSuggestedLoopName();
+      this.showSaveModal = true;
+      this.updateComplete.then(() => {
+        const input = this.renderRoot?.querySelector('.save-modal-input') as HTMLInputElement | null;
+        input?.focus();
+        input?.select();
+      });
+    }
+  };
+
+  private cancelSaveModal = () => {
+    this.showSaveModal = false;
+    this.pendingSaveName = '';
+  };
+
+  private confirmSaveModal = () => {
+    const name = this.pendingSaveName.trim() || this.getSuggestedLoopName();
+    this.dispatchEvent(new CustomEvent('save-set', {
+      detail: name,
+      bubbles: true,
+      composed: true,
+    }));
+    this.showSaveModal = false;
+    this.pendingSaveName = '';
+  };
+
+  private onSaveNameKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      this.confirmSaveModal();
+    } else if (e.key === 'Escape') {
+      this.cancelSaveModal();
+    }
+  };
+
+  private startRename = (id: string, name: string) => {
+    this.renamingId = id;
+    this.draftName = name;
+    this.confirmDeleteId = null;
+    this.requestUpdate();
+    this.updateComplete.then(() => {
+      const input = this.renderRoot?.querySelector('.library-rename-input') as HTMLInputElement | null;
+      input?.focus();
+      input?.select();
+    });
+  };
+
+  private commitRename = (_set?: ProjectData) => {
+    const id = this.renamingId;
+    const newName = this.draftName.trim();
+    if (id && newName) {
+      const p = projectStorage.getProjects().find(proj => proj.id === id);
+      if (p) {
+        p.name = newName;
+        projectStorage.saveProject(p);
+      }
+      this.savedSets = this.savedSets.map(s => s.id === id ? { ...s, name: newName } : s);
+      this.dispatchEvent(new CustomEvent('rename-project', {
+        detail: { id, name: newName },
+        bubbles: true,
+        composed: true,
+      }));
+    }
+    this.renamingId = null;
+    this.draftName = '';
+    this.requestUpdate();
+  };
+
+  private cancelRename = () => {
+    this.renamingId = null;
+    this.draftName = '';
+    this.requestUpdate();
+  };
+
+  private askDelete = (id: string) => {
+    this.confirmDeleteId = id;
+    this.renamingId = null;
+    this.requestUpdate();
+  };
+
+  private cancelDelete = () => {
+    this.confirmDeleteId = null;
+    this.requestUpdate();
+  };
+
+  private confirmDelete = (id: string) => {
+    projectStorage.deleteProject(id);
+    this.savedSets = this.savedSets.filter(s => s.id !== id);
+    this.dispatchEvent(new CustomEvent('delete-project', {
+      detail: id,
+      bubbles: true,
+      composed: true,
+    }));
+    this.confirmDeleteId = null;
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: 'Deleted loop',
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
   };
 
   private toggleLibrarySelectMode = () => {
@@ -4694,6 +4906,8 @@ export class LoopScreen extends LitElement {
       <div style="display: flex; flex-direction: column; gap: 4px;">
         ${visible.map(set => {
           const isSelected = this.librarySelected.includes(set.id);
+          const isRenaming = this.renamingId === set.id;
+          const isConfirmingDelete = this.confirmDeleteId === set.id;
           return html`
             <div
               class="library-loop-item ${this.librarySelectMode ? 'select-mode' : ''} ${isSelected ? 'selected' : ''}"
@@ -4701,7 +4915,7 @@ export class LoopScreen extends LitElement {
               @click=${() => {
                 if (this.librarySelectMode) {
                   this.toggleSelectLoop(set.id);
-                } else {
+                } else if (!isRenaming && !isConfirmingDelete) {
                   this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
                   this.setLibraryOpen(false);
                 }
@@ -4720,14 +4934,78 @@ export class LoopScreen extends LitElement {
               ` : ''}
               <div style="display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
                 ${(set.chords || []).map((c: any) => {
-                  const role = roleForTension(c.tension ?? 0);
+                  const tensionVal = typeof c === 'object' && c !== null ? (c.tension ?? 0) : 0.2;
+                  const role = roleForTension(tensionVal);
                   return html`<span style="display:inline-block;width:7px;height:7px;border-radius:${Math.round(role.radius * 0.25)}px;background:${role.color};flex-shrink:0;"></span>`;
                 })}
               </div>
               <div style="flex: 1; min-width: 0;">
-                <div style="font-size: 13.5px; font-weight: 800; color: var(--cv-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${set.name}</div>
-                <div style="font-size: 11px; color: var(--cv-ink-muted);">${set.genre} · ${set.mood}</div>
+                ${isRenaming ? html`
+                  <input
+                    type="text"
+                    class="cv-vibe-input library-rename-input"
+                    .value=${this.draftName}
+                    @input=${(e: Event) => { this.draftName = (e.target as HTMLInputElement).value; }}
+                    @keydown=${(e: KeyboardEvent) => {
+                      if (e.key === 'Enter') this.commitRename(set);
+                      if (e.key === 'Escape') this.cancelRename();
+                    }}
+                    @blur=${() => this.commitRename(set)}
+                    @click=${(e: Event) => e.stopPropagation()}
+                    style="width: 100%; box-sizing: border-box; border: none; background: var(--cv-cream, #FBF3E6); box-shadow: inset 0 0 0 1.5px rgba(46,39,31,0.16); border-radius: 9px; outline: none; font-family: inherit; font-size: 13px; font-weight: 800; color: var(--cv-ink); padding: 5px 8px;"
+                  />
+                ` : html`
+                  <div style="font-size: 13.5px; font-weight: 800; color: var(--cv-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${set.name}</div>
+                  <div style="font-size: 11px; color: var(--cv-ink-muted);">${set.genre} · ${set.mood}</div>
+                `}
               </div>
+
+              ${!this.librarySelectMode ? html`
+                ${isConfirmingDelete ? html`
+                  <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;" @click=${(e: Event) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      class="library-confirm-delete-btn"
+                      @click=${() => this.confirmDelete(set.id)}
+                      style="border: none; font-family: inherit; background: #D8624C; color: #FBF3E6; font-size: 11.5px; font-weight: 800; padding: 5px 10px; border-radius: 100px; cursor: pointer; flex-shrink: 0;"
+                    >Delete</button>
+                    <button
+                      type="button"
+                      class="library-cancel-delete-btn"
+                      @click=${this.cancelDelete}
+                      aria-label="Cancel delete"
+                      style="border: none; font-family: inherit; background: transparent; color: var(--cv-ink-muted); font-size: 14px; font-weight: 800; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;"
+                    >×</button>
+                  </div>
+                ` : !isRenaming ? html`
+                  <div class="library-item-actions" style="display: flex; gap: 2px; flex-shrink: 0;" @click=${(e: Event) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      class="library-action-btn library-rename-btn"
+                      @click=${() => this.startRename(set.id, set.name)}
+                      aria-label="Rename ${set.name}"
+                      title="Rename"
+                      style="border: none; font-family: inherit; background: transparent; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #5B5145;"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="library-action-btn library-delete-item-btn"
+                      @click=${() => this.askDelete(set.id)}
+                      aria-label="Delete ${set.name}"
+                      title="Delete"
+                      style="border: none; font-family: inherit; background: transparent; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #5B5145;"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>
+                      </svg>
+                    </button>
+                  </div>
+                ` : ''}
+              ` : ''}
             </div>
           `;
         })}
@@ -4738,6 +5016,41 @@ export class LoopScreen extends LitElement {
               : 'Nothing saved yet — tap the bookmark to keep a loop.'}
           </div>
         ` : ''}
+      </div>
+    `;
+  }
+
+  private renderSaveModal() {
+    if (!this.showSaveModal) return '';
+    return html`
+      <div class="save-modal-backdrop" @click=${this.cancelSaveModal}>
+        <div class="save-modal-card" @click=${(e: Event) => e.stopPropagation()}>
+          <div style="font-weight: 800; font-size: 16px; color: #2E271F; margin-bottom: 4px;">Name this set</div>
+          <div style="font-size: 12.5px; color: var(--cv-ink-muted); margin-bottom: 14px;">Give it a name so you can find it later.</div>
+          <input
+            type="text"
+            class="cv-vibe-input save-modal-input"
+            .value=${this.pendingSaveName}
+            @input=${(e: Event) => { this.pendingSaveName = (e.target as HTMLInputElement).value; }}
+            @keydown=${this.onSaveNameKeydown}
+            placeholder="e.g. 2am drive"
+            style="width: 100%; box-sizing: border-box; padding: 11px 14px; border-radius: 10px; border: 2px solid rgba(46,39,31,0.15); font-size: 14px; font-family: inherit; background: #fff; color: #2E271F; outline: none;"
+          />
+          <div style="display: flex; gap: 10px; margin-top: 16px;">
+            <button
+              type="button"
+              class="save-modal-cancel-btn"
+              @click=${this.cancelSaveModal}
+              style="flex: 1; border: none; background: transparent; text-align: center; padding: 11px; border-radius: 100px; font-weight: 700; font-size: 13.5px; color: var(--cv-ink-muted); cursor: pointer;"
+            >Cancel</button>
+            <button
+              type="button"
+              class="save-modal-confirm-btn"
+              @click=${this.confirmSaveModal}
+              style="flex: 1; border: none; text-align: center; padding: 11px; border-radius: 100px; font-weight: 700; font-size: 13.5px; background: #2E271F; color: #F4EBDB; cursor: pointer;"
+            >Save</button>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -5062,8 +5375,17 @@ export class LoopScreen extends LitElement {
             <button aria-label="Try another progression" class="mobile-circle-btn" @click=${this.onReroll}>
               <svg width="19" height="19" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
             </button>
-            <button aria-label="Keep this loop" class="mobile-circle-btn" @click=${() => this.dispatchEvent(new CustomEvent('save-set', { bubbles: true, composed: true }))}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+            <button
+              aria-label="${this.isSaved ? 'Saved loop' : 'Keep this loop'}"
+              class="mobile-circle-btn save-toggle-btn ${this.isSaved ? 'saved' : ''}"
+              @click=${this.toggleSaved}
+              style="${this.isSaved ? `background: ${moodColor};` : ''}"
+            >
+              ${this.isSaved ? html`
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#2E271F"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+              ` : html`
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+              `}
             </button>
             <button
               aria-label="Your loops"
@@ -5079,6 +5401,7 @@ export class LoopScreen extends LitElement {
           </div>
         </div>
 
+          ${this.renderSaveModal()}
           ${this.renderTempoSheetMobile()}
           ${this.renderFeelSheetMobile()}
           ${this.renderLibrarySheetMobile(moodColor)}
@@ -5131,25 +5454,6 @@ export class LoopScreen extends LitElement {
             <div class="rail-label">Vibe</div>
             <div class="rail-divider"></div>
             <div class="vibe-summary-vertical">${this.getVibeSummary()}</div>
-          </div>
-
-          <div class="rail-bottom">
-            <button
-              class="loops-rail-btn library-toggle rail-item loops ${this.libraryOpen ? 'active' : ''}"
-              @click=${this.toggleLibrary}
-              aria-label="Your loops"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>
-              </svg>
-            </button>
-            <div class="rail-label">Loops</div>
-
-            ${this.libraryOpen ? html`
-              <div class="loops-popover-desktop library-popover">
-                ${this.renderLibraryPopoverContent(moodColor)}
-              </div>
-            ` : ''}
           </div>
         </nav>
 
@@ -5211,13 +5515,19 @@ export class LoopScreen extends LitElement {
 
         <!-- 2. Center Stage (<main>) -->
         <main class="stage-main">
-          <!-- Row 1: View Tabs -->
-          <div class="stage-top-bar">
+          <!-- Row 1: View Tabs & Theory Toggle -->
+          <div class="stage-top-bar" style="display: flex; align-items: center; justify-content: space-between;">
             <div class="view-tabs-bar">
               <button class="view-tab ${this.activeView === 'loop' ? 'active' : ''}" @click=${() => { this.activeView = 'loop'; }}>Chords</button>
               <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
               <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
             </div>
+            <button class="theory-toggle-btn" @click=${this.onTheoryToggle} aria-label="Show the music theory">
+              <span style="font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted);">Theory</span>
+              <span class="toggle-track ${this.showTheory ? 'active' : ''}">
+                <span class="toggle-knob"></span>
+              </span>
+            </button>
           </div>
 
           <!-- Row 2: Scrollable Stage Canvas -->
@@ -5475,16 +5785,40 @@ export class LoopScreen extends LitElement {
             <!-- Idle Harmonic Arc View -->
             <div class="inspector-header">
               <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;">
-                <div>
+                <div style="flex: 1; min-width: 0;">
                   <div class="inspector-kicker">This loop</div>
                   <div class="arc-title-text">${arcTitle}</div>
                 </div>
-                <button class="theory-toggle-btn" @click=${this.onTheoryToggle} aria-label="Show the music theory">
-                  <span style="font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted);">Theory</span>
-                  <span class="toggle-track ${this.showTheory ? 'active' : ''}">
-                    <span class="toggle-knob"></span>
-                  </span>
-                </button>
+                <div style="position: relative; display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                  <button
+                    class="save-pill-btn ${this.isSaved ? 'saved' : ''}"
+                    @click=${this.toggleSaved}
+                    aria-label="${this.isSaved ? 'Saved' : 'Save'}"
+                    style="${this.isSaved ? `background: ${moodColor};` : ''}"
+                  >
+                    ${this.isSaved ? html`
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="#2E271F"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+                      Saved
+                    ` : html`
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+                      Save
+                    `}
+                  </button>
+                  <button
+                    class="loops-pill-btn library-toggle ${this.libraryOpen ? 'active' : ''}"
+                    @click=${this.toggleLibrary}
+                    aria-label="Your loops"
+                    aria-expanded=${this.libraryOpen ? 'true' : 'false'}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                    ${this.savedSets.length ? `Loops · ${this.savedSets.length}` : 'Loops'}
+                  </button>
+                  ${this.libraryOpen ? html`
+                    <div class="loops-popover-desktop library-popover">
+                      ${this.renderLibraryPopoverContent(moodColor)}
+                    </div>
+                  ` : ''}
+                </div>
               </div>
             </div>
 
@@ -5533,6 +5867,7 @@ export class LoopScreen extends LitElement {
             this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
           }}
         ></share-modal>
+        ${this.renderSaveModal()}
       </div>
     `;
   }
