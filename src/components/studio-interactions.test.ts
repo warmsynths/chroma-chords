@@ -1105,6 +1105,49 @@ describe('Studio Component Interactions', () => {
     document.body.removeChild(el);
   });
 
+  it('opens Save modal on desktop Save pill click, suggests vibe name, and dispatches save-set', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    el.isSaved = false;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const saveEvents: string[] = [];
+    el.addEventListener('save-set', ((e: CustomEvent<string>) => {
+      saveEvents.push(e.detail);
+    }) as EventListener);
+
+    const savePill = el.shadowRoot?.querySelector('.save-pill-btn') as HTMLButtonElement;
+    expect(savePill).toBeTruthy();
+    expect(savePill.textContent?.trim()).toContain('Save');
+
+    // Click Save pill opens modal
+    savePill.click();
+    await el.updateComplete;
+
+    const modalBackdrop = el.shadowRoot?.querySelector('.save-modal-backdrop') as HTMLElement;
+    expect(modalBackdrop).toBeTruthy();
+
+    const input = el.shadowRoot?.querySelector('.save-modal-input') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.value).toBeTruthy(); // Pre-filled suggested name
+
+    // Enter custom name and click Save
+    input.value = 'Sunset Grooves';
+    input.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+
+    const confirmBtn = el.shadowRoot?.querySelector('.save-modal-confirm-btn') as HTMLButtonElement;
+    expect(confirmBtn).toBeTruthy();
+    confirmBtn.click();
+    await el.updateComplete;
+
+    expect(saveEvents).toEqual(['Sunset Grooves']);
+    expect(el.shadowRoot?.querySelector('.save-modal-backdrop')).toBeFalsy();
+
+    document.body.removeChild(el);
+  });
+
   it('renders app-header brand title with Plus Jakarta Sans and title case', async () => {
     const header = document.createElement('app-header') as AppHeader;
     document.body.appendChild(header);
@@ -1136,6 +1179,119 @@ describe('Studio Component Interactions', () => {
     // Verify first label is formatted (e.g. △ or extension delta)
     const labelTexts = Array.from(labels || []).map(l => l.textContent?.trim());
     expect(labelTexts.some(t => t?.length && t.length > 0)).toBe(true);
+
+    document.body.removeChild(el);
+  });
+
+  it('toggles saved loop: unsaves and dispatches unsave-set on desktop and mobile', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    el.isSaved = true;
+    el.currentProjectId = 'proj-999';
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const unsaveEvents: string[] = [];
+    el.addEventListener('unsave-set', ((e: CustomEvent<string>) => {
+      unsaveEvents.push(e.detail);
+    }) as EventListener);
+
+    // Desktop: Save pill shows 'Saved'
+    const savePill = el.shadowRoot?.querySelector('.save-pill-btn') as HTMLButtonElement;
+    expect(savePill).toBeTruthy();
+    expect(savePill.classList.contains('saved')).toBe(true);
+    expect(savePill.textContent?.trim()).toContain('Saved');
+
+    // Clicking it dispatches unsave-set
+    savePill.click();
+    await el.updateComplete;
+
+    expect(unsaveEvents).toEqual(['proj-999']);
+
+    // Mobile: Keep this loop button
+    (window as any).innerWidth = 390;
+    (el as any).isMobile = true;
+    el.requestUpdate();
+    await el.updateComplete;
+
+    const mobileSaveBtn = el.shadowRoot?.querySelector('.mobile-bottom-transport-bar button[aria-label="Saved loop"]') as HTMLButtonElement;
+    expect(mobileSaveBtn).toBeTruthy();
+    mobileSaveBtn.click();
+    await el.updateComplete;
+
+    expect(unsaveEvents).toEqual(['proj-999', 'proj-999']);
+
+    document.body.removeChild(el);
+    (window as any).innerWidth = 1024;
+  });
+
+  it('supports inline renaming and delete confirmation in loops library', async () => {
+    const el = document.createElement('loop-screen') as LoopScreen;
+    el.progression = sampleProgression;
+    el.libraryOpen = true;
+    const testSets = [
+      { id: 'loop-alpha', name: 'Original Name', genre: 'Pop', mood: 'Warm', chords: [] },
+    ];
+    document.body.appendChild(el);
+    (el as any).savedSets = testSets;
+    el.requestUpdate();
+    await el.updateComplete;
+
+    const renameEvents: { id: string; name: string }[] = [];
+    el.addEventListener('rename-project', ((e: CustomEvent<{ id: string; name: string }>) => {
+      renameEvents.push(e.detail);
+    }) as EventListener);
+
+    const deleteEvents: string[] = [];
+    el.addEventListener('delete-project', ((e: CustomEvent<string>) => {
+      deleteEvents.push(e.detail);
+    }) as EventListener);
+
+    // 1. Rename flow
+    const renameBtn = el.shadowRoot?.querySelector('.library-rename-btn') as HTMLButtonElement;
+    expect(renameBtn).toBeTruthy();
+    renameBtn.click();
+    await el.updateComplete;
+
+    const renameInput = el.shadowRoot?.querySelector('.library-rename-input') as HTMLInputElement;
+    expect(renameInput).toBeTruthy();
+    expect(renameInput.value).toBe('Original Name');
+
+    renameInput.value = 'Brand New Name';
+    renameInput.dispatchEvent(new Event('input'));
+    renameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await el.updateComplete;
+
+    expect(renameEvents).toEqual([{ id: 'loop-alpha', name: 'Brand New Name' }]);
+    expect(el.shadowRoot?.querySelector('.library-rename-input')).toBeFalsy();
+
+    // 2. Delete confirmation flow
+    const deleteBtn = el.shadowRoot?.querySelector('.library-delete-item-btn') as HTMLButtonElement;
+    expect(deleteBtn).toBeTruthy();
+    deleteBtn.click();
+    await el.updateComplete;
+
+    // Shows Delete pill and Cancel button
+    const confirmDeleteBtn = el.shadowRoot?.querySelector('.library-confirm-delete-btn') as HTMLButtonElement;
+    const cancelDeleteBtn = el.shadowRoot?.querySelector('.library-cancel-delete-btn') as HTMLButtonElement;
+    expect(confirmDeleteBtn).toBeTruthy();
+    expect(cancelDeleteBtn).toBeTruthy();
+
+    // Test cancel
+    cancelDeleteBtn.click();
+    await el.updateComplete;
+    expect(el.shadowRoot?.querySelector('.library-confirm-delete-btn')).toBeFalsy();
+
+    // Trigger delete confirmation again and confirm
+    const deleteBtn2 = el.shadowRoot?.querySelector('.library-delete-item-btn') as HTMLButtonElement;
+    deleteBtn2.click();
+    await el.updateComplete;
+
+    const confirmDeleteBtn2 = el.shadowRoot?.querySelector('.library-confirm-delete-btn') as HTMLButtonElement;
+    confirmDeleteBtn2.click();
+    await el.updateComplete;
+
+    expect(deleteEvents).toEqual(['loop-alpha']);
 
     document.body.removeChild(el);
   });

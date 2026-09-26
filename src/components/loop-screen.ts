@@ -426,10 +426,14 @@ export class LoopScreen extends LitElement {
   @property({ type: Number }) totalSongSteps = 0;
   @property({ type: Boolean }) isGenerating = false;
   @property({ type: Boolean }) libraryOpen = false;
+  @property({ type: Boolean }) isSaved = false;
+  @property({ type: String }) currentProjectId: string | null = null;
 
   @state() private isMobile = typeof window !== 'undefined' ? window.innerWidth < 900 : false;
   @state() private activeView: ViewTab = 'loop';
   @state() vibeOpen = false;
+  @state() private showSaveModal = false;
+  @state() private pendingSaveName = '';
   @property({ type: String }) selectedBand: string | null = null;
   @state() private bandSwaps: Record<number, { originalChord: ChordBlock; move: ResolvedBandMove }> = {};
   @state() private freeText = '';
@@ -818,20 +822,25 @@ export class LoopScreen extends LitElement {
     /* Floating Loops Popover (Desktop) */
     .loops-popover-desktop {
       position: absolute;
-      left: 8px;
-      width: 300px;
-      bottom: 62px;
-      z-index: 30;
-      max-height: calc(100vh - 150px);
+      right: 0;
+      top: calc(100% + 8px);
+      width: 322px;
+      z-index: 45;
+      transform-origin: right top;
+      max-height: calc(100vh - 220px);
       overflow-y: auto;
       overscroll-behavior: contain;
       background: var(--cv-cream, #FBF3E6);
-      border: 1px solid rgba(46, 39, 31, 0.1);
-      border-radius: 16px;
-      padding: 10px;
-      box-shadow: 0 22px 44px -20px rgba(46, 39, 31, 0.5);
-      animation: cvfv-sheet-up 180ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+      border: 1px solid rgba(46, 39, 31, 0.12);
+      border-radius: 20px;
+      padding: 12px 12px 14px;
+      box-shadow: 0 28px 54px -22px rgba(46, 39, 31, 0.55);
+      animation: cvfv-pop 180ms ease-out;
       box-sizing: border-box;
+    }
+    .library-action-btn:hover {
+      background: var(--cv-cream);
+      color: var(--cv-ink);
     }
 
     /* Pills Groups */
@@ -2452,6 +2461,91 @@ export class LoopScreen extends LitElement {
     .mobile-theory-panel {
       margin-top: 20px;
     }
+
+    /* Save & Loops Header Pills */
+    .save-pill-btn {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 13px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      color: var(--cv-ink, #2E271F);
+      background: var(--cv-surface, #F6EADB);
+      transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), transform 120ms ease;
+    }
+    .save-pill-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .save-pill-btn:active {
+      transform: scale(0.96);
+    }
+    .save-pill-btn.saved {
+      background: var(--mood-color, #9CC0EC);
+    }
+
+    .loops-pill-btn {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 13px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      color: var(--cv-ink, #2E271F);
+      background: var(--cv-surface, #F6EADB);
+      transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), transform 120ms ease;
+    }
+    .loops-pill-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+    .loops-pill-btn:active {
+      transform: scale(0.96);
+    }
+    .loops-pill-btn.active {
+      background: var(--cv-surface-2, #F1E4CC);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.18);
+    }
+
+    /* Save Modal */
+    .save-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(46, 39, 31, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 120;
+      padding: 24px;
+      box-sizing: border-box;
+      animation: cvfv-fade 180ms ease-out;
+    }
+    .save-modal-card {
+      background: #FBF6EC;
+      border-radius: 20px;
+      padding: 24px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+      animation: cvfv-sheet-up 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));
+    }
+    @keyframes cvfv-fade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes cvfv-pop {
+      from { transform: scale(0.97); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
   `;
 
   connectedCallback() {
@@ -2465,14 +2559,14 @@ export class LoopScreen extends LitElement {
     this.savedSets = projectStorage.getProjects();
     this.unsubscribeProjects = typeof projectStorage.subscribeProjects === 'function'
       ? projectStorage.subscribeProjects(() => {
+        this.savedSets = projectStorage.getProjects();
+        this.requestUpdate();
+      })
+      : typeof (projectStorage as any).subscribe === 'function'
+        ? (projectStorage as any).subscribe(() => {
           this.savedSets = projectStorage.getProjects();
           this.requestUpdate();
         })
-      : typeof (projectStorage as any).subscribe === 'function'
-        ? (projectStorage as any).subscribe(() => {
-            this.savedSets = projectStorage.getProjects();
-            this.requestUpdate();
-          })
         : null;
 
     playbackEngine.setFeelSettings({
@@ -2632,6 +2726,124 @@ export class LoopScreen extends LitElement {
 
   private toggleLibrary = () => {
     this.setLibraryOpen(!this.libraryOpen);
+  };
+
+  private getSuggestedLoopName(): string {
+    if (this.selectedBand) {
+      return `${this.selectedBand} vibe`;
+    }
+    const genre = this.progression?.genre || 'Loop';
+    const mood = this.progression?.mood ? this.progression.mood.toLowerCase() : '';
+    return mood ? `${genre} ${mood}` : `${genre} loop`;
+  }
+
+  private toggleSaved = () => {
+    if (this.isSaved) {
+      this.dispatchEvent(new CustomEvent('unsave-set', {
+        detail: this.currentProjectId,
+        bubbles: true,
+        composed: true,
+      }));
+    } else {
+      this.pendingSaveName = this.getSuggestedLoopName();
+      this.showSaveModal = true;
+      this.updateComplete.then(() => {
+        const input = this.renderRoot?.querySelector('.save-modal-input') as HTMLInputElement | null;
+        input?.focus();
+        input?.select();
+      });
+    }
+  };
+
+  private cancelSaveModal = () => {
+    this.showSaveModal = false;
+    this.pendingSaveName = '';
+  };
+
+  private confirmSaveModal = () => {
+    const name = this.pendingSaveName.trim() || this.getSuggestedLoopName();
+    this.dispatchEvent(new CustomEvent('save-set', {
+      detail: name,
+      bubbles: true,
+      composed: true,
+    }));
+    this.showSaveModal = false;
+    this.pendingSaveName = '';
+  };
+
+  private onSaveNameKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      this.confirmSaveModal();
+    } else if (e.key === 'Escape') {
+      this.cancelSaveModal();
+    }
+  };
+
+  private startRename = (id: string, name: string) => {
+    this.renamingId = id;
+    this.draftName = name;
+    this.confirmDeleteId = null;
+    this.requestUpdate();
+    this.updateComplete.then(() => {
+      const input = this.renderRoot?.querySelector('.library-rename-input') as HTMLInputElement | null;
+      input?.focus();
+      input?.select();
+    });
+  };
+
+  private commitRename = (_set?: ProjectData) => {
+    const id = this.renamingId;
+    const newName = this.draftName.trim();
+    if (id && newName) {
+      const p = projectStorage.getProjects().find(proj => proj.id === id);
+      if (p) {
+        p.name = newName;
+        projectStorage.saveProject(p);
+      }
+      this.savedSets = this.savedSets.map(s => s.id === id ? { ...s, name: newName } : s);
+      this.dispatchEvent(new CustomEvent('rename-project', {
+        detail: { id, name: newName },
+        bubbles: true,
+        composed: true,
+      }));
+    }
+    this.renamingId = null;
+    this.draftName = '';
+    this.requestUpdate();
+  };
+
+  private cancelRename = () => {
+    this.renamingId = null;
+    this.draftName = '';
+    this.requestUpdate();
+  };
+
+  private askDelete = (id: string) => {
+    this.confirmDeleteId = id;
+    this.renamingId = null;
+    this.requestUpdate();
+  };
+
+  private cancelDelete = () => {
+    this.confirmDeleteId = null;
+    this.requestUpdate();
+  };
+
+  private confirmDelete = (id: string) => {
+    projectStorage.deleteProject(id);
+    this.savedSets = this.savedSets.filter(s => s.id !== id);
+    this.dispatchEvent(new CustomEvent('delete-project', {
+      detail: id,
+      bubbles: true,
+      composed: true,
+    }));
+    this.confirmDeleteId = null;
+    this.dispatchEvent(new CustomEvent('toast', {
+      detail: 'Deleted loop',
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
   };
 
   private toggleLibrarySelectMode = () => {
@@ -2996,8 +3208,8 @@ export class LoopScreen extends LitElement {
     const root = (n.match(/^[A-G][#b]?/) || ['C'])[0];
     const suf = /sus/.test(n) ? ['sus4', '7sus4', '9sus4', 'maj7sus4']
       : (/dim/.test(n) ? ['dim', 'dim7', 'dim9']
-      : (/^[A-G][#b]?m(?!aj)/.test(n) ? ['m', 'm6', 'm7', 'm9', 'mMaj7']
-      : ['', '6', '7', 'maj7', 'maj9']));
+        : (/^[A-G][#b]?m(?!aj)/.test(n) ? ['m', 'm6', 'm7', 'm9', 'mMaj7']
+          : ['', '6', '7', 'maj7', 'maj9']));
     return suf.map(s => root + s);
   }
 
@@ -3039,7 +3251,7 @@ export class LoopScreen extends LitElement {
 
       try {
         (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     const targetChordName = (reach !== undefined && lad[reach]) ? lad[reach] : chord.name;
@@ -3125,7 +3337,7 @@ export class LoopScreen extends LitElement {
     if (e && e.currentTarget) {
       try {
         (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
-      } catch (_) {}
+      } catch (_) { }
     }
     this.padFlash = -1;
     this.padHeld = -1;
@@ -3669,28 +3881,28 @@ export class LoopScreen extends LitElement {
       <div class="detail-mini-keyboard">
         <div style="display: flex;">
           ${whiteKeys.map(k => {
-            const on = highlightPcs.has(k.pc);
-            return html`<div class="white-key ${on ? 'active' : ''}">${k.note}</div>`;
-          })}
+      const on = highlightPcs.has(k.pc);
+      return html`<div class="white-key ${on ? 'active' : ''}">${k.note}</div>`;
+    })}
         </div>
         ${blackKeys.map(bk => {
-          const left = (bk.after + 1) * whitePct - blackPct / 2;
-          const on = highlightPcs.has(bk.pc);
-          return html`<div class="black-key ${on ? 'active' : ''}" style="left: ${left}%;"></div>`;
-        })}
+      const left = (bk.after + 1) * whitePct - blackPct / 2;
+      const on = highlightPcs.has(bk.pc);
+      return html`<div class="black-key ${on ? 'active' : ''}" style="left: ${left}%;"></div>`;
+    })}
       </div>
     `;
   }
 
   private get feelChanged(): boolean {
     return this.playStyle !== FEEL_DEFAULTS.playStyle ||
-           this.swing !== FEEL_DEFAULTS.swing ||
-           this.spread !== FEEL_DEFAULTS.spread ||
-           this.density !== FEEL_DEFAULTS.density ||
-           this.humanise !== FEEL_DEFAULTS.humanise ||
-           this.tone !== FEEL_DEFAULTS.tone ||
-           Object.keys(this.barFeel).length > 0 ||
-           Object.keys(this.advOverride).length > 0;
+      this.swing !== FEEL_DEFAULTS.swing ||
+      this.spread !== FEEL_DEFAULTS.spread ||
+      this.density !== FEEL_DEFAULTS.density ||
+      this.humanise !== FEEL_DEFAULTS.humanise ||
+      this.tone !== FEEL_DEFAULTS.tone ||
+      Object.keys(this.barFeel).length > 0 ||
+      Object.keys(this.advOverride).length > 0;
   }
 
   private resetFeel() {
@@ -4082,11 +4294,11 @@ export class LoopScreen extends LitElement {
             <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Key Root</div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
               ${ROOT_OPTIONS.map(opt => {
-                const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
-                const curPc = PITCH_CLASS[curKey] ?? 0;
-                const optPc = PITCH_CLASS[opt.root] ?? 0;
-                const active = curPc === optPc;
-                return html`
+      const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+      const curPc = PITCH_CLASS[curKey] ?? 0;
+      const optPc = PITCH_CLASS[opt.root] ?? 0;
+      const active = curPc === optPc;
+      return html`
                   <button
                     style="border: none; font-family: inherit; padding: 7px 11px; border-radius: 100px; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
                     @click=${() => this.selectRoot(opt.root)}
@@ -4095,16 +4307,16 @@ export class LoopScreen extends LitElement {
                     ${opt.label}
                   </button>
                 `;
-              })}
+    })}
             </div>
           </div>
           <div>
             <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label);">Scale / Mode</div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
               ${SCALE_OPTIONS.map(opt => {
-                const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
-                const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
-                return html`
+      const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+      const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
+      return html`
                   <button
                     style="border: none; font-family: inherit; padding: 7px 11px; border-radius: 100px; font-size: 11.5px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
                     @click=${() => this.selectScale(opt.type)}
@@ -4113,7 +4325,7 @@ export class LoopScreen extends LitElement {
                     ${opt.label}
                   </button>
                 `;
-              })}
+    })}
             </div>
           </div>
         </div>
@@ -4141,9 +4353,9 @@ export class LoopScreen extends LitElement {
               Whole loop
             </button>
             ${(this.progression?.chords || []).map((c, ci) => {
-              const on = this.fScopeBar === ci;
-              const dirty = !!this.barFeel[ci];
-              return html`
+      const on = this.fScopeBar === ci;
+      const dirty = !!this.barFeel[ci];
+      return html`
                 <button
                   type="button"
                   style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
@@ -4154,7 +4366,7 @@ export class LoopScreen extends LitElement {
                   <span style="width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: ${on ? 'var(--cv-cream, #FBF3E6)' : '#9E5D53'}; opacity: ${dirty ? 1 : 0}; transition: opacity 150ms ease;"></span>
                 </button>
               `;
-            })}
+    })}
           </div>
           ${this.feelChanged ? html`
             <button
@@ -4175,16 +4387,16 @@ export class LoopScreen extends LitElement {
         </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin-top: 10px;">
           ${FEEL_AXES.map(d => {
-            const cur = this.fget(d.k);
-            let nearest = d.steps[0];
-            if (typeof cur !== 'number') {
-              nearest = d.steps.find(s => s.v === cur) || d.steps[0];
-            } else {
-              d.steps.forEach(s => {
-                if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
-              });
-            }
-            return html`
+      const cur = this.fget(d.k);
+      let nearest = d.steps[0];
+      if (typeof cur !== 'number') {
+        nearest = d.steps.find(s => s.v === cur) || d.steps[0];
+      } else {
+        d.steps.forEach(s => {
+          if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
+        });
+      }
+      return html`
               <div style="display: flex; align-items: center; gap: 14px; padding: 5px 0; min-width: 0;">
                 <div style="width: 104px; flex-shrink: 0;">
                   <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink);">${d.label}</div>
@@ -4192,8 +4404,8 @@ export class LoopScreen extends LitElement {
                 </div>
                 <div style="display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0;">
                   ${d.steps.map(s => {
-                    const on = s.v === nearest.v;
-                    return html`
+        const on = s.v === nearest.v;
+        return html`
                       <button
                         type="button"
                         style="border: none; font-family: inherit; flex: 1 1 auto; min-width: fit-content; min-height: 44px; padding: 0 11px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
@@ -4203,11 +4415,11 @@ export class LoopScreen extends LitElement {
                         ${s.name}
                       </button>
                     `;
-                  })}
+      })}
                 </div>
               </div>
             `;
-          })}
+    })}
         </div>
         <button
           type="button"
@@ -4233,17 +4445,17 @@ export class LoopScreen extends LitElement {
               .maxVelocity=${this.activeEngineParams.maxVelocity}
               .parameterOverrides=${this.advOverride}
               .sourceLabels=${{
-                spread: 'Spread',
-                duration: 'Pattern + Density',
-                humanVariance: 'Humanise',
-                microTiming: 'Swing + Humanise',
-                arpMode: 'Pattern',
-                arpRate: 'Pattern',
-                arpRange: 'Pattern',
-                arpGate: 'Pattern',
-                minVelocity: 'Genre',
-                maxVelocity: 'Genre',
-              }}
+          spread: 'Spread',
+          duration: 'Pattern + Density',
+          humanVariance: 'Humanise',
+          microTiming: 'Swing + Humanise',
+          arpMode: 'Pattern',
+          arpRate: 'Pattern',
+          arpRange: 'Pattern',
+          arpGate: 'Pattern',
+          minVelocity: 'Genre',
+          maxVelocity: 'Genre',
+        }}
               style="--human-bg: transparent; --human-surface: var(--cv-surface, #F6EADB); --human-surface-2: var(--cv-surface-2, #F1E4CC); --human-border: rgba(46,39,31,0.12); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: rgba(46,39,31,0.45); --human-accent: #9E5D53; --human-accent-hover: #804A41; width: 100%; min-width: 0; box-shadow: none;"
               @parameter-override=${this.onParameterOverride}
               @parameter-relink=${this.onParameterRelink}
@@ -4311,11 +4523,11 @@ export class LoopScreen extends LitElement {
           <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); margin-top: 15px;">Key Root</div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
             ${ROOT_OPTIONS.map(opt => {
-              const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
-              const curPc = PITCH_CLASS[curKey] ?? 0;
-              const optPc = PITCH_CLASS[opt.root] ?? 0;
-              const active = curPc === optPc;
-              return html`
+      const curKey = (this.progression?.key || 'C').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
+      const curPc = PITCH_CLASS[curKey] ?? 0;
+      const optPc = PITCH_CLASS[opt.root] ?? 0;
+      const active = curPc === optPc;
+      return html`
                 <button
                   style="border: none; font-family: inherit; padding: 8px 12px; border-radius: 100px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
                   @click=${() => this.selectRoot(opt.root)}
@@ -4324,14 +4536,14 @@ export class LoopScreen extends LitElement {
                   ${opt.label}
                 </button>
               `;
-            })}
+    })}
           </div>
           <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label); margin-top: 15px;">Scale / Mode</div>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
             ${SCALE_OPTIONS.map(opt => {
-              const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
-              const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
-              return html`
+      const curScale = (this.progression?.scaleType || 'MAJOR').toUpperCase().replace(/\s+/g, '_');
+      const active = curScale === opt.type || (opt.type === 'NATURAL_MINOR' && curScale === 'MINOR');
+      return html`
                 <button
                   style="border: none; font-family: inherit; padding: 8px 12px; border-radius: 100px; font-size: 12px; font-weight: 800; cursor: pointer; transition: background 150ms ease; background: ${active ? 'var(--cv-ink, #2E271F)' : 'var(--cv-cream, #FBF3E6)'}; color: ${active ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
                   @click=${() => this.selectScale(opt.type)}
@@ -4340,7 +4552,7 @@ export class LoopScreen extends LitElement {
                   ${opt.label}
                 </button>
               `;
-            })}
+    })}
           </div>
         </div>
       </div>
@@ -4367,8 +4579,8 @@ export class LoopScreen extends LitElement {
 
         <div class="song-section-list">
           ${this.sections.map((sec, i) => {
-            const isActive = this.activeSectionIdx === i;
-            return html`
+      const isActive = this.activeSectionIdx === i;
+      return html`
               <div
                 class="song-section-row ${isActive ? 'active' : ''}"
                 @click=${() => this.onSelectSectionCard(i)}
@@ -4383,15 +4595,15 @@ export class LoopScreen extends LitElement {
                 </div>
                 <div class="song-section-chips">
                   ${sec.progression.chords.map(c => {
-                    const role = roleForTension(c.tension);
-                    return html`
+        const role = roleForTension(c.tension);
+        return html`
                       <div
                         class="song-chord-chip"
                         style="background: ${role.color};"
                         title="${c.name} (${c.functionLabel || c.tag})"
                       ></div>
                     `;
-                  })}
+      })}
                 </div>
                 ${this.sections.length > 1 ? html`
                   <button
@@ -4399,16 +4611,16 @@ export class LoopScreen extends LitElement {
                     title="Remove ${sec.name}"
                     aria-label="Remove ${sec.name}"
                     @click=${(e: Event) => {
-                      e.stopPropagation();
-                      this.dispatchEvent(new CustomEvent('remove-section', { detail: i, bubbles: true, composed: true }));
-                    }}
+            e.stopPropagation();
+            this.dispatchEvent(new CustomEvent('remove-section', { detail: i, bubbles: true, composed: true }));
+          }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 ` : ''}
               </div>
             `;
-          })}
+    })}
 
           ${canAddSection ? html`
             <button
@@ -4445,20 +4657,20 @@ export class LoopScreen extends LitElement {
           <div class="strip-timeline-wrap">
             <div class="strip-cells-bar loop-beat-cells">
               ${this.sections.map((_, si) => {
-                const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
-                return html`
+      const isCurrentSec = this.playing && this.activePlayingSectionIdx === si;
+      return html`
                   <div
                     class="strip-cell"
                     style="height: ${isCurrentSec ? 20 : 10}px; border-radius: 3px; background: ${isCurrentSec ? '#F2735F' : 'rgba(46,39,31,0.22)'}; flex: 1;"
                   ></div>
                 `;
-              })}
+    })}
             </div>
             <div class="strip-labels-row">
               <div class="strip-status-label song-transport-status">
                 ${this.playing
-                  ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
-                  : `${this.sections.length} sections · stopped`}
+        ? `Section ${this.activePlayingSectionIdx + 1} of ${this.sections.length} · ${this.sections[this.activePlayingSectionIdx]?.name || ''}`
+        : `${this.sections.length} sections · stopped`}
               </div>
               <div class="strip-space-hint">Space plays the song</div>
             </div>
@@ -4505,9 +4717,9 @@ export class LoopScreen extends LitElement {
               Whole loop
             </button>
             ${(this.progression?.chords || []).map((c, ci) => {
-              const on = this.fScopeBar === ci;
-              const dirty = !!this.barFeel[ci];
-              return html`
+      const on = this.fScopeBar === ci;
+      const dirty = !!this.barFeel[ci];
+      return html`
                 <button
                   type="button"
                   style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
@@ -4517,23 +4729,23 @@ export class LoopScreen extends LitElement {
                   <span style="width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: ${on ? 'var(--cv-cream, #FBF3E6)' : '#9E5D53'}; opacity: ${dirty ? 1 : 0};"></span>
                 </button>
               `;
-            })}
+    })}
           </div>
           <div style="font-size: 11.5px; font-weight: 700; line-height: 1.45; color: rgba(46,39,31,0.5); margin-top: 8px; text-wrap: pretty;">
             ${feelScopeNote}
           </div>
           <div style="display: flex; flex-direction: column; gap: 13px; margin-top: 14px;">
             ${FEEL_AXES.map(d => {
-              const cur = this.fget(d.k);
-              let nearest = d.steps[0];
-              if (typeof cur !== 'number') {
-                nearest = d.steps.find(s => s.v === cur) || d.steps[0];
-              } else {
-                d.steps.forEach(s => {
-                  if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
-                });
-              }
-              return html`
+      const cur = this.fget(d.k);
+      let nearest = d.steps[0];
+      if (typeof cur !== 'number') {
+        nearest = d.steps.find(s => s.v === cur) || d.steps[0];
+      } else {
+        d.steps.forEach(s => {
+          if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) nearest = s;
+        });
+      }
+      return html`
                 <div>
                   <div style="display: flex; align-items: baseline; gap: 9px;">
                     <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink, #2E271F); flex: 1; min-width: 0;">${d.label}</div>
@@ -4541,8 +4753,8 @@ export class LoopScreen extends LitElement {
                   </div>
                   <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px;">
                     ${d.steps.map(s => {
-                      const on = s.v === nearest.v;
-                      return html`
+        const on = s.v === nearest.v;
+        return html`
                         <button
                           type="button"
                           style="border: none; font-family: inherit; flex: 1 1 auto; min-width: fit-content; min-height: 44px; padding: 0 11px; border-radius: 12px; cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: -0.005em; white-space: nowrap; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
@@ -4552,11 +4764,11 @@ export class LoopScreen extends LitElement {
                           ${s.name}
                         </button>
                       `;
-                    })}
+      })}
                   </div>
                 </div>
               `;
-            })}
+    })}
           </div>
           <button
             type="button"
@@ -4582,17 +4794,17 @@ export class LoopScreen extends LitElement {
                 .maxVelocity=${this.activeEngineParams.maxVelocity}
                 .parameterOverrides=${this.advOverride}
                 .sourceLabels=${{
-                  spread: 'Spread',
-                  duration: 'Pattern + Density',
-                  humanVariance: 'Humanise',
-                  microTiming: 'Swing + Humanise',
-                  arpMode: 'Pattern',
-                  arpRate: 'Pattern',
-                  arpRange: 'Pattern',
-                  arpGate: 'Pattern',
-                  minVelocity: 'Genre',
-                  maxVelocity: 'Genre',
-                }}
+          spread: 'Spread',
+          duration: 'Pattern + Density',
+          humanVariance: 'Humanise',
+          microTiming: 'Swing + Humanise',
+          arpMode: 'Pattern',
+          arpRate: 'Pattern',
+          arpRange: 'Pattern',
+          arpGate: 'Pattern',
+          minVelocity: 'Genre',
+          maxVelocity: 'Genre',
+        }}
                 style="--human-bg: transparent; --human-surface: var(--cv-surface, #F6EADB); --human-surface-2: var(--cv-surface-2, #F1E4CC); --human-border: rgba(46,39,31,0.12); --human-text-primary: var(--cv-ink, #2E271F); --human-text-secondary: rgba(46,39,31,0.45); --human-accent: #9E5D53; --human-accent-hover: #804A41; width: 100%; min-width: 0; box-shadow: none;"
                 @parameter-override=${this.onParameterOverride}
                 @parameter-relink=${this.onParameterRelink}
@@ -4692,8 +4904,8 @@ export class LoopScreen extends LitElement {
       </div>
       <div class="quality-chips-grid">
         ${CHORD_QUALITIES.map(q => {
-          const isSel = q.label === curQuality;
-          return html`
+      const isSel = q.label === curQuality;
+      return html`
             <button
               class="chord-mod-chip quality-chip ${isSel ? 'selected active' : ''}"
               @click=${() => this.changeChordQuality(q.label)}
@@ -4704,7 +4916,7 @@ export class LoopScreen extends LitElement {
               <div class="chip-desc">${q.sub}</div>
             </button>
           `;
-        })}
+    })}
       </div>
 
       <div class="detail-kicker" style="margin-top: 20px;">Extension</div>
@@ -4714,8 +4926,8 @@ export class LoopScreen extends LitElement {
       </div>
       <div class="ext-chips-grid">
         ${CHORD_EXTENSIONS.map(e => {
-          const isSel = e.label === curExt;
-          return html`
+      const isSel = e.label === curExt;
+      return html`
             <button
               class="chord-mod-chip extension-chip ${isSel ? 'selected active' : ''}"
               @click=${() => this.changeChordExtension(e.label)}
@@ -4726,7 +4938,7 @@ export class LoopScreen extends LitElement {
               <div class="chip-desc">${e.sub}</div>
             </button>
           `;
-        })}
+    })}
       </div>
     `;
   }
@@ -5043,13 +5255,13 @@ export class LoopScreen extends LitElement {
                 "
                 @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
                 @click=${(e: MouseEvent) => {
-                  e.stopPropagation();
-                  if (isBandMoveApplied) {
-                    this.revertBandMove(i);
-                  } else if (bandMove) {
-                    this.applyBandMove(i, bandMove, activeBand);
-                  }
-                }}
+          e.stopPropagation();
+          if (isBandMoveApplied) {
+            this.revertBandMove(i);
+          } else if (bandMove) {
+            this.applyBandMove(i, bandMove, activeBand);
+          }
+        }}
                 aria-label="${isBandMoveApplied ? `Undo ${this.bandSwaps[i]?.move.name} — put ${this.bandSwaps[i]?.originalChord.name} back` : `${bandMove?.name} — change ${c.name} to ${bandMove?.chord}`}"
               >
                 ${this.showTheory && !isBandMoveApplied && bandMove?.roman ? html`
@@ -5076,8 +5288,8 @@ export class LoopScreen extends LitElement {
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 6px 8px;">
         <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1.3px; color: var(--cv-label); text-transform: uppercase;">
           ${this.librarySelectMode && this.librarySelected.length > 0
-            ? `${this.librarySelected.length} of ${this.savedSets.length} selected`
-            : `Your loops (${this.savedSets.length})`}
+        ? `${this.librarySelected.length} of ${this.savedSets.length} selected`
+        : `Your loops (${this.savedSets.length})`}
         </div>
         <div class="library-select-toolbar" style="display: flex; align-items: center; gap: 8px;">
           ${this.librarySelectMode && visible.length > 0 ? html`
@@ -5136,18 +5348,20 @@ export class LoopScreen extends LitElement {
       <div style="display: flex; flex-direction: column; gap: 4px;">
         ${visible.map(set => {
           const isSelected = this.librarySelected.includes(set.id);
+          const isRenaming = this.renamingId === set.id;
+          const isConfirmingDelete = this.confirmDeleteId === set.id;
           return html`
             <div
               class="library-loop-item ${this.librarySelectMode ? 'select-mode' : ''} ${isSelected ? 'selected' : ''}"
               style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; cursor: pointer; background: ${isSelected ? 'var(--cv-surface-2, #F1E4CC)' : 'var(--cv-surface)'}; transition: background 120ms ease;"
               @click=${() => {
-                if (this.librarySelectMode) {
-                  this.toggleSelectLoop(set.id);
-                } else {
-                  this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
-                  this.setLibraryOpen(false);
-                }
-              }}
+              if (this.librarySelectMode) {
+                this.toggleSelectLoop(set.id);
+              } else if (!isRenaming && !isConfirmingDelete) {
+                this.dispatchEvent(new CustomEvent('load-project', { detail: set, bubbles: true, composed: true }));
+                this.setLibraryOpen(false);
+              }
+            }}
             >
               ${this.librarySelectMode ? html`
                 <input
@@ -5162,24 +5376,123 @@ export class LoopScreen extends LitElement {
               ` : ''}
               <div style="display: flex; gap: 3px; align-items: center; flex-shrink: 0;">
                 ${(set.chords || []).map((c: any) => {
-                  const role = roleForTension(c.tension ?? 0);
-                  return html`<span style="display:inline-block;width:7px;height:7px;border-radius:${Math.round(role.radius * 0.25)}px;background:${role.color};flex-shrink:0;"></span>`;
-                })}
+              const tensionVal = typeof c === 'object' && c !== null ? (c.tension ?? 0) : 0.2;
+              const role = roleForTension(tensionVal);
+              return html`<span style="display:inline-block;width:7px;height:7px;border-radius:${Math.round(role.radius * 0.25)}px;background:${role.color};flex-shrink:0;"></span>`;
+            })}
               </div>
               <div style="flex: 1; min-width: 0;">
-                <div style="font-size: 13.5px; font-weight: 800; color: var(--cv-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${set.name}</div>
-                <div style="font-size: 11px; color: var(--cv-ink-muted);">${set.genre} · ${set.mood}</div>
+                ${isRenaming ? html`
+                  <input
+                    type="text"
+                    class="cv-vibe-input library-rename-input"
+                    .value=${this.draftName}
+                    @input=${(e: Event) => { this.draftName = (e.target as HTMLInputElement).value; }}
+                    @keydown=${(e: KeyboardEvent) => {
+                if (e.key === 'Enter') this.commitRename(set);
+                if (e.key === 'Escape') this.cancelRename();
+              }}
+                    @blur=${() => this.commitRename(set)}
+                    @click=${(e: Event) => e.stopPropagation()}
+                    style="width: 100%; box-sizing: border-box; border: none; background: var(--cv-cream, #FBF3E6); box-shadow: inset 0 0 0 1.5px rgba(46,39,31,0.16); border-radius: 9px; outline: none; font-family: inherit; font-size: 13px; font-weight: 800; color: var(--cv-ink); padding: 5px 8px;"
+                  />
+                ` : html`
+                  <div style="font-size: 13.5px; font-weight: 800; color: var(--cv-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${set.name}</div>
+                  <div style="font-size: 11px; color: var(--cv-ink-muted);">${set.genre} · ${set.mood}</div>
+                `}
               </div>
+
+              ${!this.librarySelectMode ? html`
+                ${isConfirmingDelete ? html`
+                  <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;" @click=${(e: Event) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      class="library-confirm-delete-btn"
+                      @click=${() => this.confirmDelete(set.id)}
+                      style="border: none; font-family: inherit; background: #D8624C; color: #FBF3E6; font-size: 11.5px; font-weight: 800; padding: 5px 10px; border-radius: 100px; cursor: pointer; flex-shrink: 0;"
+                    >Delete</button>
+                    <button
+                      type="button"
+                      class="library-cancel-delete-btn"
+                      @click=${this.cancelDelete}
+                      aria-label="Cancel delete"
+                      style="border: none; font-family: inherit; background: transparent; color: var(--cv-ink-muted); font-size: 14px; font-weight: 800; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;"
+                    >×</button>
+                  </div>
+                ` : !isRenaming ? html`
+                  <div class="library-item-actions" style="display: flex; gap: 2px; flex-shrink: 0;" @click=${(e: Event) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      class="library-action-btn library-rename-btn"
+                      @click=${() => this.startRename(set.id, set.name)}
+                      aria-label="Rename ${set.name}"
+                      title="Rename"
+                      style="border: none; font-family: inherit; background: transparent; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #5B5145;"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="library-action-btn library-delete-item-btn"
+                      @click=${() => this.askDelete(set.id)}
+                      aria-label="Delete ${set.name}"
+                      title="Delete"
+                      style="border: none; font-family: inherit; background: transparent; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #5B5145;"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>
+                      </svg>
+                    </button>
+                  </div>
+                ` : ''}
+              ` : ''}
             </div>
           `;
         })}
         ${!visible.length ? html`
           <div class="library-empty" style="padding: 16px 12px; font-size: 12.5px; line-height: 1.5; color: var(--cv-ink-muted); text-align: center;">
             ${this.savedSets.length
-              ? 'No loops match that.'
-              : 'Nothing saved yet — tap the bookmark to keep a loop.'}
+          ? 'No loops match that.'
+          : 'Nothing saved yet — tap the bookmark to keep a loop.'}
           </div>
         ` : ''}
+      </div>
+    `;
+  }
+
+  private renderSaveModal() {
+    if (!this.showSaveModal) return '';
+    return html`
+      <div class="save-modal-backdrop" @click=${this.cancelSaveModal}>
+        <div class="save-modal-card" @click=${(e: Event) => e.stopPropagation()}>
+          <div style="font-weight: 800; font-size: 16px; color: #2E271F; margin-bottom: 4px;">Name this set</div>
+          <div style="font-size: 12.5px; color: var(--cv-ink-muted); margin-bottom: 14px;">Give it a name so you can find it later.</div>
+          <input
+            type="text"
+            class="cv-vibe-input save-modal-input"
+            .value=${this.pendingSaveName}
+            @input=${(e: Event) => { this.pendingSaveName = (e.target as HTMLInputElement).value; }}
+            @keydown=${this.onSaveNameKeydown}
+            placeholder="e.g. 2am drive"
+            style="width: 100%; box-sizing: border-box; padding: 11px 14px; border-radius: 10px; border: 2px solid rgba(46,39,31,0.15); font-size: 14px; font-family: inherit; background: #fff; color: #2E271F; outline: none;"
+          />
+          <div style="display: flex; gap: 10px; margin-top: 16px;">
+            <button
+              type="button"
+              class="save-modal-cancel-btn"
+              @click=${this.cancelSaveModal}
+              style="flex: 1; border: none; background: transparent; text-align: center; padding: 11px; border-radius: 100px; font-weight: 700; font-size: 13.5px; color: var(--cv-ink-muted); cursor: pointer;"
+            >Cancel</button>
+            <button
+              type="button"
+              class="save-modal-confirm-btn"
+              @click=${this.confirmSaveModal}
+              style="flex: 1; border: none; text-align: center; padding: 11px; border-radius: 100px; font-weight: 700; font-size: 13.5px; background: #2E271F; color: #F4EBDB; cursor: pointer;"
+            >Save</button>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -5225,16 +5538,15 @@ export class LoopScreen extends LitElement {
     const isRising = tensions.every((v, i) => i === 0 || v >= tensions[i - 1]);
     const arcTitle = (maxTension - minTension) < 0.28 ? 'Stays close to home'
       : isRising ? 'A steady climb'
-      : (tensions[tensions.length - 1] < 0.25 && peakIdx < tensions.length - 1) ? 'Away, then home'
-      : 'Drifts, then settles';
+        : (tensions[tensions.length - 1] < 0.25 && peakIdx < tensions.length - 1) ? 'Away, then home'
+          : 'Drifts, then settles';
 
-    const arcSentence = `Opens ${ROLE_PLAIN[chords[0]?.functionLabel] || 'home'} and ${
-      (maxTension - minTension) < 0.28
+    const arcSentence = `Opens ${ROLE_PLAIN[chords[0]?.functionLabel] || 'home'} and ${(maxTension - minTension) < 0.28
         ? 'never strays far — every chord sits in about the same place, so the loop feels calm and repeatable.'
         : isRising
-        ? `tightens chord by chord, peaking on ${chords[peakIdx]?.name || 'the peak'}. Looping back does the resolving.`
-        : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before easing back down home.`
-    }`;
+          ? `tightens chord by chord, peaking on ${chords[peakIdx]?.name || 'the peak'}. Looping back does the resolving.`
+          : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before easing back down home.`
+      }`;
 
     // Alternative substitution candidate rows
     let familyRows: { name: string; roman?: string; notes?: string[]; sub: string; chord: ChordBlock; tension: number }[] = [];
@@ -5329,10 +5641,10 @@ export class LoopScreen extends LitElement {
                 <div class="popover-kicker spaced">Mood</div>
                 <div class="pills-group">
                   ${MOODS.map(mDef => {
-                    const m = mDef.name;
-                    const mCol = mDef.dot;
-                    const isActive = this.progression?.mood === m;
-                    return html`
+        const m = mDef.name;
+        const mCol = mDef.dot;
+        const isActive = this.progression?.mood === m;
+        return html`
                       <button
                         class="pill mood-pill ${isActive ? 'active' : ''}"
                         style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}"
@@ -5344,7 +5656,7 @@ export class LoopScreen extends LitElement {
                         ${m}
                       </button>
                     `;
-                  })}
+      })}
                 </div>
 
                 <div class="popover-kicker spaced" style="display: flex; align-items: baseline; gap: 7px;">
@@ -5353,9 +5665,9 @@ export class LoopScreen extends LitElement {
                 </div>
                 <div class="pills-group">
                   ${BANDS.map(b => {
-                    const w = BAND_WORDMARKS[b.name] || { font: b.font, pillFs: 12.5, pillTrack: '0' };
-                    const isActive = this.selectedBand === b.name;
-                    return html`
+        const w = BAND_WORDMARKS[b.name] || { font: b.font, pillFs: 12.5, pillTrack: '0' };
+        const isActive = this.selectedBand === b.name;
+        return html`
                       <button
                         class="pill ${isActive ? 'active' : ''}"
                         style="font-family: ${w.font}; font-weight: ${w.weight || 400}; font-style: ${w.italic ? 'italic' : 'normal'}; font-size: ${w.pillFs}px; letter-spacing: ${w.pillTrack}; ${isActive ? `background: ${b.color}; color: #2E271F; border-color: ${b.color}; box-shadow: 0 2px 8px -2px rgba(46,39,31,0.3);` : ''}"
@@ -5364,7 +5676,7 @@ export class LoopScreen extends LitElement {
                         ${b.name}
                       </button>
                     `;
-                  })}
+      })}
                 </div>
               </div>
             ` : ''}
@@ -5388,10 +5700,10 @@ export class LoopScreen extends LitElement {
                 <!-- 2-column pad cells grid -->
                 <div class="pad-cells-grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
                   ${chords.map((chord, idx) => {
-                    if (this.swapIndex === idx) {
-                      const role = roleForTension(chord.tension || 0.1);
-                      const isLit = this.activeIndex === idx && this.playing;
-                      return html`
+        if (this.swapIndex === idx) {
+          const role = roleForTension(chord.tension || 0.1);
+          const isLit = this.activeIndex === idx && this.playing;
+          return html`
                         <div
                           class="pad-cell pad-cell-cycler ${isLit ? 'pad-lit' : ''}"
                           style="
@@ -5414,9 +5726,9 @@ export class LoopScreen extends LitElement {
                           ></chord-pad-cycler>
                         </div>
                       `;
-                    }
-                    return this.renderChordPad(chord, idx, moodColor, false);
-                  })}
+        }
+        return this.renderChordPad(chord, idx, moodColor, false);
+      })}
                 </div>
 
                 ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, true) : ''}
@@ -5466,12 +5778,12 @@ export class LoopScreen extends LitElement {
                       <button
                         class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
                         @click=${() => {
-                          this.instrument = i.name;
-                          playbackEngine.setInstrument(i.name);
-                          this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
-                          this.expandedInstrument = false;
-                          this.requestUpdate();
-                        }}
+          this.instrument = i.name;
+          playbackEngine.setInstrument(i.name);
+          this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+          this.expandedInstrument = false;
+          this.requestUpdate();
+        }}
                       >
                         <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
                       </button>
@@ -5493,16 +5805,16 @@ export class LoopScreen extends LitElement {
                   <div style="font-size: 18px; font-weight: 800; color: var(--cv-ink); margin-top: 5px; letter-spacing: -0.015em;">${arcTitle}</div>
                   <div class="mobile-arc-bars" style="display: flex; align-items: flex-end; gap: 6px; height: 132px; margin-top: 14px;">
                     ${chords.map(c => {
-                      const h = Math.round(28 + (c.tension || 0.1) * 85);
-                      const r = roleForTension(c.tension || 0.1);
-                      return html`
+          const h = Math.round(28 + (c.tension || 0.1) * 85);
+          const r = roleForTension(c.tension || 0.1);
+          return html`
                         <div style="flex: 1; display: flex; flex-direction: column; align-items: center; cursor: default;">
                           <div style="width: 100%; height: ${h}px; border-radius: 100px; background: ${r.color};"></div>
                           <div style="font-size: 12px; font-weight: 800; color: #2E271F; margin-top: 7px;">${c.name}</div>
                           <div style="font-size: 10px; font-weight: 700; color: var(--cv-ink-muted);">${ROLE_PLAIN[c.functionLabel] || ''}</div>
                         </div>
                       `;
-                    })}
+        })}
                   </div>
                   <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.2px; color: rgba(46, 39, 31, 0.42); margin-top: 8px;">Taller means more unresolved.</div>
                   <div style="font-size: 13.5px; line-height: 1.6; color: var(--cv-ink-muted); margin-top: 12px;">${arcSentence}</div>
@@ -5530,8 +5842,8 @@ export class LoopScreen extends LitElement {
                   </div>
                   <div style="font-size: 12px; line-height: 1.6; color: #8A7C6B; margin-top: 11px;">
                     ${this.playInstrument === 'Piano'
-                      ? 'One voicing per chord, root position — the red dot is the root, play left to right.'
-                      : 'Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.'}
+            ? 'One voicing per chord, root position — the red dot is the root, play left to right.'
+            : 'Exact voicings including 7ths — the red dot is the root, ○ is an open string, × is muted.'}
                   </div>
                 </div>
 
@@ -5583,8 +5895,17 @@ export class LoopScreen extends LitElement {
             <button aria-label="Try another progression" class="mobile-circle-btn" @click=${this.onReroll}>
               <svg width="19" height="19" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="6" fill="${moodColor}"/><circle cx="8" cy="8" r="1.7" fill="#2E271F"/><circle cx="16" cy="8" r="1.7" fill="#2E271F"/><circle cx="12" cy="12" r="1.7" fill="#2E271F"/><circle cx="8" cy="16" r="1.7" fill="#2E271F"/><circle cx="16" cy="16" r="1.7" fill="#2E271F"/></svg>
             </button>
-            <button aria-label="Keep this loop" class="mobile-circle-btn" @click=${() => this.dispatchEvent(new CustomEvent('save-set', { bubbles: true, composed: true }))}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+            <button
+              aria-label="${this.isSaved ? 'Saved loop' : 'Keep this loop'}"
+              class="mobile-circle-btn save-toggle-btn ${this.isSaved ? 'saved' : ''}"
+              @click=${this.toggleSaved}
+              style="${this.isSaved ? `background: ${moodColor};` : ''}"
+            >
+              ${this.isSaved ? html`
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="#2E271F"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+              ` : html`
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+              `}
             </button>
             <button
               aria-label="Your loops"
@@ -5600,6 +5921,7 @@ export class LoopScreen extends LitElement {
           </div>
         </div>
 
+          ${this.renderSaveModal()}
           ${this.renderTempoSheetMobile()}
           ${this.renderFeelSheetMobile()}
           ${this.renderLibrarySheetMobile(moodColor)}
@@ -5613,8 +5935,8 @@ export class LoopScreen extends LitElement {
             .feelSettings=${{ swing: this.swing, spread: this.spread, density: this.density, tone: this.tone }}
             @close=${() => { this.shareOpen = false; }}
             @toast=${(e: CustomEvent<string>) => {
-              this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
-            }}
+          this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
+        }}
           ></share-modal>
       `;
     }
@@ -5640,25 +5962,6 @@ export class LoopScreen extends LitElement {
             <div class="rail-label">Vibe</div>
             <div class="rail-divider"></div>
             <div class="vibe-summary-vertical">${this.getVibeSummary()}</div>
-          </div>
-
-          <div class="rail-bottom">
-            <button
-              class="loops-rail-btn library-toggle rail-item loops ${this.libraryOpen ? 'active' : ''}"
-              @click=${this.toggleLibrary}
-              aria-label="Your loops"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5B5145" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>
-              </svg>
-            </button>
-            <div class="rail-label">Loops</div>
-
-            ${this.libraryOpen ? html`
-              <div class="loops-popover-desktop library-popover">
-                ${this.renderLibraryPopoverContent(moodColor)}
-              </div>
-            ` : ''}
           </div>
         </nav>
 
@@ -5693,10 +5996,10 @@ export class LoopScreen extends LitElement {
             <div class="popover-kicker spaced">Mood</div>
             <div class="pills-group">
               ${MOODS.map(mDef => {
-                const m = mDef.name;
-                const mCol = mDef.dot;
-                const isActive = this.progression?.mood === m;
-                return html`
+      const m = mDef.name;
+      const mCol = mDef.dot;
+      const isActive = this.progression?.mood === m;
+      return html`
                   <button class="pill mood-pill ${isActive ? 'active' : ''}" style="${isActive ? `background: ${mCol}; color: #2E271F;` : ''}" @click=${() => this.onMoodClick(m)}>
                     <span class="mood-badge" style="background: ${isActive ? 'rgba(46, 39, 31, 0.12)' : mCol + '33'};">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isActive ? '#2E271F' : mCol}" stroke-width="2.2" stroke-linecap="round"><path d="${mDef.iconPath}"/></svg>
@@ -5704,7 +6007,7 @@ export class LoopScreen extends LitElement {
                     ${m}
                   </button>
                 `;
-              })}
+    })}
             </div>
 
             <div class="popover-kicker spaced" style="display:flex;align-items:baseline;gap:7px;">
@@ -5713,9 +6016,9 @@ export class LoopScreen extends LitElement {
             </div>
             <div class="pills-group">
               ${BANDS.map(b => {
-                const w = BAND_WORDMARKS[b.name] || { font: b.font, pillFs: 12.5, pillTrack: '0' };
-                const isActive = this.selectedBand === b.name;
-                return html`
+      const w = BAND_WORDMARKS[b.name] || { font: b.font, pillFs: 12.5, pillTrack: '0' };
+      const isActive = this.selectedBand === b.name;
+      return html`
                   <button
                     class="pill ${isActive ? 'active' : ''}"
                     style="font-family: ${w.font}; font-weight: ${w.weight || 400}; font-style: ${w.italic ? 'italic' : 'normal'}; font-size: ${w.pillFs}px; letter-spacing: ${w.pillTrack}; ${isActive ? `background: ${b.color}; color: #2E271F; border-color: ${b.color}; box-shadow: 0 2px 8px -2px rgba(46,39,31,0.3);` : ''}"
@@ -5724,20 +6027,26 @@ export class LoopScreen extends LitElement {
                     ${b.name}
                   </button>
                 `;
-              })}
+    })}
             </div>
           </div>
         ` : ''}
 
         <!-- 2. Center Stage (<main>) -->
         <main class="stage-main">
-          <!-- Row 1: View Tabs -->
-          <div class="stage-top-bar">
+          <!-- Row 1: View Tabs & Theory Toggle -->
+          <div class="stage-top-bar" style="display: flex; align-items: center; justify-content: space-between;">
             <div class="view-tabs-bar">
               <button class="view-tab ${this.activeView === 'loop' ? 'active' : ''}" @click=${() => { this.activeView = 'loop'; }}>Chords</button>
               <button class="view-tab ${this.activeView === 'song' ? 'active' : ''}" @click=${() => { this.activeView = 'song'; }}>Song</button>
               <button class="view-tab ${this.activeView === 'play' ? 'active' : ''}" @click=${() => { this.activeView = 'play'; }}>Play it</button>
             </div>
+            <button class="theory-toggle-btn" @click=${this.onTheoryToggle} aria-label="Show the music theory">
+              <span style="font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted);">Theory</span>
+              <span class="toggle-track ${this.showTheory ? 'active' : ''}">
+                <span class="toggle-knob"></span>
+              </span>
+            </button>
           </div>
 
           <!-- Row 2: Scrollable Stage Canvas -->
@@ -5769,9 +6078,9 @@ export class LoopScreen extends LitElement {
                 <!-- Pad Cells Grid -->
                 <div class="pad-cells-grid pad-cells-row cv-padgrid" data-padgrid="1" data-wide="1">
                   ${chords.map((c, i) => {
-                    const padColsNow = 4;
-                    const laneAfterIdx = Math.min(chords.length - 1, (Math.floor((this.swapIndex ?? 0) / padColsNow) + 1) * padColsNow - 1);
-                    return html`
+      const padColsNow = 4;
+      const laneAfterIdx = Math.min(chords.length - 1, (Math.floor((this.swapIndex ?? 0) / padColsNow) + 1) * padColsNow - 1);
+      return html`
                       ${this.renderChordPad(c, i, moodColor, true)}
                       ${this.swapIndex !== null && i === laneAfterIdx ? html`
                         <chord-swap-lane
@@ -5790,7 +6099,7 @@ export class LoopScreen extends LitElement {
                         ></chord-swap-lane>
                       ` : ''}
                     `;
-                  })}
+    })}
                 </div>
 
                 ${this.showTheory ? this.renderScaleChords(theoryData.scaleName, theoryData.scaleHint, theoryData.scaleDegrees, false) : ''}
@@ -5847,12 +6156,12 @@ export class LoopScreen extends LitElement {
                           class="pill ${normalizeInstrumentName(this.instrument) === i.name ? 'active' : ''}"
                           style="border: none; font-family: inherit; display: inline-flex; align-items: center; background: ${(this.instrument || 'Piano') === i.name ? 'var(--cv-ink)' : 'var(--cv-surface)'}; color: ${(this.instrument || 'Piano') === i.name ? 'var(--cv-cream)' : 'var(--cv-ink)'}; border-radius: 100px; min-height: 34px; padding: 0 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: transform 120ms ease;"
                           @click=${() => {
-                            this.instrument = i.name;
-                            playbackEngine.setInstrument(i.name);
-                            this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
-                            this.expandedInstrument = false;
-                            this.requestUpdate();
-                          }}
+        this.instrument = i.name;
+        playbackEngine.setInstrument(i.name);
+        this.dispatchEvent(new CustomEvent('set-instrument', { detail: i.name, bubbles: true, composed: true }));
+        this.expandedInstrument = false;
+        this.requestUpdate();
+      }}
                         >
                           <span style="background:${i.color}; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;"></span>${i.name}
                         </button>
@@ -5993,16 +6302,40 @@ export class LoopScreen extends LitElement {
             <!-- Idle Harmonic Arc View -->
             <div class="inspector-header">
               <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;">
-                <div>
+                <div style="flex: 1; min-width: 0;">
                   <div class="inspector-kicker">This loop</div>
                   <div class="arc-title-text">${arcTitle}</div>
                 </div>
-                <button class="theory-toggle-btn" @click=${this.onTheoryToggle} aria-label="Show the music theory">
-                  <span style="font-size: 11.5px; font-weight: 800; color: var(--cv-ink-muted);">Theory</span>
-                  <span class="toggle-track ${this.showTheory ? 'active' : ''}">
-                    <span class="toggle-knob"></span>
-                  </span>
-                </button>
+                <div style="position: relative; display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                  <button
+                    class="save-pill-btn ${this.isSaved ? 'saved' : ''}"
+                    @click=${this.toggleSaved}
+                    aria-label="${this.isSaved ? 'Saved' : 'Save'}"
+                    style="${this.isSaved ? `background: ${moodColor};` : ''}"
+                  >
+                    ${this.isSaved ? html`
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="#2E271F"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+                      Saved
+                    ` : html`
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/></svg>
+                      Save
+                    `}
+                  </button>
+                  <button
+                    class="loops-pill-btn library-toggle ${this.libraryOpen ? 'active' : ''}"
+                    @click=${this.toggleLibrary}
+                    aria-label="Your loops"
+                    aria-expanded=${this.libraryOpen ? 'true' : 'false'}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                    ${this.savedSets.length ? `Loops · ${this.savedSets.length}` : 'Loops'}
+                  </button>
+                  ${this.libraryOpen ? html`
+                    <div class="loops-popover-desktop library-popover">
+                      ${this.renderLibraryPopoverContent(moodColor)}
+                    </div>
+                  ` : ''}
+                </div>
               </div>
             </div>
 
@@ -6010,9 +6343,9 @@ export class LoopScreen extends LitElement {
               ${activeBand ? this.renderBandInspectorCard(activeBand) : ''}
               <div class="arc-bars-row">
                 ${chords.map((c, i) => {
-                  const r = roleForTension(c.tension || 0.1);
-                  const barH = Math.round(18 + (c.tension || 0.1) * 62);
-                  return html`
+        const r = roleForTension(c.tension || 0.1);
+        const barH = Math.round(18 + (c.tension || 0.1) * 62);
+        return html`
                     <button class="arc-bar-col" @click=${() => this.openSwap(i)} aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || ''}">
                       <div class="arc-bar-fill-wrap">
                         <div class="arc-bar-fill" style="height: ${barH}px; background: ${r.color};"></div>
@@ -6021,7 +6354,7 @@ export class LoopScreen extends LitElement {
                       <div class="arc-bar-feel">${ROLE_PLAIN[c.functionLabel] || ''}</div>
                     </button>
                   `;
-                })}
+      })}
               </div>
               <div class="arc-caption">Taller means more unresolved.</div>
               <div class="arc-sentence-text">${arcSentence}</div>
@@ -6049,9 +6382,10 @@ export class LoopScreen extends LitElement {
           .feelSettings=${{ swing: this.swing, spread: this.spread, density: this.density, tone: this.tone }}
           @close=${() => { this.shareOpen = false; }}
           @toast=${(e: CustomEvent<string>) => {
-            this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
-          }}
+        this.dispatchEvent(new CustomEvent('toast', { detail: e.detail, bubbles: true, composed: true }));
+      }}
         ></share-modal>
+        ${this.renderSaveModal()}
       </div>
     `;
   }

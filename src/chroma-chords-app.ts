@@ -460,6 +460,23 @@ export class ChromaChordsApp extends LitElement {
     this.saveProject(e.detail);
   }
 
+  private onUnsaveSet(e: CustomEvent<string>) {
+    const id = e.detail || this.currentProjectId;
+    if (id) {
+      const p = projectStorage.getProjects().find(proj => proj.id === id);
+      const name = p?.name || 'Loop';
+      if (p) {
+        this.toastUndoProject = { ...p };
+      }
+      projectStorage.deleteProject(id);
+      if (this.currentProjectId === id) {
+        this.currentProjectId = null;
+      }
+      this.showToast(`Removed "${name}"`, id, 'restore');
+      this.requestUpdate();
+    }
+  }
+
   private onTheoryToggle() {
     this.showTheory = !this.showTheory;
     localStorage.setItem('chroma-chords-show-theory', String(this.showTheory));
@@ -542,24 +559,35 @@ export class ChromaChordsApp extends LitElement {
     this.requestUpdate();
   }
 
-  private showToast(msg: string, undoId?: string) {
+  private toastUndoAction: 'delete' | 'restore' = 'delete';
+  private toastUndoProject: ProjectData | null = null;
+
+  private showToast(msg: string, undoId?: string, action: 'delete' | 'restore' = 'delete') {
     if (this.toastDismissTimeout) clearTimeout(this.toastDismissTimeout);
     this.toastMessage = msg;
     this.toastUndoId = undoId || null;
+    this.toastUndoAction = action;
     this.toastDismissTimeout = setTimeout(() => {
       this.toastMessage = null;
       this.toastUndoId = null;
+      this.toastUndoProject = null;
     }, 3200);
   }
 
   private onToastUndo() {
     if (this.toastUndoId) {
-      projectStorage.deleteProject(this.toastUndoId);
-      if (this.currentProjectId === this.toastUndoId) {
-        this.currentProjectId = null;
+      if (this.toastUndoAction === 'restore' && this.toastUndoProject) {
+        projectStorage.saveProject(this.toastUndoProject);
+        this.currentProjectId = this.toastUndoProject.id;
+      } else if (this.toastUndoAction === 'delete') {
+        projectStorage.deleteProject(this.toastUndoId);
+        if (this.currentProjectId === this.toastUndoId) {
+          this.currentProjectId = null;
+        }
       }
       this.toastMessage = null;
       this.toastUndoId = null;
+      this.toastUndoProject = null;
       this.requestUpdate();
     }
   }
@@ -599,7 +627,7 @@ export class ChromaChordsApp extends LitElement {
     if (customName) {
       projectStorage.scheduleCloudSync();
     }
-    this.showToast(`Saved "${name}"`, id);
+    this.showToast(`Saved "${name}"`, id, 'delete');
     this.requestUpdate();
   }
 
@@ -641,6 +669,8 @@ export class ChromaChordsApp extends LitElement {
             .activePlayingSectionIdx=${this.activePlayingSectionIdx}
             .totalSongSteps=${this.totalSongSteps}
             .isGenerating=${this.isGenerating}
+            .isSaved=${isBookmarked}
+            .currentProjectId=${this.currentProjectId}
             .libraryOpen=${this.libraryOpen}
             @library-open-change=${(e: CustomEvent<boolean>) => { this.libraryOpen = e.detail; }}
             @progression-change=${this.onProgressionChange}
@@ -658,8 +688,10 @@ export class ChromaChordsApp extends LitElement {
             @select-section=${this.onSelectSection}
             @remove-section=${this.onRemoveSection}
             @save-set=${this.onSaveSet}
+            @unsave-set=${this.onUnsaveSet}
             @load-project=${this.onLoadProject}
             @delete-project=${this.onDeleteProject}
+            @rename-project=${this.onRenameProject}
             @view-sets=${() => { this.libraryOpen = true; }}
             @request-login=${this.onLoginRequest}
             @request-logout=${this.onLogoutRequest}
