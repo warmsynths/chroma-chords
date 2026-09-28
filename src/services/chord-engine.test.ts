@@ -435,11 +435,11 @@ describe('chord-engine: Starting Degree Weighting & Harmonic Generation', () => 
       expect(url).toContain('scale=major');
     });
 
-    it('preserves clean m8 link format without extra params', () => {
+    it('encodes chord names and per-chord voicings for m8hyper', () => {
       const url = buildDeviceShareUrl(testProg, 'm8');
       expect(url).toContain('m8hyper');
       expect(url).toContain('?p=Ebmaj9+Cm7+Fm9+Bb7');
-      expect(url).not.toContain('v=');
+      expect(url).toContain('v=inv1+octave+root+root');
       expect(url).not.toContain('key=');
     });
   });

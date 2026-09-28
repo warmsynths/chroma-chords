@@ -2351,9 +2351,7 @@ export function generateBorrowedChords(data: RawChordData, progression: Progress
 export type ShareDevice = 'm8' | 'circuit';
 
 // Same companion-helper URLs and localhost dev overrides as the original app's
-// openDeviceLink. The old encoder used a `human-engine` package (with full MIDI voicings
-// and humanize state) that isn't part of this rebuild; this keeps the same "?p=" fallback
-// query scheme it used when that package wasn't available — a plain '+'-joined chord list.
+// openDeviceLink.
 const DEVICE_BASE_URL: Record<ShareDevice, string> = {
   m8: 'https://warmsynths.github.io/m8hyper/',
   circuit: 'https://warmsynths.github.io/circuit-chords/',
@@ -2384,7 +2382,16 @@ export function buildDeviceShareUrl(progression: Progression, device: ShareDevic
     return `${base}?p=${chordParam}&v=${voicingParam}&key=${keyParam}&scale=${scaleParam}`;
   }
 
-  return `${base}?p=${chordParam}`;
+  // m8hyper reads "v" as one of its own CANONICAL_VOICINGS ids (root, inv1, inv2,
+  // inv3, drop2, spread, octave), space/"+"-joined positionally with the "p" chords.
+  const mapM8VoicingToken = (v?: string): string => {
+    const norm = (v || '').toLowerCase();
+    if (norm.includes('octave') || norm.includes('high') || norm.includes('up')) return 'octave';
+    if (norm.includes('inversion') || norm.includes('1st')) return 'inv1';
+    return 'root';
+  };
+  const m8VoicingParam = chords.map(c => mapM8VoicingToken(c.voicing)).join('+');
+  return `${base}?p=${chordParam}&v=${m8VoicingParam}`;
 }
 
 /* ==========================================================================
