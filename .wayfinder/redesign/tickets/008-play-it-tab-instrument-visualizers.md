@@ -2,8 +2,8 @@
 
 **Parent Map**: [.wayfinder/redesign/map.md](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/map.md)
 **Label**: `wayfinder:task`
-**Status**: Blocked
-**Blocked By**: [T02: Design Tokens, Typography & Unified App Shell Navigation](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/002-app-shell-tokens-and-navigation.md), [T04: Chords Tab & Redesigned Swap Lane](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/004-chords-tab-and-swap-lane.md)
+**Status**: Closed
+**Blocked By**: None
 
 ## Question
 
