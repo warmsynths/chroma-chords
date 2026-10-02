@@ -1922,17 +1922,21 @@ function applyLeadPresetParams(synth: Tone.PolySynth, presetId: string): void {
   } catch {}
 }
 
-export function getLeadSynthVoice(): Tone.PolySynth {
+export function getLeadSynthVoice(): Tone.PolySynth | null {
   if (!leadVoice) {
-    leadVoice = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'sawtooth' },
-      envelope: { attack: 0.02, decay: 0.3, sustain: 0.7, release: 0.4 },
-    });
-    leadGain = new Tone.Gain(0.75);
-    const dest = getLimiter();
-    leadVoice.connect(leadGain);
-    leadGain.connect(dest);
-    applyLeadPresetParams(leadVoice, activeLeadPresetId);
+    try {
+      leadVoice = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'sawtooth' },
+        envelope: { attack: 0.02, decay: 0.3, sustain: 0.7, release: 0.4 },
+      });
+      leadGain = new Tone.Gain(0.75);
+      const dest = getLimiter();
+      leadVoice.connect(leadGain);
+      leadGain.connect(dest);
+      applyLeadPresetParams(leadVoice, activeLeadPresetId);
+    } catch {
+      return null;
+    }
   }
   return leadVoice;
 }
@@ -1947,6 +1951,7 @@ export function playLeadNote(
   try {
     Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
       const voice = getLeadSynthVoice();
+      if (!voice) return;
       const pitch = typeof note === 'number' ? midiToNoteName(note) : note;
       const atTime = typeof timeSec === 'number' ? timeSec : Tone.now();
       const dur = Math.max(0.05, durationSec);
@@ -1955,10 +1960,8 @@ export function playLeadNote(
       if (typeof (voice as any).triggerAttackRelease === 'function') {
         (voice as any).triggerAttackRelease(pitch, dur, atTime, vel);
       }
-    }).catch(e => console.warn("playLeadNote failed:", e));
-  } catch (e) {
-    console.warn("playLeadNote failed:", e);
-  }
+    }).catch(() => {});
+  } catch {}
 }
 
 
