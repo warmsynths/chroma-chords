@@ -41,6 +41,56 @@ export interface MelodyFeelSettings {
   glide: number;         // 0.0 to 0.15s: portamento pitch glide between adjacent notes
 }
 
+export const GENRE_MELODY_FEEL: Record<string, MelodyFeelSettings> = {
+  Pop: {
+    humanVariance: 0.15,
+    swing: 0,
+    velocityDrift: 0.25,
+    gateRatio: 0.85,
+    glide: 0.0,
+  },
+  Rock: {
+    humanVariance: 0.35,
+    swing: 10,
+    velocityDrift: 0.45,
+    gateRatio: 0.9,
+    glide: 0.02,
+  },
+  'Lo-Fi': {
+    humanVariance: 0.65,
+    swing: 45,
+    velocityDrift: 0.4,
+    gateRatio: 0.75,
+    glide: 0.04,
+  },
+  'Neo-Soul': {
+    humanVariance: 0.5,
+    swing: 55,
+    velocityDrift: 0.35,
+    gateRatio: 0.95,
+    glide: 0.03,
+  },
+  EDM: {
+    humanVariance: 0.05,
+    swing: 0,
+    velocityDrift: 0.1,
+    gateRatio: 0.7,
+    glide: 0.05,
+  },
+  Ambient: {
+    humanVariance: 0.3,
+    swing: 0,
+    velocityDrift: 0.2,
+    gateRatio: 1.3,
+    glide: 0.08,
+  },
+};
+
+export function getMelodyFeelForGenre(genre: string): MelodyFeelSettings {
+  const norm = Object.keys(GENRE_MELODY_FEEL).find(k => k.toLowerCase() === genre.toLowerCase());
+  return GENRE_MELODY_FEEL[norm || 'Pop'] || GENRE_MELODY_FEEL.Pop;
+}
+
 export type ContourArchetype =
   | 'Arch'              // Rises to peak around bar 3, then descends to resolve
   | 'AscendingClimax'   // Starts low, climbs across bars to high climax
@@ -466,6 +516,135 @@ export function alignMelodyToChords(
 /* ==========================================================================
    Melody Engine Main Service Class
    ========================================================================== */
+/* ==========================================================================
+   Rhythmic Cells & Contour Trajectory Helpers
+   ========================================================================== */
+
+export interface RhythmicCell {
+  step: number;     // 0 to 15 (16th-note step within current bar)
+  duration: number; // duration in quarter note beats (e.g. 0.25, 0.5, 1.0, etc.)
+  accent?: boolean;
+}
+
+export function getRhythmicCellsForBar(
+  density: number,
+  barIndex: number,
+  totalBars: number,
+  contour: ContourArchetype
+): RhythmicCell[] {
+  // Density 0-25: Sparse / Ambient (1-2 notes per bar)
+  if (density < 25) {
+    if (barIndex % 2 === 0) {
+      return [{ step: 0, duration: 3.0, accent: true }];
+    } else {
+      return [
+        { step: 0, duration: 2.0, accent: true },
+        { step: 8, duration: 1.5 },
+      ];
+    }
+  }
+
+  // Density 26-60: Topline Vocal Hook (3-5 notes per bar)
+  if (density <= 60) {
+    const patterns: RhythmicCell[][] = [
+      // Pattern 0: Classic 4-note syncopated vocal hook
+      [
+        { step: 0, duration: 1.0, accent: true },
+        { step: 4, duration: 0.5 },
+        { step: 6, duration: 1.0 },
+        { step: 10, duration: 1.0 },
+      ],
+      // Pattern 1: Dotted push rhythm
+      [
+        { step: 0, duration: 0.75, accent: true },
+        { step: 3, duration: 0.75 },
+        { step: 6, duration: 1.0 },
+        { step: 10, duration: 1.0 },
+      ],
+      // Pattern 2: Breath rest on beat 1, punch on beat 2
+      [
+        { step: 4, duration: 1.0, accent: true },
+        { step: 8, duration: 0.75 },
+        { step: 11, duration: 0.75 },
+      ],
+      // Pattern 3: Final bar resolving cadence
+      [
+        { step: 0, duration: 1.5, accent: true },
+        { step: 6, duration: 0.5 },
+        { step: 8, duration: 2.0 },
+      ],
+    ];
+
+    if (barIndex === totalBars - 1) return patterns[3];
+    return patterns[barIndex % 3];
+  }
+
+  // Density 61-100: Driving Riff / Arpeggio (6-12 notes per bar)
+  const isHeavy = density > 80;
+  if (isHeavy) {
+    return [0, 2, 4, 6, 8, 10, 12, 14].map((step, i) => ({
+      step,
+      duration: 0.5,
+      accent: i === 0 || i === 4,
+    }));
+  } else {
+    return [
+      { step: 0, duration: 0.5, accent: true },
+      { step: 2, duration: 0.5 },
+      { step: 4, duration: 0.75, accent: true },
+      { step: 7, duration: 0.5 },
+      { step: 9, duration: 0.75 },
+      { step: 12, duration: 1.0 },
+    ];
+  }
+}
+
+export function getContourBias(
+  contour: ContourArchetype,
+  barIndex: number,
+  stepInBar: number,
+  totalBars: number
+): number {
+  const norm = (barIndex * 16 + stepInBar) / (totalBars * 16);
+
+  switch (contour) {
+    case 'Arch':
+      return Math.round(Math.sin(norm * Math.PI) * 9);
+
+    case 'AscendingClimax':
+      return Math.round(-4 + norm * 16);
+
+    case 'DescendingSigh':
+      return Math.round(12 - norm * 14);
+
+    case 'CallAndResponse': {
+      const isQuestion = barIndex < Math.ceil(totalBars / 2);
+      if (isQuestion) {
+        const qNorm = (barIndex * 16 + stepInBar) / (Math.ceil(totalBars / 2) * 16);
+        return Math.round(qNorm * 7);
+      } else {
+        const aNorm = ((barIndex - Math.ceil(totalBars / 2)) * 16 + stepInBar) / (Math.floor(totalBars / 2) * 16);
+        return Math.round(5 * (1 - aNorm));
+      }
+    }
+
+    case 'OstinatoRiff': {
+      const stepNorm = stepInBar / 16;
+      return Math.round(Math.sin(stepNorm * Math.PI * 2) * 5);
+    }
+
+    case 'AnthemHook': {
+      return Math.round(8 + Math.sin(norm * Math.PI * 3) * 3);
+    }
+
+    default:
+      return 0;
+  }
+}
+
+/* ==========================================================================
+   Melody Engine Main Service Class
+   ========================================================================== */
 export class MelodyEngine {
   /**
    * Generates a coherent melodic track for the given progression.
@@ -487,84 +666,115 @@ export class MelodyEngine {
 
     const notes: MelodyNote[] = [];
     const chords = progression.chords || [];
+    const totalBars = Math.max(1, chords.length);
 
-    // Density steps mapping: density 0-25 => 1-2 notes/bar, 26-60 => 3-5 notes/bar, 61-100 => 6-12 notes/bar
-    let notesPerBar = 4;
-    if (density < 25) notesPerBar = Math.max(1, Math.round((density / 25) * 2));
-    else if (density <= 60) notesPerBar = 2 + Math.round(((density - 25) / 35) * 3);
-    else notesPerBar = 5 + Math.round(((density - 60) / 40) * 7);
+    let previousMidi: number | null = null;
+    let previousJump = 0; // tracks distance of last jump for leap recovery
 
     chords.forEach((chord, barIndex) => {
       const matrix = getHarmonicChordMatrix(chord, progression.key, progression.scaleType);
-      const stepInterval = Math.max(1, Math.floor(16 / notesPerBar));
+      const cells = getRhythmicCellsForBar(density, barIndex, totalBars, contour);
 
-      for (let i = 0; i < notesPerBar; i++) {
-        const stepInBar = Math.min(15, i * stepInterval);
+      cells.forEach((cell, cellIdx) => {
+        const stepInBar = cell.step;
         const beatOffset = barIndex * 4 + (stepInBar / 4);
-        const durationBeats = Math.min(2.0, Math.max(0.5, stepInterval / 4));
+        const durationBeats = cell.duration;
 
-        // Choose chord tone according to metric beat position
-        let chosenPc: number;
-        let role: ChordToneRole = 'root';
+        // Base contour pitch bias in semitones
+        const contourBias = getContourBias(contour, barIndex, stepInBar, totalBars);
+        const targetMidiCenter = 12 * (octave + 1) + matrix.rootPc + contourBias;
 
-        if (stepInBar === 0) {
-          // Strong downbeat: root or 3rd
-          chosenPc = (i % 2 === 0 || !matrix.thirdPc) ? matrix.rootPc : matrix.thirdPc;
-          role = (chosenPc === matrix.rootPc) ? 'root' : '3rd';
-        } else if (stepInBar === 8) {
-          // Mid-bar beat 3: 5th or 3rd
-          chosenPc = matrix.fifthPc ?? matrix.rootPc;
-          role = '5th';
-        } else if (matrix.tensionPcs.length > 0 && i % 2 === 1) {
-          chosenPc = matrix.tensionPcs[0];
-          role = 'tension';
+        // Candidate pitch selection: chord tones, tensions, or scale steps
+        let chosenMidi: number;
+        let chosenRole: ChordToneRole = 'root';
+
+        // Collect available valid pitch classes for this step
+        const availablePcs = [...matrix.chordTonePcs];
+        if (matrix.tensionPcs.length > 0 && (cellIdx % 2 === 1 || density > 40)) {
+          availablePcs.push(...matrix.tensionPcs);
+        }
+
+        // Generate candidate pitches across 3 octaves around targetMidiCenter
+        const candidates: Array<{ midi: number; pc: number; role: ChordToneRole }> = [];
+        for (let oct = octave - 1; oct <= octave + 2; oct++) {
+          availablePcs.forEach(pc => {
+            const m = 12 * (oct + 1) + pc;
+            let role: ChordToneRole = 'root';
+            if (pc === matrix.rootPc) role = 'root';
+            else if (pc === matrix.thirdPc) role = '3rd';
+            else if (pc === matrix.fifthPc) role = '5th';
+            else if (pc === matrix.seventhPc) role = '7th';
+            else if (matrix.tensionPcs.includes(pc)) role = 'tension';
+
+            candidates.push({ midi: m, pc, role });
+          });
+        }
+
+        if (previousMidi === null) {
+          // First note: choose pitch closest to targetMidiCenter preferring root or 3rd
+          candidates.sort((a, b) => {
+            const aDist = Math.abs(a.midi - targetMidiCenter);
+            const bDist = Math.abs(b.midi - targetMidiCenter);
+            const aPref = (a.role === 'root' || a.role === '3rd') ? -4 : 0;
+            const bPref = (b.role === 'root' || b.role === '3rd') ? -4 : 0;
+            return (aDist + aPref) - (bDist + bPref);
+          });
+          chosenMidi = candidates[0].midi;
+          chosenRole = candidates[0].role;
+          previousJump = 0;
         } else {
-          chosenPc = matrix.thirdPc ?? matrix.rootPc;
-          role = '3rd';
+          // Leap recovery rule:
+          // If previous note jumped by > 5 semitones, next note should reverse direction by step (1-3 semitones)
+          const mustRecoverDown = previousJump > 5;
+          const mustRecoverUp = previousJump < -5;
+
+          candidates.sort((a, b) => {
+            const aDelta = a.midi - previousMidi!;
+            const bDelta = b.midi - previousMidi!;
+            let aScore = Math.abs(a.midi - targetMidiCenter);
+            let bScore = Math.abs(b.midi - targetMidiCenter);
+
+            if (mustRecoverDown) {
+              if (aDelta < 0 && Math.abs(aDelta) <= 4) aScore -= 20; // reward downward step
+              if (bDelta < 0 && Math.abs(bDelta) <= 4) bScore -= 20;
+            } else if (mustRecoverUp) {
+              if (aDelta > 0 && Math.abs(aDelta) <= 4) aScore -= 20; // reward upward step
+              if (bDelta > 0 && Math.abs(bDelta) <= 4) bScore -= 20;
+            } else {
+              // Prefer stepwise motion (1-2 semitones) or small thirds (3-4 semitones)
+              if (Math.abs(aDelta) >= 1 && Math.abs(aDelta) <= 4) aScore -= 12;
+              if (Math.abs(bDelta) >= 1 && Math.abs(bDelta) <= 4) bScore -= 12;
+            }
+
+            return aScore - bScore;
+          });
+
+          chosenMidi = candidates[0].midi;
+          chosenRole = candidates[0].role;
+          previousJump = chosenMidi - previousMidi;
         }
 
-        // Apply contour archetype pitch bias
-        let contourOffset = 0;
-        const normalizedPos = (barIndex * 4 + beatOffset) / (chords.length * 4);
+        previousMidi = chosenMidi;
 
-        if (contour === 'Arch') {
-          // Rises to peak at center, resolves at end
-          contourOffset = Math.round(Math.sin(normalizedPos * Math.PI) * 7);
-        } else if (contour === 'AscendingClimax') {
-          // Climbs upward
-          contourOffset = Math.round(normalizedPos * 12);
-        } else if (contour === 'DescendingSigh') {
-          // Drops downward
-          contourOffset = Math.round((1 - normalizedPos) * 12);
-        }
-
-        const baseMidi = 12 * (octave + 1) + chosenPc + contourOffset;
-        // Keep within pitch class
-        const finalPc = (baseMidi % 12 + 12) % 12;
-        let finalMidi = baseMidi;
-        if (finalPc !== chosenPc) {
-          finalMidi = baseMidi + ((chosenPc - finalPc + 12) % 12);
-        }
-
-        const pitch = midiToNoteName(finalMidi);
-        const classification = classifyPitch(finalMidi, chord, progression.key, progression.scaleType);
+        const pitch = midiToNoteName(chosenMidi);
+        const classification = classifyPitch(chosenMidi, chord, progression.key, progression.scaleType);
 
         notes.push({
-          id: `m-note-${barIndex}-${stepInBar}-${i}`,
+          id: `m-note-${barIndex}-${stepInBar}-${cellIdx}`,
           barIndex,
           stepInBar,
           beatOffset,
           durationBeats,
           pitch,
-          midi: finalMidi,
-          velocity: stepInBar === 0 ? 105 : 90,
-          chordToneRole: classification.role,
+          midi: chosenMidi,
+          velocity: cell.accent ? 110 : 92,
+          chordToneRole: chosenRole,
           isClash: classification.isClash,
         });
-      }
+      });
     });
 
-    return {
+    let resultTrack: MelodyTrack = {
       id: `melody-track-${Date.now()}`,
       progressionId: `${progression.key}_${progression.scaleType}`,
       notes,
@@ -579,6 +789,12 @@ export class MelodyEngine {
       solo: false,
       bandId,
     };
+
+    if (bandId) {
+      resultTrack = this.spiceWithBandTrick(resultTrack, bandId, 0, progression);
+    }
+
+    return resultTrack;
   }
 
   regenerateBar(melody: MelodyTrack, barIndex: number, progression: Progression): MelodyTrack {
@@ -638,12 +854,32 @@ export class MelodyEngine {
     };
   }
 
+  invertMelody(melody: MelodyTrack, progression?: Progression): MelodyTrack {
+    if (melody.notes.length === 0) return melody;
+    const avgMidi = Math.round(melody.notes.reduce((sum, n) => sum + n.midi, 0) / melody.notes.length);
+    const invertedNotes = melody.notes.map(n => {
+      const diff = n.midi - avgMidi;
+      const invMidi = Math.max(24, Math.min(108, avgMidi - diff));
+      const pitch = midiToNoteName(invMidi);
+      return {
+        ...n,
+        midi: invMidi,
+        pitch,
+      };
+    });
+
+    if (progression) {
+      return alignMelodyToChords({ ...melody, notes: invertedNotes }, progression);
+    }
+    return { ...melody, notes: invertedNotes };
+  }
+
   spiceWithBandTrick(melody: MelodyTrack, bandId: string, barIndex: number, progression: Progression): MelodyTrack {
     const activeChord = progression.chords[barIndex] || progression.chords[0];
-    const notes = [...melody.notes];
+    const bId = bandId.toLowerCase().replace(/[^a-z]/g, '');
 
-    if (bandId.toLowerCase().includes('oasis')) {
-      // Oasis Trick: Drone anchor pedal note G4 or D5 over changing chords
+    if (bId.includes('oasis')) {
+      // Oasis Trick: Drone anchor pedal note (G4 or D5) held over chords
       const dronePitch = 'G4';
       const droneMidi = noteToMidiNumber(dronePitch);
       const droneNotes: MelodyNote[] = [
@@ -655,7 +891,7 @@ export class MelodyEngine {
           durationBeats: 4.0,
           pitch: dronePitch,
           midi: droneMidi,
-          velocity: 100,
+          velocity: 105,
           chordToneRole: 'drone',
           tag: 'band-oasis-drone',
         },
@@ -663,6 +899,225 @@ export class MelodyEngine {
       return {
         ...melody,
         notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...droneNotes].sort((a, b) => a.beatOffset - b.beatOffset),
+        bandId,
+      };
+    }
+
+    if (bId.includes('beatles')) {
+      // Beatles Trick: Bittersweet 4-note descending chromatic line
+      const baseNote = noteToMidiNumber('C5');
+      const beatlesNotes: MelodyNote[] = [0, 1, 2, 3].map(i => {
+        const m = baseNote - i;
+        return {
+          id: `beatles-chromatic-${barIndex}-${i * 4}`,
+          barIndex,
+          stepInBar: i * 4,
+          beatOffset: barIndex * 4 + i,
+          durationBeats: 1.0,
+          pitch: midiToNoteName(m),
+          midi: m,
+          velocity: 96,
+          chordToneRole: i === 0 ? 'root' : 'chromatic',
+          tag: 'band-beatles-chromatic',
+        };
+      });
+      return {
+        ...melody,
+        notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...beatlesNotes].sort((a, b) => a.beatOffset - b.beatOffset),
+        bandId,
+      };
+    }
+
+    if (bId.includes('radiohead')) {
+      // Radiohead Trick: Falsetto 7th/octave leap landing on 9th, then eerie semitone oscillation
+      const rootMidi = noteToMidiNumber(`${progression.key || 'C'}4`);
+      const highLeap = rootMidi + 14; // high 9th
+      const radioheadNotes: MelodyNote[] = [
+        {
+          id: `radiohead-leap-${barIndex}-0`,
+          barIndex,
+          stepInBar: 0,
+          beatOffset: barIndex * 4,
+          durationBeats: 2.0,
+          pitch: midiToNoteName(highLeap),
+          midi: highLeap,
+          velocity: 110,
+          chordToneRole: 'tension',
+          tag: 'band-radiohead-falsetto',
+        },
+        {
+          id: `radiohead-trill-${barIndex}-8`,
+          barIndex,
+          stepInBar: 8,
+          beatOffset: barIndex * 4 + 2,
+          durationBeats: 1.0,
+          pitch: midiToNoteName(highLeap + 1),
+          midi: highLeap + 1,
+          velocity: 90,
+          chordToneRole: 'tension',
+          tag: 'band-radiohead-trill',
+        },
+        {
+          id: `radiohead-trill2-${barIndex}-12`,
+          barIndex,
+          stepInBar: 12,
+          beatOffset: barIndex * 4 + 3,
+          durationBeats: 1.0,
+          pitch: midiToNoteName(highLeap),
+          midi: highLeap,
+          velocity: 85,
+          chordToneRole: 'tension',
+          tag: 'band-radiohead-trill',
+        },
+      ];
+      return {
+        ...melody,
+        notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...radioheadNotes].sort((a, b) => a.beatOffset - b.beatOffset),
+        bandId,
+      };
+    }
+
+    if (bId.includes('nirvana')) {
+      // Nirvana Trick: 3-note minor pentatonic grunge riff with semitone slide
+      const rootMidi = noteToMidiNumber(`${progression.key || 'C'}4`);
+      const nirvanaNotes: MelodyNote[] = [
+        {
+          id: `nirvana-root-${barIndex}-0`,
+          barIndex,
+          stepInBar: 0,
+          beatOffset: barIndex * 4,
+          durationBeats: 1.0,
+          pitch: midiToNoteName(rootMidi),
+          midi: rootMidi,
+          velocity: 115,
+          chordToneRole: 'root',
+          tag: 'band-nirvana-grunge',
+        },
+        {
+          id: `nirvana-slide-${barIndex}-4`,
+          barIndex,
+          stepInBar: 4,
+          beatOffset: barIndex * 4 + 1,
+          durationBeats: 0.5,
+          pitch: midiToNoteName(rootMidi + 2),
+          midi: rootMidi + 2,
+          velocity: 100,
+          chordToneRole: 'passing',
+          tag: 'band-nirvana-slide',
+        },
+        {
+          id: `nirvana-min3-${barIndex}-6`,
+          barIndex,
+          stepInBar: 6,
+          beatOffset: barIndex * 4 + 1.5,
+          durationBeats: 1.5,
+          pitch: midiToNoteName(rootMidi + 3),
+          midi: rootMidi + 3,
+          velocity: 110,
+          chordToneRole: '3rd',
+          tag: 'band-nirvana-grunge',
+        },
+      ];
+      return {
+        ...melody,
+        notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...nirvanaNotes].sort((a, b) => a.beatOffset - b.beatOffset),
+        bandId,
+      };
+    }
+
+    if (bId.includes('steely') || bId.includes('dan')) {
+      // Steely Dan: Syncopated jazz phrasing with chromatic enclosure into the 9th
+      const rootMidi = noteToMidiNumber(`${progression.key || 'C'}4`);
+      const ninth = rootMidi + 14;
+      const steelyNotes: MelodyNote[] = [
+        {
+          id: `steely-enc-low-${barIndex}-2`,
+          barIndex,
+          stepInBar: 2,
+          beatOffset: barIndex * 4 + 0.5,
+          durationBeats: 0.5,
+          pitch: midiToNoteName(ninth - 1),
+          midi: ninth - 1,
+          velocity: 88,
+          chordToneRole: 'chromatic',
+          tag: 'band-steely-enclosure',
+        },
+        {
+          id: `steely-enc-high-${barIndex}-4`,
+          barIndex,
+          stepInBar: 4,
+          beatOffset: barIndex * 4 + 1,
+          durationBeats: 0.5,
+          pitch: midiToNoteName(ninth + 1),
+          midi: ninth + 1,
+          velocity: 92,
+          chordToneRole: 'chromatic',
+          tag: 'band-steely-enclosure',
+        },
+        {
+          id: `steely-target-${barIndex}-6`,
+          barIndex,
+          stepInBar: 6,
+          beatOffset: barIndex * 4 + 1.5,
+          durationBeats: 2.5,
+          pitch: midiToNoteName(ninth),
+          midi: ninth,
+          velocity: 108,
+          chordToneRole: 'tension',
+          tag: 'band-steely-jazz9',
+        },
+      ];
+      return {
+        ...melody,
+        notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...steelyNotes].sort((a, b) => a.beatOffset - b.beatOffset),
+        bandId,
+      };
+    }
+
+    if (bId.includes('mac') || bId.includes('demarco')) {
+      // Mac DeMarco: Lazy behind-the-beat descending walkdown
+      const rootMidi = noteToMidiNumber(`${progression.key || 'C'}4`);
+      const macNotes: MelodyNote[] = [
+        {
+          id: `mac-7th-${barIndex}-2`,
+          barIndex,
+          stepInBar: 2,
+          beatOffset: barIndex * 4 + 0.5,
+          durationBeats: 1.0,
+          pitch: midiToNoteName(rootMidi + 11), // maj7
+          midi: rootMidi + 11,
+          velocity: 92,
+          chordToneRole: '7th',
+          tag: 'band-mac-walkdown',
+        },
+        {
+          id: `mac-5th-${barIndex}-6`,
+          barIndex,
+          stepInBar: 6,
+          beatOffset: barIndex * 4 + 1.5,
+          durationBeats: 1.0,
+          pitch: midiToNoteName(rootMidi + 7), // 5th
+          midi: rootMidi + 7,
+          velocity: 88,
+          chordToneRole: '5th',
+          tag: 'band-mac-walkdown',
+        },
+        {
+          id: `mac-3rd-${barIndex}-10`,
+          barIndex,
+          stepInBar: 10,
+          beatOffset: barIndex * 4 + 2.5,
+          durationBeats: 1.5,
+          pitch: midiToNoteName(rootMidi + 4), // 3rd
+          midi: rootMidi + 4,
+          velocity: 95,
+          chordToneRole: '3rd',
+          tag: 'band-mac-walkdown',
+        },
+      ];
+      return {
+        ...melody,
+        notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...macNotes].sort((a, b) => a.beatOffset - b.beatOffset),
         bandId,
       };
     }

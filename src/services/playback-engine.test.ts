@@ -255,6 +255,45 @@ describe('PlaybackEngine Deep Module', () => {
       // Should emit initial step 0, then 1, 2, 3, 4, 5, 6, 7, and loop back to 0
       expect(steps).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 0]);
     });
+
+    it('sets and synchronizes melody track during playback', () => {
+      engine.setProgression(sampleProgression);
+      const mockMelodyTrack = {
+        id: 'mel-1',
+        notes: [
+          {
+            id: 'm1',
+            barIndex: 0,
+            stepInBar: 0,
+            beatOffset: 0,
+            durationBeats: 1.0,
+            pitch: 'E4',
+            midi: 64,
+            velocity: 100,
+            chordToneRole: '3rd' as const,
+          },
+        ],
+        contour: 'Arch' as const,
+        density: 50,
+        octave: 4,
+        guideMode: 'strict-chord' as const,
+        feelSettings: { humanVariance: 0.1, swing: 0, velocityDrift: 0.2, gateRatio: 0.9, glide: 0 },
+        presetId: 'lead-synth',
+        volume: 85,
+        muted: false,
+        solo: false,
+      };
+
+      engine.setMelodyTrack(mockMelodyTrack);
+      expect(engine.getMelodyTrack()).toBe(mockMelodyTrack);
+
+      engine.togglePlay();
+      expect(engine.isPlaying()).toBe(true);
+
+      // Advance timers to trigger scheduled note
+      vi.advanceTimersByTime(500);
+      expect(engine.getMelodyTrack()?.notes.length).toBe(1);
+    });
   });
 });
 

@@ -3,8 +3,8 @@
 **Parent Map**: [.wayfinder/redesign/map.md](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/map.md)
 **Label**: `wayfinder:task`
 **Type**: AFK
-**Status**: Blocked
-**Blocked By**: [T06b: Contour Archetypes & Markov Rhythmic Cell Generator](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/006b-contour-and-rhythm-generator.md)
+**Status**: Closed
+**Blocked By**: None (Completed)
 
 ## Question
 

@@ -1,6 +1,17 @@
-import { playChordForGenre, playSubNote, applyVoicingToNotes, FeelSettings } from './audio-service';
+import {
+  playChordForGenre,
+  playSubNote,
+  applyVoicingToNotes,
+  FeelSettings,
+  playLeadNote,
+  setLeadPreset,
+  setLeadVolume,
+  setLeadMute,
+  setLeadSolo,
+} from './audio-service';
 import { Progression, ChordBlock, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
 import type { SongSection } from './song-arranger';
+import { MelodyTrack, melodyEngine } from './melody-engine';
 
 export type PlaybackTickCallback = (
   activeIndex: number,
@@ -58,6 +69,21 @@ export class PlaybackEngine {
   private subBassEnabled = false;
   private barsPerChord = 1;
   private feelSettings: FeelSettings = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
+  private melodyTrack: MelodyTrack | null = null;
+
+  public setMelodyTrack(track: MelodyTrack | null): void {
+    this.melodyTrack = track;
+    if (track) {
+      if (track.presetId) setLeadPreset(track.presetId);
+      if (typeof track.volume === 'number') setLeadVolume(track.volume);
+      setLeadMute(track.muted);
+      setLeadSolo(track.solo);
+    }
+  }
+
+  public getMelodyTrack(): MelodyTrack | null {
+    return this.melodyTrack;
+  }
 
   public setSubBassEnabled(enabled: boolean): void {
     this.subBassEnabled = enabled;
@@ -328,6 +354,22 @@ export class PlaybackEngine {
         }
         if (this.subBassEnabled && notes.length > 0) {
           playSubNote(notes[0], 1.4);
+        }
+
+        // Play companion melody notes for this bar if melody is loaded and unmuted
+        if (this.melodyTrack && !this.melodyTrack.muted && this.progression) {
+          const barNotes = this.melodyTrack.notes.filter(n => n.barIndex === chordIndex);
+          if (barNotes.length > 0) {
+            const bpm = this.progression.bpm || 84;
+            const scheduled = melodyEngine.applyHumanFeel(barNotes, this.melodyTrack.feelSettings, bpm);
+            scheduled.forEach(evt => {
+              setTimeout(() => {
+                if (this.playing) {
+                  playLeadNote(evt.note, evt.duration, undefined, evt.velocity);
+                }
+              }, Math.round(evt.time * 1000));
+            });
+          }
         }
       }
     }

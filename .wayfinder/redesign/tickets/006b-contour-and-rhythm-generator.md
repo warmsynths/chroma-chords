@@ -3,8 +3,8 @@
 **Parent Map**: [.wayfinder/redesign/map.md](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/map.md)
 **Label**: `wayfinder:task`
 **Type**: AFK
-**Status**: Blocked
-**Blocked By**: [T06a: Chord-Scale Harmonic Matrix & Note Guide Resolver](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/006a-chord-scale-harmonic-matrix.md)
+**Status**: Closed
+**Blocked By**: None (Completed)
 
 ## Question
 

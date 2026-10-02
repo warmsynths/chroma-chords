@@ -1807,4 +1807,159 @@ export function playMetronomeClick(accent = false): void {
   } catch {}
 }
 
+// ---------------------------------------------------------------------------
+// Lead Synth Voice & Presets
+// ---------------------------------------------------------------------------
+
+export interface LeadPreset {
+  id: string;
+  name: string;
+  desc: string;
+  color: string;
+}
+
+export const LEAD_PRESETS: LeadPreset[] = [
+  { id: 'lead-synth', name: 'Lead Synth', desc: 'Expressive sawtooth/square synth with filter envelope', color: '#F2735F' },
+  { id: 'warm-pluck', name: 'Warm Pluck', desc: 'Soft transient pluck with reverb decay', color: '#E8A87C' },
+  { id: 'lofi-sine', name: 'Lo-fi Sine', desc: 'Pure rounded sine with tape saturation', color: '#9CC0EC' },
+  { id: 'electric-lead', name: 'Electric Lead', desc: 'Rhodes-style upper register with bite', color: '#C38D9E' },
+  { id: 'reed-flute', name: 'Reed / Flute', desc: 'Breath-style FM synth lead', color: '#41B3A3' },
+];
+
+let leadVoice: Tone.PolySynth | null = null;
+let leadGain: Tone.Gain | null = null;
+let activeLeadPresetId = 'lead-synth';
+let leadVolumeVal = 85;
+let leadMuted = false;
+let leadSolo = false;
+
+export function getLeadPresetList(): LeadPreset[] {
+  return LEAD_PRESETS;
+}
+
+export function setLeadPreset(presetId: string): void {
+  activeLeadPresetId = presetId;
+  if (leadVoice) {
+    applyLeadPresetParams(leadVoice, presetId);
+  }
+}
+
+export function getActiveLeadPreset(): string {
+  return activeLeadPresetId;
+}
+
+export function setLeadVolume(volume0to100: number): void {
+  leadVolumeVal = Math.max(0, Math.min(100, volume0to100));
+  updateLeadGain();
+}
+
+export function getLeadVolume(): number {
+  return leadVolumeVal;
+}
+
+export function setLeadMute(muted: boolean): void {
+  leadMuted = muted;
+  updateLeadGain();
+}
+
+export function isLeadMuted(): boolean {
+  return leadMuted;
+}
+
+export function setLeadSolo(solo: boolean): void {
+  leadSolo = solo;
+  updateLeadGain();
+}
+
+export function isLeadSolo(): boolean {
+  return leadSolo;
+}
+
+function updateLeadGain(): void {
+  if (!leadGain) return;
+  if (leadMuted) {
+    leadGain.gain.value = 0;
+  } else {
+    leadGain.gain.value = (leadVolumeVal / 100) * 0.9;
+  }
+}
+
+function applyLeadPresetParams(synth: Tone.PolySynth, presetId: string): void {
+  try {
+    switch (presetId) {
+      case 'warm-pluck':
+        synth.set({
+          oscillator: { type: 'triangle' },
+          envelope: { attack: 0.005, decay: 0.2, sustain: 0.05, release: 0.3 },
+        });
+        break;
+      case 'lofi-sine':
+        synth.set({
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.04, decay: 0.3, sustain: 0.7, release: 0.5 },
+        });
+        break;
+      case 'electric-lead':
+        synth.set({
+          oscillator: { type: 'sawtooth4' },
+          envelope: { attack: 0.01, decay: 0.4, sustain: 0.6, release: 0.4 },
+        });
+        break;
+      case 'reed-flute':
+        synth.set({
+          oscillator: { type: 'sine8' },
+          envelope: { attack: 0.08, decay: 0.2, sustain: 0.8, release: 0.35 },
+        });
+        break;
+      case 'lead-synth':
+      default:
+        synth.set({
+          oscillator: { type: 'sawtooth' },
+          envelope: { attack: 0.02, decay: 0.3, sustain: 0.7, release: 0.4 },
+        });
+        break;
+    }
+  } catch {}
+}
+
+export function getLeadSynthVoice(): Tone.PolySynth {
+  if (!leadVoice) {
+    leadVoice = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sawtooth' },
+      envelope: { attack: 0.02, decay: 0.3, sustain: 0.7, release: 0.4 },
+    });
+    leadGain = new Tone.Gain(0.75);
+    const dest = getLimiter();
+    leadVoice.connect(leadGain);
+    leadGain.connect(dest);
+    applyLeadPresetParams(leadVoice, activeLeadPresetId);
+  }
+  return leadVoice;
+}
+
+export function playLeadNote(
+  note: string | number,
+  durationSec: number,
+  timeSec?: number,
+  velocity = 0.85
+): void {
+  if (leadMuted) return;
+  try {
+    Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
+      const voice = getLeadSynthVoice();
+      const pitch = typeof note === 'number' ? midiToNoteName(note) : note;
+      const atTime = typeof timeSec === 'number' ? timeSec : Tone.now();
+      const dur = Math.max(0.05, durationSec);
+      const vel = Math.max(0.05, Math.min(1.0, velocity));
+
+      if (typeof (voice as any).triggerAttackRelease === 'function') {
+        (voice as any).triggerAttackRelease(pitch, dur, atTime, vel);
+      }
+    }).catch(e => console.warn("playLeadNote failed:", e));
+  } catch (e) {
+    console.warn("playLeadNote failed:", e);
+  }
+}
+
+
 

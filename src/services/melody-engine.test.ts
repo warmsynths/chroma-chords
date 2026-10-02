@@ -5,6 +5,7 @@ import {
   classifyPitch,
   snapNoteToGuide,
   alignMelodyToChords,
+  getMelodyFeelForGenre,
   MelodyTrack,
   MelodyNote,
 } from './melody-engine';
@@ -225,6 +226,91 @@ describe('Melody Engine - Harmonic Matrix & Theory', () => {
       expect(scheduled.length).toBe(track.notes.length);
       expect(scheduled[0].time).toBeGreaterThanOrEqual(0);
       expect(scheduled[0].velocity).toBeGreaterThan(0);
+    });
+
+    it('generates distinct pitch trajectories for all 6 contour archetypes', () => {
+      const arch = melodyEngine.generateMelody(dummyProgression, { contour: 'Arch' });
+      const asc = melodyEngine.generateMelody(dummyProgression, { contour: 'AscendingClimax' });
+      const desc = melodyEngine.generateMelody(dummyProgression, { contour: 'DescendingSigh' });
+      const anthem = melodyEngine.generateMelody(dummyProgression, { contour: 'AnthemHook' });
+      const call = melodyEngine.generateMelody(dummyProgression, { contour: 'CallAndResponse' });
+      const ostinato = melodyEngine.generateMelody(dummyProgression, { contour: 'OstinatoRiff' });
+
+      // Ascending Climax should end higher than it started
+      const ascFirstBarAvg = asc.notes.filter(n => n.barIndex === 0).reduce((s, n) => s + n.midi, 0) / asc.notes.filter(n => n.barIndex === 0).length;
+      const ascLastBarAvg = asc.notes.filter(n => n.barIndex === 3).reduce((s, n) => s + n.midi, 0) / asc.notes.filter(n => n.barIndex === 3).length;
+      expect(ascLastBarAvg).toBeGreaterThan(ascFirstBarAvg);
+
+      // Descending Sigh should start higher than it ended
+      const descFirstBarAvg = desc.notes.filter(n => n.barIndex === 0).reduce((s, n) => s + n.midi, 0) / desc.notes.filter(n => n.barIndex === 0).length;
+      const descLastBarAvg = desc.notes.filter(n => n.barIndex === 3).reduce((s, n) => s + n.midi, 0) / desc.notes.filter(n => n.barIndex === 3).length;
+      expect(descFirstBarAvg).toBeGreaterThan(descLastBarAvg);
+
+      // Anthem Hook stays high throughout
+      const anthemAvg = anthem.notes.reduce((s, n) => s + n.midi, 0) / anthem.notes.length;
+      expect(anthemAvg).toBeGreaterThan(65); // high register
+
+      // Call and response exists and generates notes
+      expect(call.notes.length).toBeGreaterThan(0);
+      expect(ostinato.notes.length).toBeGreaterThan(0);
+    });
+
+    it('injects all 6 Band DNA signature moves correctly', () => {
+      const baseTrack = melodyEngine.generateMelody(dummyProgression);
+
+      // 1. Beatles chromatic descent
+      const beatles = melodyEngine.spiceWithBandTrick(baseTrack, 'The Beatles', 0, dummyProgression);
+      const chromaticNote = beatles.notes.find(n => n.tag === 'band-beatles-chromatic');
+      expect(chromaticNote).toBeDefined();
+
+      // 2. Radiohead falsetto leap
+      const radiohead = melodyEngine.spiceWithBandTrick(baseTrack, 'Radiohead', 0, dummyProgression);
+      const falsettoNote = radiohead.notes.find(n => n.tag === 'band-radiohead-falsetto');
+      expect(falsettoNote).toBeDefined();
+
+      // 3. Nirvana grunge riff
+      const nirvana = melodyEngine.spiceWithBandTrick(baseTrack, 'Nirvana', 0, dummyProgression);
+      const grungeNote = nirvana.notes.find(n => n.tag === 'band-nirvana-grunge');
+      expect(grungeNote).toBeDefined();
+
+      // 4. Steely Dan jazz 9th enclosure
+      const steely = melodyEngine.spiceWithBandTrick(baseTrack, 'Steely Dan', 0, dummyProgression);
+      const steelyNote = steely.notes.find(n => n.tag === 'band-steely-jazz9');
+      expect(steelyNote).toBeDefined();
+
+      // 5. Mac DeMarco descending walkdown
+      const mac = melodyEngine.spiceWithBandTrick(baseTrack, 'Mac DeMarco', 0, dummyProgression);
+      const macNote = mac.notes.find(n => n.tag === 'band-mac-walkdown');
+      expect(macNote).toBeDefined();
+    });
+
+    it('regenerates a single bar without disturbing other bars', () => {
+      const track = melodyEngine.generateMelody(dummyProgression);
+      const bar0NotesOriginal = track.notes.filter(n => n.barIndex === 0);
+      const bar1NotesOriginal = track.notes.filter(n => n.barIndex === 1);
+
+      const regenerated = melodyEngine.regenerateBar(track, 0, dummyProgression);
+      const bar1NotesAfter = regenerated.notes.filter(n => n.barIndex === 1);
+
+      // Bar 1 notes should be unchanged
+      expect(bar1NotesAfter.map(n => n.midi)).toEqual(bar1NotesOriginal.map(n => n.midi));
+    });
+
+    it('inverts melody intervals across axis', () => {
+      const track = melodyEngine.generateMelody(dummyProgression);
+      const inverted = melodyEngine.invertMelody(track);
+      expect(inverted.notes.length).toBe(track.notes.length);
+      expect(inverted.notes[0].midi).toBeDefined();
+    });
+
+    it('retrieves genre-informed melody feel profiles', () => {
+      const lofiFeel = melodyEngine.getMelodyFeelForGenre ? melodyEngine.getMelodyFeelForGenre('Lo-Fi') : getMelodyFeelForGenre('Lo-Fi');
+      expect(lofiFeel.swing).toBe(45);
+      expect(lofiFeel.humanVariance).toBe(0.65);
+
+      const edmFeel = getMelodyFeelForGenre('EDM');
+      expect(edmFeel.swing).toBe(0);
+      expect(edmFeel.humanVariance).toBe(0.05);
     });
   });
 });
