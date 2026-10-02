@@ -28,6 +28,12 @@ export interface SongSection {
   order: number[];
 }
 
+export interface SongTimelineItem {
+  id: string;
+  sectionIndex: number;
+  repeats: number;
+}
+
 export interface SectionTemplate {
   name: string;
   desc: string;
@@ -401,5 +407,59 @@ export class SongArranger {
       order: order.slice(),
     };
     return updated;
+  }
+
+  public static createDefaultTimeline(sections: SongSection[]): SongTimelineItem[] {
+    return sections.map((_, i) => ({
+      id: `timeline-${i}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      sectionIndex: i,
+      repeats: 1,
+    }));
+  }
+
+  public static expandTimeline(sections: SongSection[], timeline: SongTimelineItem[]): SongSection[] {
+    const result: SongSection[] = [];
+    for (const item of timeline) {
+      const sec = sections[item.sectionIndex];
+      if (sec) {
+        for (let r = 0; r < Math.max(1, item.repeats); r++) {
+          result.push(sec);
+        }
+      }
+    }
+    return result.length > 0 ? result : sections;
+  }
+
+  public static reorderTimeline(timeline: SongTimelineItem[], fromIndex: number, toIndex: number): SongTimelineItem[] {
+    if (fromIndex < 0 || fromIndex >= timeline.length || toIndex < 0 || toIndex >= timeline.length || fromIndex === toIndex) {
+      return timeline;
+    }
+    const copy = [...timeline];
+    const [moved] = copy.splice(fromIndex, 1);
+    copy.splice(toIndex, 0, moved);
+    return copy;
+  }
+
+  public static updateTimelineRepeat(timeline: SongTimelineItem[], index: number, delta: number): SongTimelineItem[] {
+    if (index < 0 || index >= timeline.length) return timeline;
+    return timeline.map((item, i) => {
+      if (i !== index) return item;
+      const nextRepeats = Math.min(8, Math.max(1, item.repeats + delta));
+      return { ...item, repeats: nextRepeats };
+    });
+  }
+
+  public static addTimelineItem(timeline: SongTimelineItem[], sectionIndex: number): SongTimelineItem[] {
+    const newItem: SongTimelineItem = {
+      id: `timeline-${sectionIndex}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      sectionIndex,
+      repeats: 1,
+    };
+    return [...timeline, newItem];
+  }
+
+  public static removeTimelineItem(timeline: SongTimelineItem[], index: number): SongTimelineItem[] {
+    if (timeline.length <= 1 || index < 0 || index >= timeline.length) return timeline;
+    return timeline.filter((_, i) => i !== index);
   }
 }

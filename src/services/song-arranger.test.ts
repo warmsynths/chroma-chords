@@ -109,4 +109,39 @@ describe('SongArranger Deep Module', () => {
     const chorusChordsQuery = chorusSection.order.map(i => chorusSection.progression.chords[i].name).join('+');
     expect(chorusUrl).toContain(`?p=${chorusChordsQuery}`);
   });
+
+  describe('Timeline helper methods', () => {
+    it('creates default timeline, expands with repeats, and modifies timeline items', () => {
+      const initial = SongArranger.createInitialSong(sampleProgression);
+      const withChorus = SongArranger.addSection(initial, sampleProgression);
+      const timeline = SongArranger.createDefaultTimeline(withChorus.sections);
+
+      expect(timeline).toHaveLength(2);
+      expect(timeline[0].sectionIndex).toBe(0);
+      expect(timeline[0].repeats).toBe(1);
+
+      // Expand
+      const expanded = SongArranger.expandTimeline(withChorus.sections, timeline);
+      expect(expanded).toHaveLength(2);
+
+      // Update repeat
+      const updatedRepeats = SongArranger.updateTimelineRepeat(timeline, 0, 1);
+      expect(updatedRepeats[0].repeats).toBe(2);
+      const expanded2 = SongArranger.expandTimeline(withChorus.sections, updatedRepeats);
+      expect(expanded2).toHaveLength(3); // 2 verse + 1 chorus
+
+      // Add timeline item
+      const withAdded = SongArranger.addTimelineItem(updatedRepeats, 1);
+      expect(withAdded).toHaveLength(3);
+      expect(withAdded[2].sectionIndex).toBe(1);
+
+      // Reorder
+      const reordered = SongArranger.reorderTimeline(withAdded, 0, 2);
+      expect(reordered[0].sectionIndex).toBe(1);
+
+      // Remove
+      const removed = SongArranger.removeTimelineItem(reordered, 0);
+      expect(removed).toHaveLength(2);
+    });
+  });
 });

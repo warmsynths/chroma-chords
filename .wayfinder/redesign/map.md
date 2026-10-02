@@ -37,14 +37,14 @@ Fully implement the **Chroma Melody** design system and UI overhaul across the e
 - [T06d: Melody Human MIDI Feel Engine](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/006d-melody-human-feel-engine.md) — Implemented `MelodyFeelSettings` with microtiming jitter, swing offsets, velocity drift, articulation gate dynamics, and genre defaults.
 - [T06e: Tone.js Lead Synth Voice & Synchronized Playback](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/006e-lead-synth-playback-engine.md) — Built dedicated Tone.js lead audio voice with 5 presets, volume/mute/solo controls, and playback engine loop sync.
 - [T06: Melody Tab (`tab-melody.ts`) & MelodyGrid Sequencer Integration](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/006-melody-tab-and-grid-sequencer.md) — Built dedicated 64-step melody grid sequencer tab, Tier-2 `Strict`/`Guide`/`Free` mode toggle, note bloom micro-keyboard popovers, chord-tone guide dots, and playback sync with lead synth voice.
+- [T07: Song Tab (`tab-song.ts`) & Section Arrangement Arranger](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/007-song-tab-and-section-arranger.md) — Built 2-column Song tab (`tab-song.ts`) with Sections Library on left (cards, chord chips, add to song, edit chords/melody, new section from loop) and reorderable Song Order timeline on right with repeat counters (`− ×N +`) and live progress bar.
 
 ## Frontier Tickets (Ready / Unblocked)
 
-- [T07: Song Tab (`tab-song.ts`) & Section Arrangement Arranger](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/007-song-tab-and-section-arranger.md) — Implements the 2-column Song tab (Sections Library + reorderable Song Order timeline with drag handles and repeat counters). *(Unblocked by T02, T03)*
 - [T08: Play It Tab (`tab-play.ts`) & Interactive Instrument Visualizers](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/008-play-it-tab-instrument-visualizers.md) — Implements interactive 2-octave piano keyboard SVGs, guitar fretboard chord diagrams, ukulele fretboards, scale degrees toggle, and click-to-play audio. *(Unblocked by T02, T04)*
+- [T09: Multi-Track Export & Web MIDI Routing Modal](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/009-multitrack-export-and-midi-modal.md) — Implements Type 1 Multi-Track Standard MIDI export (Track 1 = Chords, Track 2 = Melody), dual-stem WAV export, and dedicated MIDI modal with per-part channel routing. *(Unblocked by T03, T06)*
 
 ## Blocked Tickets
-- [T09: Multi-Track Export & Web MIDI Routing Modal](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/009-multitrack-export-and-midi-modal.md) — Implements Type 1 Multi-Track Standard MIDI export (Track 1 = Chords, Track 2 = Melody), dual-stem WAV export, and dedicated MIDI modal with per-part channel routing. *(Blocked by T03, T06)*
 - [T10: End-to-End Visual Audit, Mobile Verification & Design Checklist](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/010-visual-audit-and-qa-verification.md) — Executes the 8-screen desktop/mobile audit and validates all items in the CLAUDE.md checklist. *(Blocked by T04, T05, T06, T07, T08, T09)*
 
 ## Not yet specified
