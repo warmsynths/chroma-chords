@@ -3,7 +3,7 @@
 **Parent Map**: [.wayfinder/redesign/map.md](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/map.md)
 **Label**: `wayfinder:task`
 **Type**: AFK
-**Status**: Blocked
+**Status**: Closed
 **Blocked By**: [T01: Redesign Architecture & Modular Component Specification](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/001-redesign-architecture-spec.md)
 
 ## Question

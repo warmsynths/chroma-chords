@@ -20,8 +20,10 @@ import {
 } from './chord-engine';
 
 export interface SongSection {
+  id?: string;
   name: string;
   desc: string;
+  tint?: string;
   progression: Progression;
   order: number[];
 }

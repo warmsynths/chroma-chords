@@ -5,15 +5,17 @@ import { projectStorage, SyncStatus } from './services/project-storage';
 import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
 import { SongArranger, SongSection } from './services/song-arranger';
-import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling } from './services/chord-engine';
+import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling, getMoodColor } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
 import { authService } from './services/auth-service';
+import { NavTabId } from './components/app-header';
 import './components/app-header';
 import './components/loop-screen';
 import './components/auth-modal';
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
+  @state() private activeTab: NavTabId = 'loop';
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
   @state() private libraryOpen = false;
   @state() private genre = 'Pop';
@@ -95,6 +97,13 @@ export class ChromaChordsApp extends LitElement {
       min-height: 0;
       overflow: hidden;
       position: relative;
+    }
+
+    @media (max-width: 899px) {
+      .screen-view {
+        padding: var(--cv-mob-panel-padding, 14px 18px 26px);
+        box-sizing: border-box;
+      }
     }
 
     .save-toast {
@@ -637,11 +646,13 @@ export class ChromaChordsApp extends LitElement {
     return html`
       <div class="app-header-container">
         <app-header
+          .activeTab=${this.activeTab}
           .isAuthenticated=${this.isAuthenticated}
           .userEmail=${this.userEmail}
           .savedCount=${projectStorage.getProjects().length}
           .syncStatus=${this.syncStatus}
           .syncError=${this.syncError}
+          @tab-change=${(e: CustomEvent<NavTabId>) => { this.activeTab = e.detail; }}
           @request-login=${this.onLoginRequest}
           @request-logout=${this.onLogoutRequest}
           @sync-projects=${this.onSyncProjects}
@@ -653,6 +664,8 @@ export class ChromaChordsApp extends LitElement {
       <div class="screen-view">
         ${this.progression ? html`
           <loop-screen
+            .activeView=${this.activeTab}
+            @view-change=${(e: CustomEvent<NavTabId>) => { this.activeTab = e.detail; }}
             .chordData=${this.chordData}
             .progression=${this.progression}
             .activeIndex=${this.activeIndex}

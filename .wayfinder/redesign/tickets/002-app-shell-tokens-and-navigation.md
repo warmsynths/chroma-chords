@@ -2,8 +2,17 @@
 
 **Parent Map**: [.wayfinder/redesign/map.md](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/map.md)
 **Label**: `wayfinder:task`
-**Status**: Ready / Frontier
+**Status**: Closed
 **Blocked By**: [T01: Redesign Architecture & Modular Component Specification](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/001-redesign-architecture-spec.md)
+
+## Resolution
+
+- Injected Google Fonts (`Plus Jakarta Sans` and `Space Mono`) in `index.html`.
+- Established design tokens (`--cv-panel-radius`, `--cv-mob-panel-padding`, typography) in `src/design-tokens.css`.
+- Refactored `src/components/app-header.ts` with Tier-1 navigation pills (`Chords`, `Melody`, `Song`, `Play it`), AI capacity token indicator with refill timer and popover, and MIDI settings menu action.
+- Structured responsive single-panel wrapper with 18% alpha mood background in `src/chroma-chords-app.ts` adhering to mobile `14px 18px 26px` padding contract.
+- Added comprehensive unit tests in `src/components/studio-interactions.test.ts`. All 187 tests passing.
+
 
 ## Question
 

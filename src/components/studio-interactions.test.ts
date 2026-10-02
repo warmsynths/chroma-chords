@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('tone', () => ({
   Compressor: class { connect() { return this; } toDestination() { return this; } },
@@ -62,6 +62,10 @@ describe('Studio Component Interactions', () => {
       { name: 'F', tag: 'IV', roman: 'IV', color: '#C9A9E0', functionLabel: 'Subdominant', notes: ['F4', 'A4', 'C5'], scaleLabel: 'F Maj', desc: '', degree: '4', scaleKey: 'F', tension: 0.4 },
     ],
   };
+
+  afterEach(() => {
+    (window as any).innerWidth = 1024;
+  });
 
   it('renders loop-screen and handles Genre pill click', async () => {
     const el = document.createElement('loop-screen') as LoopScreen;
@@ -1350,6 +1354,59 @@ describe('Studio Component Interactions', () => {
     expect(el.vibeOpen).toBe(false);
 
     document.body.removeChild(el);
+  });
+
+  it('app-header renders Tier-1 navigation tabs and handles tab-change', async () => {
+    const header = document.createElement('app-header') as AppHeader;
+    document.body.appendChild(header);
+    await header.updateComplete;
+
+    const navTabs = header.shadowRoot?.querySelectorAll('.nav-tab-btn');
+    expect(navTabs?.length).toBe(4);
+    const names = Array.from(navTabs || []).map(b => b.textContent?.trim());
+    expect(names).toEqual(['Chords', 'Melody', 'Song', 'Play it']);
+
+    const tabChangeSpy = vi.fn();
+    header.addEventListener('tab-change', (e: any) => tabChangeSpy(e.detail));
+
+    // Default active is loop (Chords)
+    expect(navTabs![0].classList.contains('active')).toBe(true);
+
+    // Click Melody tab
+    (navTabs![1] as HTMLElement).click();
+    await header.updateComplete;
+    expect(tabChangeSpy).toHaveBeenCalledWith('melody');
+    expect(navTabs![1].classList.contains('active')).toBe(true);
+
+    document.body.removeChild(header);
+  });
+
+  it('app-header renders AI capacity chip and toggles info popover', async () => {
+    const header = document.createElement('app-header') as AppHeader;
+    document.body.appendChild(header);
+    await header.updateComplete;
+
+    const chip = header.shadowRoot?.querySelector('.capacity-chip') as HTMLElement;
+    expect(chip).toBeTruthy();
+
+    const pips = header.shadowRoot?.querySelectorAll('.pip-dot');
+    expect(pips?.length).toBe(4);
+
+    // Click capacity chip to open tooltip panel
+    chip.click();
+    await header.updateComplete;
+
+    const popover = header.shadowRoot?.querySelector('.capacity-panel');
+    expect(popover).toBeTruthy();
+    expect(popover?.textContent).toContain('AI generates remaining chords');
+
+    // Dismiss popover
+    const closeBtn = header.shadowRoot?.querySelector('.capacity-panel .panel-close-btn') as HTMLElement;
+    closeBtn.click();
+    await header.updateComplete;
+    expect(header.shadowRoot?.querySelector('.capacity-panel')).toBeFalsy();
+
+    document.body.removeChild(header);
   });
 });
 

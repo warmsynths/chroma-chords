@@ -38,4 +38,9 @@
   --cv-plum-hover: #84698F;
   --cv-action: #9B7CA8;
   --cv-action-hover: #84698F;
+
+  /* Layout & Panel Specs */
+  --cv-panel-radius: 26px;
+  --cv-panel-radius-mob: 22px;
+  --cv-mob-panel-padding: 14px 18px 26px;
 }
