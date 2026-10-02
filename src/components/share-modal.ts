@@ -1,8 +1,9 @@
 import { LitElement, html, css, svg } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { Progression, ShareDevice, buildDeviceShareUrl } from '../services/chord-engine';
-import { downloadWav, downloadMidi } from '../services/export-service';
+import { downloadWav, downloadMidi, downloadMultiTrackMidi, downloadStemWav } from '../services/export-service';
 import { FeelSettings } from '../services/audio-service';
+import { MelodyTrack } from '../services/melody-engine';
 import { playbackEngine } from '../services/playback-engine';
 
 // Reuses the original app's inline device illustrations verbatim (still exist in git
@@ -288,6 +289,7 @@ export class ShareModal extends LitElement {
   @property({ type: String }) playStyle: string | null = null;
   @property({ type: Number }) barsPerChord = 1;
   @property({ type: Object }) feelSettings: FeelSettings | null = null;
+  @property({ type: Object }) melodyTrack: MelodyTrack | null = null;
 
   get isOpened(): boolean {
     return this.open || this.visible;
@@ -585,13 +587,20 @@ export class ShareModal extends LitElement {
     this.close();
   }
 
-  private async handleWavClick() {
+  private async handleWavClick(target: 'chords' | 'melody' | 'both' = 'chords') {
     if (!this.progression) return;
     this.emit('toast', 'Generating WAV audio...');
     try {
       const bars = this.barsPerChord || playbackEngine.getBarsPerChord() || 1;
       const feel = this.feelSettings || playbackEngine.getFeelSettings();
-      await downloadWav(this.progression, this.order, this.instrument, this.playStyle, bars, feel);
+      const track = this.melodyTrack || playbackEngine.getMelodyTrack();
+      await downloadStemWav(target, this.progression, track, {
+        order: this.order,
+        instrumentName: this.instrument,
+        playStyleName: this.playStyle,
+        barsPerChord: bars,
+        feelSettings: feel,
+      });
       this.emit('toast', 'WAV file downloaded');
     } catch (err) {
       console.error('WAV export failed', err);
@@ -600,13 +609,21 @@ export class ShareModal extends LitElement {
     this.close();
   }
 
-  private handleMidiClick() {
+  private handleMidiClick(target: 'chords' | 'melody' | 'both' = 'both') {
     if (!this.progression) return;
     try {
       const bars = this.barsPerChord || playbackEngine.getBarsPerChord() || 1;
       const feel = this.feelSettings || playbackEngine.getFeelSettings();
-      downloadMidi(this.progression, this.order, this.instrument, this.playStyle, bars, feel);
-      this.emit('toast', 'MIDI file downloaded');
+      const track = this.melodyTrack || playbackEngine.getMelodyTrack();
+      downloadMultiTrackMidi(this.progression, track, {
+        target,
+        order: this.order,
+        playStyleName: this.playStyle,
+        barsPerChord: bars,
+        feelSettings: feel,
+      });
+      const label = target === 'both' ? 'Multi-track MIDI' : `${target.toUpperCase()} MIDI`;
+      this.emit('toast', `${label} file downloaded`);
     } catch (err) {
       console.error('MIDI export failed', err);
       this.emit('toast', 'Failed to generate MIDI file');
@@ -616,6 +633,9 @@ export class ShareModal extends LitElement {
 
   render() {
     const opened = this.isOpened;
+    const track = this.melodyTrack || playbackEngine.getMelodyTrack();
+    const hasMelody = Boolean(track && track.notes && track.notes.length > 0);
+
     return html`
       <div class="backdrop ${opened ? 'open' : ''}" @click=${this.close}></div>
       <div class="share-drawer ${opened ? 'open' : ''}">
@@ -645,21 +665,49 @@ export class ShareModal extends LitElement {
           <div class="section-label">Or export a file</div>
 
           <div class="export-list">
-            <div class="export-row" @click=${this.handleWavClick}>
-              <div class="export-badge">WAV</div>
+            ${hasMelody ? html`
+              <div class="export-row" @click=${() => this.handleMidiClick('both')}>
+                <div class="export-badge" style="background: rgba(201, 169, 224, 0.3); color: #2E271F;">MID 1+2</div>
+                <div>
+                  <div class="export-title">Multi-Track MIDI (Type 1)</div>
+                  <div class="export-desc">Track 1 Chords + Track 2 Lead Melody for your DAW.</div>
+                </div>
+              </div>
+
+              <div class="export-row" @click=${() => this.handleMidiClick('melody')}>
+                <div class="export-badge">MEL</div>
+                <div>
+                  <div class="export-title">Save Melody MIDI</div>
+                  <div class="export-desc">Isolated lead voice melody track notes.</div>
+                </div>
+              </div>
+            ` : nothing}
+
+            <div class="export-row" @click=${() => this.handleMidiClick('chords')}>
+              <div class="export-badge">MID</div>
               <div>
-                <div class="export-title">Save as WAV</div>
-                <div class="export-desc">Rendered audio, ready to drop into any player.</div>
+                <div class="export-title">Save Chords MIDI</div>
+                <div class="export-desc">Just the chord progression notes and voicings.</div>
               </div>
             </div>
 
-            <div class="export-row" @click=${this.handleMidiClick}>
-              <div class="export-badge">MID</div>
+            <div class="export-row" @click=${() => this.handleWavClick('chords')}>
+              <div class="export-badge">WAV</div>
               <div>
-                <div class="export-title">Save as MIDI</div>
-                <div class="export-desc">Just the notes — reopen it in your own instrument.</div>
+                <div class="export-title">Save as WAV</div>
+                <div class="export-desc">Rendered audio loop, ready to drop into any player.</div>
               </div>
             </div>
+
+            ${hasMelody ? html`
+              <div class="export-row" @click=${() => this.handleWavClick('melody')}>
+                <div class="export-badge">STEM</div>
+                <div>
+                  <div class="export-title">Save Lead Melody WAV</div>
+                  <div class="export-desc">Isolated lead synth stem audio file.</div>
+                </div>
+              </div>
+            ` : nothing}
           </div>
         </div>
       </div>

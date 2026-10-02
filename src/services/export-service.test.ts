@@ -32,7 +32,7 @@ vi.mock('tone', () => ({
   },
 }));
 
-import { noteToMidiNumber, generateMidiBuffer, generateScheduledEvents, downloadMidi, downloadWav } from './export-service';
+import { noteToMidiNumber, generateMidiBuffer, generateMultiTrackMidiBuffer, generateScheduledEvents, downloadMidi, downloadWav } from './export-service';
 import { Progression } from './chord-engine';
 
 describe('export-service', () => {
@@ -132,5 +132,45 @@ describe('export-service', () => {
     for (const inst of insts) {
       await expect(downloadWav(sampleProgression, undefined, inst, 'Block chords', 1)).resolves.not.toThrow();
     }
+  });
+
+  it('generates multi-track Type 1 MIDI file with Track 1 Chords and Track 2 Melody', () => {
+    const sampleMelodyTrack = {
+      id: 'melody-1',
+      notes: [
+        { id: 'm-1', stepInBar: 0, barIndex: 0, beatOffset: 0, durationBeats: 1, pitch: 'E5', midi: 76, velocity: 100, chordToneRole: '3rd' as const },
+        { id: 'm-2', stepInBar: 4, barIndex: 0, beatOffset: 1, durationBeats: 1, pitch: 'G5', midi: 79, velocity: 95, chordToneRole: '5th' as const },
+        { id: 'm-3', stepInBar: 0, barIndex: 1, beatOffset: 4, durationBeats: 2, pitch: 'D5', midi: 74, velocity: 90, chordToneRole: '5th' as const },
+      ],
+      contour: 'Arch' as const,
+      density: 50,
+      octave: 5,
+      guideMode: 'strict-chord' as const,
+      feelSettings: { humanVariance: 0.1, swing: 0, velocityDrift: 0.1, gateRatio: 0.9, glide: 0 },
+      presetId: 'lead-synth',
+      volume: 80,
+      muted: false,
+      solo: false,
+    };
+
+    // Both (Type 1, 2 tracks)
+    const bothBuffer = generateMultiTrackMidiBuffer(sampleProgression, sampleMelodyTrack, { target: 'both' });
+    expect(bothBuffer).toBeInstanceOf(Uint8Array);
+    expect(bothBuffer[0]).toBe(0x4D); // 'M'
+    expect(bothBuffer[1]).toBe(0x54); // 'T'
+    expect(bothBuffer[2]).toBe(0x68); // 'h'
+    expect(bothBuffer[3]).toBe(0x64); // 'd'
+    expect(bothBuffer[9]).toBe(0x01); // Type 1 format
+    expect(bothBuffer[11]).toBe(0x02); // 2 tracks
+
+    // Melody only (1 track)
+    const melodyBuffer = generateMultiTrackMidiBuffer(sampleProgression, sampleMelodyTrack, { target: 'melody' });
+    expect(melodyBuffer).toBeInstanceOf(Uint8Array);
+    expect(melodyBuffer[11]).toBe(0x01); // 1 track
+
+    // Chords only (1 track)
+    const chordsBuffer = generateMultiTrackMidiBuffer(sampleProgression, sampleMelodyTrack, { target: 'chords' });
+    expect(chordsBuffer).toBeInstanceOf(Uint8Array);
+    expect(chordsBuffer[11]).toBe(0x01); // 1 track
   });
 });

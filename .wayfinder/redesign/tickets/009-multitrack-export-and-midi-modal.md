@@ -2,8 +2,8 @@
 
 **Parent Map**: [.wayfinder/redesign/map.md](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/map.md)
 **Label**: `wayfinder:task`
-**Status**: Blocked
-**Blocked By**: [T03: Unified Transport Bar & Mobile Dock Component](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/003-unified-transport-and-mobile-dock.md), [T06: Melody Tab & MelodyGrid Sequencer Integration](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/006-melody-tab-and-grid-sequencer.md)
+**Status**: Closed
+**Blocked By**: None
 
 ## Question
 

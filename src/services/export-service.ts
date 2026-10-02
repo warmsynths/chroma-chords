@@ -7,6 +7,7 @@ import {
   createOfflineToneRack, getLoadedSamplerBuffers, ensureSamplerLoaded,
 } from './audio-service';
 import { pitchNotesAscending } from './playback-engine';
+import { MelodyTrack, melodyEngine } from './melody-engine';
 
 export interface ScheduledNoteEvent {
   note: string;
@@ -143,6 +144,187 @@ interface MidiRawEvent {
   tick: number;
   type: 'on' | 'off';
   midi: number;
+  velocity?: number;
+}
+
+export interface MultiTrackMidiOptions {
+  target?: 'chords' | 'melody' | 'both';
+  order?: number[];
+  playStyleName?: string | null;
+  barsPerChord?: number;
+  feelSettings?: FeelSettings;
+}
+
+function buildTrackBytes(
+  trackName: string,
+  events: MidiRawEvent[],
+  channel: number,
+  bpm?: number,
+  ticksPerQuarter = 480
+): number[] {
+  const trackEvents: number[] = [];
+
+  // Set Tempo Meta Event (if bpm provided)
+  if (bpm) {
+    const mpqn = Math.round(60_000_000 / bpm);
+    trackEvents.push(0x00);
+    trackEvents.push(0xFF, 0x51, 0x03);
+    trackEvents.push((mpqn >> 16) & 0xFF, (mpqn >> 8) & 0xFF, mpqn & 0xFF);
+  }
+
+  // Track Name Meta Event
+  trackEvents.push(0x00);
+  trackEvents.push(0xFF, 0x03, trackName.length);
+  for (let i = 0; i < trackName.length; i++) {
+    trackEvents.push(trackName.charCodeAt(i));
+  }
+
+  const safeChannel = Math.max(0, Math.min(15, channel));
+  const noteOnStatus = 0x90 | safeChannel;
+  const noteOffStatus = 0x80 | safeChannel;
+
+  let lastTick = 0;
+  events.forEach(evt => {
+    const delta = Math.max(0, evt.tick - lastTick);
+    lastTick = evt.tick;
+    trackEvents.push(...encodeVLQ(delta));
+    if (evt.type === 'on') {
+      trackEvents.push(noteOnStatus, evt.midi, evt.velocity ?? 0x50);
+    } else {
+      trackEvents.push(noteOffStatus, evt.midi, 0x00);
+    }
+  });
+
+  // End of Track Meta Event
+  trackEvents.push(0x00);
+  trackEvents.push(0xFF, 0x2F, 0x00);
+
+  // Track Chunk Header: 'MTrk' + 4-byte length
+  const trackLen = trackEvents.length;
+  const trackChunkHeader = [
+    0x4D, 0x54, 0x72, 0x6B,
+    (trackLen >> 24) & 0xFF,
+    (trackLen >> 16) & 0xFF,
+    (trackLen >> 8) & 0xFF,
+    trackLen & 0xFF,
+  ];
+
+  return [...trackChunkHeader, ...trackEvents];
+}
+
+function assembleMidiFile(trackChunks: number[][], isType1: boolean, ticksPerQuarter = 480): Uint8Array {
+  const numTracks = trackChunks.length;
+  const format = isType1 && numTracks > 1 ? 1 : 0;
+
+  const headerChunk = [
+    0x4D, 0x54, 0x68, 0x64, // 'MThd'
+    0x00, 0x00, 0x00, 0x06, // length 6
+    0x00, format,           // format 0 or 1
+    (numTracks >> 8) & 0xFF, numTracks & 0xFF, // num tracks
+    (ticksPerQuarter >> 8) & 0xFF, ticksPerQuarter & 0xFF, // division
+  ];
+
+  const totalLength = headerChunk.length + trackChunks.reduce((acc, t) => acc + t.length, 0);
+  const result = new Uint8Array(totalLength);
+  result.set(headerChunk, 0);
+
+  let offset = headerChunk.length;
+  for (const track of trackChunks) {
+    result.set(track, offset);
+    offset += track.length;
+  }
+
+  return result;
+}
+
+export function generateMelodyMidiEvents(
+  melodyTrack: MelodyTrack,
+  bpm: number,
+  ticksPerQuarter = 480,
+  stepDurationSeconds: number
+): MidiRawEvent[] {
+  const events: MidiRawEvent[] = [];
+  if (!melodyTrack || !melodyTrack.notes || melodyTrack.notes.length === 0) {
+    return events;
+  }
+
+  const maxBar = melodyTrack.notes.reduce((max, n) => Math.max(max, n.barIndex), 0);
+  for (let b = 0; b <= maxBar; b++) {
+    const barNotes = melodyTrack.notes.filter(n => n.barIndex === b);
+    if (!barNotes.length) continue;
+    const barStartTime = b * stepDurationSeconds;
+    const scheduled = melodyEngine.applyHumanFeel(barNotes, melodyTrack.feelSettings, bpm);
+    scheduled.forEach(evt => {
+      const noteStartTime = barStartTime + evt.time;
+      const startTick = Math.round((noteStartTime / (60 / bpm)) * ticksPerQuarter);
+      const durTicks = Math.max(1, Math.round((evt.duration / (60 / bpm)) * ticksPerQuarter));
+      const midiNum = noteToMidiNumber(evt.note);
+      events.push({ tick: startTick, type: 'on', midi: midiNum, velocity: evt.velocity });
+      events.push({ tick: startTick + durTicks, type: 'off', midi: midiNum });
+    });
+  }
+
+  events.sort((a, b) => {
+    if (a.tick !== b.tick) return a.tick - b.tick;
+    if (a.type !== b.type) return a.type === 'off' ? -1 : 1;
+    return a.midi - b.midi;
+  });
+
+  return events;
+}
+
+/**
+ * Generates a multi-track Type 1 Standard MIDI buffer (Track 1 = Chords, Track 2 = Melody).
+ */
+export function generateMultiTrackMidiBuffer(
+  progression: Progression,
+  melodyTrack?: MelodyTrack | null,
+  options: MultiTrackMidiOptions = {}
+): Uint8Array {
+  const {
+    target = (melodyTrack && melodyTrack.notes?.length ? 'both' : 'chords'),
+    order,
+    playStyleName,
+    barsPerChord = 1,
+    feelSettings,
+  } = options;
+
+  const bpm = progression.bpm || 120;
+  const ticksPerQuarter = 480;
+  const stepDuration = (barsPerChord * 240) / bpm;
+  const trackChunks: number[][] = [];
+
+  const includeChords = target === 'chords' || target === 'both';
+  const includeMelody = (target === 'melody' || target === 'both') && melodyTrack && melodyTrack.notes?.length;
+
+  if (includeChords) {
+    const scheduledEvents = generateScheduledEvents(progression, order, playStyleName, barsPerChord, feelSettings);
+    const chordRawEvents: MidiRawEvent[] = [];
+    scheduledEvents.forEach(evt => {
+      const startTick = Math.round((evt.startTime / (60 / bpm)) * ticksPerQuarter);
+      const durTicks = Math.max(1, Math.round((evt.duration / (60 / bpm)) * ticksPerQuarter));
+      chordRawEvents.push({ tick: startTick, type: 'on', midi: evt.midi, velocity: 0x50 });
+      chordRawEvents.push({ tick: startTick + durTicks, type: 'off', midi: evt.midi });
+    });
+    chordRawEvents.sort((a, b) => {
+      if (a.tick !== b.tick) return a.tick - b.tick;
+      if (a.type !== b.type) return a.type === 'off' ? -1 : 1;
+      return a.midi - b.midi;
+    });
+
+    trackChunks.push(buildTrackBytes('Chords', chordRawEvents, 0, bpm, ticksPerQuarter));
+  }
+
+  if (includeMelody && melodyTrack) {
+    const melodyRawEvents = generateMelodyMidiEvents(melodyTrack, bpm, ticksPerQuarter, stepDuration);
+    trackChunks.push(buildTrackBytes('Melody', melodyRawEvents, 1, includeChords ? undefined : bpm, ticksPerQuarter));
+  }
+
+  if (trackChunks.length === 0) {
+    trackChunks.push(buildTrackBytes('Chroma Chords', [], 0, bpm, ticksPerQuarter));
+  }
+
+  return assembleMidiFile(trackChunks, target === 'both');
 }
 
 /**
@@ -155,86 +337,35 @@ export function generateMidiBuffer(
   barsPerChord = 1,
   feelSettings?: FeelSettings
 ): Uint8Array {
-  const bpm = progression.bpm || 120;
-  const ticksPerQuarter = 480;
-
-  const scheduledEvents = generateScheduledEvents(progression, order, playStyleName, barsPerChord, feelSettings);
-
-  const rawEvents: MidiRawEvent[] = [];
-  scheduledEvents.forEach(evt => {
-    const startTick = Math.round((evt.startTime / (60 / bpm)) * ticksPerQuarter);
-    const durTicks = Math.max(1, Math.round((evt.duration / (60 / bpm)) * ticksPerQuarter));
-    rawEvents.push({ tick: startTick, type: 'on', midi: evt.midi });
-    rawEvents.push({ tick: startTick + durTicks, type: 'off', midi: evt.midi });
+  return generateMultiTrackMidiBuffer(progression, null, {
+    target: 'chords',
+    order,
+    playStyleName,
+    barsPerChord,
+    feelSettings,
   });
-
-  rawEvents.sort((a, b) => {
-    if (a.tick !== b.tick) return a.tick - b.tick;
-    if (a.type !== b.type) return a.type === 'off' ? -1 : 1;
-    return a.midi - b.midi;
-  });
-
-  const trackEvents: number[] = [];
-
-  // Set Tempo Meta Event: Delta 0, 0xFF 0x51 0x03
-  const mpqn = Math.round(60_000_000 / bpm);
-  trackEvents.push(0x00);
-  trackEvents.push(0xFF, 0x51, 0x03);
-  trackEvents.push((mpqn >> 16) & 0xFF, (mpqn >> 8) & 0xFF, mpqn & 0xFF);
-
-  // Track Name Meta Event
-  const trackName = 'Chroma Chords';
-  trackEvents.push(0x00);
-  trackEvents.push(0xFF, 0x03, trackName.length);
-  for (let i = 0; i < trackName.length; i++) {
-    trackEvents.push(trackName.charCodeAt(i));
-  }
-
-  let lastTick = 0;
-  rawEvents.forEach(evt => {
-    const delta = evt.tick - lastTick;
-    lastTick = evt.tick;
-    trackEvents.push(...encodeVLQ(delta));
-    if (evt.type === 'on') {
-      trackEvents.push(0x90, evt.midi, 0x50);
-    } else {
-      trackEvents.push(0x80, evt.midi, 0x00);
-    }
-  });
-
-  // End of Track Meta Event
-  trackEvents.push(0x00);
-  trackEvents.push(0xFF, 0x2F, 0x00);
-
-  // Header Chunk (14 bytes)
-  const headerChunk = [
-    0x4D, 0x54, 0x68, 0x64,
-    0x00, 0x00, 0x00, 0x06,
-    0x00, 0x00,
-    0x00, 0x01,
-    (ticksPerQuarter >> 8) & 0xFF, ticksPerQuarter & 0xFF
-  ];
-
-  // Track Chunk Header (8 bytes)
-  const trackLen = trackEvents.length;
-  const trackChunkHeader = [
-    0x4D, 0x54, 0x72, 0x6B,
-    (trackLen >> 24) & 0xFF,
-    (trackLen >> 16) & 0xFF,
-    (trackLen >> 8) & 0xFF,
-    trackLen & 0xFF
-  ];
-
-  const result = new Uint8Array(headerChunk.length + trackChunkHeader.length + trackEvents.length);
-  result.set(headerChunk, 0);
-  result.set(trackChunkHeader, headerChunk.length);
-  result.set(trackEvents, headerChunk.length + trackChunkHeader.length);
-
-  return result;
 }
 
 /**
- * Downloads a Standard MIDI (.mid) file for the given progression.
+ * Downloads a Standard MIDI (.mid) file for the given progression and optional melody track.
+ */
+export function downloadMultiTrackMidi(
+  progression: Progression,
+  melodyTrack?: MelodyTrack | null,
+  options: MultiTrackMidiOptions = {}
+): void {
+  const buffer = generateMultiTrackMidiBuffer(progression, melodyTrack, options);
+  const blob = new Blob([buffer as unknown as BlobPart], { type: 'audio/midi' });
+  const key = (progression.key || 'C').toLowerCase();
+  const mood = (progression.mood || 'progression').toLowerCase().replace(/\s+/g, '-');
+  const bpm = progression.bpm || 120;
+  const targetTag = options.target || (melodyTrack && melodyTrack.notes?.length ? 'both' : 'chords');
+  const filename = `chroma-${targetTag}-${key}-${mood}-${bpm}bpm.mid`;
+  triggerDownload(blob, filename);
+}
+
+/**
+ * Downloads a Standard MIDI (.mid) file for the given progression (legacy chords export).
  */
 export function downloadMidi(
   progression: Progression,
@@ -244,13 +375,13 @@ export function downloadMidi(
   barsPerChord = 1,
   feelSettings?: FeelSettings
 ): void {
-  const buffer = generateMidiBuffer(progression, order, playStyleName, barsPerChord, feelSettings);
-  const blob = new Blob([buffer as unknown as BlobPart], { type: 'audio/midi' });
-  const key = (progression.key || 'C').toLowerCase();
-  const mood = (progression.mood || 'progression').toLowerCase().replace(/\s+/g, '-');
-  const bpm = progression.bpm || 120;
-  const filename = `chroma-chords-${key}-${mood}-${bpm}bpm.mid`;
-  triggerDownload(blob, filename);
+  downloadMultiTrackMidi(progression, null, {
+    target: 'chords',
+    order,
+    playStyleName,
+    barsPerChord,
+    feelSettings,
+  });
 }
 
 /**
@@ -579,6 +710,64 @@ export async function downloadWav(
   const mood = (progression.mood || 'progression').toLowerCase().replace(/\s+/g, '-');
   const filename = `chroma-chords-${key}-${mood}-${bpm}bpm.wav`;
   triggerDownload(wavBlob, filename);
+}
+
+/**
+ * Renders individual or combined stems (Chords, Melody, Both) to WAV files.
+ */
+export async function downloadStemWav(
+  target: 'chords' | 'melody' | 'both',
+  progression: Progression,
+  melodyTrack?: MelodyTrack | null,
+  options: {
+    order?: number[];
+    instrumentName?: string | null;
+    playStyleName?: string | null;
+    barsPerChord?: number;
+    feelSettings?: FeelSettings;
+  } = {}
+): Promise<void> {
+  const { order, instrumentName, playStyleName, barsPerChord = 1, feelSettings } = options;
+  const bpm = progression.bpm || 120;
+  const key = (progression.key || 'C').toLowerCase();
+  const mood = (progression.mood || 'progression').toLowerCase().replace(/\s+/g, '-');
+
+  if (target === 'chords' || target === 'both') {
+    await downloadWav(progression, order, instrumentName, playStyleName, barsPerChord, feelSettings);
+  }
+
+  if ((target === 'melody' || target === 'both') && melodyTrack && melodyTrack.notes?.length) {
+    const chordsToExport = (order && order.length > 0)
+      ? order.map(i => progression.chords[i]).filter((c): c is ChordBlock => Boolean(c))
+      : progression.chords;
+    const stepDuration = (barsPerChord * 240) / bpm;
+    const totalDuration = Math.max(0.1, chordsToExport.length * stepDuration);
+
+    const renderedBuffer = await Tone.Offline(async () => {
+      const synth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.01, decay: 0.15, sustain: 0.6, release: 0.2 },
+      }).toDestination();
+
+      const maxBar = melodyTrack.notes.reduce((max, n) => Math.max(max, n.barIndex), 0);
+      for (let b = 0; b <= maxBar; b++) {
+        const barNotes = melodyTrack.notes.filter(n => n.barIndex === b);
+        if (!barNotes.length) continue;
+        const barStartTime = b * stepDuration;
+        const scheduled = melodyEngine.applyHumanFeel(barNotes, melodyTrack.feelSettings, bpm);
+        scheduled.forEach(evt => {
+          const noteTime = barStartTime + evt.time;
+          if (noteTime < totalDuration) {
+            synth.triggerAttackRelease(evt.note, evt.duration, noteTime, evt.velocity / 127);
+          }
+        });
+      }
+    }, totalDuration);
+
+    const wavBlob = audioBufferToWavBlob(renderedBuffer.get()!);
+    const filename = `chroma-melody-${key}-${mood}-${bpm}bpm.wav`;
+    triggerDownload(wavBlob, filename);
+  }
 }
 
 function triggerDownload(blob: Blob, filename: string): void {

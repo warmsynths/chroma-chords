@@ -39,13 +39,14 @@ Fully implement the **Chroma Melody** design system and UI overhaul across the e
 - [T06: Melody Tab (`tab-melody.ts`) & MelodyGrid Sequencer Integration](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/006-melody-tab-and-grid-sequencer.md) — Built dedicated 64-step melody grid sequencer tab, Tier-2 `Strict`/`Guide`/`Free` mode toggle, note bloom micro-keyboard popovers, chord-tone guide dots, and playback sync with lead synth voice.
 - [T07: Song Tab (`tab-song.ts`) & Section Arrangement Arranger](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/007-song-tab-and-section-arranger.md) — Built 2-column Song tab (`tab-song.ts`) with Sections Library on left (cards, chord chips, add to song, edit chords/melody, new section from loop) and reorderable Song Order timeline on right with repeat counters (`− ×N +`) and live progress bar.
 - [T08: Play It Tab (`tab-play.ts`) & Interactive Instrument Visualizers](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/008-play-it-tab-instrument-visualizers.md) — Built interactive instrument visualizers (`tab-play.ts`) with Tier-2 `Piano` | `Guitar` | `Ukulele` segmented selector, scale degrees toggle switch, 2-octave piano keyboard SVGs, 6-string guitar and 4-string ukulele fretboard SVGs, and click-to-play audio auditioning.
+- [T09: Multi-Track Export & Web MIDI Routing Modal](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/009-multitrack-export-and-midi-modal.md) — Implemented Type 1 Multi-Track Standard MIDI export (Track 1 = Chords, Track 2 = Melody), dual-stem WAV export, Web MIDI service (`midi-service.ts`), routing modal (`midi-modal.ts`), and updated `share-modal.ts`.
 
 ## Frontier Tickets (Ready / Unblocked)
 
-- [T09: Multi-Track Export & Web MIDI Routing Modal](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/009-multitrack-export-and-midi-modal.md) — Implements Type 1 Multi-Track Standard MIDI export (Track 1 = Chords, Track 2 = Melody), dual-stem WAV export, and dedicated MIDI modal with per-part channel routing. *(Unblocked by T03, T06)*
+- [T10: End-to-End Visual Audit, Mobile Verification & Design Checklist](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/010-visual-audit-and-qa-verification.md) — Integrate tabs into main app shell, execute end-to-end audit, and validate against CLAUDE.md checklist. *(Unblocked by T04, T05, T06, T07, T08, T09)*
 
 ## Blocked Tickets
-- [T10: End-to-End Visual Audit, Mobile Verification & Design Checklist](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/010-visual-audit-and-qa-verification.md) — Executes the 8-screen desktop/mobile audit and validates all items in the CLAUDE.md checklist. *(Blocked by T04, T05, T06, T07, T08, T09)*
+None
 
 ## Not yet specified
 
