@@ -40,10 +40,10 @@ Fully implement the **Chroma Melody** design system and UI overhaul across the e
 - [T07: Song Tab (`tab-song.ts`) & Section Arrangement Arranger](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/007-song-tab-and-section-arranger.md) — Built 2-column Song tab (`tab-song.ts`) with Sections Library on left (cards, chord chips, add to song, edit chords/melody, new section from loop) and reorderable Song Order timeline on right with repeat counters (`− ×N +`) and live progress bar.
 - [T08: Play It Tab (`tab-play.ts`) & Interactive Instrument Visualizers](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/008-play-it-tab-instrument-visualizers.md) — Built interactive instrument visualizers (`tab-play.ts`) with Tier-2 `Piano` | `Guitar` | `Ukulele` segmented selector, scale degrees toggle switch, 2-octave piano keyboard SVGs, 6-string guitar and 4-string ukulele fretboard SVGs, and click-to-play audio auditioning.
 - [T09: Multi-Track Export & Web MIDI Routing Modal](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/009-multitrack-export-and-midi-modal.md) — Implemented Type 1 Multi-Track Standard MIDI export (Track 1 = Chords, Track 2 = Melody), dual-stem WAV export, Web MIDI service (`midi-service.ts`), routing modal (`midi-modal.ts`), and updated `share-modal.ts`.
+- [T10: End-to-End Visual Audit, Mobile Verification & Design Checklist](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/010-visual-audit-and-qa-verification.md) — Integrated all 4 modular tabs into `chroma-chords-app.ts` shell with "One skeleton for every tab", desktop aside split layout, persistent transport bar & mobile dock, Web MIDI modal, stem share modal, 24 unit/integration test suites passing (256/256 tests), and production bundle cleanly compiling.
 
 ## Frontier Tickets (Ready / Unblocked)
-
-- [T10: End-to-End Visual Audit, Mobile Verification & Design Checklist](file:///c:/reyn/Projects/chroma-chords/.wayfinder/redesign/tickets/010-visual-audit-and-qa-verification.md) — Integrate tabs into main app shell, execute end-to-end audit, and validate against CLAUDE.md checklist. *(Unblocked by T04, T05, T06, T07, T08, T09)*
+None — All 10 redesign tickets are complete and verified.
 
 ## Blocked Tickets
 None

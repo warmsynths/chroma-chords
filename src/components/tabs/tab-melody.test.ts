@@ -8,18 +8,16 @@ describe('TabMelody Component', () => {
   let el: TabMelody;
 
   const mockProgression: Progression = {
-    id: 'prog-1',
-    name: 'Melody Test',
     genre: 'Pop',
     mood: 'Warm',
     key: 'C',
     scaleType: 'MAJOR',
     bpm: 120,
     chords: [
-      { name: 'C', roman: 'I', tension: 0.1, functionLabel: 'Tonic', notes: ['C4', 'E4', 'G4'] },
-      { name: 'Am', roman: 'vi', tension: 0.2, functionLabel: 'Submediant', notes: ['A3', 'C4', 'E4'] },
-      { name: 'F', roman: 'IV', tension: 0.45, functionLabel: 'Subdominant', notes: ['F3', 'A3', 'C4'] },
-      { name: 'G', roman: 'V', tension: 0.85, functionLabel: 'Dominant', notes: ['G3', 'B3', 'D4'] },
+      { name: 'C', tag: 'I', roman: 'I', color: '#fff', scaleLabel: 'C Maj', desc: '', degree: '1', scaleKey: 'C', tension: 0.1, functionLabel: 'Tonic', notes: ['C4', 'E4', 'G4'] },
+      { name: 'Am', tag: 'vi', roman: 'vi', color: '#fff', scaleLabel: 'A Min', desc: '', degree: '6', scaleKey: 'A', tension: 0.2, functionLabel: 'Submediant', notes: ['A3', 'C4', 'E4'] },
+      { name: 'F', tag: 'IV', roman: 'IV', color: '#fff', scaleLabel: 'F Maj', desc: '', degree: '4', scaleKey: 'F', tension: 0.45, functionLabel: 'Subdominant', notes: ['F3', 'A3', 'C4'] },
+      { name: 'G', tag: 'V', roman: 'V', color: '#fff', scaleLabel: 'G Maj', desc: '', degree: '5', scaleKey: 'G', tension: 0.85, functionLabel: 'Dominant', notes: ['G3', 'B3', 'D4'] },
     ],
   };
 

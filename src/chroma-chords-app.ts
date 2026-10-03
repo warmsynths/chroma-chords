@@ -4,14 +4,33 @@ import { ProjectData, ProjectChord } from './services/project-service';
 import { projectStorage, SyncStatus } from './services/project-storage';
 import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
-import { SongArranger, SongSection } from './services/song-arranger';
-import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling, getMoodColor } from './services/chord-engine';
+import { SongArranger, SongSection, SongTimelineItem } from './services/song-arranger';
+import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling, getMoodColor, applyVoicingToChord } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES } from './services/audio-service';
 import { authService } from './services/auth-service';
+import { melodyEngine, MelodyTrack } from './services/melody-engine';
 import { NavTabId } from './components/app-header';
+import { PlayInstrument } from './components/tabs/tab-play';
 import './components/app-header';
-import './components/loop-screen';
+import './components/transport-bar';
+import './components/mobile-dock';
+import './components/tabs/tab-chords';
+import './components/tabs/tab-melody';
+import './components/tabs/tab-song';
+import './components/tabs/tab-play';
+import './components/aside/chord-inspector';
+import './components/modals/midi-modal';
+import './components/share-modal';
 import './components/auth-modal';
+import './components/loop-screen';
+
+function getMoodTint(hex: string): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substring(0, 2), 16) || 201;
+  const g = parseInt(clean.substring(2, 4), 16) || 169;
+  const b = parseInt(clean.substring(4, 6), 16) || 224;
+  return `rgba(${r}, ${g}, ${b}, 0.18)`;
+}
 
 @customElement('chroma-chords-app')
 export class ChromaChordsApp extends LitElement {
@@ -30,6 +49,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private playStyle: string | null = null;
   @state() private length = 4;
   @state() private sections: SongSection[] = [];
+  @state() private songTimeline: SongTimelineItem[] = [];
   @state() private activeSectionIdx = 0;
   @state() private activePlayingSectionIdx = 0;
   @state() private totalSongSteps = 0;
@@ -38,6 +58,13 @@ export class ChromaChordsApp extends LitElement {
   @state() private syncStatus: SyncStatus = 'sign-in';
   @state() private syncError: string | null = null;
   @state() private authModalOpen = false;
+  @state() private midiModalOpen = false;
+  @state() private shareModalOpen = false;
+  @state() private selectedChordIndex: number | null = null;
+  @state() private selectedBand: string | null = null;
+  @state() private melodyTrack: MelodyTrack | null = null;
+  @state() private playInstrument: PlayInstrument = 'Piano';
+  @state() private showDegrees = false;
   @state() private toastMessage: string | null = null;
   @state() private toastUndoId: string | null = null;
   @state() private isGenerating = false;
@@ -95,14 +122,101 @@ export class ChromaChordsApp extends LitElement {
       display: flex;
       flex-direction: column;
       min-height: 0;
-      overflow: hidden;
+      overflow-y: auto;
+      overflow-x: hidden;
       position: relative;
+      padding: 20px 24px 28px;
+      box-sizing: border-box;
     }
 
     @media (max-width: 899px) {
       .screen-view {
         padding: var(--cv-mob-panel-padding, 14px 18px 26px);
+        padding-bottom: 96px;
         box-sizing: border-box;
+      }
+    }
+
+    .tab-content-wrapper {
+      max-width: 1360px;
+      margin: 0 auto;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Chords tab desktop aside split */
+    .chords-tab-layout {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      width: 100%;
+    }
+
+    .chords-tab-layout .main-tinted-panel {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .desktop-aside {
+      flex-shrink: 0;
+      width: clamp(304px, 26vw, 384px);
+    }
+
+    @media (max-width: 1024px) {
+      .chords-tab-layout {
+        flex-direction: column;
+      }
+      .desktop-aside {
+        width: 100%;
+      }
+    }
+
+    /* ONE Main Panel (Mood-Tinted 18% alpha, Radius 26px / 22px mobile) */
+    .main-tinted-panel {
+      position: relative;
+      border-radius: 26px;
+      padding: 16px 20px 24px;
+      background: var(--panel-tint-bg, rgba(201, 169, 224, 0.18));
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 4px 24px rgba(46, 39, 31, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    @media (max-width: 899px) {
+      .main-tinted-panel {
+        border-radius: 22px;
+        padding: 14px 16px 20px;
+      }
+    }
+
+    .transport-container {
+      flex-shrink: 0;
+      z-index: 45;
+    }
+
+    .dock-container {
+      flex-shrink: 0;
+      z-index: 45;
+    }
+
+    .desktop-only {
+      display: block;
+    }
+    .mobile-only {
+      display: none;
+    }
+
+    @media (max-width: 899px) {
+      .desktop-only {
+        display: none !important;
+      }
+      .mobile-only {
+        display: block !important;
       }
     }
 
@@ -165,10 +279,13 @@ export class ChromaChordsApp extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.showTheory = (localStorage.getItem('chroma-chords-show-theory') || localStorage.getItem('chord-voyager-show-theory')) === 'true';
-    const savedInstrument = localStorage.getItem('chroma-chords-instrument');
+    const safeGet = (k: string) => {
+      try { return typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function' ? localStorage.getItem(k) : null; } catch { return null; }
+    };
+    this.showTheory = (safeGet('chroma-chords-show-theory') || safeGet('chord-voyager-show-theory')) === 'true';
+    const savedInstrument = safeGet('chroma-chords-instrument');
     if (savedInstrument && USER_INSTRUMENTS.some(i => i.name === savedInstrument)) this.instrument = savedInstrument;
-    const savedPlayStyle = localStorage.getItem('chroma-chords-play-style');
+    const savedPlayStyle = safeGet('chroma-chords-play-style');
     if (savedPlayStyle && USER_PLAY_STYLES.some(p => p.name === savedPlayStyle)) this.playStyle = savedPlayStyle;
 
     playbackEngine.setInstrument(this.instrument);
@@ -219,6 +336,9 @@ export class ChromaChordsApp extends LitElement {
         this.order = Array.from({ length: this.length }, (_, i) => i);
         playbackEngine.setProgression(this.progression, this.order);
         this.sections = SongArranger.createInitialSong(this.progression, this.order);
+        this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+        this.melodyTrack = melodyEngine.generateMelody(this.progression);
+        playbackEngine.setMelodyTrack(this.melodyTrack);
       }
     }).catch(err => {
       console.error('Failed to load chord data:', err);
@@ -258,6 +378,14 @@ export class ChromaChordsApp extends LitElement {
     const hash = window.location.hash.replace(/^#/, '').toLowerCase();
     if (hash === 'sets' || hash === '11a') {
       this.libraryOpen = true;
+    } else if (hash === 'melody') {
+      this.activeTab = 'melody';
+    } else if (hash === 'song') {
+      this.activeTab = 'song';
+    } else if (hash === 'play') {
+      this.activeTab = 'play';
+    } else if (hash === 'chords' || hash === 'loop') {
+      this.activeTab = 'loop';
     }
   }
 
@@ -323,6 +451,9 @@ export class ChromaChordsApp extends LitElement {
       playbackEngine.reset();
 
       this.sections = SongArranger.createInitialSong(progression, this.order);
+      this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+      this.melodyTrack = melodyEngine.generateMelody(progression);
+      playbackEngine.setMelodyTrack(this.melodyTrack);
       this.activeSectionIdx = 0;
       this.activeSearchPrompt = null;
       if (searchTerm) {
@@ -360,6 +491,12 @@ export class ChromaChordsApp extends LitElement {
     } else {
       this.sections = SongArranger.createInitialSong(this.progression, this.order);
     }
+    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+
+    if (this.melodyTrack && this.progression) {
+      this.melodyTrack = melodyEngine.alignMelodyToChords(this.melodyTrack, this.progression);
+      playbackEngine.setMelodyTrack(this.melodyTrack);
+    }
 
     this.requestUpdate();
   }
@@ -378,6 +515,9 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.setProgression(progression, this.order);
 
     this.sections = SongArranger.createInitialSong(this.progression, this.order);
+    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+    this.melodyTrack = melodyEngine.generateMelody(this.progression);
+    playbackEngine.setMelodyTrack(this.melodyTrack);
     this.activeSectionIdx = 0;
 
     if (this.playing) {
@@ -439,6 +579,9 @@ export class ChromaChordsApp extends LitElement {
     }
     playbackEngine.setProgression(this.progression, this.order);
     this.sections = SongArranger.createInitialSong(this.progression, this.order);
+    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+    this.melodyTrack = melodyEngine.generateMelody(this.progression);
+    playbackEngine.setMelodyTrack(this.melodyTrack);
     this.activeSectionIdx = 0;
     this.showToast(`Loaded "${p.name}"`);
   }
@@ -486,20 +629,28 @@ export class ChromaChordsApp extends LitElement {
     }
   }
 
+  private safeSet(k: string, v: string) {
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+        localStorage.setItem(k, v);
+      }
+    } catch {}
+  }
+
   private onTheoryToggle() {
     this.showTheory = !this.showTheory;
-    localStorage.setItem('chroma-chords-show-theory', String(this.showTheory));
+    this.safeSet('chroma-chords-show-theory', String(this.showTheory));
   }
 
   private onSetInstrument(e: CustomEvent<string>) {
     this.instrument = e.detail;
-    localStorage.setItem('chroma-chords-instrument', e.detail);
+    this.safeSet('chroma-chords-instrument', e.detail);
     playbackEngine.setInstrument(e.detail);
   }
 
   private onSetPlayStyle(e: CustomEvent<string>) {
     this.playStyle = e.detail;
-    localStorage.setItem('chroma-chords-play-style', e.detail);
+    this.safeSet('chroma-chords-play-style', e.detail);
     playbackEngine.setPlayStyle(e.detail);
   }
 
@@ -524,6 +675,13 @@ export class ChromaChordsApp extends LitElement {
     if (this.sections.length > 0) {
       this.sections = SongArranger.syncActiveSection(this.sections, this.activeSectionIdx, this.progression, this.order);
     }
+    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+
+    if (this.melodyTrack && this.progression) {
+      this.melodyTrack = melodyEngine.alignMelodyToChords(this.melodyTrack, this.progression);
+      playbackEngine.setMelodyTrack(this.melodyTrack);
+    }
+
     this.requestUpdate();
   }
 
@@ -531,6 +689,7 @@ export class ChromaChordsApp extends LitElement {
     if (!this.progression) return;
     const res = SongArranger.addSection(this.sections, this.progression, this.chordData);
     this.sections = res.sections;
+    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
     this.activeSectionIdx = res.activeIndex;
     const activeSec = this.sections[this.activeSectionIdx];
     if (activeSec) {
@@ -546,6 +705,7 @@ export class ChromaChordsApp extends LitElement {
     const idx = e.detail;
     const res = SongArranger.removeSection(this.sections, idx);
     this.sections = res.sections;
+    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
     this.activeSectionIdx = res.activeIndex;
     const activeSec = this.sections[this.activeSectionIdx];
     if (activeSec) {
@@ -642,6 +802,12 @@ export class ChromaChordsApp extends LitElement {
 
   render() {
     const isBookmarked = Boolean(this.currentProjectId && projectStorage.isProjectSaved(this.currentProjectId));
+    const moodColor = getMoodColor(this.progression?.mood || this.mood);
+    const moodTint = getMoodTint(moodColor);
+    const activeSec = this.sections[this.activeSectionIdx];
+    const activeSecLetter = activeSec ? (activeSec.id || String.fromCharCode(65 + this.activeSectionIdx)) : 'A';
+    const totalBars = this.sections.reduce((acc, s) => acc + (s.order?.length || 4) * (playbackEngine.getBarsPerChord() || 1), 0);
+    const songTotal = `${this.sections.length} sections · ${totalBars} bars`;
 
     return html`
       <div class="app-header-container">
@@ -657,84 +823,280 @@ export class ChromaChordsApp extends LitElement {
           @request-logout=${this.onLogoutRequest}
           @sync-projects=${this.onSyncProjects}
           @view-sets=${() => { this.libraryOpen = true; }}
-          @brand-click=${() => { this.libraryOpen = false; }}
+          @brand-click=${() => { this.activeTab = 'loop'; }}
+          @open-midi=${() => { this.midiModalOpen = true; }}
         ></app-header>
       </div>
 
-      <div class="screen-view">
+      <main class="screen-view" style="--panel-tint-bg: ${moodTint};">
         ${this.progression ? html`
-          <loop-screen
-            .activeView=${this.activeTab}
-            @view-change=${(e: CustomEvent<NavTabId>) => { this.activeTab = e.detail; }}
-            .chordData=${this.chordData}
-            .progression=${this.progression}
-            .activeIndex=${this.activeIndex}
-            .progressStep=${this.progressStep}
-            .order=${this.order}
-            .playing=${this.playing}
-            .showTheory=${this.showTheory}
-            .instrument=${this.instrument}
-            .playStyle=${this.playStyle}
-            .isAuthenticated=${this.isAuthenticated}
-            .userEmail=${this.userEmail}
-            .sections=${this.sections}
-            .activeSectionIdx=${this.activeSectionIdx}
-            .activePlayingSectionIdx=${this.activePlayingSectionIdx}
-            .totalSongSteps=${this.totalSongSteps}
-            .isGenerating=${this.isGenerating}
-            .isSaved=${isBookmarked}
-            .currentProjectId=${this.currentProjectId}
-            .libraryOpen=${this.libraryOpen}
-            @library-open-change=${(e: CustomEvent<boolean>) => { this.libraryOpen = e.detail; }}
-            @progression-change=${this.onProgressionChange}
-            @theory-toggle=${this.onTheoryToggle}
-            @set-instrument=${this.onSetInstrument}
-            @set-play-style=${this.onSetPlayStyle}
-            @toggle-play=${this.onTogglePlay}
-            @toggle-play-song=${this.onTogglePlaySong}
-            @set-genre=${this.onGenreChange}
-            @set-mood=${this.onMoodChange}
-            @set-length=${this.onLengthChange}
-            @freetext-generate=${this.onGenerate}
-            @reroll=${this.onReroll}
-            @add-section=${this.onAddSection}
-            @select-section=${this.onSelectSection}
-            @remove-section=${this.onRemoveSection}
-            @save-set=${this.onSaveSet}
-            @unsave-set=${this.onUnsaveSet}
-            @load-project=${this.onLoadProject}
-            @delete-project=${this.onDeleteProject}
-            @rename-project=${this.onRenameProject}
-            @view-sets=${() => { this.libraryOpen = true; }}
-            @request-login=${this.onLoginRequest}
-            @request-logout=${this.onLogoutRequest}
-            @toast=${(e: CustomEvent<string>) => this.showToast(e.detail)}
-          ></loop-screen>
+          <div class="tab-content-wrapper">
+            ${this.activeTab === 'loop' ? html`
+              <div class="chords-tab-layout">
+                <div class="main-tinted-panel">
+                  <tab-chords
+                    .progression=${this.progression}
+                    .chordData=${this.chordData}
+                    .moodColor=${moodColor}
+                    .selectedBand=${this.selectedBand}
+                    .isPlaying=${this.playing}
+                    .activeIndex=${this.activeIndex}
+                    .showTheory=${this.showTheory}
+                    @chord-detail-open=${(e: CustomEvent) => {
+                      this.selectedChordIndex = e.detail.index;
+                    }}
+                    @progression-update=${(e: CustomEvent) => {
+                      if (this.progression) {
+                        this.onProgressionChange(new CustomEvent('progression-change', {
+                          detail: { ...this.progression, chords: e.detail.chords }
+                        }));
+                      }
+                    }}
+                    @set-chord-count=${(e: CustomEvent) => {
+                      this.onLengthChange(new CustomEvent('set-length', { detail: e.detail.count }));
+                    }}
+                    @reroll=${this.onReroll}
+                    @clear-band=${() => { this.selectedBand = null; }}
+                    @open-vibe-picker=${() => { this.onReroll(); }}
+                  ></tab-chords>
+                </div>
+                <aside class="desktop-aside">
+                  <chord-inspector
+                    .progression=${this.progression}
+                    .selectedChordIndex=${this.selectedChordIndex}
+                    .selectedBand=${this.selectedBand}
+                    .showTheory=${this.showTheory}
+                    .moodColor=${moodColor}
+                    .isSaved=${isBookmarked}
+                    @close-detail=${() => { this.selectedChordIndex = null; }}
+                    @change-voicing=${(e: CustomEvent) => {
+                      if (this.progression && this.selectedChordIndex !== null) {
+                        const chords = [...this.progression.chords];
+                        const cur = chords[this.selectedChordIndex];
+                        if (cur) {
+                          chords[this.selectedChordIndex] = applyVoicingToChord(cur, e.detail.voicing || 'Major', 'None');
+                          this.onProgressionChange(new CustomEvent('progression-change', {
+                            detail: { ...this.progression, chords }
+                          }));
+                        }
+                      }
+                    }}
+                  ></chord-inspector>
+                </aside>
+              </div>
+            ` : this.activeTab === 'melody' ? html`
+              <div class="main-tinted-panel">
+                <tab-melody
+                  .progression=${this.progression}
+                  .melodyTrack=${this.melodyTrack}
+                  .activeStepIndex=${this.progressStep}
+                  .playing=${this.playing}
+                  @melody-change=${(e: CustomEvent) => {
+                    this.melodyTrack = e.detail.track;
+                    playbackEngine.setMelodyTrack(this.melodyTrack);
+                  }}
+                  @toast=${(e: CustomEvent<string>) => this.showToast(e.detail)}
+                ></tab-melody>
+              </div>
+            ` : this.activeTab === 'song' ? html`
+              <tab-song
+                .sections=${this.sections}
+                .timeline=${this.songTimeline}
+                .activeSectionIdx=${this.activeSectionIdx}
+                .activeTimelineIdx=${this.activePlayingSectionIdx}
+                .currentStep=${this.progressStep}
+                .playing=${this.playing}
+                .mood=${this.mood}
+                .bpm=${this.progression?.bpm || 120}
+                @section-select=${(e: CustomEvent) => this.onSelectSection(e)}
+                @add-section=${() => this.onAddSection()}
+                @remove-section=${(e: CustomEvent) => this.onRemoveSection(e)}
+                @timeline-change=${(e: CustomEvent) => {
+                  this.songTimeline = e.detail.timeline;
+                }}
+              ></tab-song>
+            ` : html`
+              <tab-play
+                .progression=${this.progression}
+                .activeIndex=${this.activeIndex}
+                .playing=${this.playing}
+                .showTheory=${this.showTheory}
+                .playInstrument=${this.playInstrument}
+                .showDegrees=${this.showDegrees}
+                .mood=${this.mood}
+                @instrument-change=${(e: CustomEvent) => {
+                  this.playInstrument = e.detail.instrument;
+                }}
+                @degrees-toggle=${(e: CustomEvent) => {
+                  this.showDegrees = e.detail.showDegrees;
+                }}
+                @play-chord=${(e: CustomEvent) => {
+                  if (e.detail.chord?.notes) {
+                    playbackEngine.playChordNotes(e.detail.chord.notes, 0.85);
+                  }
+                }}
+              ></tab-play>
+            `}
+          </div>
         ` : html`
           <div style="display: flex; align-items: center; justify-content: center; height: 100%; font-weight: 700; color: var(--cv-ink-muted);">
             Loading studio workspace...
           </div>
         `}
+      </main>
 
-        ${this.toastMessage ? html`
-          <div class="save-toast">
-            <span>${this.toastMessage}</span>
-            <div class="toast-actions">
-              ${this.toastUndoId ? html`
-                <button class="toast-btn" @click=${() => { this.libraryOpen = true; this.toastMessage = null; }}>View</button>
-                <button class="toast-btn undo" @click=${this.onToastUndo}>Undo</button>
-              ` : html`
-                <button class="toast-btn" @click=${() => { this.toastMessage = null; }} aria-label="Dismiss">✕</button>
-              `}
-            </div>
-          </div>
-        ` : ''}
-
-        <auth-modal
-          .open=${this.authModalOpen}
-          @close-modal=${() => { this.authModalOpen = false; }}
-        ></auth-modal>
+      <div class="transport-container desktop-only">
+        <transport-bar
+          .activeTab=${this.activeTab}
+          .isPlaying=${this.playing}
+          .playLabel=${this.activeTab === 'song' ? 'Play song' : 'Play section'}
+          .moodColor=${moodColor}
+          .sections=${this.sections}
+          .activeSectionId=${activeSecLetter}
+          .chordSound=${this.instrument || 'Stage Rhodes'}
+          .melodySound=${'Lead Synth'}
+          .chordFeel=${this.playStyle || 'Block chords'}
+          .keyRoot=${this.progression?.key || 'C'}
+          .scaleMode=${this.progression?.scaleType === 'MINOR' ? 'Minor' : 'Major'}
+          .bpm=${this.progression?.bpm || 84}
+          .barsPerChord=${playbackEngine.getBarsPerChord()}
+          .songTotal=${songTotal}
+          @toggle-play=${() => {
+            if (this.activeTab === 'song') {
+              this.onTogglePlaySong();
+            } else {
+              this.onTogglePlay();
+            }
+          }}
+          @share-click=${() => { this.shareModalOpen = true; }}
+          @bpm-change=${(e: CustomEvent) => {
+            if (this.progression) {
+              this.progression = { ...this.progression, bpm: e.detail.bpm };
+              playbackEngine.setBpm(e.detail.bpm);
+              this.requestUpdate();
+            }
+          }}
+          @bars-change=${(e: CustomEvent) => {
+            playbackEngine.setBarsPerChord(e.detail.bars);
+            this.requestUpdate();
+          }}
+          @key-change=${(e: CustomEvent) => {
+            if (this.progression) {
+              this.progression = { ...this.progression, key: e.detail.root };
+              playbackEngine.setProgression(this.progression, this.order);
+              this.requestUpdate();
+            }
+          }}
+          @scale-change=${(e: CustomEvent) => {
+            if (this.progression) {
+              const scaleType = e.detail.mode.toUpperCase();
+              this.progression = { ...this.progression, scaleType };
+              playbackEngine.setProgression(this.progression, this.order);
+              this.requestUpdate();
+            }
+          }}
+          @sound-change=${(e: CustomEvent) => {
+            this.onSetInstrument(new CustomEvent('set-instrument', { detail: e.detail.sound }));
+          }}
+          @feel-change=${(e: CustomEvent) => {
+            this.onSetPlayStyle(new CustomEvent('set-play-style', { detail: e.detail.feel }));
+          }}
+        ></transport-bar>
       </div>
+
+      <div class="dock-container mobile-only">
+        <mobile-dock
+          .activeTab=${this.activeTab}
+          .isPlaying=${this.playing}
+          .playLabel=${this.activeTab === 'song' ? 'Play song' : 'Play section'}
+          .moodColor=${moodColor}
+          .sections=${this.sections}
+          .activeSectionId=${activeSecLetter}
+          .chordSound=${this.instrument || 'Stage Rhodes'}
+          .melodySound=${'Lead Synth'}
+          .chordFeel=${this.playStyle || 'Block chords'}
+          .keyRoot=${this.progression?.key || 'C'}
+          .scaleMode=${this.progression?.scaleType === 'MINOR' ? 'Minor' : 'Major'}
+          .bpm=${this.progression?.bpm || 84}
+          .barsPerChord=${playbackEngine.getBarsPerChord()}
+          .isSaved=${isBookmarked}
+          @toggle-play=${() => {
+            if (this.activeTab === 'song') {
+              this.onTogglePlaySong();
+            } else {
+              this.onTogglePlay();
+            }
+          }}
+          @open-share=${() => { this.shareModalOpen = true; }}
+          @reroll=${this.onReroll}
+          @save-set=${() => { this.saveProject(); }}
+          @unsave-set=${() => { if (this.currentProjectId) this.onUnsaveSet(new CustomEvent('unsave-set', { detail: this.currentProjectId })); }}
+          @view-sets=${() => { this.libraryOpen = true; }}
+          @set-bpm=${(e: CustomEvent) => {
+            if (this.progression) {
+              this.progression = { ...this.progression, bpm: e.detail.bpm };
+              playbackEngine.setBpm(e.detail.bpm);
+              this.requestUpdate();
+            }
+          }}
+          @set-bars-per-chord=${(e: CustomEvent) => {
+            playbackEngine.setBarsPerChord(e.detail.bars);
+            this.requestUpdate();
+          }}
+          @set-key=${(e: CustomEvent) => {
+            if (this.progression) {
+              const root = e.detail.root;
+              const mode = e.detail.mode?.toUpperCase() === 'MINOR' ? 'MINOR' : 'MAJOR';
+              this.progression = { ...this.progression, key: root, scaleType: mode };
+              playbackEngine.setProgression(this.progression, this.order);
+              this.requestUpdate();
+            }
+          }}
+          @set-sound=${(e: CustomEvent) => {
+            this.onSetInstrument(new CustomEvent('set-instrument', { detail: e.detail.sound }));
+          }}
+          @set-feel=${(e: CustomEvent) => {
+            this.onSetPlayStyle(new CustomEvent('set-play-style', { detail: e.detail.feel }));
+          }}
+        ></mobile-dock>
+      </div>
+
+      <midi-modal
+        .isOpen=${this.midiModalOpen}
+        @close-modal=${() => { this.midiModalOpen = false; }}
+      ></midi-modal>
+
+      <share-modal
+        .open=${this.shareModalOpen}
+        .progression=${this.progression}
+        .order=${this.order}
+        .instrument=${this.instrument}
+        .playStyle=${this.playStyle}
+        .barsPerChord=${playbackEngine.getBarsPerChord()}
+        .feelSettings=${playbackEngine.getFeelSettings()}
+        .melodyTrack=${this.melodyTrack}
+        @close=${() => { this.shareModalOpen = false; }}
+        @toast=${(e: CustomEvent<string>) => this.showToast(e.detail)}
+      ></share-modal>
+
+      <auth-modal
+        .open=${this.authModalOpen}
+        @close-modal=${() => { this.authModalOpen = false; }}
+      ></auth-modal>
+
+      ${this.toastMessage ? html`
+        <div class="save-toast">
+          <span>${this.toastMessage}</span>
+          <div class="toast-actions">
+            ${this.toastUndoId ? html`
+              <button class="toast-btn" @click=${() => { this.libraryOpen = true; this.toastMessage = null; }}>View</button>
+              <button class="toast-btn undo" @click=${this.onToastUndo}>Undo</button>
+            ` : html`
+              <button class="toast-btn" @click=${() => { this.toastMessage = null; }} aria-label="Dismiss">✕</button>
+            `}
+          </div>
+        </div>
+      ` : ''}
     `;
   }
 }

@@ -1243,6 +1243,10 @@ export class MelodyEngine {
 
     return events.sort((a, b) => a.time - b.time);
   }
+
+  getMelodyFeelForGenre(genre: string): MelodyFeelSettings {
+    return getMelodyFeelForGenre(genre);
+  }
 }
 
 export const melodyEngine = new MelodyEngine();

@@ -674,7 +674,7 @@ export class TabPlay extends LitElement {
           : html`
               <div class="fret-grid">
                 ${chords.map((ch, i) =>
-                  this.renderFretCard(ch, i, this.playInstrument, this.playing && this.activeIndex === i)
+                  this.renderFretCard(ch, i, this.playInstrument as 'Guitar' | 'Ukulele', this.playing && this.activeIndex === i)
                 )}
               </div>
             `}
