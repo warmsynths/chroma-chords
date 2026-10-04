@@ -18,6 +18,7 @@ import './components/tabs/tab-chords';
 import './components/tabs/tab-melody';
 import './components/tabs/tab-song';
 import './components/tabs/tab-play';
+import './components/loops-library';
 import './components/aside/chord-inspector';
 import './components/modals/midi-modal';
 import './components/share-modal';
@@ -37,6 +38,8 @@ export class ChromaChordsApp extends LitElement {
   @state() private activeTab: NavTabId = 'loop';
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
   @state() private libraryOpen = false;
+  @state() private swapState: { swapIndex: number | null; abPick: any; feel: string } = { swapIndex: null, abPick: null, feel: '' };
+  @state() private closeSwapSignal = 0;
   @state() private genre = 'Pop';
   @state() private mood = 'Dreamy';
   @state() private progression: Progression | null = null;
@@ -508,6 +511,30 @@ export class ChromaChordsApp extends LitElement {
     .dock-container {
       flex-shrink: 0;
       z-index: 45;
+    }
+
+    .m-library-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 39;
+      background: rgba(46, 39, 31, 0.28);
+      animation: cvfv-fade 180ms ease-out;
+    }
+    .m-library-pop {
+      position: fixed;
+      left: 14px;
+      right: 14px;
+      bottom: 92px;
+      z-index: 40;
+      max-height: calc(100vh - 200px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      background: var(--cv-cream, #FBF3E6);
+      border: 1px solid rgba(46, 39, 31, 0.1);
+      border-radius: 18px;
+      padding: 10px;
+      box-shadow: 0 22px 44px -18px rgba(46, 39, 31, 0.55);
+      animation: cvfv-sheet-up 180ms var(--cv-ease, ease);
     }
 
     .desktop-only {
@@ -1404,6 +1431,8 @@ export class ChromaChordsApp extends LitElement {
                     .isPlaying=${this.playing}
                     .activeIndex=${this.activeIndex}
                     .showTheory=${this.showTheory}
+                    .closeSwapSignal=${this.closeSwapSignal}
+                    @swap-state=${(e: CustomEvent) => { this.swapState = e.detail; }}
                     @chord-detail-open=${(e: CustomEvent) => {
                       this.selectedChordIndex = e.detail.index;
                     }}
@@ -1710,8 +1739,14 @@ export class ChromaChordsApp extends LitElement {
             @toggle-library=${() => {
               this.libraryOpen = !this.libraryOpen;
             }}
-            @select-set=${(e: CustomEvent) => this.onLoadProject(e)}
+            .swapIndex=${this.activeTab === 'loop' ? this.swapState.swapIndex : null}
+            .abPick=${this.activeTab === 'loop' ? this.swapState.abPick : null}
+            .activeSwapFamily=${this.swapState.feel}
+            @swap-close-request=${() => { this.closeSwapSignal += 1; }}
+            .activeSetId=${this.currentProjectId}
+            @select-set=${(e: CustomEvent) => { this.libraryOpen = false; this.onLoadProject(e); }}
             @delete-set=${(e: CustomEvent) => this.onUnsaveSet(e)}
+            @rename-set=${(e: CustomEvent) => this.onRenameProject(e)}
             @change-voicing=${(e: CustomEvent) => {
               if (this.progression && this.selectedChordIndex !== null) {
                 const chords = [...this.progression.chords];
@@ -1727,6 +1762,21 @@ export class ChromaChordsApp extends LitElement {
           ></chord-inspector>
         </aside>
       </div>
+
+      <!-- Saved loops (phones): popover above the dock; on desktop this lives in the right-hand column -->
+      ${this.libraryOpen ? html`
+        <div class="m-library-backdrop mobile-only" @click=${() => { this.libraryOpen = false; }}></div>
+        <div class="m-library-pop mobile-only" role="dialog" aria-label="Your saved loops">
+          <loops-library
+            .sets=${projectStorage.getProjects()}
+            .activeId=${this.currentProjectId}
+            .moodColor=${moodColor}
+            @select-set=${(e: CustomEvent) => { this.libraryOpen = false; this.onLoadProject(e); }}
+            @delete-set=${(e: CustomEvent) => this.onUnsaveSet(e)}
+            @rename-set=${(e: CustomEvent) => this.onRenameProject(e)}
+          ></loops-library>
+        </div>
+      ` : ''}
 
       <!-- Mobile Dock: Persistent at viewport bottom on mobile only -->
       <div class="dock-container mobile-only">

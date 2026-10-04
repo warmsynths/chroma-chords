@@ -59,6 +59,8 @@ export class TabChords extends LitElement {
   @property({ type: Boolean }) isPlaying = false;
   @property({ type: Number }) activeIndex = -1;
   @property({ type: Boolean }) showTheory = false;
+  /** Bumped by the app when the right-hand column's × asks to close the open swap. */
+  @property({ type: Number }) closeSwapSignal = 0;
 
   @state() private swapIndex: number | null = null;
   @state() private activeSwapFamily = 'Darker';
@@ -914,6 +916,18 @@ export class TabChords extends LitElement {
 
   updated(changedProperties: PropertyValues) {
     super.updated(changedProperties);
+    if (changedProperties.has('closeSwapSignal') && changedProperties.get('closeSwapSignal') !== undefined) {
+      this.swapIndex = null;
+      this.abPick = null;
+    }
+    if (changedProperties.has('swapIndex') || changedProperties.has('abPick') || changedProperties.has('activeSwapFamily')) {
+      // Tell the right-hand column what is being swapped / auditioned
+      this.dispatchEvent(new CustomEvent('swap-state', {
+        detail: { swapIndex: this.swapIndex, abPick: this.abPick, feel: this.activeSwapFamily },
+        bubbles: true,
+        composed: true,
+      }));
+    }
     if (changedProperties.has('progression') && this.progression?.chords) {
       let changed = false;
       const nextVoice = { ...this.padVoice };

@@ -16,6 +16,9 @@ import {
   SCALE_LABEL,
   SCALE_ABBREV,
 } from '../../services/chord-engine';
+import { getBandById } from '../../services/band-dna-service';
+import type { ProjectData } from '../../services/project-service';
+import '../loops-library';
 
 export const CHORD_QUALITIES = [
   { label: 'Major', sub: 'bright' },
@@ -76,6 +79,7 @@ export class ChordInspector extends LitElement {
     }
 
     .inspector-top-row {
+      position: relative;
       padding: 18px 22px 14px;
       border-bottom: 1px solid rgba(46, 39, 31, 0.08);
       flex-shrink: 0;
@@ -92,6 +96,9 @@ export class ChordInspector extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 14px;
+      /* soft fade where the column scrolls under the edge (design) */
+      -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 22px), transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 22px), transparent 100%);
     }
 
     /* Header */
@@ -127,7 +134,6 @@ export class ChordInspector extends LitElement {
     }
 
     .header-actions {
-      position: relative;
       display: flex;
       align-items: center;
       gap: 6px;
@@ -194,9 +200,13 @@ export class ChordInspector extends LitElement {
     /* Popover */
     .popover-menu {
       position: absolute;
-      top: calc(100% + 8px);
-      right: 0;
-      width: 280px;
+      top: calc(100% - 4px);
+      left: 14px;
+      right: 14px;
+      z-index: 100;
+      max-height: calc(100vh - 220px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
       background: var(--cv-cream, #FBF3E6);
       border: 1px solid rgba(46, 39, 31, 0.12);
       border-radius: 18px;
@@ -318,9 +328,90 @@ export class ChordInspector extends LitElement {
     }
 
     .arc-sentence-text {
-      font-size: 13px;
-      line-height: 1.55;
+      font-size: 13.5px;
+      line-height: 1.6;
       color: var(--cv-ink-muted, #5B5145);
+    }
+
+    /* Band card: "How they write" */
+    .band-card {
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 16px;
+      padding: 13px 15px 15px;
+    }
+
+    .band-card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .band-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    .band-card-kicker {
+      flex: 1;
+      min-width: 0;
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+    }
+
+    .band-card-name {
+      line-height: 1.15;
+      color: #2E271F;
+      flex-shrink: 0;
+    }
+
+    .band-sig-row {
+      margin-top: 12px;
+    }
+
+    .band-sig-row + .band-sig-row {
+      padding-top: 10px;
+      margin-top: 10px;
+      border-top: 1px solid rgba(46, 39, 31, 0.08);
+    }
+
+    .band-sig-k {
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+    }
+
+    .band-sig-v {
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 1.5;
+      color: var(--cv-ink, #2E271F);
+      margin-top: 3px;
+    }
+
+    /* Hint card at the bottom of the idle column */
+    .hint-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 14px;
+      padding: 11px 13px;
+      margin-top: 2px;
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+
+    .hint-card svg {
+      flex-shrink: 0;
+      margin-top: 1px;
     }
 
     /* Chord Detail Elements */
@@ -656,7 +747,10 @@ export class ChordInspector extends LitElement {
   isSaved = false;
 
   @property({ type: Array })
-  savedSets: Array<{ id: string; name: string; date?: string }> = [];
+  savedSets: ProjectData[] = [];
+
+  @property({ type: String })
+  activeSetId: string | null = null;
 
   @property({ type: Boolean })
   libraryOpen = false;
@@ -696,6 +790,10 @@ export class ChordInspector extends LitElement {
     this.dispatchEvent(new CustomEvent('chord-select', { detail: { index }, bubbles: true, composed: true }));
   }
 
+  private onCloseSwap() {
+    this.dispatchEvent(new CustomEvent('swap-close-request', { bubbles: true, composed: true }));
+  }
+
   private onCloseDetail() {
     this.dispatchEvent(new CustomEvent('close-detail', { bubbles: true, composed: true }));
   }
@@ -707,16 +805,6 @@ export class ChordInspector extends LitElement {
   private onToggleLibrary() {
     this.libraryOpen = !this.libraryOpen;
     this.dispatchEvent(new CustomEvent('toggle-library', { detail: { open: this.libraryOpen }, bubbles: true, composed: true }));
-  }
-
-  private onSelectSavedSet(set: any) {
-    this.libraryOpen = false;
-    this.dispatchEvent(new CustomEvent('select-saved-set', { detail: { set }, bubbles: true, composed: true }));
-  }
-
-  private onDeleteSavedSet(id: string, e: Event) {
-    e.stopPropagation();
-    this.dispatchEvent(new CustomEvent('delete-saved-set', { detail: { id }, bubbles: true, composed: true }));
   }
 
   private onChangeQuality(quality: string) {
@@ -754,120 +842,22 @@ export class ChordInspector extends LitElement {
       <div class="inspector-panel" style="--mood-color: ${moodCol};">
         ${this.selectedChordIndex !== null && chords[this.selectedChordIndex]
           ? this.renderChordDetail(chords[this.selectedChordIndex], chords)
-          : this.swapIndex !== null && this.abPick
-            ? this.renderSwapAudition()
+          : this.swapIndex !== null && chords[this.swapIndex]
+            ? this.renderSwapAudition(chords)
             : this.renderIdleOverview(chords, moodCol)}
       </div>
     `;
   }
 
-  private renderIdleOverview(chords: ChordBlock[], moodCol: string) {
-    // Tension arc computation
-    const tensions = chords.map(c => c.tension || 0.1);
-    const maxTension = Math.max(...tensions, 0.1);
-    const minTension = Math.min(...tensions, 0);
-    const peakIdx = tensions.indexOf(maxTension);
-    const isRising = tensions.every((v, i) => i === 0 || v >= tensions[i - 1]);
 
-    const arcTitle = (maxTension - minTension) < 0.28
-      ? 'Stays close to home'
-      : isRising
-        ? 'A steady climb'
-        : (tensions[tensions.length - 1] < 0.25 && peakIdx < tensions.length - 1)
-          ? 'Away, then home'
-          : 'Drifts, then settles';
-
-    const arcSentence = `Opens ${ROLE_PLAIN[chords[0]?.functionLabel] || 'HOME'} and ${(maxTension - minTension) < 0.28
-      ? 'never strays far — every chord sits in about the same place, so the loop feels calm and repeatable.'
-      : isRising
-        ? `tightens chord by chord, peaking on ${chords[peakIdx]?.name || 'the peak'}. Looping back does the resolving.`
-        : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before easing back down home.`
-    }`;
-
+  private renderTheory(chords: ChordBlock[]) {
+    if (!this.showTheory) return '';
     const cadences = detectProgressionCadences(chords);
     const voiceLinks = analyzeVoiceLeading(chords);
     const key = this.progression?.key || 'C';
     const scale = this.progression?.scaleType || 'MAJOR';
-    const scaleName = SCALE_LABEL[scale] || 'Major';
-
     return html`
-      <div class="inspector-top-row">
-        <div class="header-row">
-          <div>
-            <div class="kicker">THIS LOOP</div>
-            <div class="main-title">${arcTitle}</div>
-          </div>
-          <div class="header-actions">
-            <button
-              class="action-btn ${this.isSaved ? 'saved' : ''}"
-              @click=${this.onToggleSave}
-              aria-label="${this.isSaved ? 'Saved loop' : 'Save loop'}"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="${this.isSaved ? '#2E271F' : 'none'}" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>
-              </svg>
-              ${this.isSaved ? 'Saved' : 'Save'}
-            </button>
-            <button
-              class="action-btn ${this.libraryOpen ? 'open' : ''}"
-              @click=${this.onToggleLibrary}
-              aria-label="Your saved loops"
-              aria-expanded=${this.libraryOpen ? 'true' : 'false'}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 6h16M4 12h16M4 18h10"/>
-              </svg>
-              ${this.savedSets.length ? `Loops · ${this.savedSets.length}` : 'Loops'}
-            </button>
 
-            ${this.libraryOpen ? html`
-              <div class="popover-menu">
-                <div class="kicker" style="margin-bottom: 8px;">SAVED LOOPS</div>
-                ${this.savedSets.length === 0 ? html`
-                  <div style="font-size: 12px; color: var(--cv-ink-muted); padding: 8px 4px;">No saved loops yet. Click "Save" to store your favorite progressions.</div>
-                ` : this.savedSets.map(s => html`
-                  <div class="popover-item saved-set-item" @click=${() => this.onSelectSavedSet(s)}>
-                    <span style="font-size: 12.5px; font-weight: 700; color: #2E271F;">${s.name}</span>
-                    <button
-                      style="border: none; background: none; color: #8A6B3F; font-size: 14px; cursor: pointer;"
-                      @click=${(e: Event) => this.onDeleteSavedSet(s.id, e)}
-                      aria-label="Delete ${s.name}"
-                    >×</button>
-                  </div>
-                `)}
-              </div>
-            ` : ''}
-          </div>
-        </div>
-      </div>
-
-      <div class="inspector-body">
-        <!-- Arc Bars Chart (Height: 152px) -->
-        <div class="arc-bars-container">
-          ${chords.map((c, i) => {
-            const r = roleForTension(c.tension ?? 0.1);
-            const barH = Math.max(18, Math.round(18 + (c.tension ?? 0.1) * 62));
-            return html`
-              <button
-                class="arc-bar-col ${this.selectedChordIndex === i ? 'selected' : ''}"
-                @click=${() => this.onBarClick(i)}
-                aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || ''}"
-              >
-                <div class="bar-pod">
-                  <div class="bar-fill" style="height: ${barH}px; background: ${r.color};"></div>
-                </div>
-                <div class="bar-meta">
-                  <div class="bar-chord-name">${c.name}</div>
-                  <div class="bar-role-hint">${ROLE_PLAIN[c.functionLabel] || ''}</div>
-                </div>
-              </button>
-            `;
-          })}
-        </div>
-        <div class="arc-hint-text">Taller means more unresolved.</div>
-        <div class="arc-sentence-text">${arcSentence}</div>
-
-        ${this.showTheory ? html`
           <div class="theory-box">
             <div class="theory-row">
               <span class="theory-key">Key<span style="display: none;"> &amp; Scale</span></span>
@@ -922,7 +912,128 @@ export class ChordInspector extends LitElement {
               <div class="theory-note-text">${this.progression.note}</div>
             ` : ''}
           </div>
+            `;
+  }
+
+  private renderIdleOverview(chords: ChordBlock[], moodCol: string) {
+    // Tension arc computation
+    const tensions = chords.map(c => c.tension || 0.1);
+    const maxTension = Math.max(...tensions, 0.1);
+    const minTension = Math.min(...tensions, 0);
+    const peakIdx = tensions.indexOf(maxTension);
+    const isRising = tensions.every((v, i) => i === 0 || v >= tensions[i - 1]);
+
+    const arcTitle = (maxTension - minTension) < 0.28
+      ? 'Stays close to home'
+      : isRising
+        ? 'A steady climb'
+        : (tensions[tensions.length - 1] < 0.25 && peakIdx < tensions.length - 1)
+          ? 'Away, then home'
+          : 'Drifts, then settles';
+
+    const arcSentence = `Opens ${ROLE_PLAIN[chords[0]?.functionLabel] || 'HOME'} and ${(maxTension - minTension) < 0.28
+      ? 'never strays far — every chord sits in about the same place, so the loop feels calm and repeatable.'
+      : isRising
+        ? `tightens chord by chord, peaking on ${chords[peakIdx]?.name || 'the peak'}. Looping back does the resolving.`
+        : `explores tension up to ${chords[peakIdx]?.name || 'the middle'} before easing back down home.`
+    }`;
+
+    const band = this.selectedBand ? getBandById(this.selectedBand) : null;
+
+    return html`
+      <div class="inspector-top-row">
+        <div class="header-row">
+          <div>
+            <div class="kicker">THIS LOOP</div>
+            <div class="main-title">${arcTitle}</div>
+          </div>
+          <div class="header-actions">
+            <button
+              class="action-btn ${this.isSaved ? 'saved' : ''}"
+              @click=${this.onToggleSave}
+              aria-label="${this.isSaved ? 'Saved loop' : 'Save loop'}"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="${this.isSaved ? '#2E271F' : 'none'}" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>
+              </svg>
+              ${this.isSaved ? 'Saved' : 'Save'}
+            </button>
+            <button
+              class="action-btn ${this.libraryOpen ? 'open' : ''}"
+              @click=${this.onToggleLibrary}
+              aria-label="Your saved loops"
+              aria-expanded=${this.libraryOpen ? 'true' : 'false'}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 6h16M4 12h16M4 18h10"/>
+              </svg>
+              ${this.savedSets.length ? `Loops · ${this.savedSets.length}` : 'Loops'}
+            </button>
+
+            ${this.libraryOpen ? html`
+              <div class="popover-menu">
+                <loops-library
+                  .sets=${this.savedSets}
+                  .activeId=${this.activeSetId}
+                  .moodColor=${this.moodColor}
+                ></loops-library>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="inspector-body">
+        <!-- Arc Bars Chart (Height: 152px) -->
+        <div class="arc-bars-container">
+          ${chords.map((c, i) => {
+            const r = roleForTension(c.tension ?? 0.1);
+            const barH = Math.max(18, Math.round(18 + (c.tension ?? 0.1) * 62));
+            return html`
+              <button
+                class="arc-bar-col ${this.selectedChordIndex === i ? 'selected' : ''}"
+                @click=${() => this.onBarClick(i)}
+                aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || ''}"
+              >
+                <div class="bar-pod">
+                  <div class="bar-fill" style="height: ${barH}px; background: ${r.color};"></div>
+                </div>
+                <div class="bar-meta">
+                  <div class="bar-chord-name">${c.name}</div>
+                  <div class="bar-role-hint">${ROLE_PLAIN[c.functionLabel] || ''}</div>
+                </div>
+              </button>
+            `;
+          })}
+        </div>
+        <div class="arc-hint-text">Taller means more unresolved.</div>
+        <div class="arc-sentence-text">${arcSentence}</div>
+
+        ${this.renderTheory(chords)}
+
+        ${band ? html`
+          <div class="band-card">
+            <div class="band-card-head">
+              <div class="band-swatch" style="background: ${band.color};"></div>
+              <div class="band-card-kicker">How they write</div>
+              <div
+                class="band-card-name"
+                style="font-family: ${band.font}; font-weight: ${band.weight || 400}; font-style: ${band.italic ? 'italic' : 'normal'}; font-size: ${(band.pillFs || 13) + 1}px; letter-spacing: ${band.pillTrack || 'normal'};"
+              >${band.name}</div>
+            </div>
+            ${band.sig.map(row => html`
+              <div class="band-sig-row">
+                <div class="band-sig-k">${row.k}</div>
+                <div class="band-sig-v">${row.v}</div>
+              </div>
+            `)}
+          </div>
         ` : ''}
+
+        <div class="hint-card">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${moodCol}" stroke-width="2.4" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
+          <div>Press a chord to hear it — the arrows on a card show what else could go there.</div>
+        </div>
       </div>
     `;
   }
@@ -1037,32 +1148,46 @@ export class ChordInspector extends LitElement {
     `;
   }
 
-  private renderSwapAudition() {
+  private renderSwapAudition(chords: ChordBlock[]) {
+    const idx = this.swapIndex ?? 0;
+    const chord = chords[idx];
+    const r = roleForTension(chord?.tension ?? 0.1);
+    const pick = this.abPick;
     return html`
       <div class="inspector-top-row">
         <div class="header-row">
-          <div>
-            <div class="kicker">BAR ${(this.swapIndex ?? 0) + 1} HARMONIC CONTEXT</div>
-            <div class="main-title">Auditioning Swap</div>
+          <div style="min-width: 0;">
+            <div class="kicker" style="font-size: 10px;">Swapping Bar ${idx + 1}</div>
+            <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
+              <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1;">${chord?.name || ''}</div>
+              ${chord?.roman ? html`<div style="font-family: var(--cv-font-mono, 'Space Mono', monospace); font-size: 11px; font-weight: 700; color: #8A6B3F;">${chord.roman}</div>` : ''}
+              <div style="font-size: 12px; font-weight: 700; color: rgba(46, 39, 31, 0.45);">${ROLE_PLAIN[chord?.functionLabel || ''] || chord?.functionLabel || ''}</div>
+            </div>
           </div>
-          <button class="close-btn" @click=${this.onCloseDetail} aria-label="Close audition">×</button>
+          <button class="close-btn" style="width: 44px; height: 44px; margin: -8px -10px 0 0;" @click=${this.onCloseSwap} aria-label="Close swap">\u00D7</button>
         </div>
       </div>
 
       <div class="inspector-body">
-        <div class="audition-card">
-          <div class="kicker" style="color: #2E271F;">${this.activeSwapFamily || 'Substitution'}</div>
-          <div class="audition-title">${this.abPick.chord || this.abPick.name}</div>
-          <div style="font-size: 12.5px; color: var(--cv-ink-muted); line-height: 1.5;">
-            ${this.abPick.functionLabel || this.abPick.fn || 'Alters the emotional color of this bar.'}
-          </div>
-          ${this.abPick.notes ? html`
-            <div style="font-size: 12px; font-weight: 700; color: #2E271F;">
-              Notes: ${this.abPick.notes.join(' · ')}
+        ${pick ? html`
+          <div class="audition-block">
+            <div class="kicker" style="font-size: 10px; margin: 0;">Auditioning \u00B7 ${this.activeSwapFamily || 'Substitution'}</div>
+            <div style="display: flex; align-items: baseline; gap: 8px; margin-top: 5px; flex-wrap: wrap;">
+              <div style="font-size: 21px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1;">${pick.name || pick.chord}</div>
+              ${pick.roman ? html`<div style="font-size: 11px; font-weight: 800; letter-spacing: 0.6px; color: var(--cv-label, #8A6B3F);">${pick.roman}</div>` : ''}
             </div>
-          ` : ''}
-        </div>
+            ${pick.desc || pick.functionLabel ? html`<div style="font-size: 12.5px; font-weight: 700; line-height: 1.5; color: var(--cv-ink-muted); margin-top: 6px;">${pick.desc || ROLE_PLAIN[pick.functionLabel] || pick.functionLabel}</div>` : ''}
+            ${pick.notes?.length ? html`<div style="font-size: 12px; font-weight: 800; letter-spacing: 0.4px; margin-top: 10px;">${pick.notes.map((n: string) => n.replace(/\d+$/, '')).join(' \u00B7 ')}</div>` : ''}
+          </div>
+        ` : html`
+          <div style="font-size: 12.5px; font-weight: 700; line-height: 1.55; color: var(--cv-ink-muted);">
+            Pick a feeling under the loop, then a chord inside it. What it does and how it voices shows up here.
+          </div>
+        `}
+        <div style="height: 3px; background: ${r.color}; border-radius: 2px; opacity: 0.7;"></div>
+        ${this.renderTheory(chords)}
       </div>
     `;
   }
+
 }

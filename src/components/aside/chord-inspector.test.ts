@@ -121,9 +121,29 @@ describe('ChordInspector Component', () => {
     await el.updateComplete;
     const shadow = el.shadowRoot!;
 
-    const auditionCard = shadow.querySelector('.audition-card');
+    const auditionCard = shadow.querySelector('.audition-block');
     expect(auditionCard).toBeTruthy();
     expect(auditionCard?.textContent).toContain('Fm');
     expect(auditionCard?.textContent).toContain('Minor iv Cadence');
+    expect(shadow.querySelector('.inspector-top-row')?.textContent).toContain('Swapping Bar 3');
+  });
+
+  it('shows the swapping header and a hint as soon as a swap is open, before anything is picked', async () => {
+    el.swapIndex = 0;
+    el.abPick = null;
+    await el.updateComplete;
+    const shadow = el.shadowRoot!;
+    expect(shadow.querySelector('.inspector-top-row')?.textContent).toContain('Swapping Bar 1');
+    expect(shadow.querySelector('.inspector-body')?.textContent).toContain('Pick a feeling under the loop');
+
+    const closeSpy = vi.fn();
+    el.addEventListener('swap-close-request', closeSpy);
+    (shadow.querySelector('[aria-label="Close swap"]') as HTMLElement).click();
+    expect(closeSpy).toHaveBeenCalled();
+  });
+
+  it('idle state ends with the hint card', async () => {
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.hint-card')?.textContent).toContain('Press a chord to hear it');
   });
 });
