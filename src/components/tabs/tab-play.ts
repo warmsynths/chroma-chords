@@ -137,62 +137,57 @@ export class TabPlay extends LitElement {
       box-sizing: border-box;
     }
 
+    /* The app's ONE main tinted panel wraps this tab; no second panel here (design: one skeleton) */
     .play-panel {
       position: relative;
-      border-radius: 26px;
-      padding: 16px 20px 24px;
-      background: var(--panel-tint-bg, rgba(201, 169, 224, 0.18));
-      backdrop-filter: blur(8px);
-      box-shadow: 0 4px 24px rgba(46, 39, 31, 0.04);
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      min-height: 520px;
+      gap: 0;
     }
 
-    @media (max-width: 640px) {
-      .play-panel {
-        border-radius: 22px;
-        padding: 14px 16px 20px;
-      }
-    }
-
-    /* Panel Header */
+    /* Header row (Chroma Melody Play it): tier-2 + degrees switch + hint on one wrapping row */
     .panel-header {
       display: flex;
       align-items: center;
-      justify-content: space-between;
       flex-wrap: wrap;
-      gap: 12px;
-      padding-bottom: 4px;
-      border-bottom: 1px solid rgba(46, 39, 31, 0.08);
-    }
-
-    .header-left {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-    }
-
-    .header-label {
-      font-size: 10.5px;
-      font-weight: 800;
-      letter-spacing: 1.2px;
-      text-transform: uppercase;
-      color: #8a6b3f;
-    }
-
-    .header-sub {
-      font-size: 12px;
-      font-weight: 600;
-      color: #6b5f50;
+      gap: 12px 16px;
     }
 
     .header-right {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
+      display: contents;
+    }
+
+    .hint-banner {
+      flex: 1;
+      min-width: 200px;
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: #6b5f50;
+    }
+
+    @media (max-width: 899px) {
+      .panel-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0;
+      }
+      .tier2-control {
+        align-self: flex-start;
+        max-width: 100%;
+        flex-wrap: wrap;
+      }
+      .degrees-switch {
+        margin-top: 13px;
+        padding-top: 13px;
+        border-top: 1px solid rgba(46, 39, 31, 0.09);
+      }
+      .hint-banner {
+        min-width: 0;
+        font-size: 12px;
+        margin-top: 11px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid rgba(46, 39, 31, 0.09);
+      }
     }
 
     /* Tier-2 Segmented Control */
@@ -228,21 +223,17 @@ export class TabPlay extends LitElement {
     .degrees-switch {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       cursor: pointer;
       user-select: none;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
       color: #6b5f50;
-      background: rgba(46, 39, 31, 0.04);
-      padding: 4px 10px;
-      border-radius: 100px;
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      transition: background 0.15s ease;
+      min-height: 32px;
     }
 
     .degrees-switch:hover {
-      background: rgba(46, 39, 31, 0.08);
+      color: #2e271f;
     }
 
     .toggle-track {
@@ -274,28 +265,28 @@ export class TabPlay extends LitElement {
       transform: translateX(12px);
     }
 
-    /* Subtitle Banner */
-    .hint-banner {
-      font-size: 12.5px;
-      line-height: 1.5;
-      color: #6b5f50;
-      background: rgba(251, 243, 230, 0.6);
-      border-radius: 12px;
-      padding: 8px 14px;
-      border: 1px solid rgba(46, 39, 31, 0.06);
-    }
-
     /* Grid Layouts */
     .piano-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-      gap: 16px;
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    @media (max-width: 899px) {
+      .piano-grid,
+      .fret-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin-top: 18px;
+      }
     }
 
     .fret-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 16px;
+      gap: 14px;
+      margin-top: 20px;
     }
 
     /* Play Card */
@@ -621,29 +612,22 @@ export class TabPlay extends LitElement {
 
     return html`
       <div class="play-panel">
-        <!-- Panel Header -->
+        <!-- Header row: tier-2 instrument, degrees switch, hint -->
         <div class="panel-header">
-          <div class="header-left">
-            <span class="header-label">PLAY IT</span>
-            <span class="header-sub">${this.playInstrument} Voicings</span>
+          <div class="tier2-control" role="tablist" aria-label="Instrument selector">
+            ${instruments.map(inst => html`
+              <button
+                class="tier2-chip ${this.playInstrument === inst ? 'active' : ''}"
+                @click=${() => this.setInstrument(inst)}
+                role="tab"
+                aria-selected=${this.playInstrument === inst}
+              >
+                ${inst}
+              </button>
+            `)}
           </div>
 
           <div class="header-right">
-            <!-- Tier-2 Segmented Instrument Control -->
-            <div class="tier2-control" role="tablist" aria-label="Instrument selector">
-              ${instruments.map(inst => html`
-                <button
-                  class="tier2-chip ${this.playInstrument === inst ? 'active' : ''}"
-                  @click=${() => this.setInstrument(inst)}
-                  role="tab"
-                  aria-selected=${this.playInstrument === inst}
-                >
-                  ${inst}
-                </button>
-              `)}
-            </div>
-
-            <!-- Scale Degrees Switch -->
             <div
               class="degrees-switch"
               @click=${this.toggleDegrees}
@@ -656,11 +640,10 @@ export class TabPlay extends LitElement {
               </div>
               <span>Scale degrees</span>
             </div>
+
+            <div class="hint-banner">${hintText}</div>
           </div>
         </div>
-
-        <!-- Subtitle Hint Banner -->
-        <div class="hint-banner">${hintText}</div>
 
         <!-- Visualizer Content -->
         ${this.playInstrument === 'Piano'

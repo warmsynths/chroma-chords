@@ -1310,7 +1310,7 @@ export class ChromaChordsApp extends LitElement {
     const activeSec = this.sections[this.activeSectionIdx];
     const activeSecLetter = activeSec ? (activeSec.id || String.fromCharCode(65 + this.activeSectionIdx)) : 'A';
     const totalBars = this.sections.reduce((acc, s) => acc + (s.order?.length || 4) * (playbackEngine.getBarsPerChord() || 1), 0);
-    const songTotal = `${this.sections.length} sections · ${totalBars} bars`;
+    const songTotal = `${this.sections.length} ${this.sections.length === 1 ? 'section' : 'sections'} · ${totalBars} bars`;
 
     return html`
       <!-- Top Site Header -->

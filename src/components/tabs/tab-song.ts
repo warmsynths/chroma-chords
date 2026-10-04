@@ -328,6 +328,48 @@ export class TabSong extends LitElement {
       color: #e74c3c;
     }
 
+    /* Phones (design: Song mobile): 48px rows, grip drag, repeat stepper + delete only */
+    @media (max-width: 899px) {
+      .timeline-container {
+        position: static;
+        border-radius: 22px;
+        padding: 12px;
+      }
+      .timeline-list {
+        gap: 5px;
+        min-height: 0;
+      }
+      .timeline-card {
+        min-height: 48px;
+      }
+      .drag-handle {
+        width: 26px;
+        margin-left: -6px;
+        font-size: 15px;
+        letter-spacing: -3px;
+      }
+      .timeline-chords-summary {
+        display: none;
+      }
+      .repeat-stepper {
+        height: 36px;
+      }
+      .repeat-stepper .stepper-btn {
+        width: 34px;
+        height: 34px;
+      }
+      .icon-action-btn {
+        width: 36px;
+        height: 36px;
+      }
+      .timeline-actions .icon-action-btn:not(.delete-item-btn) {
+        display: none;
+      }
+      .timeline-card:not(.selected) .delete-item-btn {
+        display: none;
+      }
+    }
+
     .timeline-empty {
       padding: 24px 12px;
       text-align: center;
@@ -766,6 +808,36 @@ export class TabSong extends LitElement {
     this.dragOverIdx = null;
   }
 
+  // Touch / pen reordering: HTML5 drag-and-drop doesn't fire on touch screens, so the grip drives it with pointer events.
+  private onGripPointerDown(index: number, e: PointerEvent) {
+    if (e.pointerType === 'mouse') return; // mouse keeps native drag-and-drop
+    e.preventDefault();
+    e.stopPropagation();
+    this.draggingIdx = index;
+    this.dragOverIdx = index;
+    const move = (ev: PointerEvent) => {
+      const el = this.shadowRoot?.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+      const row = el?.closest('.timeline-card') as HTMLElement | null;
+      if (row?.dataset.idx !== undefined) this.dragOverIdx = parseInt(row.dataset.idx, 10);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      const target = this.dragOverIdx;
+      if (this.draggingIdx !== null && target !== null && target !== this.draggingIdx) {
+        const updated = SongArranger.reorderTimeline(this.getEffectiveTimeline(), this.draggingIdx, target);
+        this.timeline = updated;
+        this.dispatchEvent(new CustomEvent('reorder-timeline', { detail: { timeline: updated }, bubbles: true, composed: true }));
+      }
+      this.draggingIdx = null;
+      this.dragOverIdx = null;
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+
   render() {
     const timeline = this.getEffectiveTimeline();
     const totalBars = this.getTotalBars();
@@ -799,6 +871,7 @@ export class TabSong extends LitElement {
                       <div
                         class="timeline-card ${isPlayingItem ? 'active-playing' : ''} ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}"
                         draggable="true"
+                        data-idx=${idx}
                         @click=${() => this.onSelectSectionCard(item.sectionIndex)}
                         @dragstart=${(e: DragEvent) => this.onDragStart(idx, e)}
                         @dragover=${(e: DragEvent) => this.onDragOver(idx, e)}
@@ -808,7 +881,7 @@ export class TabSong extends LitElement {
                         <!-- Active playback progress bar -->
                         <div class="playback-bar"></div>
 
-                        <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+                        <span class="drag-handle" title="Drag to reorder" aria-label="Drag to reorder" @pointerdown=${(e: PointerEvent) => this.onGripPointerDown(idx, e)}>⋮⋮</span>
                         <span class="step-idx">${String(idx + 1).padStart(2, '0')}</span>
 
                         <span class="timeline-badge" style="background: ${badgeColor};">

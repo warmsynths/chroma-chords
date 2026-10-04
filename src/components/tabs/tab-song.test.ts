@@ -192,4 +192,31 @@ describe('TabSong Component', () => {
 
     el.remove();
   });
+
+  it('reorders the song with a touch drag on the grip (HTML5 drag does not fire on touch)', async () => {
+    const el = document.createElement('tab-song') as TabSong;
+    el.sections = sampleSections;
+    el.timeline = [
+      { id: 't0', sectionIndex: 0, repeats: 1 },
+      { id: 't1', sectionIndex: 1, repeats: 1 },
+    ];
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const reordered: any[] = [];
+    el.addEventListener('reorder-timeline', (e: any) => reordered.push(e.detail.timeline));
+
+    const rows = el.shadowRoot!.querySelectorAll('.timeline-card');
+    const grip = rows[0].querySelector('.drag-handle') as HTMLElement;
+    const lastRow = rows[1] as HTMLElement;
+    // happy-dom has no layout, so hit-test the second row directly
+    (el.shadowRoot as any).elementFromPoint = () => lastRow;
+
+    grip.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true, composed: true, cancelable: true }));
+    window.dispatchEvent(new PointerEvent('pointermove', { pointerType: 'touch', clientX: 10, clientY: 80 }));
+    window.dispatchEvent(new PointerEvent('pointerup', { pointerType: 'touch' }));
+
+    expect(reordered.length).toBe(1);
+    expect(reordered[0].map((t: any) => t.sectionIndex)).toEqual([1, 0]);
+  });
 });

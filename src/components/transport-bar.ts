@@ -167,6 +167,18 @@ export class TransportBar extends LitElement {
       column-gap: 4px;
       padding: 9px 10px;
       box-sizing: border-box;
+      container-type: inline-size;
+    }
+
+    /* Narrow desktops: drop the Sound / Feel kickers so the bar stays on one row */
+    @container (max-width: 1060px) {
+      .tb-btn .kicker,
+      .play-rest {
+        display: none;
+      }
+      .tb-btn {
+        padding: 0 10px;
+      }
     }
 
     .play-btn {
@@ -930,7 +942,7 @@ export class TransportBar extends LitElement {
           aria-label=${this.playLabel}
         >
           <span class="play-icon">${playIcon}</span>
-          ${this.playLabel}
+          <span class="play-first">${this.playLabel.split(' ')[0]}</span><span class="play-rest">${this.playLabel.includes(' ') ? ' ' + this.playLabel.split(' ').slice(1).join(' ') : ''}</span>
         </button>
 
         <div class="divider"></div>
@@ -1027,7 +1039,7 @@ export class TransportBar extends LitElement {
             @click=${() => this.toggleMenu('sound')}
             aria-label="Select instrument sound"
           >
-            <span>Sound</span>
+            <span class="kicker">Sound</span>
             <span class="highlight">${currentSound}</span>
             <span class="caret">▾</span>
           </button>
@@ -1038,7 +1050,7 @@ export class TransportBar extends LitElement {
             @click=${() => this.toggleMenu('feel')}
             aria-label="Select rhythmic feel"
           >
-            <span>Feel</span>
+            <span class="kicker">Feel</span>
             <span class="highlight">${currentFeelShort}</span>
             <span class="caret">▾</span>
           </button>
