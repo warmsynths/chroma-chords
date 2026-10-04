@@ -288,5 +288,63 @@ describe('TabMelody Component', () => {
     window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
     document.elementFromPoint = origElementFromPoint;
   });
+
+  describe('mobile layout', () => {
+    beforeEach(async () => {
+      el.isMobile = true;
+      await el.updateComplete;
+    });
+
+    it('renders the overview tiles (4 chords x 16 cells) and the note dock instead of the lanes', async () => {
+      const shadow = el.shadowRoot!;
+      expect(el.hasAttribute('mobile')).toBe(true);
+      expect(shadow.querySelectorAll('.m-tile').length).toBe(4);
+      expect(shadow.querySelectorAll('.m-cell').length).toBe(64);
+      expect(shadow.querySelectorAll('.m-wk').length).toBe(7);
+      expect(shadow.querySelectorAll('.m-bk').length).toBe(5);
+      expect(shadow.querySelector('.melody-grid-stage')).toBeNull();
+    });
+
+    it('places a note from the dock keyboard on the selected step', async () => {
+      const shadow = el.shadowRoot!;
+      const changeSpy = vi.fn();
+      el.addEventListener('melody-change', changeSpy);
+
+      (shadow.querySelector('.m-cell[data-step="4"]') as HTMLElement).click();
+      await el.updateComplete;
+      (shadow.querySelector('.m-wk[aria-label="E"]') as HTMLElement).click();
+      await el.updateComplete;
+
+      expect(changeSpy).toHaveBeenCalled();
+      const note = el.melodyTrack!.notes.find(n => n.barIndex === 0 && n.stepInBar === 4);
+      expect(note?.pitch.startsWith('E')).toBe(true);
+    });
+
+    it('removes a selected note on second tap and restores it with Undo', async () => {
+      const shadow = el.shadowRoot!;
+      (shadow.querySelector('.m-cell[data-step="0"]') as HTMLElement).click();
+      await el.updateComplete;
+      (shadow.querySelector('.m-wk[aria-label="G"]') as HTMLElement).click();
+      await el.updateComplete;
+      expect(el.melodyTrack!.notes.length).toBe(1);
+
+      (shadow.querySelector('.m-cell[data-step="0"]') as HTMLElement).click();
+      await el.updateComplete;
+      expect(el.melodyTrack!.notes.length).toBe(0);
+
+      (shadow.querySelector('.m-toast button') as HTMLElement).click();
+      await el.updateComplete;
+      expect(el.melodyTrack!.notes.length).toBe(1);
+    });
+
+    it('switches to the focus view with one big grid for the chosen chord', async () => {
+      const shadow = el.shadowRoot!;
+      (shadow.querySelector('.m-expand') as HTMLElement).click();
+      await el.updateComplete;
+      expect(shadow.querySelector('.m-overview')).toBeNull();
+      expect(shadow.querySelectorAll('.m-tab').length).toBe(4);
+      expect(shadow.querySelectorAll('.m-focus-grid .m-cell').length).toBe(16);
+    });
+  });
 });
 

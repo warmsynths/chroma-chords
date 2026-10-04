@@ -247,6 +247,45 @@ export class MobileDock extends LitElement {
       animation: sheet-fade-in 140ms ease;
     }
 
+    .loop-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px 8px;
+    }
+    .loop-row-label {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #8A6B3F;
+    }
+    .loop-seg {
+      flex: 1;
+      display: flex;
+      gap: 2px;
+      background: rgba(46, 39, 31, 0.06);
+      border-radius: 100px;
+      padding: 3px;
+    }
+    .loop-seg-btn {
+      flex: 1;
+      border: none;
+      font-family: inherit;
+      min-height: 36px;
+      border-radius: 100px;
+      background: transparent;
+      color: #6B5F50;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .loop-seg-btn.active {
+      background: #FBF3E6;
+      color: #2E271F;
+      font-weight: 800;
+      box-shadow: inset 0 0 0 1px rgba(46, 39, 31, 0.1), 0 1px 2px rgba(46, 39, 31, 0.12);
+    }
     .popover-menu-item {
       border: none;
       font-family: inherit;
@@ -649,9 +688,7 @@ export class MobileDock extends LitElement {
     }));
   }
 
-  private onLoopCycle() {
-    const modes = ['Section', 'Chord', 'Span'];
-    const next = modes[(modes.indexOf(this.melodyLoop) + 1) % 3];
+  private onSetLoop(next: 'Section' | 'Chord' | 'Span') {
     this.melodyLoop = next;
     this.dispatchEvent(new CustomEvent('loop-cycle', {
       detail: { melodyLoop: next },
@@ -735,16 +772,6 @@ export class MobileDock extends LitElement {
             </svg>
           </button>
 
-          ${isMelody ? html`
-            <button
-              class="dock-btn"
-              @click=${this.onLoopCycle}
-              aria-label="Change what loops"
-              style="font-size: 11px; font-weight: 800; padding: 0 8px;"
-            >
-              Loop ${this.melodyLoop}
-            </button>
-          ` : ''}
         ` : ''}
 
         <!-- Key & Tempo Button -->
@@ -770,6 +797,21 @@ export class MobileDock extends LitElement {
         <!-- More Popover (Upwards) -->
         ${this.activeSheet === 'more' ? html`
           <div class="popover-up">
+            ${isMelody ? html`
+              <div class="loop-row">
+                <span class="loop-row-label">Loop</span>
+                <div class="loop-seg" role="radiogroup" aria-label="What loops">
+                  ${(['Section', 'Chord', 'Span'] as const).map(m => html`
+                    <button
+                      class="loop-seg-btn ${this.melodyLoop === m ? 'active' : ''}"
+                      role="radio"
+                      aria-checked=${this.melodyLoop === m}
+                      @click=${() => this.onSetLoop(m)}
+                    >${m}</button>
+                  `)}
+                </div>
+              </div>
+            ` : ''}
             <button class="popover-menu-item" @click=${this.onRerollProgression}>
               <span class="label">Try another progression</span>
               <span class="desc">New chords for this section, with undo</span>

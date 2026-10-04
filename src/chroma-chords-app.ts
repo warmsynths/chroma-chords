@@ -529,13 +529,45 @@ export class ChromaChordsApp extends LitElement {
       }
       .main-tinted-panel {
         border-radius: 22px;
-        padding: 14px 16px 20px;
+        padding: 16px;
       }
       .sub-nav-row {
-        padding: 10px 14px 4px;
+        padding: 10px 18px 4px;
+        gap: 8px;
       }
+      .nav-tabs-track {
+        flex: 1 1 auto;
+        min-width: 0;
+        justify-content: space-between;
+      }
+      .nav-tab-btn {
+        flex: 1 1 auto;
+        padding: 6px 6px;
+        font-size: 12.5px;
+      }
+      .nav-spacer {
+        display: none;
+      }
+      .theory-nav-toggle {
+        gap: 6px;
+        padding: 0 6px 0 10px;
+      }
+      .theory-nav-label {
+        font-size: 12px;
+      }
+      /* Same gap under the nav on every tab (design rule: 14px 18px 26px) */
       .scrollable-content {
-        padding: 8px 12px 96px;
+        padding: 14px 18px 26px;
+      }
+      /* Melody fills the space between nav and dock; the grid scales to fit */
+      .scrollable-content.fill {
+        overflow: hidden;
+      }
+      .scrollable-content.fill .main-tinted-panel {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        padding: 14px 12px 12px;
       }
     }
 
@@ -556,6 +588,13 @@ export class ChromaChordsApp extends LitElement {
       box-shadow: 0 16px 36px -10px rgba(46, 39, 31, 0.45);
       z-index: 99;
       animation: cv-toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @media (max-width: 899px) {
+      /* Keep toasts clear of the dock */
+      .save-toast {
+        bottom: 112px;
+        max-width: calc(100vw - 32px);
+      }
     }
     @keyframes cv-toast-in {
       from { opacity: 0; transform: translateX(-50%) translateY(14px); }
@@ -1186,6 +1225,12 @@ export class ChromaChordsApp extends LitElement {
     this.requestUpdate();
   }
 
+  private onPickSection(e: CustomEvent<{ id?: string }>) {
+    const id = e.detail?.id;
+    const idx = this.sections.findIndex((sec, i) => (sec.id || String.fromCharCode(65 + i)) === id);
+    if (idx >= 0) this.onSelectSection(new CustomEvent('select-section', { detail: idx }));
+  }
+
   private toastUndoAction: 'delete' | 'restore' = 'delete';
   private toastUndoProject: ProjectData | null = null;
 
@@ -1347,7 +1392,7 @@ export class ChromaChordsApp extends LitElement {
           </div>
 
           <!-- Scrollable Content View: ONE Main Tinted Panel -->
-          <div class="scrollable-content" style="--panel-tint-bg: ${moodTint};">
+          <div class="scrollable-content ${this.activeTab === 'melody' ? 'fill' : ''}" style="--panel-tint-bg: ${moodTint};">
             ${this.progression ? html`
               ${this.activeTab === 'loop' ? html`
                 <div class="main-tinted-panel">
@@ -1474,6 +1519,8 @@ export class ChromaChordsApp extends LitElement {
               <!-- Separate independent instance of controls for Melody -->
               <transport-bar
                 id="melody-transport-bar"
+                @select-section=${(e: CustomEvent) => this.onPickSection(e)}
+                @new-section=${() => this.onAddSection()}
                 .activeTab=${'melody'}
                 .isPlaying=${this.melodyPlaying}
                 .playLabel=${'Play melody'}
@@ -1540,6 +1587,8 @@ export class ChromaChordsApp extends LitElement {
               <!-- Dedicated instance of controls for Chords / Song / Play -->
               <transport-bar
                 id="chord-transport-bar"
+                @select-section=${(e: CustomEvent) => this.onPickSection(e)}
+                @new-section=${() => this.onAddSection()}
                 .activeTab=${this.activeTab}
                 .isPlaying=${this.activeTab === 'song' ? this.songPlaying : this.chordPlaying}
                 .playLabel=${this.activeTab === 'song' ? 'Play song' : 'Play chords'}
@@ -1753,6 +1802,15 @@ export class ChromaChordsApp extends LitElement {
           @set-sound=${(e: CustomEvent) => {
             this.onSetInstrument(new CustomEvent('set-instrument', { detail: e.detail.sound }));
           }}
+          @set-chord-sound=${(e: CustomEvent) => {
+            this.onSetInstrument(new CustomEvent('set-instrument', { detail: e.detail.sound }));
+          }}
+          @set-chord-feel=${(e: CustomEvent) => {
+            const val = e.detail.feel || e.detail.playStyle;
+            this.onSetPlayStyle(new CustomEvent('set-play-style', { detail: val }));
+          }}
+          @select-section=${(e: CustomEvent) => this.onPickSection(e)}
+          @new-section=${() => this.onAddSection()}
           @set-feel=${(e: CustomEvent) => {
             const val = e.detail.feel || e.detail.playStyle;
             this.onSetPlayStyle(new CustomEvent('set-play-style', { detail: val }));
