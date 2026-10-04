@@ -314,6 +314,48 @@ export class TabChords extends LitElement {
       }
     }
 
+    /* Playing now footer (Chroma Melody: last pad pressed) */
+    .now-playing-row {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      margin-top: 16px;
+      padding-top: 13px;
+      border-top: 1px solid rgba(46, 39, 31, 0.08);
+    }
+
+    .now-kicker {
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+    }
+
+    .now-label {
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      color: var(--cv-ink, #2E271F);
+    }
+
+    .now-sub {
+      flex: 1 1 140px;
+      min-width: 0;
+      font-size: 11.5px;
+      font-weight: 700;
+      line-height: 1.45;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+
+    @media (min-width: 900px) {
+      .now-label { font-size: 15px; }
+      .now-sub { flex-basis: 200px; font-size: 12px; }
+    }
+
     /* Add / remove chord (phones only) */
     .add-chord-row {
       display: none;
@@ -1245,6 +1287,12 @@ export class TabChords extends LitElement {
     const activeBand = this.selectedBand ? getBandById(this.selectedBand) : null;
     const padCols = this.padCols;
 
+    const lp = this.lastPad;
+    const nowLabel = lp ? (chords[Math.min(lp.idx, chords.length - 1)]?.name ?? '\u2014') : '\u2014';
+    const nowSub = lp
+      ? `${lp.voicing} \u00B7 velocity ${lp.vel}`
+      : `Press a chord. Nearer the top of a card plays a higher voicing.${padCols === 4 ? ' Home-row keys A S D F play them too.' : ''}`;
+
     const diatonicList = this.showTheory
       ? getDiatonicScaleDegreeList(this.progression.key || 'C', this.progression.scaleType || 'MAJOR', this.chordData, this.progression)
       : [];
@@ -1513,6 +1561,13 @@ export class TabChords extends LitElement {
           </div>
         </div>
       ` : ''}
+
+      <!-- 5. Playing now (last pad pressed) -->
+      <div class="now-playing-row" aria-live="polite">
+        <span class="now-kicker">Playing now</span>
+        <span class="now-label">${nowLabel}</span>
+        <span class="now-sub">${nowSub}</span>
+      </div>
     `;
   }
 }

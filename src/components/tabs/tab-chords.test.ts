@@ -95,6 +95,18 @@ describe('TabChords component', () => {
     expect(firstPad.textContent).toContain('HOME'); // Role kicker
   });
 
+  it('shows a Playing now footer: a hint first, then the last pad pressed', async () => {
+    const row = () => el.shadowRoot!.querySelector('.now-playing-row') as HTMLElement;
+    expect(row().textContent).toContain('Playing now');
+    expect(row().textContent).toContain('Press a chord');
+
+    (el as any).lastPad = { idx: 1, voicing: '1st inversion', vel: 94, zone: 1, reach: null };
+    await el.updateComplete;
+
+    expect(row().querySelector('.now-label')!.textContent).toBe(dummyChords[1].name);
+    expect(row().querySelector('.now-sub')!.textContent).toContain('1st inversion \u00B7 velocity 94');
+  });
+
   it('emits reroll event when Try Another is clicked', async () => {
     const rerollSpy = vi.fn();
     el.addEventListener('reroll', rerollSpy);
