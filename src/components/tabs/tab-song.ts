@@ -19,6 +19,17 @@ const SECTION_COLORS = [
   '#E6B89C', // H: Sand
 ];
 
+const SECTION_TINTS = [
+  '#DFEAF8', // A: Soft tinted blue
+  '#F4E2DE', // B: Soft tinted coral
+  '#E6EDDA', // C: Soft tinted sage
+  '#FAF0D7', // D: Warm gold tint
+  '#ECE3F2', // E: Soft tinted purple
+  '#F7DFE7', // F: Dusty rose tint
+  '#DCF0F2', // G: Soft aqua tint
+  '#F5E8DC', // H: Sand tint
+];
+
 @customElement('tab-song')
 export class TabSong extends LitElement {
   @property({ type: Array }) sections: SongSection[] = [];
@@ -38,124 +49,51 @@ export class TabSong extends LitElement {
       display: block;
       width: 100%;
       box-sizing: border-box;
-      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-      color: #2e271f;
+      font-family: var(--cv-font-sans, 'Plus Jakarta Sans', system-ui, sans-serif);
+      color: var(--cv-ink, #2e271f);
     }
 
     * {
       box-sizing: border-box;
     }
 
-    .song-panel {
-      position: relative;
-      border-radius: 26px;
-      padding: 16px 20px 24px;
-      background: var(--panel-tint-bg, rgba(201, 169, 224, 0.18));
-      backdrop-filter: blur(8px);
-      box-shadow: 0 4px 24px rgba(46, 39, 31, 0.04);
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      min-height: 520px;
-    }
-
-    @media (max-width: 640px) {
-      .song-panel {
-        border-radius: 22px;
-        padding: 14px 16px 20px;
-      }
-    }
-
-    /* Panel Header */
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
-      padding-bottom: 4px;
-      border-bottom: 1px solid rgba(46, 39, 31, 0.08);
-    }
-
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .header-label {
-      font-size: 10.5px;
-      font-weight: 800;
-      letter-spacing: 1.2px;
-      text-transform: uppercase;
-      color: #8a6b3f;
-    }
-
-    .header-count {
-      font-size: 12px;
-      font-weight: 700;
-      color: #6b5f50;
-      background: rgba(46, 39, 31, 0.06);
-      padding: 2px 10px;
-      border-radius: 100px;
-      font-family: 'Space Mono', monospace;
-    }
-
-    .header-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .play-song-btn {
-      min-height: 34px;
-      padding: 0 16px;
-      border: none;
-      border-radius: 100px;
-      font-family: inherit;
-      font-size: 12.5px;
-      font-weight: 800;
-      background: #c9a9e0;
-      color: #2e271f;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      box-shadow: 0 2px 6px rgba(46, 39, 31, 0.1);
-      transition: transform 0.15s ease, background 0.15s ease;
-    }
-
-    .play-song-btn:hover {
-      background: #bfa1d9;
-      transform: translateY(-1px);
-    }
-
-    .play-song-btn.playing {
-      background: #2e271f;
-      color: #fbf3e6;
-    }
-
-    /* 2-Column Responsive Layout */
+    /* 2-Column Responsive Layout (Matches Chroma Melody.dc.html:409) */
     .song-columns {
       display: grid;
-      grid-template-columns: minmax(320px, 390px) 1fr;
-      gap: 20px;
+      grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+      gap: 18px;
       align-items: start;
+      width: 100%;
+      color: #2E271F;
     }
 
     @media (max-width: 860px) {
       .song-columns {
         grid-template-columns: 1fr;
-        gap: 24px;
+        gap: 16px;
       }
     }
 
-    /* Column Headers */
-    .col-header {
+    /* Left Sticky Order Column (order: -1 per Chroma Melody.dc.html:432) */
+    .timeline-container {
+      order: -1;
+      position: sticky;
+      top: 0;
+      min-width: 0;
+      border-radius: 26px;
+      background: var(--panel-tint-bg, rgba(201, 169, 224, 0.18));
+      padding: 14px;
       display: flex;
       flex-direction: column;
-      gap: 2px;
-      margin-bottom: 10px;
+      gap: 6px;
+    }
+
+    .timeline-header-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 2px 4px 6px;
+      border-bottom: 1px solid rgba(46, 39, 31, 0.06);
     }
 
     .col-title {
@@ -163,219 +101,50 @@ export class TabSong extends LitElement {
       font-weight: 800;
       letter-spacing: 1.2px;
       text-transform: uppercase;
-      color: #8a6b3f;
+      color: var(--cv-label, #8a6b3f);
     }
 
     .col-sub {
-      font-size: 12px;
-      font-weight: 600;
-      color: #6b5f50;
-    }
-
-    /* Left Column: Sections Library */
-    .sections-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .section-card {
-      border-radius: 18px;
-      padding: 14px;
-      background: #fbf3e6;
-      border: 1.5px solid rgba(46, 39, 31, 0.08);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      box-shadow: 0 2px 8px rgba(46, 39, 31, 0.04);
-      transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
-      cursor: pointer;
-    }
-
-    .section-card:hover {
-      border-color: rgba(46, 39, 31, 0.2);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 14px rgba(46, 39, 31, 0.07);
-    }
-
-    .section-card.active {
-      border-color: #2e271f;
-      box-shadow: 0 0 0 2px #2e271f, 0 4px 16px rgba(46, 39, 31, 0.08);
-    }
-
-    .section-card-top {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .section-badge {
-      width: 24px;
-      height: 24px;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Space Mono', monospace;
-      font-size: 12px;
-      font-weight: 700;
-      color: #2e271f;
-      flex-shrink: 0;
-    }
-
-    .section-name {
-      font-size: 16px;
-      font-weight: 800;
-      letter-spacing: -0.01em;
-      color: #2e271f;
-    }
-
-    .section-bars {
-      font-family: 'Space Mono', monospace;
-      font-size: 10.5px;
-      font-weight: 700;
-      color: #6b5f50;
-      background: rgba(46, 39, 31, 0.06);
-      padding: 2px 7px;
-      border-radius: 6px;
-      margin-left: auto;
-    }
-
-    .section-desc {
-      font-size: 12px;
-      line-height: 1.4;
-      color: #6b5f50;
-      margin: 0;
-    }
-
-    /* Mini Chord Chips */
-    .chord-chips-row {
-      display: flex;
-      gap: 5px;
-      flex-wrap: wrap;
-      align-items: center;
-      padding: 2px 0;
-    }
-
-    .chord-chip {
-      padding: 4px 8px;
-      border-radius: 8px;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: -0.01em;
-      color: #2e271f;
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .chord-chip-rn {
-      font-family: 'Space Mono', monospace;
-      font-size: 9px;
-      color: #6b5f50;
-    }
-
-    /* Section Actions */
-    .section-actions {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding-top: 6px;
-      border-top: 1px solid rgba(46, 39, 31, 0.06);
-    }
-
-    .action-btn {
-      min-height: 28px;
-      padding: 0 10px;
-      border-radius: 8px;
-      border: 1px solid rgba(46, 39, 31, 0.12);
-      background: #fbf3e6;
-      font-family: inherit;
       font-size: 11.5px;
       font-weight: 700;
-      color: #2e271f;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-    }
-
-    .action-btn:hover {
-      background: #f1e4cc;
-      border-color: rgba(46, 39, 31, 0.25);
-    }
-
-    .action-btn.primary {
-      background: #2e271f;
-      color: #fbf3e6;
-      border-color: #2e271f;
-    }
-
-    .action-btn.primary:hover {
-      background: #4a3f33;
-    }
-
-    .new-section-btn {
-      width: 100%;
-      min-height: 44px;
-      border-radius: 16px;
-      border: 1.5px dashed rgba(46, 39, 31, 0.25);
-      background: rgba(251, 243, 230, 0.6);
-      font-family: inherit;
-      font-size: 13px;
-      font-weight: 800;
-      color: #2e271f;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      cursor: pointer;
-      margin-top: 4px;
-      transition: background 0.15s ease, border-color 0.15s ease;
-    }
-
-    .new-section-btn:hover {
-      background: #fbf3e6;
-      border-color: #2e271f;
-    }
-
-    /* Right Column: Song Order Timeline */
-    .timeline-container {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
+      color: var(--cv-ink-muted, #6b5f50);
+      font-family: var(--cv-font-mono, 'Space Mono', monospace);
     }
 
     .timeline-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      min-height: 200px;
+      gap: 6px;
+      min-height: 120px;
     }
 
+    /* Timeline Row Item (Matches Chroma Melody.dc.html:435) */
     .timeline-card {
       position: relative;
-      border-radius: 16px;
-      padding: 12px 14px;
-      background: #fbf3e6;
-      border: 1.5px solid rgba(46, 39, 31, 0.08);
+      min-height: 42px;
+      border-radius: 14px;
+      background: rgba(251, 243, 230, 0.5);
+      border: none;
       display: flex;
       align-items: center;
-      gap: 12px;
-      box-shadow: 0 1px 4px rgba(46, 39, 31, 0.03);
-      transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+      gap: 8px;
+      padding: 0 6px 0 10px;
+      cursor: pointer;
       overflow: hidden;
+      transition: background 150ms ease, box-shadow 150ms ease, transform 120ms ease;
     }
 
     .timeline-card:hover {
-      border-color: rgba(46, 39, 31, 0.22);
+      background: rgba(251, 243, 230, 0.82);
+    }
+
+    .timeline-card.selected {
+      box-shadow: inset 0 0 0 2px #2e271f;
+      background: var(--cv-cream, #fbf3e6);
     }
 
     .timeline-card.active-playing {
-      border-color: #9b7ca8;
-      box-shadow: 0 0 0 2px #9b7ca8, 0 4px 14px rgba(155, 124, 168, 0.2);
+      box-shadow: inset 0 0 0 2px #f2735f;
     }
 
     .timeline-card.dragging {
@@ -387,16 +156,16 @@ export class TabSong extends LitElement {
       border-top: 3px solid #2e271f;
     }
 
-    /* Full-width playback highlight bar */
+    /* Playback Progress Highlight Bar across the row */
     .playback-bar {
       position: absolute;
-      bottom: 0;
       left: 0;
-      height: 3px;
-      background: #9b7ca8;
+      top: 0;
+      bottom: 0;
       width: 0%;
-      transition: width 0.1s linear;
-      border-radius: 0 2px 2px 0;
+      background: rgba(242, 115, 95, 0.16);
+      pointer-events: none;
+      transition: width 0.15s linear;
     }
 
     .timeline-card.active-playing .playback-bar {
@@ -404,39 +173,55 @@ export class TabSong extends LitElement {
     }
 
     .drag-handle {
+      position: relative;
+      align-self: stretch;
+      width: 22px;
       display: flex;
       align-items: center;
-      gap: 4px;
-      color: #6b5f50;
+      justify-content: center;
       cursor: grab;
-      font-size: 13px;
+      touch-action: none;
+      color: #b3a590;
+      font-size: 14px;
+      letter-spacing: -2px;
+      flex-shrink: 0;
       user-select: none;
     }
 
     .step-idx {
-      font-family: 'Space Mono', monospace;
-      font-size: 12px;
+      position: relative;
+      font-family: var(--cv-font-mono, 'Space Mono', monospace);
+      font-size: 11px;
       font-weight: 700;
-      color: #8a6b3f;
-      min-width: 18px;
+      color: var(--cv-ink-muted, #6b5f50);
+      width: 20px;
+      text-align: right;
+    }
+
+    .timeline-badge {
+      position: relative;
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      font-size: 11px;
+      font-weight: 800;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      color: #2e271f;
     }
 
     .timeline-card-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
+      position: relative;
       flex: 1;
       min-width: 0;
-    }
-
-    .timeline-card-title-row {
       display: flex;
-      align-items: center;
-      gap: 6px;
+      flex-direction: column;
+      gap: 1px;
     }
 
     .timeline-card-name {
-      font-size: 14.5px;
+      font-size: 13.5px;
       font-weight: 800;
       color: #2e271f;
       white-space: nowrap;
@@ -445,7 +230,7 @@ export class TabSong extends LitElement {
     }
 
     .timeline-chords-summary {
-      font-size: 11.5px;
+      font-size: 10.5px;
       font-weight: 600;
       color: #6b5f50;
       white-space: nowrap;
@@ -455,51 +240,53 @@ export class TabSong extends LitElement {
 
     /* Repeat Counter Stepper */
     .repeat-stepper {
+      position: relative;
       display: flex;
       align-items: center;
-      gap: 2px;
-      background: rgba(46, 39, 31, 0.06);
+      height: 30px;
       border-radius: 100px;
-      padding: 2px;
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.14);
       flex-shrink: 0;
+      background: rgba(251, 243, 230, 0.5);
     }
 
     .stepper-btn {
       width: 26px;
       height: 26px;
       border: none;
-      border-radius: 50%;
       background: transparent;
-      color: #2e271f;
-      font-size: 13px;
-      font-weight: 800;
+      border-radius: 50%;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 0.15s ease;
+      font-family: inherit;
+      font-weight: 800;
+      font-size: 13px;
+      color: #2e271f;
+      display: grid;
+      place-items: center;
+      transition: background 120ms ease;
     }
 
     .stepper-btn:hover:not(:disabled) {
-      background: #fbf3e6;
+      background: rgba(46, 39, 31, 0.08);
     }
 
     .stepper-btn:disabled {
-      opacity: 0.35;
+      opacity: 0.3;
       cursor: not-allowed;
     }
 
     .repeat-label {
-      font-family: 'Space Mono', monospace;
-      font-size: 11.5px;
-      font-weight: 700;
-      color: #2e271f;
+      font-size: 12px;
+      font-weight: 800;
       min-width: 24px;
       text-align: center;
+      color: #2e271f;
+      user-select: none;
     }
 
-    /* Move / Remove actions */
+    /* Row Action Buttons (Move & Delete) */
     .timeline-actions {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 2px;
@@ -507,18 +294,18 @@ export class TabSong extends LitElement {
     }
 
     .icon-action-btn {
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
       border: none;
-      border-radius: 8px;
+      border-radius: 50%;
       background: transparent;
       color: #6b5f50;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
       font-size: 12px;
-      transition: background 0.15s ease, color 0.15s ease;
+      transition: background 120ms ease, color 120ms ease;
     }
 
     .icon-action-btn:hover:not(:disabled) {
@@ -532,45 +319,254 @@ export class TabSong extends LitElement {
     }
 
     .delete-item-btn {
-      font-size: 16px;
-      font-weight: 700;
-      color: #f2735f;
+      font-size: 15px;
+      color: #6b5f50;
     }
 
     .delete-item-btn:hover:not(:disabled) {
-      background: rgba(242, 115, 95, 0.12);
-      color: #e85f49;
+      background: rgba(231, 76, 60, 0.12);
+      color: #e74c3c;
     }
 
-    /* Empty state */
     .timeline-empty {
-      padding: 32px 16px;
-      border-radius: 16px;
-      border: 1.5px dashed rgba(46, 39, 31, 0.2);
+      padding: 24px 12px;
       text-align: center;
-      color: #6b5f50;
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--cv-ink-muted, #6b5f50);
+      border-radius: 14px;
+      border: 1.5px dashed rgba(46, 39, 31, 0.2);
     }
 
-    /* Timeline Footer */
-    .timeline-footer {
+    /* Right Column: Sections Library */
+    .sections-library {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .sections-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Section Card (Matches Chroma Melody.dc.html:413-428) */
+    .section-card {
+      border-radius: 20px;
+      background: var(--section-tint, rgba(156, 192, 236, 0.22));
+      border: none;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      cursor: pointer;
+      box-shadow: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .section-card:hover {
+      transform: translateY(-1px);
+    }
+
+    .section-card.active {
+      box-shadow: inset 0 0 0 2px #2e271f;
+    }
+
+    .section-card-top {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
       gap: 10px;
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: rgba(251, 243, 230, 0.5);
-      border: 1px solid rgba(46, 39, 31, 0.06);
+      flex-wrap: wrap;
     }
 
-    .timeline-summary {
-      font-family: 'Space Mono', monospace;
+    .section-badge {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      background: #2e271f;
+      color: #fbf3e6;
+      font-size: 12px;
+      font-weight: 800;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+
+    .section-name {
+      font-size: 16px;
+      font-weight: 800;
+      color: #2e271f;
+    }
+
+    .section-bars {
       font-size: 11.5px;
       font-weight: 700;
+      color: rgba(46, 39, 31, 0.62);
+      font-family: var(--cv-font-mono, 'Space Mono', monospace);
+    }
+
+    .section-desc {
+      font-size: 12px;
+      line-height: 1.4;
       color: #6b5f50;
+      margin: 0;
+    }
+
+    /* Chord Chips Grid with 8-dot rhythm matrices */
+    .chord-chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chord-chip {
+      flex: 1 1 92px;
+      min-width: 0;
+      border-radius: 12px;
+      padding: 9px 10px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      border: none;
+      user-select: none;
+      background: var(--chord-col, #9cc0ec);
+    }
+
+    .chord-chip-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chord-chip-role {
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(46, 39, 31, 0.62);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+
+    .chord-chip-name {
+      font-size: 13px;
+      font-weight: 800;
+      color: #2e271f;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chord-chip-rn {
+      font-family: var(--cv-font-mono, 'Space Mono', monospace);
+      font-size: 9.5px;
+      font-weight: 700;
+      color: var(--cv-label, #8a6b3f);
+    }
+
+    .rhythm-dots-matrix {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      row-gap: 3px;
+      column-gap: 2px;
+      align-items: center;
+      justify-items: center;
+    }
+
+    .rhythm-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.35);
+    }
+
+    .rhythm-dot.active {
+      width: 7px;
+      height: 7px;
+      background: #fbf3e6;
+    }
+
+    /* Section Actions (Chroma Melody.dc.html:424-427) */
+    .section-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .section-card:not(.active) .section-actions {
+      display: none;
+    }
+
+    .action-btn.section-edit-btn {
+      flex: 1;
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+      border: none;
+      border-radius: 100px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      background: rgba(46, 39, 31, 0.08);
+      color: #2e271f;
+      transition: background 150ms ease, transform 100ms ease;
+    }
+
+    .action-btn.section-edit-btn:hover {
+      background: rgba(46, 39, 31, 0.14);
+    }
+
+    .action-btn.section-edit-btn:active {
+      transform: scale(0.98);
+    }
+
+    .action-btn.primary {
+      margin-left: auto;
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 12px;
+      border: none;
+      border-radius: 100px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      background: #2e271f;
+      color: #fbf3e6;
+    }
+
+    .action-btn.primary:hover {
+      background: #463c31;
+    }
+
+    .new-section-btn {
+      width: 100%;
+      min-height: 44px;
+      border-radius: 16px;
+      border: 1.5px dashed rgba(46, 39, 31, 0.25);
+      background: transparent;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 800;
+      color: #8a6b3f;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: background 150ms ease, border-color 150ms ease;
+    }
+
+    .new-section-btn:hover {
+      background: rgba(251, 243, 230, 0.6);
+      border-color: #8a6b3f;
     }
   `;
 
@@ -578,59 +574,36 @@ export class TabSong extends LitElement {
     if (this.timeline && this.timeline.length > 0) {
       return this.timeline;
     }
-    if (this.sections && this.sections.length > 0) {
-      return SongArranger.createDefaultTimeline(this.sections);
-    }
-    return [];
+    return this.sections.map((_, idx) => ({
+      id: `timeline-item-${idx}`,
+      sectionIndex: idx,
+      repeats: 1,
+    }));
   }
 
   private getTotalBars(): number {
     const timeline = this.getEffectiveTimeline();
-    let total = 0;
-    for (const item of timeline) {
+    return timeline.reduce((total, item) => {
       const sec = this.sections[item.sectionIndex];
-      const count = sec?.progression?.chords?.length || 4;
-      total += count * Math.max(1, item.repeats);
-    }
-    return total;
+      const bars = sec?.progression?.chords?.length || 4;
+      return total + bars * item.repeats;
+    }, 0);
   }
 
   private getEstimatedDuration(): string {
-    const bars = this.getTotalBars();
-    const beats = bars * 4;
-    const seconds = Math.round((beats / (this.bpm || 120)) * 60);
+    const totalBars = this.getTotalBars();
+    const beats = totalBars * 4;
+    const seconds = Math.round((beats / this.bpm) * 60);
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins > 0 ? `${mins}m ` : ''}${secs}s`;
+    const remSecs = seconds % 60;
+    return `${mins}:${String(remSecs).padStart(2, '0')}`;
   }
 
-  private onSelectSectionCard(index: number) {
-    this.activeSectionIdx = index;
+  private onSelectSectionCard(idx: number) {
+    this.activeSectionIdx = idx;
     this.dispatchEvent(
       new CustomEvent('select-section', {
-        detail: { sectionIndex: index },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private onEditChords(index: number, e: Event) {
-    e.stopPropagation();
-    this.dispatchEvent(
-      new CustomEvent('edit-chords', {
-        detail: { sectionIndex: index },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private onEditMelody(index: number, e: Event) {
-    e.stopPropagation();
-    this.dispatchEvent(
-      new CustomEvent('edit-melody', {
-        detail: { sectionIndex: index },
+        detail: { sectionIndex: idx },
         bubbles: true,
         composed: true,
       })
@@ -640,7 +613,12 @@ export class TabSong extends LitElement {
   private onAddToSong(sectionIndex: number, e: Event) {
     e.stopPropagation();
     const timeline = this.getEffectiveTimeline();
-    const updated = SongArranger.addTimelineItem(timeline, sectionIndex);
+    const newItem: SongTimelineItem = {
+      id: `timeline-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      sectionIndex,
+      repeats: 1,
+    };
+    const updated = [...timeline, newItem];
     this.timeline = updated;
     this.dispatchEvent(
       new CustomEvent('reorder-timeline', {
@@ -651,10 +629,42 @@ export class TabSong extends LitElement {
     );
   }
 
-  private onUpdateRepeat(index: number, delta: number, e: Event) {
+  private onEditChords(sectionIndex: number, e: Event) {
+    e.stopPropagation();
+    this.activeSectionIdx = sectionIndex;
+    this.dispatchEvent(
+      new CustomEvent('edit-chords', {
+        detail: { sectionIndex },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private onEditMelody(sectionIndex: number, e: Event) {
+    e.stopPropagation();
+    this.activeSectionIdx = sectionIndex;
+    this.dispatchEvent(
+      new CustomEvent('edit-melody', {
+        detail: { sectionIndex },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  private onUpdateRepeat(timelineIdx: number, delta: number, e: Event) {
     e.stopPropagation();
     const timeline = this.getEffectiveTimeline();
-    const updated = SongArranger.updateTimelineRepeat(timeline, index, delta);
+    const item = timeline[timelineIdx];
+    if (!item) return;
+
+    const newRepeats = Math.max(1, Math.min(8, item.repeats + delta));
+    if (newRepeats === item.repeats) return;
+
+    const updated = timeline.map((it, idx) =>
+      idx === timelineIdx ? { ...it, repeats: newRepeats } : it
+    );
     this.timeline = updated;
     this.dispatchEvent(
       new CustomEvent('reorder-timeline', {
@@ -665,12 +675,13 @@ export class TabSong extends LitElement {
     );
   }
 
-  private onMoveTimelineItem(index: number, delta: number, e: Event) {
+  private onMoveTimelineItem(idx: number, delta: number, e: Event) {
     e.stopPropagation();
     const timeline = this.getEffectiveTimeline();
-    const target = index + delta;
-    if (target < 0 || target >= timeline.length) return;
-    const updated = SongArranger.reorderTimeline(timeline, index, target);
+    const targetIdx = idx + delta;
+    if (targetIdx < 0 || targetIdx >= timeline.length) return;
+
+    const updated = SongArranger.reorderTimeline(timeline, idx, targetIdx);
     this.timeline = updated;
     this.dispatchEvent(
       new CustomEvent('reorder-timeline', {
@@ -681,10 +692,12 @@ export class TabSong extends LitElement {
     );
   }
 
-  private onRemoveTimelineItem(index: number, e: Event) {
+  private onRemoveTimelineItem(idx: number, e: Event) {
     e.stopPropagation();
     const timeline = this.getEffectiveTimeline();
-    const updated = SongArranger.removeTimelineItem(timeline, index);
+    if (timeline.length <= 1) return;
+
+    const updated = timeline.filter((_, i) => i !== idx);
     this.timeline = updated;
     this.dispatchEvent(
       new CustomEvent('reorder-timeline', {
@@ -759,158 +772,52 @@ export class TabSong extends LitElement {
     const estDuration = this.getEstimatedDuration();
 
     return html`
-      <div class="song-panel">
-        <!-- Panel Header -->
-        <div class="panel-header">
-          <div class="header-left">
-            <span class="header-label">SONG</span>
-            <span class="header-count">${timeline.length} parts · ${totalBars} bars</span>
-          </div>
-
-          <div class="header-right">
-            <button
-              class="play-song-btn ${this.playing ? 'playing' : ''}"
-              @click=${this.onTogglePlaySong}
-              aria-label="Toggle song playback"
-            >
-              ${this.playing
-                ? html`<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> Stop song`
-                : html`<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Play song · ${timeline.length} parts`}
-            </button>
-          </div>
-        </div>
-
-        <!-- 2-Column Responsive Layout -->
-        <div class="song-columns">
-          <!-- Left Column: Sections Library -->
-          <div class="sections-library">
-            <div class="col-header">
-              <span class="col-title">SECTIONS</span>
-              <span class="col-sub">Edit once, used everywhere</span>
-            </div>
-
-            <div class="sections-list">
-              ${this.sections.map((section, idx) => {
-                const badge = SECTION_BADGES[idx % SECTION_BADGES.length];
-                const badgeColor = SECTION_COLORS[idx % SECTION_COLORS.length];
-                const chords = section.progression?.chords || [];
-                const isActive = this.activeSectionIdx === idx;
-
-                return html`
-                  <div
-                    class="section-card ${isActive ? 'active' : ''}"
-                    @click=${() => this.onSelectSectionCard(idx)}
-                    role="button"
-                    tabindex="0"
-                  >
-                    <div class="section-card-top">
-                      <span class="section-badge" style="background: ${badgeColor};">
-                        ${badge}
-                      </span>
-                      <span class="section-name">${section.name}</span>
-                      <span class="section-bars">${chords.length} bars</span>
-                    </div>
-
-                    ${section.desc
-                      ? html`<p class="section-desc">${section.desc}</p>`
-                      : nothing}
-
-                    <!-- Chord Chips Row -->
-                    <div class="chord-chips-row">
-                      ${chords.map(c => {
-                        const tensionColor = roleForTension(c.tension ?? 0.2);
-                        return html`
-                          <span
-                            class="chord-chip"
-                            style="background: color-mix(in srgb, ${tensionColor} 30%, #FBF3E6);"
-                          >
-                            <span>${c.name}</span>
-                            ${c.roman ? html`<span class="chord-chip-rn">${c.roman}</span>` : nothing}
-                          </span>
-                        `;
-                      })}
-                    </div>
-
-                    <!-- Section Actions -->
-                    <div class="section-actions">
-                      <button
-                        class="action-btn primary"
-                        @click=${(e: Event) => this.onAddToSong(idx, e)}
-                        title="Append instance to Song timeline"
-                      >
-                        + Add to song
-                      </button>
-                      <button
-                        class="action-btn"
-                        @click=${(e: Event) => this.onEditChords(idx, e)}
-                        title="Edit chords in Chords tab"
-                      >
-                        Edit chords
-                      </button>
-                      <button
-                        class="action-btn"
-                        @click=${(e: Event) => this.onEditMelody(idx, e)}
-                        title="Edit melody in Melody tab"
-                      >
-                        Edit melody
-                      </button>
-                    </div>
-                  </div>
-                `;
-              })}
-
-              <button
-                class="new-section-btn"
-                @click=${this.onNewSectionFromLoop}
-                title="Branch current progression into a new section"
-              >
-                + New section from loop
-              </button>
-            </div>
-          </div>
-
-          <!-- Right Column: Song Order Timeline -->
-          <div class="timeline-container">
-            <div class="col-header">
+      <!-- 2-Column Responsive Layout (Song order on left, Sections on right per Chroma Melody design) -->
+      <div class="song-columns" data-screen-label="Song">
+        <!-- Left Column: Song Order Timeline (Sticky) -->
+        <div class="timeline-container">
+            <div class="timeline-header-row">
               <span class="col-title">SONG ORDER</span>
-              <span class="col-sub">Drag to arrange, set repeats</span>
+              <span class="col-sub">${totalBars} bars · ${estDuration}</span>
             </div>
 
             <div class="timeline-list">
               ${timeline.length === 0
-                ? html`<div class="timeline-empty">No sections in timeline. Add one from the library!</div>`
+                ? html`<div class="timeline-empty">Add a section to start the song.</div>`
                 : timeline.map((item, idx) => {
                     const sec = this.sections[item.sectionIndex];
                     if (!sec) return nothing;
                     const badge = SECTION_BADGES[item.sectionIndex % SECTION_BADGES.length];
-                    const badgeColor = SECTION_COLORS[item.sectionIndex % SECTION_COLORS.length];
+                    const badgeColor = SECTION_TINTS[item.sectionIndex % SECTION_TINTS.length];
                     const chordsSummary = (sec.progression?.chords || []).map(c => c.name).join(' – ');
                     const isPlayingItem = this.playing && this.activeTimelineIdx === idx;
+                    const isSelected = item.sectionIndex === this.activeSectionIdx;
                     const isDragging = this.draggingIdx === idx;
                     const isDragOver = this.dragOverIdx === idx;
 
                     return html`
                       <div
-                        class="timeline-card ${isPlayingItem ? 'active-playing' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}"
+                        class="timeline-card ${isPlayingItem ? 'active-playing' : ''} ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}"
                         draggable="true"
+                        @click=${() => this.onSelectSectionCard(item.sectionIndex)}
                         @dragstart=${(e: DragEvent) => this.onDragStart(idx, e)}
                         @dragover=${(e: DragEvent) => this.onDragOver(idx, e)}
                         @dragend=${this.onDragEnd}
                         @drop=${(e: DragEvent) => this.onDrop(idx, e)}
                       >
-                        <div class="drag-handle" title="Drag to reorder">
-                          ⋮⋮ <span class="step-idx">${idx + 1}</span>
-                        </div>
+                        <!-- Active playback progress bar -->
+                        <div class="playback-bar"></div>
 
-                        <span class="section-badge" style="background: ${badgeColor};">
+                        <span class="drag-handle" title="Drag to reorder">⋮⋮</span>
+                        <span class="step-idx">${String(idx + 1).padStart(2, '0')}</span>
+
+                        <span class="timeline-badge" style="background: ${badgeColor};">
                           ${badge}
                         </span>
 
                         <div class="timeline-card-info">
-                          <div class="timeline-card-title-row">
-                            <span class="timeline-card-name">${sec.name}</span>
-                          </div>
-                          <div class="timeline-chords-summary">${chordsSummary}</div>
+                          <span class="timeline-card-name">${sec.name}</span>
+                          <span class="timeline-chords-summary">${chordsSummary}</span>
                         </div>
 
                         <!-- Repeat Counter Stepper -->
@@ -919,7 +826,7 @@ export class TabSong extends LitElement {
                             class="stepper-btn"
                             @click=${(e: Event) => this.onUpdateRepeat(idx, -1, e)}
                             ?disabled=${item.repeats <= 1}
-                            aria-label="Decrease repeat"
+                            aria-label="Fewer repeats"
                           >
                             −
                           </button>
@@ -928,13 +835,13 @@ export class TabSong extends LitElement {
                             class="stepper-btn"
                             @click=${(e: Event) => this.onUpdateRepeat(idx, 1, e)}
                             ?disabled=${item.repeats >= 8}
-                            aria-label="Increase repeat"
+                            aria-label="More repeats"
                           >
                             +
                           </button>
                         </div>
 
-                        <!-- Move Up / Down Buttons -->
+                        <!-- Move Up / Down Buttons & Remove -->
                         <div class="timeline-actions">
                           <button
                             class="icon-action-btn"
@@ -964,23 +871,110 @@ export class TabSong extends LitElement {
                             ×
                           </button>
                         </div>
-
-                        <!-- Active playback progress bar -->
-                        <div class="playback-bar"></div>
                       </div>
                     `;
                   })}
             </div>
+          </div>
 
-            <!-- Timeline Footer Summary -->
-            <div class="timeline-footer">
-              <span class="timeline-summary">
-                Total: ${totalBars} bars · ~${estDuration} at ${this.bpm} BPM
-              </span>
+          <!-- Right Column: Sections Library (Edit once, used everywhere) -->
+          <div class="sections-library">
+            <div class="col-title" style="margin-bottom: 2px;">
+              SECTIONS · EDIT ONCE, USED EVERYWHERE
+            </div>
+
+            <div class="sections-list">
+              ${this.sections.map((section, idx) => {
+                const badge = SECTION_BADGES[idx % SECTION_BADGES.length];
+                const sectionTint = SECTION_TINTS[idx % SECTION_TINTS.length];
+                const chords = section.progression?.chords || [];
+                const isActive = this.activeSectionIdx === idx;
+
+                return html`
+                  <div
+                    class="section-card ${isActive ? 'active' : ''}"
+                    style="--section-tint: ${sectionTint};"
+                    @click=${() => this.onSelectSectionCard(idx)}
+                    role="button"
+                    tabindex="0"
+                  >
+                    <div class="section-card-top">
+                      <span class="section-badge">
+                        ${badge}
+                      </span>
+                      <span class="section-name">${section.name}</span>
+                      <span class="section-bars">${chords.length} bars · ${this.bpm} BPM</span>
+                      <button
+                        class="action-btn primary"
+                        @click=${(e: Event) => this.onAddToSong(idx, e)}
+                        title="Append instance to Song timeline"
+                      >
+                        + Add to song
+                      </button>
+                    </div>
+
+                    ${section.desc
+                      ? html`<p class="section-desc">${section.desc}</p>`
+                      : nothing}
+
+                    <!-- Chord Chips Row with 8-dot Rhythm Matrices (Chroma Melody.dc.html:422) -->
+                    <div class="chord-chips-row">
+                      ${chords.map((c, chordIndex) => {
+                        const tensionRole = roleForTension(c.tension ?? 0.2);
+                        return html`
+                          <div
+                            class="chord-chip"
+                            style="--chord-col: ${tensionRole.color};"
+                          >
+                            <div class="chord-chip-text">
+                              <span class="chord-chip-role">${c.functionLabel || 'CHORD'}</span>
+                              <div style="display: flex; align-items: baseline; gap: 4px;">
+                                <span class="chord-chip-name">${c.name}</span>
+                                ${c.roman ? html`<span class="chord-chip-rn">${c.roman}</span>` : nothing}
+                              </div>
+                            </div>
+                            <!-- 8-dot rhythm matrix per Chroma Melody design -->
+                            <div class="rhythm-dots-matrix">
+                              ${Array.from({ length: 8 }, (_, dIdx) => html`
+                                <span class="rhythm-dot ${dIdx === 0 || dIdx === 4 ? 'active' : ''}"></span>
+                              `)}
+                            </div>
+                          </div>
+                        `;
+                      })}
+                    </div>
+
+                    <!-- Section Actions (Shown on active section per Chroma Melody.dc.html:424-427) -->
+                    <div class="section-actions">
+                      <button
+                        class="action-btn section-edit-btn"
+                        @click=${(e: Event) => this.onEditChords(idx, e)}
+                        title="Edit chords in Chords tab"
+                      >
+                        Edit chords
+                      </button>
+                      <button
+                        class="action-btn section-edit-btn"
+                        @click=${(e: Event) => this.onEditMelody(idx, e)}
+                        title="Edit melody in Melody tab"
+                      >
+                        Edit melody
+                      </button>
+                    </div>
+                  </div>
+                `;
+              })}
+
+              <button
+                class="new-section-btn"
+                @click=${this.onNewSectionFromLoop}
+                title="Branch current progression into a new section"
+              >
+                + New section from the loop
+              </button>
             </div>
           </div>
         </div>
-      </div>
     `;
   }
 }

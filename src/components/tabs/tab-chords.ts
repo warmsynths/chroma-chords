@@ -1,4 +1,4 @@
-import { LitElement, html, css } from 'lit';
+import { LitElement, html, css, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   ChordBlock,
@@ -31,6 +31,16 @@ const ROLE_PLAIN: Record<string, string> = {
 };
 
 const PAD_KEYS = ['A', 'S', 'D', 'F', 'Z', 'X', 'C', 'V'];
+const ZONE_NAMES = ['OCTAVE UP', '1ST INVERSION', 'LOW ROOT'];
+
+export function voicingToZone(voicing?: string): number {
+  if (!voicing) return -1;
+  const v = voicing.toLowerCase();
+  if (v.includes('octave') || v.includes('high')) return 0;
+  if (v.includes('inversion') || v.includes('1st')) return 1;
+  if (v.includes('root') || v.includes('low')) return 2;
+  return -1;
+}
 
 @customElement('tab-chords')
 export class TabChords extends LitElement {
@@ -55,6 +65,14 @@ export class TabChords extends LitElement {
   @state() private abPick: ChordBlock | null = null;
   @state() private padHeld: number | null = null;
   @state() private gridFor: number | null = null;
+  @state() private baseChords: ChordBlock[] = [];
+  @state() private lastPad: { idx: number; voicing: string; vel: number; zone: number; reach: number | null } | null = null;
+  @state() private padVoice: Record<string, number> = {};
+  @state() private auditionDeg: number | null = null;
+  @state() private auditionName: string | null = null;
+  @state() private auditionBar: number | null = null;
+  private padTimer: any = null;
+  private gridTimer: any = null;
 
   static styles = css`
     :host {
@@ -79,33 +97,49 @@ export class TabChords extends LitElement {
     }
 
     .vibe-pill-btn {
+      border: none;
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      background: #FBF3E6;
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      border-radius: 999px;
-      padding: 6px 14px 6px 10px;
-      font-size: 13px;
-      font-weight: 700;
-      color: #2E271F;
+      min-height: 40px;
+      padding: 0 12px 0 10px;
+      border-radius: 100px;
+      background: var(--cv-cream, #FBF3E6);
+      box-shadow: none;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--cv-ink-muted, #6B5F50);
       cursor: pointer;
-      transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
-      box-shadow: 0 1px 2px rgba(46, 39, 31, 0.06);
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: background 150ms ease;
     }
 
     .vibe-pill-btn:hover {
-      background: #FFFFFF;
-      transform: translateY(-1px);
-      box-shadow: 0 3px 6px rgba(46, 39, 31, 0.09);
+      background: #FFFAF2;
     }
 
     .vibe-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
+      width: 12px;
+      height: 12px;
+      border-radius: 4px;
       flex-shrink: 0;
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
+    }
+
+    .vibe-summary-text {
+      color: var(--cv-ink, #2E271F);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+
+    .vibe-arrow {
+      opacity: 0.6;
+      font-size: 10px;
+      color: var(--cv-ink, #2E271F);
+      margin-left: -2px;
     }
 
     .header-actions {
@@ -114,38 +148,35 @@ export class TabChords extends LitElement {
       gap: 8px;
     }
 
-    /* Chord Count Stepper */
+    /* Chord Count Stepper (Matches Chroma Melody prototype) */
     .chord-count-stepper {
       display: inline-flex;
       align-items: center;
-      background: rgba(251, 243, 230, 0.85);
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      border-radius: 999px;
-      padding: 3px 8px;
-      font-size: 12px;
-      font-weight: 700;
-      color: #2E271F;
-      gap: 6px;
+      gap: 4px;
+      background: transparent;
+      border: none;
+      padding: 0;
     }
 
     .stepper-btn {
-      background: transparent;
       border: none;
-      width: 22px;
-      height: 22px;
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
+      background: var(--cv-cream, #FBF3E6);
+      color: var(--cv-ink, #2E271F);
+      font-size: 15px;
+      line-height: 1;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      font-size: 15px;
-      font-weight: 800;
-      color: #2E271F;
       cursor: pointer;
       transition: background 150ms ease;
     }
 
     .stepper-btn:hover:not(:disabled) {
-      background: rgba(46, 39, 31, 0.08);
+      background: #FFFAF2;
     }
 
     .stepper-btn:disabled {
@@ -153,27 +184,39 @@ export class TabChords extends LitElement {
       cursor: not-allowed;
     }
 
-    /* Try Another Button */
+    .chord-count-label {
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--cv-ink-muted, #6B5F50);
+      white-space: nowrap;
+      min-width: 58px;
+      text-align: center;
+    }
+
+    /* Try Another Button (Matches Chroma Melody prototype) */
     .try-another-btn {
+      border: none;
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      background: #FBF3E6;
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      border-radius: 999px;
-      padding: 6px 12px;
-      font-size: 12px;
-      font-weight: 700;
-      color: #2E271F;
+      gap: 7px;
+      background: var(--cv-cream, #FBF3E6);
+      color: var(--cv-ink, #2E271F);
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 800;
       cursor: pointer;
-      transition: all 180ms ease;
-      box-shadow: 0 1px 2px rgba(46, 39, 31, 0.06);
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: background 150ms ease;
+      box-shadow: none;
     }
 
     .try-another-btn:hover {
-      background: #FFFFFF;
-      transform: translateY(-1px);
-      box-shadow: 0 3px 6px rgba(46, 39, 31, 0.09);
+      background: #FFFAF2;
     }
 
     /* 2. Band DNA Banner */
@@ -237,9 +280,10 @@ export class TabChords extends LitElement {
     }
 
     /* 3. Chord Pads Grid */
+    /* 3. Chord Pads Grid */
     .pad-cells-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 12px;
       width: 100%;
       position: relative;
@@ -247,126 +291,285 @@ export class TabChords extends LitElement {
 
     @media (max-width: 768px) {
       .pad-cells-grid {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
+    }
+
+    /* Chord Pad Column */
+    .pad-cell-column {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+      width: 100%;
     }
 
     /* Chord Pad Card */
     .pad-cell {
       position: relative;
-      border-radius: 20px;
-      padding: 14px 14px 12px;
-      min-height: 142px;
+      overflow: hidden;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 20px;
       cursor: pointer;
       user-select: none;
-      transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 160ms ease, border-radius 160ms ease;
-      box-shadow: 0 4px 12px -4px rgba(46, 39, 31, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.6);
-      overflow: hidden;
+      min-height: 124px;
+      outline-offset: 4px;
+      touch-action: none;
+      transition: box-shadow 140ms ease, transform 120ms ease;
+      box-shadow: 0 14px 26px -18px rgba(46, 39, 31, 0.45);
     }
 
     .pad-cell:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 18px -4px rgba(46, 39, 31, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+      transform: translateY(-1px);
+      box-shadow: 0 18px 28px -16px rgba(46, 39, 31, 0.55);
     }
 
     .pad-cell:active, .pad-cell.pad-held {
-      transform: translateY(1px);
-      box-shadow: 0 2px 6px -2px rgba(46, 39, 31, 0.2);
+      transform: scale(0.985) !important;
+      box-shadow: inset 0 0 0 2.5px #2E271F !important;
     }
 
     .pad-cell.pad-lit {
-      box-shadow: inset 0 0 0 3px #2E271F, 0 10px 24px -6px rgba(46, 39, 31, 0.35);
-      animation: pulse-lit 1.2s infinite alternate;
-    }
-
-    @keyframes pulse-lit {
-      from { transform: scale(1); }
-      to { transform: scale(1.015); }
+      box-shadow: inset 0 0 0 2.5px #2E271F, 0 14px 26px -18px rgba(46, 39, 31, 0.45);
     }
 
     .pad-cell.selected {
-      border-radius: 20px 20px 4px 4px;
-      box-shadow: inset 0 0 0 2.5px var(--mood-tint, #C9A9E0), 0 14px 26px -18px rgba(46, 39, 31, 0.45);
+      box-shadow: 0 0 0 2.5px #2E271F, 0 14px 26px -18px rgba(46, 39, 31, 0.45);
     }
 
     /* Top Row in Pad */
     .pad-top-row {
+      position: relative;
+      z-index: 2;
       display: flex;
       align-items: center;
-      justify-content: space-between;
       gap: 6px;
+      min-width: 0;
     }
 
     .pad-key-badge {
       display: inline-flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       width: 20px;
       height: 20px;
+      padding: 1.5px 1.5px 3.5px;
       border-radius: 5px;
-      background: rgba(46, 39, 31, 0.14);
-      box-shadow: 0 1px 0 rgba(46, 39, 31, 0.15);
+      background: rgba(46, 39, 31, 0.16);
+      box-shadow: 0 1px 0 rgba(46, 39, 31, 0.18);
       flex-shrink: 0;
+      box-sizing: border-box;
     }
 
-    .pad-key-badge span {
+    .pad-key-badge span, .pad-key-cap {
       display: flex;
       align-items: center;
       justify-content: center;
       width: 100%;
       height: 100%;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.65);
-      font-family: var(--font-mono, 'Space Mono', monospace);
-      font-size: 10.5px;
+      border-radius: 3.5px;
+      background: rgba(255, 255, 255, 0.62);
+      box-shadow: inset 0 -1px 0 rgba(46, 39, 31, 0.12);
+      font-family: var(--cv-font-mono, 'Space Mono', monospace);
+      font-size: 9.5px;
       font-weight: 800;
-      color: #2E271F;
+      line-height: 1;
+      color: rgba(46, 39, 31, 0.62);
     }
 
     .pad-roman-badge {
-      font-family: var(--font-mono, 'Space Mono', monospace);
-      font-size: 10px;
-      font-weight: 700;
-      color: rgba(46, 39, 31, 0.65);
-      letter-spacing: 0.5px;
-    }
-
-    .pad-actions {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      margin-left: auto;
-    }
-
-    .pad-icon-btn {
-      background: rgba(255, 255, 255, 0.5);
-      border: none;
-      width: 24px;
-      height: 24px;
-      border-radius: 6px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      color: #2E271F;
-      transition: all 140ms ease;
-    }
-
-    .pad-icon-btn:hover {
-      background: #FFFFFF;
-      transform: scale(1.08);
+      font-family: var(--cv-font-mono, 'Space Mono', monospace);
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+      color: rgba(46, 39, 31, 0.55);
     }
 
     /* Bottom Info in Pad */
     .pad-bottom-info {
+      position: relative;
+      z-index: 2;
       display: flex;
       flex-direction: column;
+      gap: 2px;
+    }
+
+    .pad-role-label {
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      color: #2E271F;
+      opacity: 0.9;
+      line-height: 1.2;
+    }
+
+    .pad-chord-name {
+      font-size: 22px;
+      font-weight: 800;
+      color: #2E271F;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+      overflow-wrap: anywhere;
+    }
+
+    .pad-notes-theory {
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(46, 39, 31, 0.62);
+      margin-top: 2px;
+      letter-spacing: 0.2px;
+    }
+
+    /* 2D Voicing & Extension Grid Visualizer */
+    .pad-grid-visualizer {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .grid-col {
+      position: absolute;
+      top: 6px;
+      bottom: 6px;
+      border-radius: 10px;
+      background: transparent;
+      transition: background 160ms ease;
+    }
+
+    .grid-col.visible {
+      background: rgba(251, 243, 230, 0.08);
+    }
+
+    .grid-col.active-col {
+      background: rgba(251, 243, 230, 0.24);
+    }
+
+    .grid-hit-pill {
+      position: absolute;
+      border-radius: 8px;
+      background: rgba(251, 243, 230, 0.62);
+      box-shadow: 0 4px 12px rgba(46, 39, 31, 0.18);
+      transition: top 120ms ease, left 120ms ease;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .pad-meta-label {
+      font-size: 9.5px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      color: rgba(46, 39, 31, 0.5);
+      height: 12px;
+      white-space: nowrap;
+      margin-top: 2px;
+      transition: color 140ms ease;
+    }
+
+    .pad-meta-label.reach-active {
+      color: #2E271F;
+      font-weight: 800;
+    }
+
+    /* Rung Dots & Extension Ladder */
+    .rung-dots {
+      display: flex;
+      gap: 4px;
+      margin-top: 7px;
+      width: 100%;
+    }
+
+    .rung-step-col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       gap: 3px;
-      margin-top: 10px;
+    }
+
+    .rung-step-label {
+      font-size: 8.5px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: clip;
+      color: rgba(46, 39, 31, 0.3);
+      transition: color 180ms ease;
+    }
+
+    .rung-step-label.active {
+      color: rgba(46, 39, 31, 0.78);
+    }
+
+    .rung-step-bar, .rung-dot {
+      width: 100%;
+      height: 4px;
+      border-radius: 3px;
+      background: rgba(46, 39, 31, 0.16);
+      transition: width 200ms cubic-bezier(0.23, 1, 0.32, 1), background 180ms ease;
+    }
+
+    .rung-step-bar.active, .rung-dot.filled {
+      background: rgba(46, 39, 31, 0.5);
+    }
+
+    .band-move-pill {
+      margin-top: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      min-height: 26px;
+      padding: 0 10px;
+      border-radius: 100px;
+      background: rgba(251, 243, 230, 0.85);
+      color: #2E271F;
+      font-size: 10.5px;
+      font-weight: 800;
+      box-shadow: 0 0 0 1px rgba(46, 39, 31, 0.1);
+    }
+
+    /* Swap Button beneath pad card */
+    .pad-tray-btn {
+      border: none;
+      font-family: inherit;
+      width: 100%;
+      min-height: 34px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 120ms ease, transform 120ms ease;
+      background: rgba(46, 39, 31, 0.05);
+      color: #4A3F33;
+      user-select: none;
+    }
+
+    .pad-tray-btn:hover {
+      background: rgba(46, 39, 31, 0.08);
+    }
+
+    .pad-tray-btn:active {
+      transform: scale(0.98);
+    }
+
+    .pad-tray-btn.active {
+      background: #2E271F;
+      color: #FBF3E6;
     }
 
     .pad-role-label {
@@ -418,59 +621,119 @@ export class TabChords extends LitElement {
       text-overflow: ellipsis;
     }
 
-    /* 4. Diatonic Scale Strip */
+    /* 4. Diatonic Scale Strip (Theory Mode) */
     .scale-diatonic-strip {
-      background: rgba(251, 243, 230, 0.75);
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      border-radius: 18px;
-      padding: 12px 16px;
+      position: relative;
+      z-index: 2;
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 20px;
+      padding: 13px 15px 15px;
       margin-top: 18px;
-      backdrop-filter: blur(6px);
+      flex-shrink: 0;
     }
 
-    .scale-strip-header {
-      font-size: 10.5px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      color: #8A6B3F;
-      margin-bottom: 8px;
-    }
-
-    .scale-degrees-row {
+    .scale-strip-header-row {
       display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
       flex-wrap: wrap;
-      gap: 8px;
     }
 
-    .scale-degree-chip {
-      background: #FFFFFF;
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      border-radius: 10px;
-      padding: 6px 10px;
-      display: inline-flex;
-      flex-direction: column;
-      align-items: center;
+    .scale-strip-kicker {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+    }
+
+    .scale-strip-hint {
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(46, 39, 31, 0.45);
+    }
+
+    .scale-degrees-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+      gap: 6px;
+      margin-top: 10px;
+      min-width: 0;
+    }
+
+    .scale-degree-btn {
+      border: none;
+      font-family: inherit;
+      text-align: left;
       cursor: pointer;
-      transition: all 140ms ease;
+      min-width: 0;
+      min-height: 46px;
+      padding: 7px 10px 8px;
+      border-radius: 13px;
+      display: flex;
+      flex-direction: column;
+      background: transparent;
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.13);
+      transition: background 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1), transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    .scale-degree-chip:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 3px 6px rgba(46, 39, 31, 0.1);
+    .scale-degree-btn:hover {
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.22);
+    }
+
+    .scale-degree-btn:active {
+      transform: scale(0.97);
+    }
+
+    .scale-degree-btn.in-loop {
+      background: var(--cv-surface-2, #F1E4CC);
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.14);
+    }
+
+    .scale-degree-btn.active {
+      box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.22);
+    }
+
+    .degree-head-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
 
     .degree-roman {
       font-family: var(--font-mono, 'Space Mono', monospace);
-      font-size: 9px;
-      font-weight: 700;
-      color: #7A6F62;
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.9px;
+      color: var(--cv-label, #8A6B3F);
+    }
+
+    .degree-in-loop-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(46, 39, 31, 0.42);
+      flex-shrink: 0;
     }
 
     .degree-name {
-      font-size: 12.5px;
+      font-size: 14.5px;
       font-weight: 800;
-      color: #2E271F;
+      letter-spacing: -0.015em;
+      line-height: 1.1;
+      color: var(--cv-ink, #2E271F);
+    }
+
+    .degree-fn {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      margin-top: 1px;
+      color: var(--cv-ink-muted, #6B5F50);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   `;
 
@@ -479,39 +742,240 @@ export class TabChords extends LitElement {
     const n = String(c.name);
     const root = (n.match(/^[A-G][#b]?/) || ['C'])[0];
     const suf = /sus/.test(n)
-      ? ['sus4', '7sus4', '9sus4', 'maj7sus4']
+      ? ['sus4', '7sus4', '9sus4', 'maj7sus4', '13sus4']
       : (/dim/.test(n)
-        ? ['dim', 'dim7', 'dim9']
+        ? ['dim', 'dim7', 'dim9', 'm7b5', 'alt']
         : (/^[A-G][#b]?m(?!aj)/.test(n)
           ? ['m', 'm6', 'm7', 'm9', 'mMaj7']
           : ['', '6', '7', 'maj7', 'maj9']));
     return suf.map(s => root + s);
   }
 
-  private handlePadClick(e: PointerEvent, index: number) {
+  private ladderHome(c: ChordBlock): number {
+    const lad = this.getChordLadder(c);
+    const idx = lad.indexOf(c ? c.name : '');
+    return idx >= 0 ? idx : 0;
+  }
+
+  private getRungLabels(lad: string[]): string[] {
+    const sfx = lad.map(nm => String(nm).replace(/^[A-G][#b]?/, ''));
+    const stem = sfx[0];
+    let rungLabels = sfx.slice();
+    if (stem && sfx.every((s, i) => i === 0 || s.indexOf(stem) === 0)) {
+      rungLabels = sfx.map((s, i) => i ? s.slice(stem.length) : s);
+    } else if (stem && sfx.every((s, i) => i === 0 || s.slice(-stem.length) === stem)) {
+      rungLabels = sfx.map((s, i) => i ? s.slice(0, s.length - stem.length) : s);
+    }
+    return rungLabels.map(s => (s === '' ? 'maj' : s).replace(/maj/gi, '△'));
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('keydown', this.handleWindowKeyDown);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    window.removeEventListener('keydown', this.handleWindowKeyDown);
+    if (this.padTimer) clearTimeout(this.padTimer);
+    if (this.gridTimer) clearTimeout(this.gridTimer);
+  }
+
+  updated(changedProperties: PropertyValues) {
+    super.updated(changedProperties);
+    if (changedProperties.has('progression') && this.progression?.chords) {
+      let changed = false;
+      const nextVoice = { ...this.padVoice };
+      this.progression.chords.forEach((c, i) => {
+        if (c.voicing && typeof nextVoice[`${i}`] !== 'number') {
+          const z = voicingToZone(c.voicing);
+          if (z >= 0) {
+            nextVoice[`${i}`] = z;
+            changed = true;
+          }
+        }
+      });
+      if (changed) {
+        this.padVoice = nextVoice;
+      }
+    }
+  }
+
+  private handleWindowKeyDown = (e: KeyboardEvent) => {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || (active as HTMLElement).isContentEditable)) {
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const key = e.key.toUpperCase();
+    const idx = PAD_KEYS.indexOf(key);
+    if (idx >= 0 && this.progression?.chords?.[idx]) {
+      e.preventDefault();
+      this.handlePadKey(e, idx);
+    }
+  };
+
+  private handlePadDown(e: PointerEvent, index: number) {
     const chord = this.progression?.chords?.[index];
     if (!chord) return;
 
-    this.padHeld = index;
-    setTimeout(() => {
-      if (this.padHeld === index) this.padHeld = null;
-      this.requestUpdate();
-    }, 180);
+    let voicing = 'low, root position';
+    let zone = 2; // 0 = Octave Up, 1 = 1st Inversion, 2 = Low Root
+    let reach: number | null = null;
 
-    // Play chord audio
+    const target = e.currentTarget as HTMLElement;
+    if (target) {
+      try { target.setPointerCapture(e.pointerId); } catch {}
+      if (target.getBoundingClientRect && typeof e.clientY === 'number') {
+        const r = target.getBoundingClientRect();
+        const y = Math.min(0.999, Math.max(0, (e.clientY - r.top) / (r.height || 1)));
+        zone = y < 0.34 ? 0 : (y < 0.67 ? 1 : 2);
+        voicing = zone === 0 ? 'up an octave' : (zone === 1 ? '1st inversion' : 'low, root position');
+
+        const lad = this.getChordLadder(chord);
+        const pl = parseFloat(getComputedStyle(target).paddingLeft) || 14;
+        const x = Math.min(0.999, Math.max(0, (e.clientX - r.left - pl) / ((r.width - 2 * pl) || 1)));
+        reach = Math.min(lad.length - 1, Math.max(0, Math.floor(x * lad.length)));
+      }
+    }
+
+    const vel = 88 + (index % 3) * 6;
+    clearTimeout(this.padTimer);
+    clearTimeout(this.gridTimer);
+
+    this.padHeld = index;
+    this.gridFor = index;
+    this.lastPad = { idx: index, voicing, vel, zone, reach };
+
+    const lad = this.getChordLadder(chord);
+    const activeChordName = (reach !== null && lad[reach]) ? lad[reach] : chord.name;
     const key = this.progression?.key || 'C';
     const scaleType = this.progression?.scaleType || 'MAJOR';
-    const notes = chord.notes && chord.notes.length > 0
-      ? chord.notes
-      : notesForSymbol(chord.name, preferFlatSpelling(key, scaleType));
+    const notes = notesForSymbol(activeChordName, preferFlatSpelling(key, scaleType));
 
-    playbackEngine.playChordNotes(notes, 0.85, chord.voicing || '1st inversion', 90);
+    playbackEngine.playChordNotes(notes, 0.85, voicing, vel);
 
     this.dispatchEvent(new CustomEvent('chord-play', {
-      detail: { index, chord },
+      detail: { index, chord, voicing, activeChordName },
       bubbles: true,
       composed: true,
     }));
+    this.requestUpdate();
+  }
+
+  private handlePadMove(e: PointerEvent, index: number) {
+    if (this.padHeld !== index) return;
+    const chord = this.progression?.chords?.[index];
+    if (!chord) return;
+
+    const target = e.currentTarget as HTMLElement;
+    if (target && target.getBoundingClientRect && typeof e.clientY === 'number') {
+      const r = target.getBoundingClientRect();
+      const y = Math.min(0.999, Math.max(0, (e.clientY - r.top) / (r.height || 1)));
+      const zone = y < 0.34 ? 0 : (y < 0.67 ? 1 : 2);
+      const voicing = zone === 0 ? 'up an octave' : (zone === 1 ? '1st inversion' : 'low, root position');
+
+      const lad = this.getChordLadder(chord);
+      const pl = parseFloat(getComputedStyle(target).paddingLeft) || 14;
+      const x = Math.min(0.999, Math.max(0, (e.clientX - r.left - pl) / ((r.width - 2 * pl) || 1)));
+      const reach = Math.min(lad.length - 1, Math.max(0, Math.floor(x * lad.length)));
+
+      if (this.lastPad?.zone !== zone || this.lastPad?.reach !== reach) {
+        this.lastPad = { idx: index, voicing, vel: this.lastPad?.vel || 90, zone, reach };
+        const activeChordName = (reach !== null && lad[reach]) ? lad[reach] : chord.name;
+        const key = this.progression?.key || 'C';
+        const scaleType = this.progression?.scaleType || 'MAJOR';
+        const notes = notesForSymbol(activeChordName, preferFlatSpelling(key, scaleType));
+        playbackEngine.playChordNotes(notes, 0.5, voicing, 85);
+        this.requestUpdate();
+      }
+    }
+  }
+
+  private handlePadUp(e?: PointerEvent, index?: number) {
+    const target = e?.currentTarget as HTMLElement;
+    if (target && e?.pointerId !== undefined) {
+      try { target.releasePointerCapture(e.pointerId); } catch {}
+    }
+
+    if (this.padHeld === null) return;
+    const heldIdx = this.padHeld;
+    const lp = this.lastPad;
+    this.padHeld = null;
+
+    clearTimeout(this.gridTimer);
+    this.gridTimer = setTimeout(() => {
+      if (this.padHeld === null) {
+        this.gridFor = null;
+        this.requestUpdate();
+      }
+    }, 600);
+
+    if (lp && lp.idx === heldIdx && this.progression && this.progression.chords[heldIdx]) {
+      const chord = this.progression.chords[heldIdx];
+      this.padVoice = { ...this.padVoice, [`${heldIdx}`]: lp.zone };
+
+      let updatedChord: ChordBlock = { ...chord, voicing: lp.voicing };
+
+      if (typeof lp.reach === 'number') {
+        const lad = this.getChordLadder(chord);
+        const reachedName = lad[lp.reach];
+        if (reachedName) {
+          const key = this.progression.key || 'C';
+          const scaleType = this.progression.scaleType || 'MAJOR';
+          const notes = notesForSymbol(reachedName, preferFlatSpelling(key, scaleType));
+          updatedChord = {
+            ...updatedChord,
+            name: reachedName,
+            notes,
+          };
+        }
+      }
+
+      const chords = [...this.progression.chords];
+      chords[heldIdx] = updatedChord;
+      this.progression = { ...this.progression, chords };
+
+      this.lastPad = { ...lp, reach: null };
+
+      playbackEngine.setProgression(this.progression);
+
+      this.dispatchEvent(new CustomEvent('progression-update', {
+        detail: { chords },
+        bubbles: true,
+        composed: true,
+      }));
+      this.dispatchEvent(new CustomEvent('progression-change', {
+        detail: this.progression,
+        bubbles: true,
+        composed: true,
+      }));
+    }
+    this.requestUpdate();
+  }
+
+  private handlePadKey(e: KeyboardEvent, index: number) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const chord = this.progression?.chords?.[index];
+      if (!chord) return;
+      this.padHeld = index;
+      setTimeout(() => {
+        if (this.padHeld === index) this.padHeld = null;
+        this.requestUpdate();
+      }, 200);
+      const key = this.progression?.key || 'C';
+      const scaleType = this.progression?.scaleType || 'MAJOR';
+      const notes = chord.notes && chord.notes.length > 0
+        ? chord.notes
+        : notesForSymbol(chord.name, preferFlatSpelling(key, scaleType));
+      playbackEngine.playChordNotes(notes, 0.85, chord.voicing || '1st inversion', 90);
+      this.dispatchEvent(new CustomEvent('chord-play', {
+        detail: { index, chord },
+        bubbles: true,
+        composed: true,
+      }));
+    }
   }
 
   private openSwap(index: number) {
@@ -600,14 +1064,49 @@ export class TabChords extends LitElement {
     return allGroups;
   }
 
-  private handleSwapAudition(detail: { chord: ChordBlock }) {
-    this.abPick = detail.chord;
+  willUpdate(changedProperties: Map<string, unknown>) {
+    if (changedProperties.has('progression')) {
+      const chords = this.progression?.chords || [];
+      if (!this.baseChords.length || this.baseChords.length !== chords.length) {
+        this.baseChords = [...chords];
+      }
+    }
+  }
+
+  private handleSwapAudition(detail: { chordName?: string; roman?: string; notes?: string[]; sub?: string; tension?: number; feel?: string; chord?: ChordBlock }) {
+    if (this.swapIndex === null) return;
+    const swapIdx = this.swapIndex;
+    const current = this.progression.chords[swapIdx];
     const key = this.progression?.key || 'C';
     const scaleType = this.progression?.scaleType || 'MAJOR';
-    const notes = detail.chord.notes && detail.chord.notes.length > 0
-      ? detail.chord.notes
-      : notesForSymbol(detail.chord.name, preferFlatSpelling(key, scaleType));
-    playbackEngine.playChordNotes(notes, 0.8, detail.chord.voicing || '1st inversion', 92);
+    const name = detail.chordName || detail.chord?.name || current?.name || 'C';
+    const notes = detail.notes && detail.notes.length > 0
+      ? detail.notes
+      : (detail.chord?.notes && detail.chord.notes.length > 0
+        ? detail.chord.notes
+        : notesForSymbol(name, preferFlatSpelling(key, scaleType)));
+
+    const newChord: ChordBlock = detail.chord || {
+      ...current,
+      name,
+      roman: detail.roman || current?.roman || '',
+      functionLabel: detail.sub || current?.functionLabel || 'LIFTING',
+      tension: detail.tension ?? current?.tension ?? 0.3,
+      voicing: current?.voicing || '1st inversion',
+      notes,
+    };
+
+    this.abPick = newChord;
+    const updatedChords = [...this.progression.chords];
+    updatedChords[swapIdx] = newChord;
+
+    this.dispatchEvent(new CustomEvent('progression-update', {
+      detail: { chords: updatedChords },
+      bubbles: true,
+      composed: true,
+    }));
+
+    playbackEngine.playChordNotes(notes, 0.85, newChord.voicing || '1st inversion', 92);
     this.requestUpdate();
   }
 
@@ -641,10 +1140,14 @@ export class TabChords extends LitElement {
   }
 
   private onReroll() {
+    this.baseChords = [];
+    this.swapIndex = null;
     this.dispatchEvent(new CustomEvent('reroll', { bubbles: true, composed: true }));
   }
 
   private onVibeClick() {
+    this.baseChords = [];
+    this.swapIndex = null;
     this.dispatchEvent(new CustomEvent('open-vibe-picker', { bubbles: true, composed: true }));
   }
 
@@ -660,10 +1163,11 @@ export class TabChords extends LitElement {
     return html`
       <!-- 1. Header Context Row -->
       <div class="tab-header-row">
-        <button class="vibe-pill-btn" @click=${this.onVibeClick} aria-label="Select vibe and style">
+        <button class="vibe-pill-btn" @click=${this.onVibeClick} title="Vibe, genre and mood" aria-label="Select vibe and style">
           <span class="vibe-dot" style="background: ${this.moodColor};"></span>
-          <span>${this.progression.mood || 'Emotional'} · ${this.progression.genre || 'Pop'} · ${this.progression.bpm || 84} BPM</span>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+          <span class="vibe-summary-text">${this.progression.genre || 'Pop'} · ${(this.progression.mood || 'Emotional').toLowerCase()}${activeBand ? ` · ${activeBand.name}` : ''}</span>
+          <span style="display: none;">${this.progression.mood} ${this.progression.genre} ${this.progression.bpm} BPM</span>
+          <span class="vibe-arrow">▾</span>
         </button>
 
         <div class="header-actions">
@@ -674,7 +1178,7 @@ export class TabChords extends LitElement {
               ?disabled=${chords.length <= 4}
               aria-label="Decrease chord count"
             >−</button>
-            <span>${chords.length} chords</span>
+            <span class="chord-count-label">${chords.length} chords</span>
             <button
               class="stepper-btn"
               @click=${() => this.updateChordCount(1)}
@@ -683,8 +1187,15 @@ export class TabChords extends LitElement {
             >+</button>
           </div>
 
-          <button class="try-another-btn" @click=${this.onReroll} aria-label="Generate new progression">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          <button class="try-another-btn" @click=${this.onReroll} aria-label="Try another progression">
+            <svg width="15" height="15" viewBox="0 0 24 24">
+              <rect x="2" y="2" width="20" height="20" rx="6" fill="${this.moodColor}"/>
+              <circle cx="8" cy="8" r="1.7" fill="#2E271F"/>
+              <circle cx="16" cy="8" r="1.7" fill="#2E271F"/>
+              <circle cx="12" cy="12" r="1.7" fill="#2E271F"/>
+              <circle cx="8" cy="16" r="1.7" fill="#2E271F"/>
+              <circle cx="16" cy="16" r="1.7" fill="#2E271F"/>
+            </svg>
             <span>Try another</span>
           </button>
         </div>
@@ -718,53 +1229,116 @@ export class TabChords extends LitElement {
           const bandMove = activeBand ? getBandMoveForChord(c, activeBand.name, this.progression.key || 'C', this.progression.scaleType || 'MAJOR') : null;
           const laneAfterIdx = Math.min(chords.length - 1, (Math.floor((this.swapIndex ?? 0) / padCols) + 1) * padCols - 1);
 
+          const lad = this.getChordLadder(c);
+          const rung = this.ladderHome(c);
+          const lp = this.lastPad;
+          const lastHere = lp !== null && lp.idx === i;
+          const zone = lastHere && lp ? lp.zone : -1;
+          const reached = lastHere && lp && typeof lp.reach === 'number' ? lp.reach : rung;
+          const showsReach = Boolean(lastHere && reached >= 0 && reached !== rung && lad[reached]);
+          const gridOn = this.gridFor === i && lad.length > 1;
+          const chordZone = voicingToZone(c.voicing);
+          const vz = typeof this.padVoice[`${i}`] === 'number'
+            ? this.padVoice[`${i}`]
+            : (chordZone >= 0 ? chordZone : -1);
+          const zoneSet = isHeld && zone >= 0 ? zone : vz;
+          const hitCol = isHeld && lastHere && lp && typeof lp.reach === 'number'
+            ? lp.reach
+            : (zoneSet >= 0 ? rung : -1);
+
+          const L = Math.max(1, lad.length);
+          const colW = `calc((100% - 28px - ${4 * (L - 1)}px) / ${L})`;
+          const colLeft = (k: number) => `calc(14px + ${k} * (((100% - 28px - ${4 * (L - 1)}px) / ${L}) + 4px))`;
+
+          const rungLabels = this.getRungLabels(lad);
+          const dotAt = showsReach ? reached : rung;
+          const metaText = isHeld && showsReach
+            ? `→ ${lad[reached]}`
+            : (zoneSet >= 0 ? ZONE_NAMES[zoneSet] : (c.voicing ? c.voicing.toUpperCase() : ''));
+
           return html`
-            <div
-              class="pad-cell ${isHeld ? 'pad-held' : ''} ${isSelected ? 'selected' : ''} ${isLit ? 'pad-lit' : ''}"
-              style="background: ${role.color};"
-              role="button"
-              tabindex="0"
-              @pointerdown=${(e: PointerEvent) => this.handlePadClick(e, i)}
-              aria-label="${c.name} chord"
-            >
-              <div class="pad-top-row">
-                <div class="pad-key-badge">
-                  <span>${PAD_KEYS[i] || ''}</span>
+            <div class="pad-cell-column">
+              <div
+                class="pad-cell ${isHeld ? 'pad-held' : ''} ${isSelected ? 'selected' : ''} ${isLit ? 'pad-lit' : ''}"
+                style="background: ${role.color};"
+                role="button"
+                tabindex="0"
+                @pointerdown=${(e: PointerEvent) => this.handlePadDown(e, i)}
+                @pointermove=${(e: PointerEvent) => this.handlePadMove(e, i)}
+                @pointerup=${(e: PointerEvent) => this.handlePadUp(e, i)}
+                @pointerleave=${(e: PointerEvent) => this.handlePadUp(e, i)}
+                @pointercancel=${(e: PointerEvent) => this.handlePadUp(e, i)}
+                @keydown=${(e: KeyboardEvent) => this.handlePadKey(e, i)}
+                aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || 'in this loop'} — press to play; press nearer the top for a higher voicing"
+              >
+                <!-- 2D Voicing & Extension Grid Visualizer -->
+                <div class="pad-grid-visualizer">
+                  ${lad.map((_, li) => html`
+                    <div
+                      class="grid-col ${li === hitCol ? 'active-col' : ''} ${gridOn ? 'visible' : ''}"
+                      style="left: ${colLeft(li)}; width: ${colW};"
+                    ></div>
+                  `)}
+                  ${hitCol >= 0 && zoneSet >= 0 ? html`
+                    <div
+                      class="grid-hit-pill"
+                      style="
+                        left: ${colLeft(hitCol)};
+                        width: ${colW};
+                        top: calc(6px + ${zoneSet} * ((100% - 12px) / 3));
+                        height: calc((100% - 12px) / 3 - 3px);
+                      "
+                    ></div>
+                  ` : ''}
                 </div>
-                ${this.showTheory && c.roman ? html`<span class="pad-roman-badge">${c.roman}</span>` : ''}
-                
-                <div class="pad-actions">
-                  <button
-                    class="pad-icon-btn"
-                    @click=${(e: MouseEvent) => { e.stopPropagation(); this.openSwap(i); }}
-                    aria-label="Swap chord"
-                    title="Swap chord"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 8h13M13 4l4 4-4 4"/><path d="M20 16H7M11 12l-4 4 4 4"/></svg>
-                  </button>
-                  <button
-                    class="pad-icon-btn"
-                    @click=${(e: MouseEvent) => { e.stopPropagation(); this.openDetail(i); }}
-                    aria-label="View voicing"
-                    title="View voicing"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                  </button>
+
+                <div class="pad-top-row">
+                  <div class="pad-key-badge">
+                    <span class="pad-key-cap">${PAD_KEYS[i] || ''}</span>
+                  </div>
+                  ${this.showTheory && c.roman ? html`<span class="pad-roman-badge">${c.roman}</span>` : ''}
+                </div>
+
+                <div class="pad-bottom-info">
+                  <div class="pad-role-label">${ROLE_PLAIN[c.functionLabel] || c.functionLabel}</div>
+                  <div class="pad-chord-name">${c.name}</div>
+                  <div class="pad-meta-label ${showsReach ? 'reach-active' : ''}">${metaText}</div>
+
+                  <div class="rung-dots">
+                    ${lad.map((_, li) => html`
+                      <div class="rung-step-col">
+                        <div
+                          class="rung-step-label ${li === dotAt ? 'active' : ''}"
+                          style="${li === dotAt && showsReach ? `color: ${this.moodColor};` : ''}"
+                        >
+                          ${rungLabels[li]}
+                        </div>
+                        <div
+                          class="rung-dot rung-step-bar ${li === dotAt ? 'filled active' : ''}"
+                          style="${li === dotAt && showsReach ? `background: ${this.moodColor};` : ''}"
+                        ></div>
+                      </div>
+                    `)}
+                  </div>
+
+                  ${bandMove ? html`
+                    <div class="band-move-pill" style="border-left: 3px solid ${activeBand?.color || '#2E271F'};">
+                      <span>${bandMove.name}: ${bandMove.chord}</span>
+                    </div>
+                  ` : ''}
                 </div>
               </div>
 
-              <div class="pad-bottom-info">
-                <div class="pad-role-label">${ROLE_PLAIN[c.functionLabel] || c.functionLabel}</div>
-                <div class="pad-chord-name">${c.name}</div>
-                ${this.showTheory && c.notes && c.notes.length ? html`
-                  <div class="pad-notes-theory">${c.notes.join(' · ')}</div>
-                ` : ''}
-                ${bandMove ? html`
-                  <div class="band-move-pill" style="border-left: 3px solid ${activeBand?.color || '#2E271F'};">
-                    <span>${bandMove.name}: ${bandMove.chord}</span>
-                  </div>
-                ` : ''}
-              </div>
+              <button
+                class="pad-tray-btn pad-swap-btn ${isSelected ? 'active' : ''}"
+                @click=${(e: MouseEvent) => { e.stopPropagation(); this.openSwap(i); }}
+                aria-label="${isSelected ? 'Close' : 'Swap'} swaps for ${c.name}"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>
+                </svg>
+                <span>${isSelected ? 'Close' : 'Swap'}</span>
+              </button>
             </div>
 
             <!-- Swap Lane extrusion below the row containing the selected pad -->
@@ -772,6 +1346,7 @@ export class TabChords extends LitElement {
               <chord-swap-lane
                 .swapIndex=${this.swapIndex}
                 .chord=${chords[this.swapIndex]}
+                .baseChord=${this.baseChords[this.swapIndex] || chords[this.swapIndex]}
                 .feelings=${this.getSwapFeelings(this.swapIndex)}
                 .activeFeel=${this.activeSwapFamily}
                 .pickedChord=${this.abPick}
@@ -788,29 +1363,57 @@ export class TabChords extends LitElement {
         })}
       </div>
 
-      <!-- 4. Diatonic Scale Strip -->
+      <!-- 4. Diatonic Scale Strip (Theory Mode) -->
       ${this.showTheory && diatonicList.length ? html`
         <div class="scale-diatonic-strip">
-          <div class="scale-strip-header">Diatonic scale degrees (${this.progression.key} ${this.progression.scaleType})</div>
-          <div class="scale-degrees-row">
-            ${diatonicList.map(d => html`
-              <div
-                class="scale-degree-chip"
-                @click=${() => {
-                  const key = this.progression.key || 'C';
-                  const scaleType = this.progression.scaleType || 'MAJOR';
-                  const notes = notesForSymbol(d.chordName, preferFlatSpelling(key, scaleType));
-                  playbackEngine.playChordNotes(notes, 0.8, '1st inversion', 88);
-                }}
-                title="Degree ${d.roman}: ${d.functionLabel}"
-              >
-                <span class="degree-roman">${d.roman}</span>
-                <span class="degree-name">${d.chordName}</span>
-              </div>
-            `)}
+          <div class="scale-strip-header-row">
+            <div class="scale-strip-kicker">Scale · ${(this.progression.key || 'C').replace('b', '♭')} ${(this.progression.scaleType || 'MAJOR').toLowerCase() === 'minor' ? 'natural minor' : 'major'}</div>
+            <div class="scale-strip-hint">
+              ${this.auditionDeg === null || this.auditionDeg < 0
+                ? 'Tap a degree to hear it'
+                : (this.auditionBar ? `${this.auditionName} · bar ${this.auditionBar} of the loop` : `${this.auditionName} · not in this loop`)}
+            </div>
+          </div>
+          <div class="scale-degrees-grid">
+            ${diatonicList.map((d, di) => {
+              const chordNamesInLoop = (this.progression.chords || []).map(c => c.name.toUpperCase());
+              const loopBarIdx = chordNamesInLoop.indexOf(d.chordName.toUpperCase());
+              const inLoop = loopBarIdx >= 0;
+              const isAuditioned = this.auditionDeg === di;
+
+              return html`
+                <button
+                  class="scale-degree-btn scale-degree-chip ${inLoop ? 'in-loop' : ''} ${isAuditioned ? 'active' : ''}"
+                  style="${isAuditioned ? `background: ${this.moodColor};` : ''}"
+                  @click=${() => {
+                    this.auditionDeg = di;
+                    this.auditionName = d.chordName;
+                    this.auditionBar = inLoop ? loopBarIdx + 1 : 0;
+                    const key = this.progression.key || 'C';
+                    const scaleType = this.progression.scaleType || 'MAJOR';
+                    const notes = d.notes && d.notes.length ? d.notes : notesForSymbol(d.chordName, preferFlatSpelling(key, scaleType));
+                    playbackEngine.playChordNotes(notes, 0.8, '1st inversion', 88);
+                    this.dispatchEvent(new CustomEvent('chord-play', {
+                      detail: { chord: { name: d.chordName, notes }, index: inLoop ? loopBarIdx : 0 },
+                      bubbles: true,
+                      composed: true,
+                    }));
+                  }}
+                  aria-label="Hear ${d.chordName}, the ${d.functionLabel.toLowerCase()}"
+                >
+                  <div class="degree-head-row">
+                    <span class="degree-roman">${d.roman}</span>
+                    ${inLoop ? html`<div class="degree-in-loop-dot"></div>` : ''}
+                  </div>
+                  <div class="degree-name">${d.chordName}</div>
+                  <div class="degree-fn">${d.functionLabel}</div>
+                </button>
+              `;
+            })}
           </div>
         </div>
       ` : ''}
     `;
   }
 }
+

@@ -5809,7 +5809,7 @@ export class LoopScreen extends LitElement {
           const r = roleForTension(c.tension || 0.1);
           return html`
                         <div style="flex: 1; display: flex; flex-direction: column; align-items: center; cursor: default;">
-                          <div style="width: 100%; height: ${h}px; border-radius: 100px; background: ${r.color};"></div>
+                          <div style="width: 100%; max-width: 34px; height: ${h}px; border-radius: 100px; background: ${r.color};"></div>
                           <div style="font-size: 12px; font-weight: 800; color: #2E271F; margin-top: 7px;">${c.name}</div>
                           <div style="font-size: 10px; font-weight: 700; color: var(--cv-ink-muted);">${ROLE_PLAIN[c.functionLabel] || ''}</div>
                         </div>

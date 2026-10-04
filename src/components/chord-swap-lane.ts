@@ -20,38 +20,13 @@ export interface SwapFeelItem {
   rows: SwapFeelRow[];
 }
 
-// Helpers for harmonic color interpolation and WCAG contrast
-function lerp(a: number, b: number, t: number): number {
-  return Math.round(a + (b - a) * t);
-}
-
-function lerpColor(hexA: string, hexB: string, t: number): string {
-  const pa = [1, 3, 5].map(i => parseInt(hexA.slice(i, i + 2), 16));
-  const pb = [1, 3, 5].map(i => parseInt(hexB.slice(i, i + 2), 16));
-  return '#' + pa.map((v, i) => lerp(v, pb[i], t).toString(16).padStart(2, '0')).join('');
-}
-
-function relLum(hex: string): number {
-  const ch = [1, 3, 5]
-    .map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
-    .map(v => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
-  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
-}
-
-function joinFill(hex: string): string {
-  const creamLum = 0.925;
-  let out = hex;
-  for (let i = 1; i <= 20; i++) {
-    out = lerpColor(hex, '#2E271F', i * 0.05);
-    if ((creamLum + 0.05) / (relLum(out) + 0.05) >= 4.7) break;
-  }
-  return out;
-}
+const SHADES = [52, 76, 100];
 
 @customElement('chord-swap-lane')
 export class ChordSwapLane extends LitElement {
   @property({ type: Number }) swapIndex = 0;
   @property({ type: Object }) chord?: ChordBlock;
+  @property({ type: Object }) baseChord?: ChordBlock;
   @property({ type: Array }) feelings: SwapFeelItem[] = [];
   @property({ type: String }) activeFeel = 'Darker';
   @property({ type: Object }) pickedChord: ChordBlock | null = null;
@@ -61,229 +36,207 @@ export class ChordSwapLane extends LitElement {
 
   static styles = css`
     :host {
-      display: contents;
-      font-family: var(--cv-font, sans-serif);
+      display: block;
+      grid-column: 1 / -1;
+      width: 100%;
+      min-width: 0;
+      font-family: var(--cv-font, 'Plus Jakarta Sans', system-ui, sans-serif);
+      color: var(--cv-ink, #2E271F);
     }
 
     *, *::before, *::after {
       box-sizing: border-box;
     }
 
-    .lane-shell {
-      position: relative;
-      grid-column: 1 / -1;
+    .tray-wrapper {
+      width: 100%;
       min-width: 0;
-      display: grid;
-      grid-template-rows: 1fr;
-      animation: cvfv-laneopen 480ms 60ms cubic-bezier(0.16, 1, 0.3, 1) both;
-      margin-top: 6px;
+      position: relative;
+      padding-top: 7px;
+      margin-top: -4px;
       margin-bottom: 8px;
+      animation: cvfv-tray 260ms cubic-bezier(0.23, 1, 0.32, 1) both;
     }
 
-    .lane-neck {
+    @keyframes cvfv-tray {
+      0% { opacity: 0; transform: translateY(-8px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    .tray-pointer {
       position: absolute;
+      top: 0;
+      width: 16px;
+      height: 16px;
+      background: var(--cv-cream, #FBF3E6);
+      transform: rotate(45deg);
+      border-radius: 3px;
       z-index: 1;
-      top: -22px;
-      height: 36px;
-      border-radius: 0 0 3px 3px;
-      transform-origin: top center;
-      animation: cvfv-laneneck 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
-      transition: left 300ms var(--cv-ease, ease), width 300ms var(--cv-ease, ease), background 200ms ease;
+      transition: left 240ms cubic-bezier(0.23, 1, 0.32, 1);
     }
 
-    .lane-clip {
-      min-height: 0;
-      overflow: hidden;
+    .tray-card {
       position: relative;
       z-index: 2;
-    }
-
-    .lane-panel {
-      border-radius: 14px;
-      padding: 15px 16px 16px;
-      box-shadow: 0 26px 46px -30px rgba(46, 39, 31, 0.75);
-      animation: cvfv-lanepanel 420ms 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
-      transition: background 250ms var(--cv-ease, ease);
-    }
-
-    .lane-header {
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 18px;
+      padding: 14px 16px 16px;
       display: flex;
-      align-items: center;
-      gap: 10px;
-      animation: cvfv-trayitem 300ms 220ms var(--cv-ease, ease) both;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 16px 36px -12px rgba(46, 39, 31, 0.35);
+      border: 1px solid rgba(46, 39, 31, 0.08);
     }
 
-    .lane-kicker {
-      font-size: 13px;
-      font-weight: 800;
-      letter-spacing: -0.01em;
-      color: #2E271F;
-      min-width: 0;
-    }
-
-    .lane-hint {
-      font-size: 11px;
-      font-weight: 700;
-      color: #2E271F;
-      opacity: 0.7;
-      white-space: nowrap;
-    }
-
-    .lane-close-btn {
-      border: none;
-      font-family: inherit;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      background: rgba(46, 39, 31, 0.12);
-      color: #2E271F;
-      font-size: 16px;
-      line-height: 1;
-      cursor: pointer;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: background 150ms ease, transform 120ms ease;
-    }
-    .lane-close-btn:hover {
-      background: rgba(46, 39, 31, 0.2);
-    }
-    .lane-close-btn:active {
-      transform: scale(0.92);
-    }
-
-    .feelings-row {
-      display: flex;
-      gap: 7px;
-      margin-top: 11px;
-      animation: cvfv-trayitem 340ms 280ms var(--cv-ease, ease) both;
-    }
-
-    .feel-tile {
-      border: none;
-      margin: 0;
-      font-family: inherit;
-      text-align: left;
-      cursor: pointer;
-      padding: 10px 11px 11px;
-      flex: 1 1 0;
-      min-width: 0;
-      transition: box-shadow 200ms ease, border-radius 200ms ease, background 200ms ease, transform 140ms ease;
-    }
-    .feel-tile:not([data-sel="1"]):active {
-      transform: scale(0.98);
-    }
-
-    .feel-tile-name {
-      display: block;
-      font-size: 13px;
-      font-weight: 800;
-      line-height: 1.15;
-      letter-spacing: -0.01em;
-    }
-
-    .feel-tile-sub {
-      display: block;
-      font-size: 10.5px;
-      font-weight: 700;
-      line-height: 1.3;
-      opacity: 0.9;
-      margin-top: 3px;
-    }
-
-    .chords-shell {
-      position: relative;
-      margin-top: 10px;
-      animation: cvfv-trayitem 340ms 350ms var(--cv-ease, ease) both;
-    }
-
-    .chords-neck {
-      position: absolute;
-      z-index: 3;
-      top: -11px;
-      height: 15px;
-      transition: left 300ms var(--cv-ease, ease), right 300ms var(--cv-ease, ease), width 300ms var(--cv-ease, ease), background 200ms ease;
-    }
-
-    .chords-box {
-      position: relative;
-      z-index: 2;
+    .tray-header {
       display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
-      border-radius: 12px;
-      padding: 10px 11px;
-      transition: background 200ms ease, border-radius 200ms ease;
     }
 
-    .chord-pill-btn {
+    .tray-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .tray-title {
+      font-size: 13.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+    }
+
+    .tray-sub {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+
+    .tray-spacer {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .tray-revert-btn {
       border: none;
       font-family: inherit;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 100px;
+      color: #2E271F;
+      font-size: 12px;
+      font-weight: 800;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 7px;
-      border-radius: 100px;
-      padding: 8px 14px;
-      transition: background 200ms ease, box-shadow 200ms ease, transform 120ms ease;
+      gap: 5px;
+      transition: transform 120ms ease, opacity 120ms ease;
     }
-    .chord-pill-btn:hover {
+
+    .tray-revert-btn:hover {
+      opacity: 0.9;
       transform: translateY(-1px);
     }
-    .chord-pill-btn:active {
+
+    .tray-close-btn {
+      border: none;
+      font-family: inherit;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--cv-ink-muted, #6B5F50);
+      font-size: 18px;
+      font-weight: 800;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 150ms ease, color 150ms ease;
+    }
+
+    .tray-close-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
+      color: #2E271F;
+    }
+
+    .tray-groups-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+    }
+
+    .tray-group-col {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .tray-group-header {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .tray-group-name {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+    }
+
+    .tray-group-sub {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--cv-ink-muted, #6B5F50);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tray-chips-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .tray-chip {
+      flex: 1 1 0;
+      min-width: 56px;
+      border: none;
+      font-family: inherit;
+      min-height: 38px;
+      padding: 0 8px;
+      border-radius: 12px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 120ms ease, box-shadow 120ms ease, background 150ms ease;
+    }
+
+    .tray-chip:hover {
+      box-shadow: inset 0 0 0 2px #2E271F;
+      transform: translateY(-1px);
+    }
+
+    .tray-chip:active {
       transform: scale(0.96);
     }
 
-    .chord-pill-name {
-      font-size: 13px;
-      font-weight: 800;
-      white-space: nowrap;
-    }
-
-    .chord-pill-roman {
-      font-size: 10px;
-      font-weight: 800;
-      letter-spacing: 0.5px;
-      opacity: 0.8;
-    }
-
-    .keep-swap-btn {
-      border: none;
-      font-family: inherit;
-      cursor: pointer;
-      border-radius: 100px;
-      padding: 8px 16px;
-      font-size: 12px;
-      font-weight: 800;
-      white-space: nowrap;
-      min-height: 34px;
-      background: #FBF6EC;
-      color: #2E271F;
-      box-shadow: 0 10px 20px -14px rgba(46, 39, 31, 0.6);
-      transition: background 180ms ease, transform 120ms ease, box-shadow 180ms ease;
-    }
-    .keep-swap-btn:hover {
-      background: #FFFFFF;
-      transform: scale(1.02);
-      box-shadow: 0 12px 24px -12px rgba(46, 39, 31, 0.8);
-    }
-    .keep-swap-btn:active {
-      transform: scale(0.97);
+    .tray-chip.selected {
+      background: #2E271F !important;
+      color: #FBF3E6 !important;
     }
   `;
 
-  private onSelectFeel(name: string) {
-    this.activeFeel = name;
-    this.dispatchEvent(new CustomEvent('swap-feel-change', {
-      detail: { feel: name },
-      bubbles: true,
-      composed: true,
-    }));
-  }
-
-  private onAudition(row: SwapFeelRow, feel: SwapFeelItem) {
+  private onPick(row: SwapFeelRow, feel: SwapFeelItem) {
     this.dispatchEvent(new CustomEvent('swap-audition', {
       detail: {
         chordName: row.name,
@@ -299,11 +252,22 @@ export class ChordSwapLane extends LitElement {
     }));
   }
 
-  private onConfirm() {
-    this.dispatchEvent(new CustomEvent('swap-confirm', {
-      bubbles: true,
-      composed: true,
-    }));
+  private onRevert() {
+    if (this.baseChord) {
+      this.dispatchEvent(new CustomEvent('swap-audition', {
+        detail: {
+          chordName: this.baseChord.name,
+          roman: this.baseChord.roman || '',
+          notes: this.baseChord.notes || [],
+          sub: this.baseChord.functionLabel || '',
+          tension: this.baseChord.tension || 0.3,
+          feel: 'Original',
+          chord: this.baseChord,
+        },
+        bubbles: true,
+        composed: true,
+      }));
+    }
   }
 
   private onClose() {
@@ -315,184 +279,102 @@ export class ChordSwapLane extends LitElement {
 
   render() {
     const padColsNow = Math.max(1, this.padCols || 4);
-    const laneCol = this.swapIndex % padColsNow;
-    const laneTrack = `calc((100% - ${12 * (padColsNow - 1)}px) / ${padColsNow})`;
-    const chordTension = this.chord?.tension ?? 0.3;
-    const laneBody = roleForTension(chordTension).color;
+    const colIndex = this.swapIndex % padColsNow;
+    const colWidthPct = 100 / padColsNow;
+    const pointerLeft = `calc(${colIndex * colWidthPct}% + ${colWidthPct / 2}% - 8px)`;
 
-    const currentFeel = this.feelings.find(f => f.name === this.activeFeel) || this.feelings[0];
-    const feelIdx = Math.max(0, this.feelings.findIndex(f => f.name === currentFeel?.name));
-    const feelCount = Math.max(1, this.feelings.length);
-    const feelTrack = `calc((100% - ${7 * (feelCount - 1)}px) / ${feelCount})`;
+    const cur = this.chord;
+    const curName = cur?.name || '';
+    const curTension = cur?.tension ?? 0.3;
+    const curColor = roleForTension(curTension).color;
 
-    const isFirstFeel = feelIdx === 0;
-    const isLastFeel = feelIdx === feelCount - 1;
+    const baseName = this.baseChord?.name || curName;
+    const baseColor = roleForTension(this.baseChord?.tension ?? curTension).color;
+    const isSwapped = Boolean(this.baseChord && this.baseChord.name !== curName);
 
-    let neckPositionStyle = `left: calc(${feelTrack} * ${feelIdx} + ${7 * feelIdx}px); width: ${feelTrack};`;
-    let boxRadius = '12px';
-
-    if (isFirstFeel && isLastFeel) {
-      neckPositionStyle = `left: 0; right: 0; width: 100%;`;
-      boxRadius = '0 0 12px 12px';
-    } else if (isFirstFeel) {
-      neckPositionStyle = `left: 0; width: ${feelTrack};`;
-      boxRadius = '0 12px 12px 12px';
-    } else if (isLastFeel) {
-      neckPositionStyle = `left: auto; right: 0; width: ${feelTrack};`;
-      boxRadius = '12px 0 12px 12px';
-    }
-
-    const feelTension = currentFeel?.tension ?? 0.3;
-    const feelColor = joinFill(roleForTension(feelTension).color);
-
-    const laneKicker = `Bar ${this.swapIndex + 1} · ${this.chord?.name || 'Chord'} could feel…`;
-    const laneHint = this.pickedChord
-      ? `hearing swap: ${this.pickedChord.name}`
-      : 'tap to audition in the loop';
+    const title = isSwapped
+      ? `Bar ${this.swapIndex + 1} is now ${curName}`
+      : `Bar ${this.swapIndex + 1} · swap ${curName} for…`;
+    const sub = isSwapped
+      ? `Was ${baseName}.`
+      : 'Tap one to hear it in place. Undo puts it back.';
 
     return html`
-      <div class="lane-shell" data-swap-lane="1">
-        <!-- Neck connecting the active chord pad down to the lane -->
-        <div
-          class="lane-neck"
-          style="
-            left: calc(${laneTrack} * ${laneCol} + ${12 * laneCol}px);
-            width: ${laneTrack};
-            background: ${laneBody};
-          "
-        ></div>
+      <div class="tray-wrapper" data-swap-lane="1">
+        <div class="tray-pointer" style="left: ${pointerLeft};"></div>
+        <div class="tray-card">
+          <!-- Tray Header Row -->
+          <div class="tray-header">
+            <span class="tray-swatch" style="background: ${curColor};"></span>
+            <span class="tray-title">${title}</span>
+            <span class="tray-sub">${sub}</span>
+            <div class="tray-spacer"></div>
 
-        <div class="lane-clip">
-          <div class="lane-panel" style="background: ${laneBody};">
-            <!-- Header bar -->
-            <div class="lane-header">
-              <div class="lane-kicker">${laneKicker}</div>
-              <div style="flex: 1; min-width: 0;"></div>
-              <div class="lane-hint">${laneHint}</div>
+            ${isSwapped ? html`
               <button
-                class="lane-close-btn"
-                @click=${this.onClose}
-                aria-label="Close swap lane"
-              >×</button>
-            </div>
-
-            ${this.band ? html`
-              <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; color: #5B5145; background: ${this.band.color}3D; border-radius: 10px; padding: 6px 12px; margin-top: 9px; animation: cvfv-trayitem 300ms 200ms var(--cv-ease, ease) both;">
-                <div style="width: 7px; height: 7px; border-radius: 2px; background: ${this.band.color}; flex-shrink: 0;"></div>
-                <span>${this.band.name} mode — their moves first</span>
-                <span style="font-size: 10px; font-weight: 700; color: var(--cv-ink-muted); margin-left: auto;">${this.band.plain || ''}</span>
-              </div>
+                class="tray-revert-btn"
+                style="background: ${baseColor};"
+                @click=${this.onRevert}
+                aria-label="Revert to ${baseName}"
+              >
+                Back to ${baseName}
+              </button>
             ` : ''}
 
-            <!-- Feelings row -->
-            <div class="feelings-row">
-              ${this.feelings.map((f) => {
-                const on = f.name === currentFeel?.name;
-                const rc = roleForTension(f.tension);
-                const tileBg = on ? joinFill(rc.color) : lerpColor(rc.color, '#FBF6EC', 0.5);
-                return html`
-                  <button
-                    class="feel-tile"
-                    data-feel-tile="1"
-                    data-sel="${on ? '1' : '0'}"
-                    style="
-                      background: ${tileBg};
-                      border-radius: ${on ? '12px 12px 0 0' : '12px'};
-                      box-shadow: ${on ? 'none' : 'inset 0 0 0 1.5px rgba(46,39,31,0.14)'};
-                    "
-                    @click=${() => this.onSelectFeel(f.name)}
-                  >
-                    <span class="feel-tile-name" style="color: ${on ? '#FBF6EC' : '#2E271F'};">${f.name}</span>
-                    <span class="feel-tile-sub" style="color: ${on ? '#FBF6EC' : '#2E271F'};">${f.sub}</span>
-                  </button>
-                `;
-              })}
-            </div>
+            <button
+              class="tray-close-btn"
+              @click=${this.onClose}
+              aria-label="Close swaps drawer"
+            >
+              ×
+            </button>
+          </div>
 
-            <!-- Chords row extruded from active feeling -->
-            <div class="chords-shell" data-lane-join="${feelIdx}">
-              <div
-                class="chords-neck"
-                style="
-                  ${neckPositionStyle}
-                  background: ${feelColor};
-                "
-              ></div>
+          <!-- Groups Grid (Feel Families) -->
+          <div class="tray-groups-grid">
+            ${this.feelings.map(feel => {
+              const famColor = roleForTension(feel.tension).color;
+              const rows = (feel.rows || []).slice(0, 3);
 
-              <div class="chords-box" style="background: ${feelColor}; border-radius: ${boxRadius};">
-                ${(currentFeel?.rows || []).map((row) => {
-                  const on = this.pickedChord?.name === row.name;
-                  const rowTension = typeof row.tension === 'number' ? row.tension : feelTension;
-                  const rowRole = roleForTension(rowTension);
-
-                  return html`
-                    <button
-                      class="chord-pill-btn"
-                      style="
-                        background: ${on ? '#2E271F' : 'rgba(251, 246, 236, 0.88)'};
-                      "
-                      @click=${() => this.onAudition(row, currentFeel)}
-                      aria-label="Audition ${row.name}"
-                    >
-                      <span
-                        style="
-                          width: 9px;
-                          height: 9px;
-                          border-radius: ${Math.round(rowRole.radius * 0.25)}px;
-                          background: ${rowRole.color};
-                          flex-shrink: 0;
-                        "
-                      ></span>
-                      <span
-                        class="chord-pill-name"
-                        style="color: ${on ? '#FBF6EC' : '#2E271F'};"
-                      >${row.name}</span>
-                      ${row.roman ? html`
-                        <span
-                          class="chord-pill-roman"
-                          style="color: ${on ? 'rgba(251,246,236,0.7)' : 'var(--cv-label)'};"
-                        >${row.roman}</span>
-                      ` : ''}
-                      ${row.bandTag ? html`
-                        <span
-                          style="
-                            font-size: 8.5px;
-                            font-weight: 800;
-                            letter-spacing: 0.7px;
-                            text-transform: uppercase;
-                            color: #2E271F;
-                            background: ${row.bandColor || '#F6D98B'};
-                            border-radius: 100px;
-                            padding: 2px 6px;
-                            margin-left: 4px;
-                            white-space: nowrap;
-                          "
-                        >${row.bandTag}</span>
-                      ` : ''}
-                    </button>
-                  `;
-                })}
-
-                <div style="flex: 1; min-width: 0;"></div>
-
-                ${this.pickedChord ? html`
-                  <button
-                    class="keep-swap-btn"
-                    @click=${this.onConfirm}
-                    aria-label="Keep ${this.pickedChord.name}"
-                  >
-                    Keep ${this.pickedChord.name}
-                  </button>
-                ` : html`
-                  <div style="font-size: 11px; font-weight: 700; color: #FBF6EC; opacity: 0.85; white-space: nowrap;">
-                    tap to hear it in the loop
+              return html`
+                <div class="tray-group-col">
+                  <div class="tray-group-header">
+                    <span class="tray-group-name">${feel.name}</span>
+                    <span class="tray-group-sub">${feel.sub}</span>
                   </div>
-                `}
-              </div>
-            </div>
+
+                  <div class="tray-chips-row">
+                    ${rows.map((row, i) => {
+                      const isSelected = row.name === curName;
+                      const shade = SHADES[i] || 100;
+                      const chipBg = `color-mix(in srgb, ${famColor} ${shade}%, #FBF3E6)`;
+
+                      return html`
+                        <button
+                          class="tray-chip ${isSelected ? 'selected' : ''}"
+                          style="${isSelected
+                            ? `box-shadow: 0 0 0 2px ${famColor};`
+                            : `background: ${chipBg}; color: #2E271F;`}"
+                          @click=${() => this.onPick(row, feel)}
+                          aria-label="Swap to ${row.name}"
+                        >
+                          ${isSelected ? `✓ ${row.name}` : row.name}
+                        </button>
+                      `;
+                    })}
+                  </div>
+                </div>
+              `;
+            })}
           </div>
         </div>
       </div>
     `;
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'chord-swap-lane': ChordSwapLane;
   }
 }

@@ -1,5 +1,45 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+vi.mock('tone', () => ({
+  Compressor: class { connect() { return this; } toDestination() { return this; } },
+  Sampler: class { connect() { return this; } triggerAttackRelease() { } triggerAttack() { } triggerRelease() { } },
+  PolySynth: class { connect() { return this; } triggerAttackRelease() { } triggerAttack() { } triggerRelease() { } set() { } },
+  Synth: class { triggerAttackRelease() { } },
+  MonoSynth: class { triggerAttackRelease() { } },
+  FMSynth: class { triggerAttackRelease() { } },
+  Reverb: class { connect() { return this; } },
+  Chorus: class { start() { return this; } connect() { return this; } },
+  Gain: class {
+    gain = { rampTo: vi.fn(), value: 1 };
+    connect() { return this; }
+    toDestination() { return this; }
+  },
+  Filter: class {
+    frequency = { value: 1000 };
+    connect() { return this; }
+  },
+  EQ3: class {
+    high = { value: 0 };
+    mid = { value: 0 };
+    low = { value: 0 };
+    connect() { return this; }
+  },
+  Vibrato: class {
+    connect() { return this; }
+  },
+  Distortion: class {
+    connect() { return this; }
+  },
+  Limiter: class {
+    connect() { return this; }
+    toDestination() { return this; }
+  },
+  loaded: () => Promise.resolve(),
+  start: () => Promise.resolve(),
+  now: () => 0,
+}));
+
 import './tab-chords';
 import type { TabChords } from './tab-chords';
 import type { ChordBlock, Progression } from '../../services/chord-engine';
@@ -79,7 +119,7 @@ describe('TabChords component', () => {
   });
 
   it('opens swap lane when swap icon is clicked on a pad', async () => {
-    const swapBtns = el.shadowRoot!.querySelectorAll('.pad-icon-btn');
+    const swapBtns = el.shadowRoot!.querySelectorAll('.pad-swap-btn');
     const firstSwapBtn = swapBtns[0] as HTMLElement;
     firstSwapBtn.click();
     await el.updateComplete;
@@ -96,4 +136,127 @@ describe('TabChords component', () => {
     expect(banner).toBeTruthy();
     expect(banner!.textContent).toContain('Oasis');
   });
+
+  it('latches voicing and extension when clicked and keeps them latched after release', async () => {
+    const updateSpy = vi.fn();
+    const changeSpy = vi.fn();
+    el.addEventListener('progression-update', updateSpy);
+    el.addEventListener('progression-change', changeSpy);
+
+    const pads = el.shadowRoot!.querySelectorAll('.pad-cell');
+    const firstPad = pads[0] as HTMLElement;
+
+    // Mock getBoundingClientRect: width 200, height 120, left 100, top 100
+    // Padding 14 -> usable width: 200 - 28 = 172.
+    // Chord ladder for C is ['C', 'C6', 'C7', 'Cmaj7', 'Cmaj9'] (5 rungs).
+    // Zone 0: Octave Up (y < 0.34, top 100 + 20 = 120)
+    // Reach 3: Cmaj7 (x ~ 0.7 -> left 100 + 14 + 0.7 * 172 = 234.4)
+    firstPad.getBoundingClientRect = () => ({
+      left: 100,
+      top: 100,
+      width: 200,
+      height: 120,
+      right: 300,
+      bottom: 220,
+      x: 100,
+      y: 100,
+      toJSON: () => {},
+    });
+
+    // 1. Pointer Down in top-right area (zone 0: octave up, reach 3: Cmaj7)
+    firstPad.dispatchEvent(new PointerEvent('pointerdown', {
+      clientX: 235,
+      clientY: 120,
+      bubbles: true,
+      composed: true,
+    }));
+    await el.updateComplete;
+
+    // While held, meta label should show preview reach
+    const metaWhileHeld = firstPad.querySelector('.pad-meta-label') as HTMLElement;
+    expect(metaWhileHeld.textContent).toContain('Cmaj7');
+
+    // 2. Pointer Up (release)
+    firstPad.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      composed: true,
+    }));
+    await el.updateComplete;
+
+    // Voicing and extension must now be latched!
+    expect(updateSpy).toHaveBeenCalled();
+    expect(changeSpy).toHaveBeenCalled();
+    const lastChange = changeSpy.mock.calls[changeSpy.mock.calls.length - 1][0] as CustomEvent;
+    expect(lastChange.detail.chords[0].name).toBe('Cmaj7');
+    expect(lastChange.detail.chords[0].voicing).toBe('up an octave');
+
+    // Visual indicators must stay latched!
+    // 1. Chord name updated to Cmaj7
+    const chordNameEl = firstPad.querySelector('.pad-chord-name') as HTMLElement;
+    expect(chordNameEl.textContent).toBe('Cmaj7');
+
+    // 2. Meta label shows 'OCTAVE UP'
+    const metaAfterRelease = firstPad.querySelector('.pad-meta-label') as HTMLElement;
+    expect(metaAfterRelease.textContent).toBe('OCTAVE UP');
+
+    // 3. 2D grid hit pill exists and stays rendered
+    const hitPill = firstPad.querySelector('.grid-hit-pill') as HTMLElement;
+    expect(hitPill).toBeTruthy();
+
+    // 4. Rung dots active at index 3 (Cmaj7)
+    const rungLabels = firstPad.querySelectorAll('.rung-step-label');
+    expect(rungLabels[3].classList.contains('active')).toBe(true);
+
+    // 3. Now click middle zone (zone 1: 1st inversion) on the same chord
+    firstPad.dispatchEvent(new PointerEvent('pointerdown', {
+      clientX: 235,
+      clientY: 160, // y = 60/120 = 0.5 -> zone 1 (1st inversion)
+      bubbles: true,
+      composed: true,
+    }));
+    await el.updateComplete;
+
+    firstPad.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      composed: true,
+    }));
+    await el.updateComplete;
+
+    // Meta label now latched to '1ST INVERSION'
+    expect(metaAfterRelease.textContent).toBe('1ST INVERSION');
+    expect(el.progression.chords[0].voicing).toBe('1st inversion');
+    expect(el.progression.chords[0].name).toBe('Cmaj7');
+  });
+
+  it('keeps latched voicings and extensions on separate pads independently', async () => {
+    const pads = el.shadowRoot!.querySelectorAll('.pad-cell');
+    const pad0 = pads[0] as HTMLElement;
+    const pad1 = pads[1] as HTMLElement;
+
+    pad0.getBoundingClientRect = () => ({
+      left: 100, top: 100, width: 200, height: 120, right: 300, bottom: 220, x: 100, y: 100, toJSON: () => {},
+    });
+    pad1.getBoundingClientRect = () => ({
+      left: 320, top: 100, width: 200, height: 120, right: 520, bottom: 220, x: 320, y: 100, toJSON: () => {},
+    });
+
+    // Latch Pad 0 to Octave Up
+    pad0.dispatchEvent(new PointerEvent('pointerdown', { clientX: 200, clientY: 110, bubbles: true }));
+    pad0.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    await el.updateComplete;
+
+    // Latch Pad 1 to Low Root
+    pad1.dispatchEvent(new PointerEvent('pointerdown', { clientX: 420, clientY: 200, bubbles: true }));
+    pad1.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    await el.updateComplete;
+
+    // Both pads must preserve their respective latched voicings
+    const meta0 = pad0.querySelector('.pad-meta-label') as HTMLElement;
+    const meta1 = pad1.querySelector('.pad-meta-label') as HTMLElement;
+    expect(meta0.textContent).toBe('OCTAVE UP');
+    expect(meta1.textContent).toBe('LOW ROOT');
+    expect(pad0.querySelector('.grid-hit-pill')).toBeTruthy();
+    expect(pad1.querySelector('.grid-hit-pill')).toBeTruthy();
+  });
 });
+

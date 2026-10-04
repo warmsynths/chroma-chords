@@ -18,7 +18,9 @@ export type PlaybackTickCallback = (
   progressStep: number,
   sectionIndex?: number,
   totalSteps?: number,
-  isSongMode?: boolean
+  isSongMode?: boolean,
+  /** Global 16th-step position (bar * 16 + step) while a step loop is active, else -1. */
+  stepPos?: number
 ) => void;
 
 export function pitchNotesAscending(notes: string[], baseOctave = 4): string[] {
@@ -70,6 +72,85 @@ export class PlaybackEngine {
   private barsPerChord = 1;
   private feelSettings: FeelSettings = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
   private melodyTrack: MelodyTrack | null = null;
+  /** Half-open [start, end) range in global 16th steps; null = normal per-bar playback. */
+  private stepLoop: [number, number] | null = null;
+  private stepPos = -1;
+
+  /**
+   * Loop a range of 16th steps (melody Chord / Span loop modes).
+   * Pass null to return to normal per-bar section playback.
+   */
+  public setStepLoop(range: [number, number] | null): void {
+    const next = range && range[1] > range[0] ? [range[0], range[1]] as [number, number] : null;
+    const same = next === this.stepLoop
+      || (!!next && !!this.stepLoop && next[0] === this.stepLoop[0] && next[1] === this.stepLoop[1]);
+    if (same) return;
+    this.stepLoop = next;
+    if (!next) this.stepPos = -1;
+    if (this.playing) this.startAutoplay();
+  }
+
+  public getStepLoop(): [number, number] | null {
+    return this.stepLoop ? [this.stepLoop[0], this.stepLoop[1]] : null;
+  }
+
+  public getStepPos(): number {
+    return this.stepPos;
+  }
+
+  private isStepLooping(): boolean {
+    return this.mode === 'single' && !!this.stepLoop && !!this.progression;
+  }
+
+  private getSixteenthMs(): number {
+    const safeBpm = Math.max(40, Math.min(240, this.progression?.bpm || 84));
+    return 60000 / safeBpm / 4;
+  }
+
+  /** One 16th step of a step loop — mirrors MelodyGrid.dc.html tick(). */
+  private stepTick(): void {
+    if (!this.stepLoop || !this.progression) return;
+    const [a, b] = this.stepLoop;
+    let pos = this.stepPos + 1;
+    if (pos < a || pos >= b) pos = a;
+    this.stepPos = pos;
+
+    const sd = this.getSixteenthMs() / 1000;
+    const row = Math.floor(pos / 16);
+    const chordCount = this.progression.chords.length;
+    if (chordCount > 0) {
+      const chordIndex = row % chordCount;
+      const orderIdx = this.order.indexOf(chordIndex);
+      this.activeIndex = orderIdx >= 0 ? orderIdx : chordIndex;
+      this.progressStep = this.activeIndex;
+
+      // Strike the chord at each row start, or at the loop start, held to the row/loop end
+      if (pos % 16 === 0 || pos === a) {
+        const chord = this.progression.chords[chordIndex];
+        if (chord) {
+          let notes = Array.isArray(chord.notes) ? chord.notes : [];
+          if (notes.length === 0 || !notes.every(n => typeof n === 'string' && n.trim().length > 0)) {
+            notes = notesForSymbol(chord.name || 'CMAJ', preferFlatSpelling(this.progression.key || 'C', this.progression.scaleType || 'MAJOR'));
+          }
+          const holdSec = Math.max(0.05, (Math.min(b, (row + 1) * 16) - pos) * sd);
+          this.playChordNotes(notes, holdSec, chord.voicing, undefined, chordIndex);
+          if (this.subBassEnabled && notes.length > 0) playSubNote(notes[0], holdSec);
+        }
+      }
+
+      // Melody note starting on this step
+      if (this.melodyTrack && !this.melodyTrack.muted) {
+        const stepInBar = pos % 16;
+        const note = this.melodyTrack.notes.find(n => n.barIndex === row && n.stepInBar === stepInBar);
+        if (note) {
+          const lenSteps = Math.max(1, Math.round((note.durationBeats || 0.25) * 4));
+          const vel = typeof note.velocity === 'number' ? Math.max(0.05, Math.min(1, note.velocity / 127)) : undefined;
+          playLeadNote(note.pitch, lenSteps * sd * 0.92, undefined, vel);
+        }
+      }
+    }
+    this.notifyTick();
+  }
 
   public setMelodyTrack(track: MelodyTrack | null): void {
     this.melodyTrack = track;
@@ -213,6 +294,8 @@ export class PlaybackEngine {
     const totalSteps = this.getTotalSteps();
     if (this.mode === 'song') {
       this.tickCallbacks.forEach(cb => cb(this.activeIndex, this.songStep, this.activeSectionIndex, totalSteps, true));
+    } else if (this.isStepLooping()) {
+      this.tickCallbacks.forEach(cb => cb(this.activeIndex, this.progressStep, 0, totalSteps, false, this.stepPos));
     } else {
       this.tickCallbacks.forEach(cb => cb(this.activeIndex, this.progressStep, 0, totalSteps, false));
     }
@@ -238,6 +321,12 @@ export class PlaybackEngine {
 
   public startAutoplay(): void {
     this.stopAutoplay();
+    if (this.isStepLooping()) {
+      this.autoplayTimer = setInterval(() => {
+        if (this.playing) this.stepTick();
+      }, this.getSixteenthMs());
+      return;
+    }
     const intervalMs = this.getStepIntervalMs();
     this.autoplayTimer = setInterval(() => {
       if (!this.playing) return;
@@ -272,6 +361,7 @@ export class PlaybackEngine {
       this.progressStep = 0;
       this.songStep = 0;
       this.activeSectionIndex = 0;
+      this.stepPos = -1;
       this.stopAutoplay();
       this.notifyTick();
     } else {
@@ -280,6 +370,13 @@ export class PlaybackEngine {
       this.progressStep = 0;
       this.songStep = 0;
       this.activeSectionIndex = 0;
+      if (this.isStepLooping()) {
+        // Start at the top of the loop range, like MelodyGrid play()
+        this.stepPos = this.stepLoop![0] - 1;
+        this.startAutoplay();
+        this.stepTick();
+        return this.playing;
+      }
       if (this.mode === 'song' && this.sections.length > 0) {
         this.updateSongStepState(0);
       }
@@ -459,6 +556,7 @@ export class PlaybackEngine {
   public reset(): void {
     this.stopAutoplay();
     this.playing = false;
+    this.stepPos = -1;
     this.activeIndex = 0;
     this.progressStep = 0;
     this.songStep = 0;

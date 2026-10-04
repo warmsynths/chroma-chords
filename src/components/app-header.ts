@@ -27,6 +27,7 @@ export class AppHeader extends LitElement {
   @property({ type: String }) syncError: string | null = null;
   @property({ type: String }) title = 'Chroma Chords';
   @property({ type: String }) activeTab: NavTabId = 'loop';
+  @property({ type: Boolean }) showNav = true;
   @property({ type: Number }) aiTokens = 4;
   @property({ type: Number }) aiNextIn = 60;
   @property({ type: String }) midiStatus = 'Idle';
@@ -478,19 +479,21 @@ export class AppHeader extends LitElement {
           <span class="brand-title">${this.title}</span>
         </div>
 
-        <!-- Tier-1 Navigation Tabs -->
-        <nav class="nav-tabs-wrap" aria-label="Main Navigation">
-          ${NAV_TABS.map(t => html`
-            <button
-              class="nav-tab-btn ${this.activeTab === t.id ? 'active' : ''}"
-              role="tab"
-              aria-selected=${this.activeTab === t.id}
-              @click=${() => this.setTab(t.id)}
-            >
-              ${t.name}
-            </button>
-          `)}
-        </nav>
+        <!-- Tier-1 Navigation Tabs (if showNav is enabled) -->
+        ${this.showNav ? html`
+          <nav class="nav-tabs-wrap" aria-label="Main Navigation">
+            ${NAV_TABS.map(t => html`
+              <button
+                class="nav-tab-btn ${this.activeTab === t.id ? 'active' : ''}"
+                role="tab"
+                aria-selected=${this.activeTab === t.id}
+                @click=${() => this.setTab(t.id)}
+              >
+                ${t.name}
+              </button>
+            `)}
+          </nav>
+        ` : ''}
 
         <!-- Right Actions: AI Tokens, Sign in / Account -->
         <div class="right-actions">

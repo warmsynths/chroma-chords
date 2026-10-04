@@ -1,14 +1,12 @@
-import { LitElement, html, css, svg, nothing } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { LitElement, html, css, svg, nothing, PropertyValues } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
 import { Progression, ShareDevice, buildDeviceShareUrl } from '../services/chord-engine';
-import { downloadWav, downloadMidi, downloadMultiTrackMidi, downloadStemWav } from '../services/export-service';
+import { downloadMultiTrackMidi, downloadStemWav } from '../services/export-service';
 import { FeelSettings } from '../services/audio-service';
 import { MelodyTrack } from '../services/melody-engine';
 import { playbackEngine } from '../services/playback-engine';
 
-// Reuses the original app's inline device illustrations verbatim (still exist in git
-// history at 3383fcf's renderShareModal) rather than the flat mono-badge placeholder
-// from the design reference.
+// Inline device illustrations kept verbatim per user requirement
 const M8_SVG = svg`
   <svg width="100" height="142" viewBox="0 0 240 340">
     <defs>
@@ -266,19 +264,6 @@ const CIRCUIT_SVG = svg`
   </svg>
 `;
 
-interface Dest {
-  device: ShareDevice;
-  mono: string;
-  name: string;
-  desc: string;
-  svg: ReturnType<typeof svg>;
-}
-
-const DESTS: Dest[] = [
-  { device: 'm8', mono: 'M8', name: 'M8 Tracker', desc: 'Opens the M8 helper with this progression.', svg: M8_SVG },
-  { device: 'circuit', mono: 'CT', name: 'Circuit Tracks', desc: 'Opens the Circuit Tracks helper with this progression.', svg: CIRCUIT_SVG },
-];
-
 @customElement('share-modal')
 export class ShareModal extends LitElement {
   @property({ type: Boolean }) open = false;
@@ -291,8 +276,24 @@ export class ShareModal extends LitElement {
   @property({ type: Object }) feelSettings: FeelSettings | null = null;
   @property({ type: Object }) melodyTrack: MelodyTrack | null = null;
 
+  @state() private exportPart: 'chords' | 'melody' | 'both' = 'chords';
+  @state() private exportMsg: string | null = null;
+
   get isOpened(): boolean {
     return this.open || this.visible;
+  }
+
+  willUpdate(changedProps: PropertyValues) {
+    if ((changedProps.has('open') || changedProps.has('visible')) && this.isOpened) {
+      const track = this.melodyTrack || playbackEngine.getMelodyTrack();
+      const hasMelody = Boolean(track && track.notes && track.notes.length > 0);
+      if (hasMelody) {
+        this.exportPart = 'both';
+      } else {
+        this.exportPart = 'chords';
+      }
+      this.exportMsg = null;
+    }
   }
 
   static styles = css`
@@ -309,7 +310,7 @@ export class ShareModal extends LitElement {
       -webkit-backdrop-filter: blur(0px);
       pointer-events: none;
       opacity: 0;
-      transition: opacity 260ms cubic-bezier(0.16, 1, 0.3, 1), background 260ms cubic-bezier(0.16, 1, 0.3, 1);
+      transition: opacity 220ms ease-out, background 220ms ease-out;
     }
     .backdrop.open {
       background: rgba(46, 39, 31, 0.5);
@@ -323,18 +324,18 @@ export class ShareModal extends LitElement {
       top: 50%;
       left: 50%;
       z-index: 1001;
-      width: calc(100% - 40px);
-      max-width: 560px;
-      max-height: 85vh;
+      width: calc(100% - 48px);
+      max-width: 660px;
+      max-height: 86vh;
       background: var(--cv-cream, #FBF6EC);
-      border-radius: 28px;
-      box-shadow: 0 28px 64px -14px rgba(46, 39, 31, 0.45), 0 0 0 1px rgba(46, 39, 31, 0.08);
+      border-radius: 24px;
+      box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.45);
       display: flex;
       flex-direction: column;
-      transform: translate(-50%, -46%) scale(0.96);
+      transform: translate(-50%, -47%) scale(0.97);
       opacity: 0;
       pointer-events: none;
-      transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
+      transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
       box-sizing: border-box;
       overflow: hidden;
     }
@@ -356,10 +357,21 @@ export class ShareModal extends LitElement {
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 24px 26px 28px;
+      padding: 22px 26px 28px;
+      box-sizing: border-box;
+    }
+    .drawer-content::-webkit-scrollbar {
+      width: 6px;
+    }
+    .drawer-content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .drawer-content::-webkit-scrollbar-thumb {
+      background: rgba(46, 39, 31, 0.15);
+      border-radius: 3px;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 720px) {
       .share-drawer {
         top: auto;
         left: 0;
@@ -369,9 +381,9 @@ export class ShareModal extends LitElement {
         max-width: 100%;
         max-height: 88vh;
         border-radius: 26px 26px 0 0;
-        box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 -20px 50px -20px rgba(0, 0, 0, 0.5);
         transform: translateY(100%);
-        transition: transform 280ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
+        transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
       }
       .share-drawer.open {
         transform: translateY(0);
@@ -385,20 +397,21 @@ export class ShareModal extends LitElement {
         flex-shrink: 0;
       }
       .drawer-content {
-        padding: 14px 22px 28px;
+        padding: 14px 22px 26px;
       }
     }
+
     .head-row {
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
-      gap: 12px;
+      gap: 14px;
     }
     .title {
-      font-size: 21px;
+      font-size: 22px;
       font-weight: 800;
       letter-spacing: -0.01em;
-      color: var(--cv-ink, #2E271F);
+      color: #2E271F;
     }
     .subtitle {
       font-size: 12.5px;
@@ -416,8 +429,8 @@ export class ShareModal extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
-      color: var(--cv-ink, #2E271F);
+      font-size: 17px;
+      color: #2E271F;
       flex-shrink: 0;
       cursor: pointer;
       transition: background 150ms ease, transform 120ms ease;
@@ -428,82 +441,54 @@ export class ShareModal extends LitElement {
     .close-btn:active {
       transform: scale(0.94);
     }
-    .dests-grid {
-      display: flex;
-      gap: 12px;
-      margin-top: 20px;
-    }
-    .dest-card {
-      flex: 1;
-      background: var(--cv-surface, #F6EADB);
-      border-radius: 18px;
-      padding: 16px 14px;
-      cursor: pointer;
-      transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms ease, box-shadow 150ms ease;
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      box-sizing: border-box;
-    }
-    .dest-card:hover {
-      background: var(--cv-surface-2, #F1E4CC);
-      transform: translateY(-2px);
-      box-shadow: 0 8px 20px -8px rgba(46, 39, 31, 0.15);
-    }
-    .dest-card:active {
-      transform: scale(0.97);
-    }
-    .device-svg-box {
-      width: 100%;
-      height: 100px;
+
+    /* What to export segmented filter */
+    .what-to-export-row {
       display: flex;
       align-items: center;
-      justify-content: center;
-      margin-bottom: 10px;
-      background: rgba(0, 0, 0, 0.03);
-      border-radius: 12px;
-      padding: 6px;
-      box-sizing: border-box;
+      gap: 10px;
+      margin-top: 20px;
+      flex-wrap: wrap;
     }
-    .device-svg-box svg {
-      max-width: 100%;
-      max-height: 100%;
-      height: auto;
-      filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.12));
-      transition: transform 180ms ease;
-    }
-    .dest-card:hover .device-svg-box svg {
-      transform: translateY(-2px) scale(1.03);
-    }
-    .dest-badge {
-      padding: 3px 7px;
-      border-radius: 7px;
-      background: var(--cv-surface-2, #F1E4CC);
-      font-size: 10.5px;
-      font-weight: 800;
-      color: var(--cv-label, #8A6B3F);
-      letter-spacing: 0.4px;
-    }
-    .dest-name {
-      font-size: 13.5px;
-      font-weight: 800;
-      color: var(--cv-ink, #2E271F);
-      margin-top: 8px;
-    }
-    .dest-desc {
-      font-size: 11.5px;
-      line-height: 1.5;
-      color: var(--cv-ink-muted, #6B5F50);
-      margin-top: 4px;
-      text-wrap: pretty;
-    }
-    .section-label {
+    .filter-label {
       font-size: 11px;
       font-weight: 800;
       letter-spacing: 1.2px;
       color: var(--cv-label, #8A6B3F);
       text-transform: uppercase;
-      margin: 24px 0 11px;
+    }
+    .pill-group {
+      display: flex;
+      gap: 2px;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 100px;
+      padding: 4px;
+    }
+    .pill-btn {
+      border: none;
+      font-family: inherit;
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 100px;
+      font-size: 12.5px;
+      font-weight: 800;
+      cursor: pointer;
+      background: transparent;
+      color: #6B5F50;
+      transition: background 150ms ease, color 150ms ease;
+    }
+    .pill-btn.active {
+      background: #2E271F;
+      color: #FBF3E6;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      color: var(--cv-label, #8A6B3F);
+      text-transform: uppercase;
+      margin: 22px 0 10px;
     }
     .export-list {
       display: flex;
@@ -514,36 +499,86 @@ export class ShareModal extends LitElement {
       display: flex;
       align-items: center;
       gap: 14px;
-      background: var(--cv-surface, #F6EADB);
+      background: #F6EADB;
       border-radius: 16px;
       padding: 14px 16px;
       cursor: pointer;
       transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1), background 150ms ease;
+      user-select: none;
     }
     .export-row:hover {
-      background: var(--cv-surface-2, #F1E4CC);
+      background: #F1E4CC;
       transform: translateY(-1px);
     }
     .export-row:active {
       transform: scale(0.99);
     }
+    .export-row.disabled {
+      opacity: 0.45;
+      cursor: default;
+      pointer-events: none;
+    }
+
     .export-badge {
       width: 42px;
       height: 42px;
       border-radius: 12px;
-      background: var(--cv-surface-2, #F1E4CC);
+      background: #F1E4CC;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 11px;
       font-weight: 800;
-      color: var(--cv-label, #8A6B3F);
+      color: #2E271F;
       flex-shrink: 0;
     }
-    .export-title {
+
+    /* Device chip container with SVG artwork */
+    .device-chip {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+      padding: 2px;
+      box-sizing: border-box;
+      position: relative;
+    }
+    .device-chip.m8-chip {
+      background: #9CC0EC;
+    }
+    .device-chip.ct-chip {
+      background: #F2A79B;
+    }
+    .device-svg-box {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .device-svg-box svg {
+      max-width: 100%;
+      max-height: 100%;
+      height: auto;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+      transition: transform 180ms ease;
+    }
+    .export-row:hover .device-svg-box svg {
+      transform: scale(1.08);
+    }
+
+    .export-meta {
+      min-width: 0;
+      flex: 1;
+    }
+    .export-name {
       font-size: 13.5px;
       font-weight: 800;
-      color: var(--cv-ink, #2E271F);
+      color: #2E271F;
     }
     .export-desc {
       font-size: 11.5px;
@@ -551,6 +586,30 @@ export class ShareModal extends LitElement {
       color: var(--cv-ink-muted, #6B5F50);
       margin-top: 2px;
       text-wrap: pretty;
+    }
+    .export-action {
+      font-size: 12px;
+      font-weight: 800;
+      color: #2E271F;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .export-msg {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #6F8F5C;
+    }
+    .msg-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #7FA968;
+      flex-shrink: 0;
     }
   `;
 
@@ -578,12 +637,24 @@ export class ShareModal extends LitElement {
     this.emit('close');
   }
 
+  private setExportPart(part: 'chords' | 'melody' | 'both') {
+    this.exportPart = part;
+    this.exportMsg = null;
+  }
+
+  private byPart<T>(chordsVal: T, melodyVal: T, bothVal: T): T {
+    if (this.exportPart === 'chords') return chordsVal;
+    if (this.exportPart === 'melody') return melodyVal;
+    return bothVal;
+  }
+
   private handleDeviceClick(device: ShareDevice) {
     if (!this.progression) return;
     const url = buildDeviceShareUrl(this.progression, device, this.order);
     window.open(url, '_blank');
     const label = device === 'm8' ? 'M8 Tracker' : 'Circuit Tracks';
     this.emit('toast', `Opening ${label} helper...`);
+    this.exportMsg = `Opening ${label}…`;
     this.close();
   }
 
@@ -601,7 +672,10 @@ export class ShareModal extends LitElement {
         barsPerChord: bars,
         feelSettings: feel,
       });
-      this.emit('toast', 'WAV file downloaded');
+      const stem = `${(this.progression.key || 'c').toLowerCase()}_${(this.progression.mood || 'loop').toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+      const filename = `${stem}${target === 'chords' ? '' : '_' + target}.wav`;
+      this.emit('toast', `WAV file downloaded (${filename})`);
+      this.exportMsg = `Saved ${filename}`;
     } catch (err) {
       console.error('WAV export failed', err);
       this.emit('toast', 'Failed to generate WAV file');
@@ -622,8 +696,11 @@ export class ShareModal extends LitElement {
         barsPerChord: bars,
         feelSettings: feel,
       });
+      const stem = `${(this.progression.key || 'c').toLowerCase()}_${(this.progression.mood || 'loop').toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+      const filename = `${stem}${target === 'chords' ? '' : '_' + target}.mid`;
       const label = target === 'both' ? 'Multi-track MIDI' : `${target.toUpperCase()} MIDI`;
-      this.emit('toast', `${label} file downloaded`);
+      this.emit('toast', `${label} file downloaded (${filename})`);
+      this.exportMsg = `Saved ${filename}`;
     } catch (err) {
       console.error('MIDI export failed', err);
       this.emit('toast', 'Failed to generate MIDI file');
@@ -633,82 +710,148 @@ export class ShareModal extends LitElement {
 
   render() {
     const opened = this.isOpened;
-    const track = this.melodyTrack || playbackEngine.getMelodyTrack();
-    const hasMelody = Boolean(track && track.notes && track.notes.length > 0);
 
     return html`
       <div class="backdrop ${opened ? 'open' : ''}" @click=${this.close}></div>
       <div class="share-drawer ${opened ? 'open' : ''}">
         <div class="handle-bar"><div class="handle-pill"></div></div>
         <div class="drawer-content">
+          <!-- Header -->
           <div class="head-row">
             <div>
-              <div class="title">Share progression</div>
-              <div class="subtitle">Send it somewhere you can actually play it.</div>
+              <div class="title">Share &amp; export</div>
+              <div class="subtitle">Pick what goes out, then where it goes.</div>
             </div>
             <button class="close-btn" @click=${this.close} aria-label="Close">×</button>
           </div>
 
-          <div class="dests-grid">
-            ${DESTS.map(d => html`
-              <div class="dest-card" @click=${() => this.handleDeviceClick(d.device)}>
-                <div class="device-svg-box">
-                  ${d.svg}
-                </div>
-                <div class="dest-badge">${d.mono}</div>
-                <div class="dest-name">${d.name}</div>
-                <div class="dest-desc">${d.desc}</div>
-              </div>
-            `)}
+          <!-- What to export segmented filter -->
+          <div class="what-to-export-row">
+            <div class="filter-label">What to export</div>
+            <div class="pill-group">
+              <button
+                class="pill-btn ${this.exportPart === 'chords' ? 'active' : ''}"
+                @click=${() => this.setExportPart('chords')}
+              >Chords</button>
+              <button
+                class="pill-btn ${this.exportPart === 'melody' ? 'active' : ''}"
+                @click=${() => this.setExportPart('melody')}
+              >Melody</button>
+              <button
+                class="pill-btn ${this.exportPart === 'both' ? 'active' : ''}"
+                @click=${() => this.setExportPart('both')}
+              >Both</button>
+            </div>
           </div>
 
-          <div class="section-label">Or export a file</div>
-
+          <!-- Files Group -->
+          <div class="section-title">Files</div>
           <div class="export-list">
-            ${hasMelody ? html`
-              <div class="export-row" @click=${() => this.handleMidiClick('both')}>
-                <div class="export-badge" style="background: rgba(201, 169, 224, 0.3); color: #2E271F;">MID 1+2</div>
-                <div>
-                  <div class="export-title">Multi-Track MIDI (Type 1)</div>
-                  <div class="export-desc">Track 1 Chords + Track 2 Lead Melody for your DAW.</div>
-                </div>
-              </div>
-
-              <div class="export-row" @click=${() => this.handleMidiClick('melody')}>
-                <div class="export-badge">MEL</div>
-                <div>
-                  <div class="export-title">Save Melody MIDI</div>
-                  <div class="export-desc">Isolated lead voice melody track notes.</div>
-                </div>
-              </div>
-            ` : nothing}
-
-            <div class="export-row" @click=${() => this.handleMidiClick('chords')}>
-              <div class="export-badge">MID</div>
-              <div>
-                <div class="export-title">Save Chords MIDI</div>
-                <div class="export-desc">Just the chord progression notes and voicings.</div>
-              </div>
-            </div>
-
-            <div class="export-row" @click=${() => this.handleWavClick('chords')}>
+            <div
+              class="export-row"
+              role="button"
+              tabindex="0"
+              @click=${() => this.handleWavClick(this.exportPart)}
+            >
               <div class="export-badge">WAV</div>
-              <div>
-                <div class="export-title">Save as WAV</div>
-                <div class="export-desc">Rendered audio loop, ready to drop into any player.</div>
+              <div class="export-meta">
+                <div class="export-name">Audio (.wav)</div>
+                <div class="export-desc">
+                  ${this.byPart(
+                    'The chord loop, rendered.',
+                    'The melody on its own, rendered.',
+                    'Chords and melody mixed to one file.'
+                  )}
+                </div>
+              </div>
+              <div class="export-action">Save</div>
+            </div>
+
+            <div
+              class="export-row"
+              role="button"
+              tabindex="0"
+              @click=${() => this.handleMidiClick(this.exportPart)}
+            >
+              <div class="export-badge">MID</div>
+              <div class="export-meta">
+                <div class="export-name">MIDI (.mid)</div>
+                <div class="export-desc">
+                  ${this.byPart(
+                    'One track of chords.',
+                    'One track of melody.',
+                    'Two tracks: chords and melody.'
+                  )}
+                </div>
+              </div>
+              <div class="export-action">Save</div>
+            </div>
+          </div>
+
+          <!-- Send To Group -->
+          <div class="section-title">Send to</div>
+          <div class="export-list">
+            <!-- M8 Tracker -->
+            <div
+              class="export-row dest-card"
+              role="button"
+              tabindex="0"
+              @click=${() => this.handleDeviceClick('m8')}
+            >
+              <div class="device-chip m8-chip">
+                <div class="device-svg-box">
+                  ${M8_SVG}
+                </div>
+              </div>
+              <div class="export-meta">
+                <div class="export-name">
+                  ${this.byPart('M8 Hyper', 'M8 song (.m8s)', 'M8 Hyper + song file')}
+                </div>
+                <div class="export-desc">
+                  ${this.byPart(
+                    'Opens M8 Hyper with this progression.',
+                    'Melody as phrases on track 1, ready to load on the M8.',
+                    'Opens M8 Hyper with the chords and saves the melody as an .m8s song.'
+                  )}
+                </div>
+              </div>
+              <div class="export-action">
+                ${this.byPart('Open ↗', 'Save', 'Open ↗')}
               </div>
             </div>
 
-            ${hasMelody ? html`
-              <div class="export-row" @click=${() => this.handleWavClick('melody')}>
-                <div class="export-badge">STEM</div>
-                <div>
-                  <div class="export-title">Save Lead Melody WAV</div>
-                  <div class="export-desc">Isolated lead synth stem audio file.</div>
+            <!-- Circuit Tracks -->
+            <div
+              class="export-row dest-card ${this.exportPart === 'melody' ? 'disabled' : ''}"
+              role="button"
+              tabindex="${this.exportPart === 'melody' ? '-1' : '0'}"
+              @click=${this.exportPart === 'melody' ? null : () => this.handleDeviceClick('circuit')}
+            >
+              <div class="device-chip ct-chip">
+                <div class="device-svg-box">
+                  ${CIRCUIT_SVG}
                 </div>
               </div>
-            ` : nothing}
+              <div class="export-meta">
+                <div class="export-name">Circuit Chords</div>
+                <div class="export-desc">
+                  ${this.exportPart === 'melody'
+                    ? 'Chords only. Pick Chords or Both to send.'
+                    : (this.exportPart === 'both'
+                      ? 'Opens Circuit Chords with the progression. The melody stays here.'
+                      : 'Opens Circuit Chords with this progression.')}
+                </div>
+              </div>
+              <div class="export-action">Open ↗</div>
+            </div>
           </div>
+
+          ${this.exportMsg ? html`
+            <div class="export-msg">
+              <span class="msg-dot"></span>
+              <span>${this.exportMsg}</span>
+            </div>
+          ` : nothing}
         </div>
       </div>
     `;

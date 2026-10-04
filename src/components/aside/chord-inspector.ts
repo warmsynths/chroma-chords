@@ -55,23 +55,43 @@ export class ChordInspector extends LitElement {
   static styles = css`
     :host {
       display: block;
-      width: clamp(304px, 26vw, 384px);
+      width: 100%;
+      height: 100%;
       box-sizing: border-box;
       font-family: var(--cv-font-sans, 'Plus Jakarta Sans', system-ui, sans-serif);
       color: var(--cv-ink, #2E271F);
+      background: var(--cv-surface, #F6EADB);
     }
 
-    .inspector-card {
-      background: var(--cv-surface-card, rgba(251, 243, 230, 0.85));
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      border-radius: 24px;
-      padding: 20px;
-      box-shadow: 0 10px 28px -12px rgba(46, 39, 31, 0.15);
+    button, input, select {
+      font-family: inherit;
+    }
+
+    .inspector-panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .inspector-top-row {
+      padding: 18px 22px 14px;
+      border-bottom: 1px solid rgba(46, 39, 31, 0.08);
+      flex-shrink: 0;
+      box-sizing: border-box;
+    }
+
+    .inspector-body {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 16px 22px 22px;
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
-      gap: 18px;
+      gap: 14px;
     }
 
     /* Header */
@@ -85,10 +105,10 @@ export class ChordInspector extends LitElement {
     .kicker {
       font-size: 10.5px;
       font-weight: 800;
-      letter-spacing: 1.2px;
+      letter-spacing: 1.3px;
       text-transform: uppercase;
       color: var(--cv-label, #8A6B3F);
-      margin-bottom: 3px;
+      margin-bottom: 4px;
     }
 
     .main-title {
@@ -114,52 +134,61 @@ export class ChordInspector extends LitElement {
       flex-shrink: 0;
     }
 
-    .action-btn {
+    .action-btn, .pill-btn {
+      flex-shrink: 0;
+      border: none;
+      font-family: inherit;
       display: inline-flex;
       align-items: center;
-      gap: 5px;
-      background: rgba(46, 39, 31, 0.06);
-      border: none;
+      gap: 6px;
+      height: 32px;
+      padding: 0 13px;
       border-radius: 100px;
-      padding: 6px 12px;
-      font-size: 12px;
+      font-size: 12.5px;
       font-weight: 800;
-      color: var(--cv-ink, #2E271F);
       cursor: pointer;
-      transition: background 160ms ease, transform 120ms ease;
+      color: var(--cv-ink, #2E271F);
+      background: var(--cv-surface, #F6EADB);
+      box-shadow: none;
+      transition: background 150ms ease, transform 120ms ease;
     }
 
-    .action-btn:hover {
-      background: rgba(46, 39, 31, 0.1);
+    .action-btn:hover, .pill-btn:hover {
+      background: var(--cv-surface-2, #F1E4CC);
     }
 
-    .action-btn:active {
+    .action-btn:active, .pill-btn:active {
       transform: scale(0.96);
     }
 
-    .action-btn.saved {
+    .action-btn.saved, .pill-btn.saved {
       background: var(--mood-color, #F2735F);
       color: #2E271F;
     }
 
+    .action-btn.open, .pill-btn.open {
+      background: var(--cv-surface-2, #F1E4CC);
+    }
+
     .close-btn {
-      background: rgba(46, 39, 31, 0.08);
+      background: transparent;
       border: none;
-      width: 28px;
-      height: 28px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--cv-ink, #2E271F);
+      font-size: 18px;
+      font-weight: 800;
+      color: rgba(46, 39, 31, 0.55);
       cursor: pointer;
       transition: background 150ms ease, transform 120ms ease;
+      flex-shrink: 0;
     }
 
     .close-btn:hover {
-      background: rgba(46, 39, 31, 0.15);
+      background: var(--cv-surface-2, #F1E4CC);
     }
 
     /* Popover */
@@ -167,12 +196,12 @@ export class ChordInspector extends LitElement {
       position: absolute;
       top: calc(100% + 8px);
       right: 0;
-      width: 250px;
-      background: #FBF3E6;
-      border: 1px solid rgba(46, 39, 31, 0.1);
-      border-radius: 16px;
+      width: 280px;
+      background: var(--cv-cream, #FBF3E6);
+      border: 1px solid rgba(46, 39, 31, 0.12);
+      border-radius: 18px;
       padding: 12px;
-      box-shadow: 0 14px 32px -8px rgba(46, 39, 31, 0.25);
+      box-shadow: 0 20px 44px -14px rgba(46, 39, 31, 0.35);
       z-index: 100;
       animation: popover-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
     }
@@ -196,51 +225,81 @@ export class ChordInspector extends LitElement {
       background: rgba(46, 39, 31, 0.06);
     }
 
-    /* Tension Arc Chart */
+    /* Tension Arc Chart (Height: 152px) */
     .arc-bars-container {
       display: flex;
       align-items: flex-end;
-      gap: 8px;
-      height: 110px;
-      padding: 12px 10px 6px;
-      background: rgba(46, 39, 31, 0.03);
-      border-radius: 16px;
+      gap: 6px;
+      height: 152px;
+      padding: 0 2px;
       box-sizing: border-box;
     }
 
     .arc-bar-col {
       flex: 1;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      border-radius: 12px;
+      padding: 4px 2px;
+      cursor: pointer;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-end;
-      height: 100%;
-      background: none;
-      border: none;
-      padding: 0;
-      cursor: pointer;
-      transition: transform 140ms ease;
+      transition: background 120ms ease;
     }
 
     .arc-bar-col:hover {
-      transform: translateY(-2px);
+      background: var(--cv-cream, #FBF3E6);
     }
 
-    .arc-bar-col.selected .bar-fill {
-      box-shadow: inset 0 0 0 2px #2E271F;
+    .bar-pod {
+      height: 80px;
+      flex-shrink: 0;
+      width: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
     }
 
     .bar-fill {
       width: 100%;
+      max-width: 34px;
       border-radius: 100px;
-      transition: height 240ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease;
+      transition: height 240ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease, box-shadow 150ms ease, transform 150ms ease;
+    }
+
+    .arc-bar-col:hover .bar-fill {
+      transform: scaleY(1.03);
+      transform-origin: bottom;
+    }
+
+    .arc-bar-col.selected .bar-fill {
+      box-shadow: 0 0 0 2px #2E271F;
+    }
+
+    .bar-meta {
+      flex-shrink: 0;
+      width: 100%;
+      min-height: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding-top: 6px;
     }
 
     .bar-chord-name {
-      font-size: 11px;
+      font-size: 13px;
       font-weight: 800;
-      color: var(--cv-ink, #2E271F);
-      margin-top: 6px;
+      color: #2E271F;
+      white-space: nowrap;
+    }
+
+    .bar-role-hint {
+      font-size: 10.5px;
+      font-weight: 700;
+      color: rgba(46, 39, 31, 0.5);
       white-space: nowrap;
     }
 
@@ -390,13 +449,12 @@ export class ChordInspector extends LitElement {
       margin-top: 1px;
     }
 
-    /* Theory Details */
+    /* Theory Details (Matches Chroma Melody prototype lines 795-838) */
     .theory-box {
-      border-top: 1px solid rgba(46, 39, 31, 0.08);
+      margin-top: 18px;
       padding-top: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      border-top: 1px solid rgba(46, 39, 31, 0.08);
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
     }
 
     .theory-row {
@@ -406,50 +464,161 @@ export class ChordInspector extends LitElement {
       gap: 12px;
     }
 
+    .theory-row.formula-row {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid rgba(46, 39, 31, 0.08);
+    }
+
     .theory-key {
       font-size: 10px;
       font-weight: 800;
-      letter-spacing: 1.2px;
+      letter-spacing: 1.3px;
       text-transform: uppercase;
       color: var(--cv-label, #8A6B3F);
+      flex-shrink: 0;
     }
 
     .theory-val {
-      font-size: 12.5px;
+      font-size: 13px;
       font-weight: 800;
       color: var(--cv-ink, #2E271F);
+    }
+
+    .formula-val {
+      letter-spacing: 0.3px;
+      text-align: right;
+    }
+
+    .theory-section-kicker {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+      margin: 20px 0 9px;
+    }
+
+    .voice-leading-section .theory-section-kicker {
+      margin: 20px 0 4px;
+    }
+
+    .cadences-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
     }
 
     .cadence-card {
-      background: #FBF3E6;
-      border: 1px solid rgba(46, 39, 31, 0.08);
-      border-radius: 12px;
-      padding: 10px 12px;
-      margin-top: 4px;
+      background: var(--cv-cream, #FBF3E6);
+      border-radius: 15px;
+      padding: 11px 13px;
+      border: none;
+      box-shadow: none;
     }
 
-    .cadence-title {
-      font-size: 12px;
+    .cadence-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .cadence-name {
+      font-size: 13px;
       font-weight: 800;
       color: var(--cv-ink, #2E271F);
+    }
+
+    .cadence-bars {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: var(--cv-label, #8A6B3F);
+      white-space: nowrap;
+    }
+
+    .cadence-move-row {
       display: flex;
-      justify-content: space-between;
+      align-items: baseline;
+      gap: 7px;
+      margin-top: 5px;
+      flex-wrap: wrap;
+    }
+
+    .cadence-move {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+
+    .cadence-degrees {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      color: rgba(46, 39, 31, 0.45);
     }
 
     .cadence-desc {
-      font-size: 11px;
-      line-height: 1.45;
-      color: var(--cv-ink-muted, #5B5145);
-      margin-top: 3px;
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-top: 5px;
+      text-wrap: pretty;
+    }
+
+    .voice-links-list {
+      display: flex;
+      flex-direction: column;
     }
 
     .voice-link-row {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
+      gap: 12px;
+      padding: 9px 0;
+      border-top: 1px solid rgba(46, 39, 31, 0.08);
+      border-bottom: none;
+    }
+
+    .voice-link-left {
+      min-width: 0;
+    }
+
+    .voice-link-chords {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+    }
+
+    .voice-link-move {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+      margin-top: 2px;
+    }
+
+    .voice-link-right {
       font-size: 11.5px;
-      padding: 4px 0;
-      border-bottom: 1px solid rgba(46, 39, 31, 0.05);
+      font-weight: 700;
+      color: rgba(46, 39, 31, 0.4);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .voice-link-right.shared {
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+
+    .theory-note-text {
+      font-size: 12.5px;
+      line-height: 1.6;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-top: 14px;
+      text-wrap: pretty;
     }
 
     /* Audition State */
@@ -582,15 +751,13 @@ export class ChordInspector extends LitElement {
     const moodCol = this.moodColor || getMoodColor(this.progression?.mood || 'Warm');
 
     return html`
-      <aside class="chord-inspector cv-aside" style="--mood-color: ${moodCol};">
-        <div class="inspector-card">
-          ${this.selectedChordIndex !== null && chords[this.selectedChordIndex]
-            ? this.renderChordDetail(chords[this.selectedChordIndex], chords)
-            : this.swapIndex !== null && this.abPick
-              ? this.renderSwapAudition()
-              : this.renderIdleOverview(chords, moodCol)}
-        </div>
-      </aside>
+      <div class="inspector-panel" style="--mood-color: ${moodCol};">
+        ${this.selectedChordIndex !== null && chords[this.selectedChordIndex]
+          ? this.renderChordDetail(chords[this.selectedChordIndex], chords)
+          : this.swapIndex !== null && this.abPick
+            ? this.renderSwapAudition()
+            : this.renderIdleOverview(chords, moodCol)}
+      </div>
     `;
   }
 
@@ -624,111 +791,139 @@ export class ChordInspector extends LitElement {
     const scaleName = SCALE_LABEL[scale] || 'Major';
 
     return html`
-      <div class="header-row">
-        <div>
-          <div class="kicker">THIS LOOP</div>
-          <div class="main-title">${arcTitle}</div>
-        </div>
-        <div class="header-actions">
-          <button
-            class="action-btn ${this.isSaved ? 'saved' : ''}"
-            @click=${this.onToggleSave}
-            aria-label="${this.isSaved ? 'Saved loop' : 'Save loop'}"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="${this.isSaved ? '#2E271F' : 'none'}" stroke="#2E271F" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>
-            </svg>
-            ${this.isSaved ? 'Saved' : 'Save'}
-          </button>
-          <button
-            class="action-btn"
-            @click=${this.onToggleLibrary}
-            aria-label="Your saved loops"
-            aria-expanded=${this.libraryOpen ? 'true' : 'false'}
-          >
-            Loops${this.savedSets.length ? ` (${this.savedSets.length})` : ''}
-          </button>
-
-          ${this.libraryOpen ? html`
-            <div class="popover-menu">
-              <div class="kicker" style="margin-bottom: 8px;">SAVED LOOPS</div>
-              ${this.savedSets.length === 0 ? html`
-                <div style="font-size: 12px; color: var(--cv-ink-muted); padding: 8px 4px;">No saved loops yet. Click "Save" to store your favorite progressions.</div>
-              ` : this.savedSets.map(s => html`
-                <div class="popover-item" @click=${() => this.onSelectSavedSet(s)}>
-                  <span style="font-size: 12.5px; font-weight: 700; color: #2E271F;">${s.name}</span>
-                  <button
-                    style="border: none; background: none; color: #8A6B3F; font-size: 14px; cursor: pointer;"
-                    @click=${(e: Event) => this.onDeleteSavedSet(s.id, e)}
-                    aria-label="Delete ${s.name}"
-                  >×</button>
-                </div>
-              `)}
-            </div>
-          ` : ''}
-        </div>
-      </div>
-
-      <!-- Arc Bars Chart -->
-      <div class="arc-bars-container">
-        ${chords.map((c, i) => {
-          const r = roleForTension(c.tension || 0.1);
-          const barH = Math.round(18 + (c.tension || 0.1) * 60);
-          return html`
+      <div class="inspector-top-row">
+        <div class="header-row">
+          <div>
+            <div class="kicker">THIS LOOP</div>
+            <div class="main-title">${arcTitle}</div>
+          </div>
+          <div class="header-actions">
             <button
-              class="arc-bar-col ${this.selectedChordIndex === i ? 'selected' : ''}"
-              @click=${() => this.onBarClick(i)}
-              aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || ''}"
+              class="action-btn ${this.isSaved ? 'saved' : ''}"
+              @click=${this.onToggleSave}
+              aria-label="${this.isSaved ? 'Saved loop' : 'Save loop'}"
             >
-              <div class="bar-fill" style="height: ${barH}px; background: ${r.color};"></div>
-              <div class="bar-chord-name">${c.name}</div>
-              <div class="bar-role-hint">${ROLE_PLAIN[c.functionLabel] || ''}</div>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="${this.isSaved ? '#2E271F' : 'none'}" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>
+              </svg>
+              ${this.isSaved ? 'Saved' : 'Save'}
             </button>
-          `;
-        })}
-      </div>
-      <div class="arc-hint-text">Taller means more unresolved.</div>
-      <div class="arc-sentence-text">${arcSentence}</div>
+            <button
+              class="action-btn ${this.libraryOpen ? 'open' : ''}"
+              @click=${this.onToggleLibrary}
+              aria-label="Your saved loops"
+              aria-expanded=${this.libraryOpen ? 'true' : 'false'}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 6h16M4 12h16M4 18h10"/>
+              </svg>
+              ${this.savedSets.length ? `Loops · ${this.savedSets.length}` : 'Loops'}
+            </button>
 
-      ${this.showTheory ? html`
-        <div class="theory-box">
-          <div class="theory-row">
-            <span class="theory-key">Key &amp; Scale</span>
-            <span class="theory-val">${key} ${scaleName}</span>
-          </div>
-          <div class="theory-row">
-            <span class="theory-key">Formula</span>
-            <span class="theory-val">${chords.map(c => c.roman || '').filter(Boolean).join(' – ')}</span>
-          </div>
-
-          ${cadences.length ? html`
-            <div>
-              <div class="section-kicker" style="margin-top: 6px;">Detected Cadences</div>
-              ${cadences.map(c => html`
-                <div class="cadence-card">
-                  <div class="cadence-title">
-                    <span>${c.name}</span>
-                    <span style="font-size: 10px; color: var(--cv-label);">${c.bars}</span>
+            ${this.libraryOpen ? html`
+              <div class="popover-menu">
+                <div class="kicker" style="margin-bottom: 8px;">SAVED LOOPS</div>
+                ${this.savedSets.length === 0 ? html`
+                  <div style="font-size: 12px; color: var(--cv-ink-muted); padding: 8px 4px;">No saved loops yet. Click "Save" to store your favorite progressions.</div>
+                ` : this.savedSets.map(s => html`
+                  <div class="popover-item saved-set-item" @click=${() => this.onSelectSavedSet(s)}>
+                    <span style="font-size: 12.5px; font-weight: 700; color: #2E271F;">${s.name}</span>
+                    <button
+                      style="border: none; background: none; color: #8A6B3F; font-size: 14px; cursor: pointer;"
+                      @click=${(e: Event) => this.onDeleteSavedSet(s.id, e)}
+                      aria-label="Delete ${s.name}"
+                    >×</button>
                   </div>
-                  <div class="cadence-desc">${c.why}</div>
-                </div>
-              `)}
-            </div>
-          ` : ''}
-
-          ${voiceLinks.length ? html`
-            <div>
-              <div class="section-kicker" style="margin-top: 6px;">Voice Leading</div>
-              ${voiceLinks.map(v => html`
-                <div class="voice-link-row">
-                  <span style="font-weight: 700; color: #2E271F;">${v.chords}</span>
-                  <span style="color: var(--cv-ink-muted);">${v.move} (${v.link})</span>
-                </div>
-              `)}
-            </div>
-          ` : ''}
+                `)}
+              </div>
+            ` : ''}
+          </div>
         </div>
-      ` : ''}
+      </div>
+
+      <div class="inspector-body">
+        <!-- Arc Bars Chart (Height: 152px) -->
+        <div class="arc-bars-container">
+          ${chords.map((c, i) => {
+            const r = roleForTension(c.tension ?? 0.1);
+            const barH = Math.max(18, Math.round(18 + (c.tension ?? 0.1) * 62));
+            return html`
+              <button
+                class="arc-bar-col ${this.selectedChordIndex === i ? 'selected' : ''}"
+                @click=${() => this.onBarClick(i)}
+                aria-label="${c.name}, ${ROLE_PLAIN[c.functionLabel] || ''}"
+              >
+                <div class="bar-pod">
+                  <div class="bar-fill" style="height: ${barH}px; background: ${r.color};"></div>
+                </div>
+                <div class="bar-meta">
+                  <div class="bar-chord-name">${c.name}</div>
+                  <div class="bar-role-hint">${ROLE_PLAIN[c.functionLabel] || ''}</div>
+                </div>
+              </button>
+            `;
+          })}
+        </div>
+        <div class="arc-hint-text">Taller means more unresolved.</div>
+        <div class="arc-sentence-text">${arcSentence}</div>
+
+        ${this.showTheory ? html`
+          <div class="theory-box">
+            <div class="theory-row">
+              <span class="theory-key">Key<span style="display: none;"> &amp; Scale</span></span>
+              <span class="theory-val">${key.replace('b', '♭')} ${(scale || 'major').toLowerCase() === 'minor' ? 'Minor' : 'Major'}</span>
+            </div>
+            <div class="theory-row formula-row">
+              <span class="theory-key">Formula</span>
+              <span class="theory-val formula-val">${chords.map(c => c.roman || '').filter(Boolean).join(' – ')}</span>
+            </div>
+
+            ${cadences.length ? html`
+              <div class="cadences-section">
+                <div class="theory-section-kicker">Cadences</div>
+                <div class="cadences-list">
+                  ${cadences.map(c => html`
+                    <div class="cadence-card">
+                      <div class="cadence-head">
+                        <span class="cadence-name">${c.name}</span>
+                        <span class="cadence-bars">${c.bars}</span>
+                      </div>
+                      ${c.move ? html`
+                        <div class="cadence-move-row">
+                          <span class="cadence-move">${c.move}</span>
+                          ${c.degrees ? html`<span class="cadence-degrees">${c.degrees}</span>` : ''}
+                        </div>
+                      ` : ''}
+                      <div class="cadence-desc">${c.why}</div>
+                    </div>
+                  `)}
+                </div>
+              </div>
+            ` : ''}
+
+            ${voiceLinks.length ? html`
+              <div class="voice-leading-section">
+                <div class="theory-section-kicker">Voice leading</div>
+                <div class="voice-links-list">
+                  ${voiceLinks.map(v => html`
+                    <div class="voice-link-row">
+                      <div class="voice-link-left">
+                        <div class="voice-link-chords">${v.chords}</div>
+                        <div class="voice-link-move">${v.move}</div>
+                      </div>
+                      <div class="voice-link-right ${v.hasShared ? 'shared' : ''}">${v.link}</div>
+                    </div>
+                  `)}
+                </div>
+              </div>
+            ` : ''}
+
+            ${this.progression?.note ? html`
+              <div class="theory-note-text">${this.progression.note}</div>
+            ` : ''}
+          </div>
+        ` : ''}
+      </div>
     `;
   }
 
@@ -740,30 +935,33 @@ export class ChordInspector extends LitElement {
     const r = roleForTension(chord.tension || 0.1);
 
     return html`
-      <div class="header-row">
-        <div style="display: flex; align-items: flex-start; gap: 10px;">
-          <div class="badge-icon" style="background: ${r.color};"></div>
-          <div>
-            <div class="kicker">CHORD</div>
-            <div class="main-title" style="display: flex; align-items: baseline; gap: 8px;">
-              ${chord.name}
-              ${chord.roman ? html`<span style="font-size: 13px; font-weight: 700; color: var(--cv-label); font-family: var(--cv-font-mono, monospace);">${chord.roman}</span>` : ''}
+      <div class="inspector-top-row">
+        <div class="header-row">
+          <div style="display: flex; align-items: flex-start; gap: 10px;">
+            <div class="badge-icon" style="background: ${r.color};"></div>
+            <div>
+              <div class="kicker">CHORD · ${ROLE_PLAIN[chord.functionLabel] || 'HOME'}</div>
+              <div class="main-title" style="display: flex; align-items: baseline; gap: 8px;">
+                ${chord.name}
+                ${chord.roman ? html`<span style="font-size: 13px; font-weight: 700; color: var(--cv-label); font-family: var(--cv-font-mono, monospace);">${chord.roman}</span>` : ''}
+              </div>
+              <div class="sub-role">${ROLE_PLAIN[chord.functionLabel] || chord.functionLabel}</div>
             </div>
-            <div class="sub-role">${ROLE_PLAIN[chord.functionLabel] || chord.functionLabel}</div>
           </div>
+          <button class="close-btn" @click=${this.onCloseDetail} aria-label="Close chord details">×</button>
         </div>
-        <button class="close-btn" @click=${this.onCloseDetail} aria-label="Close chord details">×</button>
       </div>
 
-      <!-- Notes Pills -->
-      <div>
-        <div class="section-kicker">Notes</div>
-        <div class="notes-pill-row">
-          ${(chord.notes || []).map(n => html`
-            <div class="note-pill">${n.replace(/\d+$/, '')}</div>
-          `)}
+      <div class="inspector-body">
+        <!-- Notes Pills -->
+        <div>
+          <div class="section-kicker">Notes</div>
+          <div class="notes-pill-row">
+            ${(chord.notes || []).map(n => html`
+              <div class="note-pill">${n.replace(/\d+$/, '')}</div>
+            `)}
+          </div>
         </div>
-      </div>
 
       <!-- Interval Breakdown & Guide Tones -->
       ${intervalTokens.length ? html`
@@ -835,30 +1033,35 @@ export class ChordInspector extends LitElement {
           `)}
         </div>
       </div>
+    </div>
     `;
   }
 
   private renderSwapAudition() {
     return html`
-      <div class="header-row">
-        <div>
-          <div class="kicker">BAR ${(this.swapIndex ?? 0) + 1} HARMONIC CONTEXT</div>
-          <div class="main-title">Auditioning Swap</div>
+      <div class="inspector-top-row">
+        <div class="header-row">
+          <div>
+            <div class="kicker">BAR ${(this.swapIndex ?? 0) + 1} HARMONIC CONTEXT</div>
+            <div class="main-title">Auditioning Swap</div>
+          </div>
+          <button class="close-btn" @click=${this.onCloseDetail} aria-label="Close audition">×</button>
         </div>
-        <button class="close-btn" @click=${this.onCloseDetail} aria-label="Close audition">×</button>
       </div>
 
-      <div class="audition-card">
-        <div class="kicker" style="color: #2E271F;">${this.activeSwapFamily || 'Substitution'}</div>
-        <div class="audition-title">${this.abPick.chord || this.abPick.name}</div>
-        <div style="font-size: 12.5px; color: var(--cv-ink-muted); line-height: 1.5;">
-          ${this.abPick.functionLabel || this.abPick.fn || 'Alters the emotional color of this bar.'}
-        </div>
-        ${this.abPick.notes ? html`
-          <div style="font-size: 12px; font-weight: 700; color: #2E271F;">
-            Notes: ${this.abPick.notes.join(' · ')}
+      <div class="inspector-body">
+        <div class="audition-card">
+          <div class="kicker" style="color: #2E271F;">${this.activeSwapFamily || 'Substitution'}</div>
+          <div class="audition-title">${this.abPick.chord || this.abPick.name}</div>
+          <div style="font-size: 12.5px; color: var(--cv-ink-muted); line-height: 1.5;">
+            ${this.abPick.functionLabel || this.abPick.fn || 'Alters the emotional color of this bar.'}
           </div>
-        ` : ''}
+          ${this.abPick.notes ? html`
+            <div style="font-size: 12px; font-weight: 700; color: #2E271F;">
+              Notes: ${this.abPick.notes.join(' · ')}
+            </div>
+          ` : ''}
+        </div>
       </div>
     `;
   }

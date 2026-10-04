@@ -153,6 +153,7 @@ export interface MelodyGenerateOptions {
   feelSettings?: Partial<MelodyFeelSettings>;
   presetId?: string;
   bandId?: string;
+  seed?: number;
 }
 
 /* ==========================================================================
@@ -530,18 +531,30 @@ export function getRhythmicCellsForBar(
   density: number,
   barIndex: number,
   totalBars: number,
-  contour: ContourArchetype
+  contour: ContourArchetype,
+  seed: number = 0
 ): RhythmicCell[] {
   // Density 0-25: Sparse / Ambient (1-2 notes per bar)
   if (density < 25) {
-    if (barIndex % 2 === 0) {
-      return [{ step: 0, duration: 3.0, accent: true }];
-    } else {
-      return [
+    const sparsePatterns: RhythmicCell[][] = [
+      [{ step: 0, duration: 3.0, accent: true }],
+      [{ step: 4, duration: 2.5, accent: true }],
+      [
         { step: 0, duration: 2.0, accent: true },
         { step: 8, duration: 1.5 },
-      ];
+      ],
+      [
+        { step: 2, duration: 2.0, accent: true },
+        { step: 10, duration: 1.5 },
+      ],
+    ];
+
+    if (seed === 0) {
+      if (barIndex % 2 === 0) return sparsePatterns[0];
+      return sparsePatterns[2];
     }
+    const offset = Math.abs(seed) % sparsePatterns.length;
+    return sparsePatterns[(barIndex + offset) % sparsePatterns.length];
   }
 
   // Density 26-60: Topline Vocal Hook (3-5 notes per bar)
@@ -573,10 +586,34 @@ export function getRhythmicCellsForBar(
         { step: 6, duration: 0.5 },
         { step: 8, duration: 2.0 },
       ],
+      // Pattern 4: Syncopated late groove
+      [
+        { step: 2, duration: 1.0, accent: true },
+        { step: 6, duration: 0.5 },
+        { step: 8, duration: 1.0 },
+        { step: 12, duration: 1.0 },
+      ],
+      // Pattern 5: Spacious phrasing
+      [
+        { step: 0, duration: 1.5, accent: true },
+        { step: 6, duration: 1.0 },
+        { step: 10, duration: 1.5 },
+      ],
+      // Pattern 6: Double tap drive
+      [
+        { step: 0, duration: 0.5, accent: true },
+        { step: 2, duration: 0.5 },
+        { step: 6, duration: 1.0 },
+        { step: 10, duration: 1.0 },
+      ],
     ];
 
     if (barIndex === totalBars - 1) return patterns[3];
-    return patterns[barIndex % 3];
+    if (seed === 0) {
+      return patterns[barIndex % 3];
+    }
+    const offset = Math.abs(seed) % (patterns.length - 1);
+    return patterns[(barIndex + offset) % (patterns.length - 1)];
   }
 
   // Density 61-100: Driving Riff / Arpeggio (6-12 notes per bar)
@@ -588,6 +625,16 @@ export function getRhythmicCellsForBar(
       accent: i === 0 || i === 4,
     }));
   } else {
+    if (seed && seed % 2 === 1) {
+      return [
+        { step: 0, duration: 0.5, accent: true },
+        { step: 3, duration: 0.5 },
+        { step: 6, duration: 0.5, accent: true },
+        { step: 8, duration: 0.5 },
+        { step: 10, duration: 0.75 },
+        { step: 13, duration: 0.75 },
+      ];
+    }
     return [
       { step: 0, duration: 0.5, accent: true },
       { step: 2, duration: 0.5 },
@@ -647,6 +694,28 @@ export function getContourBias(
    ========================================================================== */
 export class MelodyEngine {
   /**
+   * Creates an empty melody track with 0 notes.
+   */
+  createEmptyTrack(progression?: Progression | null, options: Partial<MelodyTrack> = {}): MelodyTrack {
+    const genre = progression?.genre || 'Pop';
+    return {
+      id: `melody-track-${Date.now()}`,
+      progressionId: progression ? `${progression.key}_${progression.scaleType}` : undefined,
+      notes: [],
+      contour: 'Arch',
+      density: 50,
+      octave: 4,
+      guideMode: 'strict-chord',
+      feelSettings: this.getMelodyFeelForGenre(genre),
+      presetId: 'lead-synth',
+      volume: 80,
+      muted: false,
+      solo: false,
+      ...options,
+    };
+  }
+
+  /**
    * Generates a coherent melodic track for the given progression.
    */
   generateMelody(progression: Progression, options: MelodyGenerateOptions = {}): MelodyTrack {
@@ -663,6 +732,7 @@ export class MelodyEngine {
     };
     const presetId = options.presetId || 'lead-synth';
     const bandId = options.bandId;
+    const seed = options.seed ?? 0;
 
     const notes: MelodyNote[] = [];
     const chords = progression.chords || [];
@@ -673,7 +743,7 @@ export class MelodyEngine {
 
     chords.forEach((chord, barIndex) => {
       const matrix = getHarmonicChordMatrix(chord, progression.key, progression.scaleType);
-      const cells = getRhythmicCellsForBar(density, barIndex, totalBars, contour);
+      const cells = getRhythmicCellsForBar(density, barIndex, totalBars, contour, seed);
 
       cells.forEach((cell, cellIdx) => {
         const stepInBar = cell.step;
@@ -719,8 +789,9 @@ export class MelodyEngine {
             const bPref = (b.role === 'root' || b.role === '3rd') ? -4 : 0;
             return (aDist + aPref) - (bDist + bPref);
           });
-          chosenMidi = candidates[0].midi;
-          chosenRole = candidates[0].role;
+          const pickIdx = seed ? Math.abs(seed + barIndex) % Math.min(3, candidates.length) : 0;
+          chosenMidi = candidates[pickIdx].midi;
+          chosenRole = candidates[pickIdx].role;
           previousJump = 0;
         } else {
           // Leap recovery rule:
@@ -749,8 +820,10 @@ export class MelodyEngine {
             return aScore - bScore;
           });
 
-          chosenMidi = candidates[0].midi;
-          chosenRole = candidates[0].role;
+          const poolSize = Math.min(2, candidates.length);
+          const pickIdx = seed && poolSize > 1 ? ((seed * 31 + barIndex * 17 + stepInBar * 7) % 7 < 3 ? 1 : 0) : 0;
+          chosenMidi = candidates[pickIdx].midi;
+          chosenRole = candidates[pickIdx].role;
           previousJump = chosenMidi - previousMidi;
         }
 

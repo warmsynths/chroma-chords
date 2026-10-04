@@ -257,7 +257,7 @@ export class TabPlay extends LitElement {
     }
 
     .toggle-track.active {
-      background: #2e271f;
+      background: var(--cv-mood-color, var(--cv-purple, #C9A9E0));
     }
 
     .toggle-knob {

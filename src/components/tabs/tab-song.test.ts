@@ -179,21 +179,14 @@ describe('TabSong Component', () => {
     document.body.appendChild(el);
     await el.updateComplete;
 
-    let playToggled = false;
     let newSectionTriggered = false;
 
-    el.addEventListener('toggle-play-song', () => {
-      playToggled = true;
-    });
     el.addEventListener('new-section-from-loop', () => {
       newSectionTriggered = true;
     });
 
-    const playBtn = el.shadowRoot!.querySelector('.play-song-btn') as HTMLButtonElement;
-    playBtn.click();
-    expect(playToggled).toBe(true);
-
     const newSecBtn = el.shadowRoot!.querySelector('.new-section-btn') as HTMLButtonElement;
+    expect(newSecBtn).toBeTruthy();
     newSecBtn.click();
     expect(newSectionTriggered).toBe(true);
 

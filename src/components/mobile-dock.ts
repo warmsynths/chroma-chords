@@ -1,8 +1,9 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SongSection } from '../services/song-arranger';
-import { FeelSettings } from '../services/audio-service';
-import { TRANSPORT_SOUNDS, ROOT_KEYS, SCALE_MODES } from './transport-bar';
+import { FeelSettings, setMasterTone } from '../services/audio-service';
+import { playbackEngine } from '../services/playback-engine';
+import { TRANSPORT_SOUNDS, ROOT_KEYS, SCALE_MODES, FEEL_AXES, FEEL_DEFAULTS, ADV_DEFS } from './transport-bar';
 
 export type MobileSheetType = 'key' | 'feel' | 'sound' | 'section' | 'more' | null;
 
@@ -18,15 +19,18 @@ export class MobileDock extends LitElement {
   @property({ type: String }) melodySound = 'Stage Rhodes';
   @property({ type: String }) chordFeel = 'Block chords';
   @property({ type: String }) melodyFeel = 'Smooth';
+  @property({ type: String }) melodyLoop = 'Section';
   @property({ type: Object }) feelSettings: FeelSettings = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
   @property({ type: String }) keyRoot = 'C';
   @property({ type: String }) scaleMode = 'Major';
   @property({ type: Number }) bpm = 84;
   @property({ type: Number }) barsPerChord = 1;
   @property({ type: Boolean }) isSaved = false;
+  @property({ type: Array }) chords: Array<{ name: string; roman?: string }> = [];
 
   @state() private activeSheet: MobileSheetType = null;
-  @state() private feelMoreOpen = false;
+  @state() private feelScope: number | null = null;
+  @state() private advOpen = false;
 
   static styles = css`
     :host {
@@ -381,21 +385,161 @@ export class MobileDock extends LitElement {
     }));
   }
 
-  private onSelectFeelStep(axis: string, stepName: string, value: any) {
-    const isMelody = this.activeTab === 'melody';
-    if (axis === 'Pattern') {
-      this.dispatchEvent(new CustomEvent(isMelody ? 'set-melody-feel' : 'set-chord-feel', {
-        detail: { feel: stepName },
-        bubbles: true,
-        composed: true,
-      }));
-    } else {
-      this.dispatchEvent(new CustomEvent('set-feel-settings', {
-        detail: { [axis.toLowerCase()]: value },
-        bubbles: true,
-        composed: true,
-      }));
+  private get feelChanged(): boolean {
+    const fs = this.feelSettings || {};
+    const allBarFeel = fs.barFeel || {};
+    const advOv = fs.advOverride || {};
+    return (
+      (fs.playStyle && fs.playStyle !== FEEL_DEFAULTS.playStyle) ||
+      (fs.swing !== undefined && fs.swing !== FEEL_DEFAULTS.swing) ||
+      (fs.spread !== undefined && fs.spread !== FEEL_DEFAULTS.spread) ||
+      (fs.density !== undefined && fs.density !== FEEL_DEFAULTS.density) ||
+      (fs.humanise !== undefined && fs.humanise !== FEEL_DEFAULTS.humanise) ||
+      (fs.tone && fs.tone !== FEEL_DEFAULTS.tone) ||
+      Object.keys(allBarFeel).length > 0 ||
+      Object.keys(advOv).length > 0
+    );
+  }
+
+  private resetFeel() {
+    this.feelSettings = {
+      ...FEEL_DEFAULTS,
+      barFeel: {},
+      advOverride: {},
+    };
+    this.feelScope = null;
+    playbackEngine.setPlayStyle(FEEL_DEFAULTS.playStyle);
+    playbackEngine.setFeelSettings(this.feelSettings);
+    setMasterTone(FEEL_DEFAULTS.tone);
+
+    this.dispatchEvent(new CustomEvent('set-feel', {
+      detail: { feel: FEEL_DEFAULTS.playStyle },
+      bubbles: true,
+      composed: true,
+    }));
+    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+      detail: { feelSettings: { ...this.feelSettings } },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private fget(k: string): any {
+    const fs = this.feelSettings || {};
+    const bar = this.feelScope;
+    if (bar !== null && fs.barFeel && fs.barFeel[bar] && (fs.barFeel[bar] as any)[k] !== undefined) {
+      return (fs.barFeel[bar] as any)[k];
     }
+    if (k === 'playStyle') {
+      return fs.playStyle || this.chordFeel || 'Block chords';
+    }
+    return (fs as any)[k] ?? (FEEL_DEFAULTS as any)[k];
+  }
+
+  private getNearestStep(d: typeof FEEL_AXES[0]) {
+    const cur = this.fget(d.k);
+    if (typeof cur !== 'number') {
+      return d.steps.find(s => s.v === cur) || d.steps[0];
+    }
+    let nearest = d.steps[0];
+    d.steps.forEach(s => {
+      if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) {
+        nearest = s;
+      }
+    });
+    return nearest;
+  }
+
+  private onSelectFeelStep(key: string, value: any) {
+    const isMelody = this.activeTab === 'melody';
+    const nextFs = { ...this.feelSettings };
+    if (this.feelScope === null) {
+      (nextFs as any)[key] = value;
+      if (key === 'playStyle') {
+        playbackEngine.setPlayStyle(value);
+        this.dispatchEvent(new CustomEvent(isMelody ? 'set-melody-feel' : 'set-chord-feel', {
+          detail: { feel: value, playStyle: value },
+          bubbles: true,
+          composed: true,
+        }));
+        this.dispatchEvent(new CustomEvent('set-feel', {
+          detail: { feel: value, playStyle: value },
+          bubbles: true,
+          composed: true,
+        }));
+      } else if (key === 'tone') {
+        setMasterTone(value);
+      }
+    } else {
+      const bar = this.feelScope;
+      const bf = { ...(nextFs.barFeel || {}) };
+      bf[bar] = { ...(bf[bar] || {}), [key]: value };
+      nextFs.barFeel = bf;
+    }
+
+    this.feelSettings = nextFs;
+    playbackEngine.setFeelSettings(this.feelSettings);
+
+    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+      detail: { feelSettings: { ...this.feelSettings }, key, value, chordIndex: this.feelScope },
+      bubbles: true,
+      composed: true,
+    }));
+    this.dispatchEvent(new CustomEvent('set-feel-settings', {
+      detail: { [key.toLowerCase()]: value },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private getDerivedParams() {
+    const numOf = (k: string) => {
+      const v = this.fget(k);
+      return typeof v === 'number' ? v : 0;
+    };
+    const pattern = this.fget('playStyle');
+    const spreadVal = +(numOf('spread') / 100).toFixed(2);
+    const durationVal = +(pattern === 'Half-time' ? 1.6 : (numOf('density') > 70 ? 0.65 : 1)).toFixed(2);
+    const varianceVal = +(numOf('humanise') / 100).toFixed(2);
+    const microVal = +((numOf('swing') / 100) * 0.5 + (numOf('humanise') / 100) * 0.3).toFixed(2);
+    return {
+      spread: spreadVal,
+      duration: durationVal,
+      variance: varianceVal,
+      micro: microVal,
+    };
+  }
+
+  private onAdvInput(param: string, value: number) {
+    const nextFs = { ...this.feelSettings };
+    nextFs.advOverride = { ...(nextFs.advOverride || {}), [param]: value };
+    this.feelSettings = nextFs;
+    playbackEngine.setFeelSettings(this.feelSettings);
+    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+      detail: { feelSettings: { ...this.feelSettings }, advOverride: nextFs.advOverride },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private onAdvRelink(param: string) {
+    const nextFs = { ...this.feelSettings };
+    if (nextFs.advOverride) {
+      const adv = { ...nextFs.advOverride };
+      delete adv[param];
+      nextFs.advOverride = adv;
+    }
+    this.feelSettings = nextFs;
+    playbackEngine.setFeelSettings(this.feelSettings);
+    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+      detail: { feelSettings: { ...this.feelSettings }, advOverride: nextFs.advOverride },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
   }
 
   private onBpmChange(delta: number) {
@@ -463,6 +607,17 @@ export class MobileDock extends LitElement {
     }));
   }
 
+  private onLoopCycle() {
+    const modes = ['Section', 'Chord', 'Span'];
+    const next = modes[(modes.indexOf(this.melodyLoop) + 1) % 3];
+    this.melodyLoop = next;
+    this.dispatchEvent(new CustomEvent('loop-cycle', {
+      detail: { melodyLoop: next },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
   render() {
     const isMelody = this.activeTab === 'melody';
     const isSong = this.activeTab === 'song';
@@ -479,6 +634,11 @@ export class MobileDock extends LitElement {
     const playIcon = this.isPlaying ? '■' : '▶';
     const currentSound = isMelody ? this.melodySound : this.chordSound;
     const currentFeel = isMelody ? this.melodyFeel : this.chordFeel;
+    const effectiveChords = this.chords && this.chords.length > 0
+      ? this.chords
+      : (activeSection?.progression?.chords?.length
+        ? activeSection.progression.chords
+        : [{ name: 'Chord 1' }, { name: 'Chord 2' }, { name: 'Chord 3' }, { name: 'Chord 4' }]);
 
     return html`
       <div class="dock-container" data-screen-label="MobileDock">
@@ -532,6 +692,17 @@ export class MobileDock extends LitElement {
               <circle cx="10" cy="17" r="2"></circle>
             </svg>
           </button>
+
+          ${isMelody ? html`
+            <button
+              class="dock-btn"
+              @click=${this.onLoopCycle}
+              aria-label="Change what loops"
+              style="font-size: 11px; font-weight: 800; padding: 0 8px;"
+            >
+              Loop ${this.melodyLoop}
+            </button>
+          ` : ''}
         ` : ''}
 
         <!-- Key & Tempo Button -->
@@ -665,70 +836,136 @@ export class MobileDock extends LitElement {
 
       <!-- Feel Bottom Sheet -->
       ${this.activeSheet === 'feel' ? html`
-        <div class="bottom-sheet">
+        <div class="bottom-sheet" style="max-height: calc(100% - 24px); overflow-y: auto;">
           <div class="sheet-handle"></div>
-          <div class="sheet-header">
-            <span class="sheet-title">${isMelody ? 'Melody feel' : 'Chord feel'}</span>
-            <button class="sheet-close-btn" @click=${this.closeSheet}>×</button>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 2px 0 10px;">
+            <div style="font-size: 15.5px; font-weight: 800; letter-spacing: -0.01em; color: var(--cv-ink, #2E271F); flex: 1; min-width: 0;">
+              ${isMelody ? 'Melody feel' : 'Chord feel'}
+            </div>
+            ${this.feelChanged ? html`
+              <button
+                type="button"
+                @click=${this.resetFeel}
+                style="border: none; font-family: inherit; background: transparent; color: var(--cv-ink-muted, #6B5F50); font-size: 12px; font-weight: 800; cursor: pointer; padding: 6px 10px; border-radius: 10px;"
+              >Reset</button>
+            ` : ''}
+            <button
+              type="button"
+              @click=${this.closeSheet}
+              style="border: none; font-family: inherit; background: var(--cv-surface-2, #F1E4CC); color: var(--cv-ink, #2E271F); border-radius: 100px; padding: 8px 14px; font-size: 12px; font-weight: 800; cursor: pointer;"
+            >Done</button>
           </div>
 
-          <div class="sheet-section-title">Pattern</div>
-          <div class="pill-group">
-            ${['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)', 'Half-time'].map(step => html`
-              <button
-                class="pill-btn ${step === currentFeel ? 'selected' : ''}"
-                @click=${() => this.onSelectFeelStep('Pattern', step, step)}
-              >
-                ${step.replace(/ chords|\(swing\)/g, '')}
-              </button>
-            `)}
+          <div style="display: flex; gap: 5px; overflow-x: auto; padding-bottom: 4px; margin-top: 2px;">
+            <button
+              type="button"
+              style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${this.feelScope === null ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${this.feelScope === null ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'}; flex-shrink: 0;"
+              @click=${() => { this.feelScope = null; }}
+              aria-label="Whole section feel"
+            >
+              Whole section
+            </button>
+            ${effectiveChords.map((c, ci) => {
+              const on = this.feelScope === ci;
+              const dirty = !!(this.feelSettings?.barFeel && this.feelSettings.barFeel[ci] && Object.keys(this.feelSettings.barFeel[ci]).length > 0);
+              const chordName = c.name || ('Chord ' + (ci + 1));
+              return html`
+                <button
+                  type="button"
+                  style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'}; flex-shrink: 0;"
+                  @click=${() => { this.feelScope = ci; }}
+                  aria-label="${chordName}, ${on ? 'editing' : 'edit feel'}"
+                >
+                  ${chordName}
+                  <span style="width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: ${on ? 'var(--cv-cream, #FBF3E6)' : '#9E5D53'}; opacity: ${dirty ? 1 : 0}; transition: opacity 150ms ease;"></span>
+                </button>
+              `;
+            })}
           </div>
 
-          <div class="sheet-section-title">Swing</div>
-          <div class="pill-group">
-            ${[
-              { name: 'Straight', val: 0 },
-              { name: 'Light', val: 20 },
-              { name: 'Medium', val: 45 },
-              { name: 'Hard', val: 70 },
-            ].map(s => html`
-              <button
-                class="pill-btn ${(this.feelSettings.swing || 0) === s.val ? 'selected' : ''}"
-                @click=${() => this.onSelectFeelStep('Swing', s.name, s.val)}
-              >
-                ${s.name}
-              </button>
-            `)}
+          <div style="font-size: 11.5px; font-weight: 700; line-height: 1.45; color: rgba(46,39,31,0.5); margin-top: 8px; text-wrap: pretty;">
+            ${this.feelScope === null
+              ? 'Everything below applies to every chord in this section.'
+              : `Only ${effectiveChords[this.feelScope]?.name || ('Chord ' + (this.feelScope + 1))} plays this way. The rest keep the section feel.`}
           </div>
 
-          <div class="sheet-section-title">Humanise</div>
-          <div class="pill-group">
-            ${[
-              { name: 'Off', val: 0 },
-              { name: 'Subtle', val: 25 },
-              { name: 'Natural', val: 50 },
-              { name: 'Loose', val: 80 },
-            ].map(s => html`
-              <button
-                class="pill-btn ${(this.feelSettings.humanise || 0) === s.val ? 'selected' : ''}"
-                @click=${() => this.onSelectFeelStep('Humanise', s.name, s.val)}
-              >
-                ${s.name}
-              </button>
-            `)}
+          <div style="display: flex; flex-direction: column; gap: 14px; margin-top: 14px;">
+            ${FEEL_AXES.map(d => {
+              const nearest = this.getNearestStep(d);
+              return html`
+                <div>
+                  <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px;">
+                    <span style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink, #2E271F);">${d.label}</span>
+                    <span style="font-size: 11px; font-weight: 600; color: #6B5F50;">${d.hint}</span>
+                  </div>
+                  <div class="pill-group">
+                    ${d.steps.map(s => {
+                      const on = s.v === nearest.v;
+                      return html`
+                        <button
+                          type="button"
+                          class="pill-btn ${on ? 'selected' : ''}"
+                          @click=${() => this.onSelectFeelStep(d.k, s.v)}
+                          aria-label="${d.label}: ${s.name}"
+                        >
+                          ${s.name}
+                        </button>
+                      `;
+                    })}
+                  </div>
+                </div>
+              `;
+            })}
           </div>
 
-          <div class="sheet-section-title">Tone</div>
-          <div class="pill-group">
-            ${['Warm', 'Glassy', 'Dusty'].map(t => html`
-              <button
-                class="pill-btn ${this.feelSettings.tone === t ? 'selected' : ''}"
-                @click=${() => this.onSelectFeelStep('Tone', t, t)}
-              >
-                ${t}
-              </button>
-            `)}
-          </div>
+          <button
+            type="button"
+            @click=${() => { this.advOpen = !this.advOpen; }}
+            style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: transparent; color: var(--cv-ink-muted, #6B5F50); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; padding: 10px 0; margin-top: 10px;"
+            aria-label="Show the engine parameters these choices set"
+          >
+            Engine parameters <span style="font-size: 9px;">${this.advOpen ? '▲' : '▼'}</span>
+          </button>
+
+          ${this.advOpen ? html`
+            <div style="border-top: 1px solid rgba(46,39,31,0.1); padding-top: 13px; display: flex; flex-direction: column; gap: 14px;">
+              ${ADV_DEFS.map(p => {
+                const advOv = this.feelSettings?.advOverride || {};
+                const derived = this.getDerivedParams();
+                const detached = advOv[p.k] !== undefined;
+                const val = detached ? advOv[p.k] : derived[p.k as keyof typeof derived];
+                return html`
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <div style="font-size: 12px; font-weight: 800; color: var(--cv-ink, #2E271F); flex: 1; min-width: 0;">${p.label}</div>
+                      <button
+                        type="button"
+                        @click=${() => this.onAdvRelink(p.k)}
+                        style="border: none; font-family: inherit; background: transparent; color: #9E5D53; font-size: 10.5px; font-weight: 800; cursor: pointer; padding: 4px 6px; border-radius: 7px; ${detached ? '' : 'opacity: 0; pointer-events: none;'}"
+                        aria-label="Re-link to the feel axis"
+                      >Re-link</button>
+                      <div style="font-size: 11.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--cv-ink, #2E271F); background: var(--cv-surface-2, #F1E4CC); border-radius: 6px; padding: 2px 7px;">
+                        ${typeof val === 'number' ? val.toFixed(2) : val}
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="${p.max}"
+                      step="${p.step}"
+                      .value="${String(val)}"
+                      @input=${(e: Event) => this.onAdvInput(p.k, +(e.target as HTMLInputElement).value)}
+                      aria-label="${p.label}"
+                      style="width: 100%; margin-top: 7px; accent-color: #9E5D53; cursor: pointer;"
+                    />
+                    <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: ${detached ? '#9E5D53' : 'rgba(46,39,31,0.36)'}; margin-top: 3px;">
+                      ${detached ? 'Set by hand' : 'From ' + p.from}
+                    </div>
+                  </div>
+                `;
+              })}
+            </div>
+          ` : ''}
         </div>
       ` : ''}
 

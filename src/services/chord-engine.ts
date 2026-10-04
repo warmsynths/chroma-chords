@@ -43,6 +43,7 @@ export interface Progression {
   bpm: number;
   chords: ChordBlock[];
   searchTerm?: string;
+  note?: string;
 }
 
 export interface TheoryGroupRow {

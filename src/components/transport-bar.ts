@@ -1,7 +1,8 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { SongSection } from '../services/song-arranger';
-import { FeelSettings } from '../services/audio-service';
+import { FeelSettings, setMasterTone } from '../services/audio-service';
+import { playbackEngine } from '../services/playback-engine';
 
 export interface TransportSoundItem {
   name: string;
@@ -28,6 +29,90 @@ export const SCALE_MODES = [
   'Major', 'Minor', 'Dorian', 'Mixolydian', 'Lydian', 'Phrygian', 'Locrian', 'Harmonic minor', 'Melodic minor'
 ];
 
+export const FEEL_AXES = [
+  {
+    k: 'playStyle',
+    label: 'Pattern',
+    hint: 'How the notes are laid out in time',
+    steps: [
+      { v: 'Block chords', name: 'Block' },
+      { v: 'Arpeggio', name: 'Arp' },
+      { v: 'Strum', name: 'Strum' },
+      { v: 'Broken (swing)', name: 'Broken' },
+      { v: 'Half-time', name: 'Half-time' },
+    ],
+  },
+  {
+    k: 'swing',
+    label: 'Swing',
+    hint: 'How far behind the beat the notes land',
+    steps: [
+      { v: 0, name: 'Straight' },
+      { v: 25, name: 'Light' },
+      { v: 55, name: 'Loose' },
+      { v: 85, name: 'Heavy' },
+    ],
+  },
+  {
+    k: 'spread',
+    label: 'Spread',
+    hint: 'How far apart the notes sit',
+    steps: [
+      { v: 15, name: 'Tight' },
+      { v: 50, name: 'Close' },
+      { v: 75, name: 'Open' },
+      { v: 95, name: 'Wide' },
+    ],
+  },
+  {
+    k: 'density',
+    label: 'Density',
+    hint: 'How many notes per chord',
+    steps: [
+      { v: 20, name: 'Sparse' },
+      { v: 50, name: 'Simple' },
+      { v: 75, name: 'Full' },
+      { v: 95, name: 'Busy' },
+    ],
+  },
+  {
+    k: 'humanise',
+    label: 'Humanise',
+    hint: 'How loose the timing and touch are',
+    steps: [
+      { v: 0, name: 'Machine' },
+      { v: 45, name: 'Natural' },
+      { v: 80, name: 'Loose' },
+    ],
+  },
+  {
+    k: 'tone',
+    label: 'Tone',
+    hint: 'The colour of the instrument',
+    steps: [
+      { v: 'Warm', name: 'Warm' },
+      { v: 'Glassy', name: 'Glassy' },
+      { v: 'Dusty', name: 'Dusty' },
+    ],
+  },
+];
+
+export const FEEL_DEFAULTS = {
+  playStyle: 'Block chords',
+  swing: 0,
+  spread: 50,
+  density: 50,
+  humanise: 45,
+  tone: 'Warm',
+};
+
+export const ADV_DEFS = [
+  { k: 'spread', label: 'Spread', from: 'Spread', max: 1, step: 0.01 },
+  { k: 'duration', label: 'Duration', from: 'Pattern + Density', max: 2, step: 0.01 },
+  { k: 'variance', label: 'Human variance', from: 'Humanise', max: 1, step: 0.01 },
+  { k: 'micro', label: 'Micro-timing', from: 'Swing + Humanise', max: 1, step: 0.01 },
+];
+
 export type TransportMenuType = 'section' | 'sound' | 'feel' | 'tempo' | null;
 
 @customElement('transport-bar')
@@ -49,16 +134,23 @@ export class TransportBar extends LitElement {
   @property({ type: Number }) bpm = 84;
   @property({ type: Number }) barsPerChord = 1;
   @property({ type: String }) songTotal = '';
+  @property({ type: Array }) chords: Array<{ name: string; roman?: string }> = [];
 
   @state() private openMenu: TransportMenuType = null;
-  @state() private feelMoreOpen = false;
+  @state() private feelScope: number | null = null;
+  @state() private advOpen = false;
 
   static styles = css`
     :host {
       display: block;
       width: 100%;
       box-sizing: border-box;
-      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-family: var(--cv-font, 'Plus Jakarta Sans', system-ui, sans-serif);
+      color: #FBF3E6;
+    }
+
+    button, input, select {
+      font-family: inherit;
     }
 
     .transport-container {
@@ -207,9 +299,24 @@ export class TransportBar extends LitElement {
 
     .sound-popover {
       left: 120px;
-      width: 320px;
-      max-height: min(68vh, 520px);
-      overflow-y: auto;
+      width: min(480px, calc(100vw - 40px));
+      max-height: none;
+      overflow-y: visible;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .sound-popover::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    .sound-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 4px;
     }
 
     .sound-item {
@@ -217,31 +324,36 @@ export class TransportBar extends LitElement {
       border: none;
       font-family: inherit;
       border-radius: 12px;
-      background: transparent;
+      background: rgba(46, 39, 31, 0.05);
       cursor: pointer;
       display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 9px 10px;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
       text-align: left;
       color: #2E271F;
-      transition: background 120ms ease;
+      transition: background 120ms ease, transform 120ms ease;
     }
 
     .sound-item:hover {
       background: #F1E4CC;
+      transform: translateY(-1px);
     }
 
     .sound-item.selected {
-      background: #F1E4CC;
+      background: #2E271F;
+      color: #FBF3E6;
+    }
+
+    .sound-item.selected .sound-desc {
+      color: rgba(251, 243, 230, 0.65);
     }
 
     .sound-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 4px;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
       flex-shrink: 0;
-      margin-top: 3px;
     }
 
     .sound-meta {
@@ -263,83 +375,75 @@ export class TransportBar extends LitElement {
       line-height: 1.35;
     }
 
-    .feel-popover {
-      left: 180px;
-      width: 360px;
-      max-height: min(72vh, 560px);
+    .docked-panel {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(100% + 10px);
+      z-index: 50;
+      max-height: min(72vh, 640px);
       overflow-y: auto;
+      border-radius: 20px;
+      box-shadow: 0 0 0 1px rgba(46, 39, 31, 0.08), 0 22px 48px rgba(46, 39, 31, 0.22);
+      background: var(--cv-cream, #FBF3E6);
+      color: #2E271F;
+      box-sizing: border-box;
     }
 
-    .feel-axis {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-bottom: 12px;
+    .feel-panel {
+      padding: 16px 18px 18px;
     }
 
-    .feel-axis-header {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-
-    .feel-axis-label {
-      font-size: 12.5px;
-      font-weight: 800;
-    }
-
-    .feel-axis-hint {
-      font-size: 11px;
-      font-weight: 600;
-      color: #6B5F50;
-    }
-
-    .feel-track {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 2px;
-      background: #F6EADB;
-      border-radius: 14px;
-      padding: 3px;
+    @keyframes cvfv-panel {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .feel-step-btn {
-      flex: 1 1 auto;
       border: none;
       font-family: inherit;
-      min-height: 34px;
-      padding: 0 10px;
-      border-radius: 11px;
+      flex: 1 1 auto;
+      min-width: fit-content;
+      min-height: 44px;
+      padding: 0 11px;
+      border-radius: 12px;
+      cursor: pointer;
       font-size: 12px;
       font-weight: 800;
-      cursor: pointer;
+      letter-spacing: -0.005em;
       white-space: nowrap;
-      background: transparent;
-      color: #6B5F50;
-      transition: background 120ms ease, color 120ms ease;
+      transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-ink-muted, #6B5F50);
+    }
+
+    .feel-step-btn:hover {
+      background: var(--cv-surface, #F6EADB);
     }
 
     .feel-step-btn.selected {
-      background: #2E271F;
-      color: #FBF3E6;
+      background: var(--cv-ink, #2E271F);
+      color: var(--cv-cream, #FBF3E6);
     }
 
-    .more-toggle {
-      border: none;
-      background: transparent;
-      padding: 4px 0;
-      font-family: inherit;
-      font-size: 12px;
-      font-weight: 800;
-      color: #8A6B3F;
-      cursor: pointer;
+    .feel-step-btn:active {
+      transform: scale(0.97);
     }
 
     .tempo-popover {
-      right: 50px;
-      width: 420px;
-      max-height: min(72vh, 560px);
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: calc(100% + 10px);
+      z-index: 50;
+      max-height: min(72vh, 640px);
       overflow-y: auto;
+      border-radius: 20px;
+      box-shadow: 0 0 0 1px rgba(46, 39, 31, 0.08), 0 22px 48px rgba(46, 39, 31, 0.22);
+      background: var(--cv-cream, #FBF3E6);
+      color: #2E271F;
+      padding: 16px 18px 16px;
+      box-sizing: border-box;
     }
 
     .tempo-row {
@@ -521,7 +625,11 @@ export class TransportBar extends LitElement {
   }
 
   private onLoopCycle() {
+    const modes = ['Section', 'Chord', 'Span'];
+    const next = modes[(modes.indexOf(this.melodyLoop) + 1) % 3];
+    this.melodyLoop = next;
     this.dispatchEvent(new CustomEvent('loop-cycle', {
+      detail: { melodyLoop: next },
       bubbles: true,
       composed: true,
     }));
@@ -537,21 +645,166 @@ export class TransportBar extends LitElement {
     }));
   }
 
-  private onSelectFeelStep(axis: string, stepName: string, value: any) {
-    const isMelody = this.activeTab === 'melody';
-    if (axis === 'Pattern') {
-      this.dispatchEvent(new CustomEvent(isMelody ? 'set-melody-feel' : 'set-chord-feel', {
-        detail: { feel: stepName },
-        bubbles: true,
-        composed: true,
-      }));
-    } else {
-      this.dispatchEvent(new CustomEvent('set-feel-settings', {
-        detail: { [axis.toLowerCase()]: value },
-        bubbles: true,
-        composed: true,
-      }));
+  private get feelChanged(): boolean {
+    const fs = this.feelSettings || {};
+    const allBarFeel = fs.barFeel || {};
+    const advOv = fs.advOverride || {};
+    return (
+      (fs.playStyle && fs.playStyle !== FEEL_DEFAULTS.playStyle) ||
+      (fs.swing !== undefined && fs.swing !== FEEL_DEFAULTS.swing) ||
+      (fs.spread !== undefined && fs.spread !== FEEL_DEFAULTS.spread) ||
+      (fs.density !== undefined && fs.density !== FEEL_DEFAULTS.density) ||
+      (fs.humanise !== undefined && fs.humanise !== FEEL_DEFAULTS.humanise) ||
+      (fs.tone && fs.tone !== FEEL_DEFAULTS.tone) ||
+      Object.keys(allBarFeel).length > 0 ||
+      Object.keys(advOv).length > 0
+    );
+  }
+
+  private resetFeel() {
+    this.feelSettings = {
+      ...FEEL_DEFAULTS,
+      barFeel: {},
+      advOverride: {},
+    };
+    this.feelScope = null;
+    playbackEngine.setPlayStyle(FEEL_DEFAULTS.playStyle);
+    playbackEngine.setFeelSettings(this.feelSettings);
+    setMasterTone(FEEL_DEFAULTS.tone);
+
+    this.dispatchEvent(new CustomEvent('feel-change', {
+      detail: { feel: FEEL_DEFAULTS.playStyle, playStyle: FEEL_DEFAULTS.playStyle },
+      bubbles: true,
+      composed: true,
+    }));
+    this.dispatchEvent(new CustomEvent('set-chord-feel', {
+      detail: { feel: FEEL_DEFAULTS.playStyle },
+      bubbles: true,
+      composed: true,
+    }));
+    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+      detail: { feelSettings: { ...this.feelSettings } },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private fget(k: string): any {
+    const fs = this.feelSettings || {};
+    const bar = this.feelScope;
+    if (bar !== null && fs.barFeel && fs.barFeel[bar] && (fs.barFeel[bar] as any)[k] !== undefined) {
+      return (fs.barFeel[bar] as any)[k];
     }
+    if (k === 'playStyle') {
+      return fs.playStyle || this.chordFeel || 'Block chords';
+    }
+    return (fs as any)[k] ?? (FEEL_DEFAULTS as any)[k];
+  }
+
+  private getNearestStep(d: typeof FEEL_AXES[0]) {
+    const cur = this.fget(d.k);
+    if (typeof cur !== 'number') {
+      return d.steps.find(s => s.v === cur) || d.steps[0];
+    }
+    let nearest = d.steps[0];
+    d.steps.forEach(s => {
+      if (Math.abs(Number(s.v) - Number(cur)) < Math.abs(Number(nearest.v) - Number(cur))) {
+        nearest = s;
+      }
+    });
+    return nearest;
+  }
+
+  private onSelectFeelStep(key: string, value: any) {
+    const isMelody = this.activeTab === 'melody';
+    const nextFs = { ...this.feelSettings };
+    if (this.feelScope === null) {
+      (nextFs as any)[key] = value;
+      if (key === 'playStyle') {
+        playbackEngine.setPlayStyle(value);
+        this.dispatchEvent(new CustomEvent(isMelody ? 'set-melody-feel' : 'set-chord-feel', {
+          detail: { feel: value, playStyle: value },
+          bubbles: true,
+          composed: true,
+        }));
+        this.dispatchEvent(new CustomEvent('feel-change', {
+          detail: { feel: value, playStyle: value },
+          bubbles: true,
+          composed: true,
+        }));
+      } else if (key === 'tone') {
+        setMasterTone(value);
+      }
+    } else {
+      const bar = this.feelScope;
+      const bf = { ...(nextFs.barFeel || {}) };
+      bf[bar] = { ...(bf[bar] || {}), [key]: value };
+      nextFs.barFeel = bf;
+    }
+
+    this.feelSettings = nextFs;
+    playbackEngine.setFeelSettings(this.feelSettings);
+
+    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+      detail: { feelSettings: { ...this.feelSettings }, key, value, chordIndex: this.feelScope },
+      bubbles: true,
+      composed: true,
+    }));
+    this.dispatchEvent(new CustomEvent('set-feel-settings', {
+      detail: { [key.toLowerCase()]: value },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private getDerivedParams() {
+    const numOf = (k: string) => {
+      const v = this.fget(k);
+      return typeof v === 'number' ? v : 0;
+    };
+    const pattern = this.fget('playStyle');
+    const spreadVal = +(numOf('spread') / 100).toFixed(2);
+    const durationVal = +(pattern === 'Half-time' ? 1.6 : (numOf('density') > 70 ? 0.65 : 1)).toFixed(2);
+    const varianceVal = +(numOf('humanise') / 100).toFixed(2);
+    const microVal = +((numOf('swing') / 100) * 0.5 + (numOf('humanise') / 100) * 0.3).toFixed(2);
+    return {
+      spread: spreadVal,
+      duration: durationVal,
+      variance: varianceVal,
+      micro: microVal,
+    };
+  }
+
+  private onAdvInput(param: string, value: number) {
+    const nextFs = { ...this.feelSettings };
+    nextFs.advOverride = { ...(nextFs.advOverride || {}), [param]: value };
+    this.feelSettings = nextFs;
+    playbackEngine.setFeelSettings(this.feelSettings);
+    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+      detail: { feelSettings: { ...this.feelSettings }, advOverride: nextFs.advOverride },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  }
+
+  private onAdvRelink(param: string) {
+    const nextFs = { ...this.feelSettings };
+    if (nextFs.advOverride) {
+      const adv = { ...nextFs.advOverride };
+      delete adv[param];
+      nextFs.advOverride = adv;
+    }
+    this.feelSettings = nextFs;
+    playbackEngine.setFeelSettings(this.feelSettings);
+    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+      detail: { feelSettings: { ...this.feelSettings }, advOverride: nextFs.advOverride },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
   }
 
   private onBpmChange(delta: number) {
@@ -609,6 +862,16 @@ export class TransportBar extends LitElement {
 
     const currentSound = isMelody ? this.melodySound : this.chordSound;
     const currentFeel = isMelody ? this.melodyFeel : this.chordFeel;
+    const currentPattern = this.fget('playStyle');
+    const patternStep = FEEL_AXES[0].steps.find(s => s.v === currentPattern) || FEEL_AXES[0].steps[0];
+    const currentFeelShort = patternStep.name;
+
+    const effectiveChords = this.chords && this.chords.length > 0
+      ? this.chords
+      : (activeSection?.progression?.chords?.length
+        ? activeSection.progression.chords
+        : [{ name: 'Chord 1' }, { name: 'Chord 2' }, { name: 'Chord 3' }, { name: 'Chord 4' }]);
+
     const playBg = this.isPlaying ? '#FBF3E6' : this.moodColor;
     const playIcon = this.isPlaying ? '■' : '▶';
 
@@ -713,7 +976,7 @@ export class TransportBar extends LitElement {
             aria-label="Select rhythmic feel"
           >
             <span>Feel</span>
-            <span class="highlight">${currentFeel}</span>
+            <span class="highlight">${currentFeelShort}</span>
             <span class="caret">▾</span>
           </button>
         ` : ''}
@@ -722,149 +985,148 @@ export class TransportBar extends LitElement {
         ${this.openMenu === 'sound' ? html`
           <div class="popover-shell sound-popover">
             <div class="popover-title">${isMelody ? 'Melody sound' : 'Chord sound'}</div>
-            ${TRANSPORT_SOUNDS.map(inst => html`
-              <button
-                class="sound-item ${inst.name === currentSound ? 'selected' : ''}"
-                @click=${() => this.onSelectSound(inst.name)}
-              >
-                <span class="sound-dot" style="background: ${inst.color};"></span>
-                <div class="sound-meta">
-                  <span class="sound-name">${inst.name}</span>
-                  <span class="sound-desc">${inst.desc}</span>
-                </div>
-              </button>
-            `)}
+            <div class="sound-grid">
+              ${TRANSPORT_SOUNDS.map(inst => html`
+                <button
+                  class="sound-item ${inst.name === currentSound ? 'selected' : ''}"
+                  @click=${() => this.onSelectSound(inst.name)}
+                >
+                  <span class="sound-dot" style="background: ${inst.color};"></span>
+                  <div class="sound-meta">
+                    <span class="sound-name">${inst.name}</span>
+                    <span class="sound-desc">${inst.desc}</span>
+                  </div>
+                </button>
+              `)}
+            </div>
           </div>
         ` : ''}
 
-        <!-- Feel Popover -->
+        <!-- Feel Docked Panel -->
         ${this.openMenu === 'feel' ? html`
-          <div class="popover-shell feel-popover">
-            <div class="popover-title">${isMelody ? 'Melody feel' : 'Chord feel'}</div>
-            
-            <div class="feel-axis">
-              <div class="feel-axis-header">
-                <span class="feel-axis-label">Pattern</span>
-                <span class="feel-axis-hint">Rhythmic motion</span>
+          <div class="docked-panel feel-panel" style="animation: cvfv-panel 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1));">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; color: var(--cv-label, #8A6B3F); flex-shrink: 0;">
+                ${isMelody ? 'Melody feel' : 'Chord feel'}
               </div>
-              <div class="feel-track">
-                ${['Block chords', 'Arpeggio', 'Strum', 'Broken (swing)', 'Half-time'].map(step => html`
-                  <button
-                    class="feel-step-btn ${step === currentFeel ? 'selected' : ''}"
-                    @click=${() => this.onSelectFeelStep('Pattern', step, step)}
-                  >
-                    ${step.replace(/ chords|\(swing\)/g, '')}
-                  </button>
-                `)}
+              <div style="display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0;">
+                <button
+                  type="button"
+                  style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${this.feelScope === null ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${this.feelScope === null ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                  @click=${() => { this.feelScope = null; }}
+                  aria-label="Whole section, editing"
+                >
+                  Whole section
+                </button>
+                ${effectiveChords.map((c, ci) => {
+                  const on = this.feelScope === ci;
+                  const dirty = !!(this.feelSettings?.barFeel && this.feelSettings.barFeel[ci] && Object.keys(this.feelSettings.barFeel[ci]).length > 0);
+                  const chordName = c.name || ('Chord ' + (ci + 1));
+                  return html`
+                    <button
+                      type="button"
+                      style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; border-radius: 100px; cursor: pointer; font-size: 11.5px; font-weight: 800; white-space: nowrap; transition: background 150ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)), color 150ms ease; background: ${on ? 'var(--cv-ink, #2E271F)' : 'var(--cv-surface-2, #F1E4CC)'}; color: ${on ? 'var(--cv-cream, #FBF3E6)' : 'var(--cv-ink-muted, #6B5F50)'};"
+                      @click=${() => { this.feelScope = ci; }}
+                      aria-label="${chordName}, ${on ? 'editing' : 'edit feel'}"
+                    >
+                      ${chordName}
+                      <span style="width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; background: ${on ? 'var(--cv-cream, #FBF3E6)' : '#9E5D53'}; opacity: ${dirty ? 1 : 0}; transition: opacity 150ms ease;"></span>
+                    </button>
+                  `;
+                })}
               </div>
+              ${this.feelChanged ? html`
+                <button
+                  type="button"
+                  @click=${this.resetFeel}
+                  style="border: none; font-family: inherit; background: transparent; color: var(--cv-ink-muted, #6B5F50); font-size: 11.5px; font-weight: 800; cursor: pointer; padding: 6px 8px; border-radius: 9px;"
+                >Reset</button>
+              ` : ''}
+              <button
+                type="button"
+                @click=${() => this.closeMenu()}
+                aria-label="Close feel and tone"
+                style="border: none; font-family: inherit; background: transparent; color: rgba(46,39,31,0.5); width: 30px; height: 30px; border-radius: 50%; font-size: 16px; font-weight: 800; cursor: pointer; flex-shrink: 0;"
+              >×</button>
             </div>
-
-            <div class="feel-axis">
-              <div class="feel-axis-header">
-                <span class="feel-axis-label">Swing</span>
-                <span class="feel-axis-hint">Timing offset</span>
-              </div>
-              <div class="feel-track">
-                ${[
-                  { name: 'Straight', val: 0 },
-                  { name: 'Light', val: 20 },
-                  { name: 'Medium', val: 45 },
-                  { name: 'Hard', val: 70 },
-                ].map(s => html`
-                  <button
-                    class="feel-step-btn ${(this.feelSettings.swing || 0) === s.val ? 'selected' : ''}"
-                    @click=${() => this.onSelectFeelStep('Swing', s.name, s.val)}
-                  >
-                    ${s.name}
-                  </button>
-                `)}
-              </div>
+            <div style="font-size: 11.5px; font-weight: 700; line-height: 1.45; color: rgba(46,39,31,0.5); margin-top: 7px; text-wrap: pretty;">
+              ${this.feelScope === null
+                ? 'Everything below applies to every chord in this section.'
+                : `Only ${effectiveChords[this.feelScope]?.name || ('Chord ' + (this.feelScope + 1))} plays this way. The rest keep the section feel.`}
             </div>
-
-            <div class="feel-axis">
-              <div class="feel-axis-header">
-                <span class="feel-axis-label">Humanise</span>
-                <span class="feel-axis-hint">Velocity & time micro-drift</span>
-              </div>
-              <div class="feel-track">
-                ${[
-                  { name: 'Off', val: 0 },
-                  { name: 'Subtle', val: 25 },
-                  { name: 'Natural', val: 50 },
-                  { name: 'Loose', val: 80 },
-                ].map(s => html`
-                  <button
-                    class="feel-step-btn ${(this.feelSettings.humanise || 0) === s.val ? 'selected' : ''}"
-                    @click=${() => this.onSelectFeelStep('Humanise', s.name, s.val)}
-                  >
-                    ${s.name}
-                  </button>
-                `)}
-              </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 22px; margin-top: 10px;">
+              ${FEEL_AXES.map(d => {
+                const nearest = this.getNearestStep(d);
+                return html`
+                  <div style="display: flex; align-items: center; gap: 14px; padding: 5px 0; min-width: 0;">
+                    <div style="width: 104px; flex-shrink: 0;">
+                      <div style="font-size: 12.5px; font-weight: 800; color: var(--cv-ink, #2E271F);">${d.label}</div>
+                      <div style="font-size: 10.5px; font-weight: 700; line-height: 1.35; color: rgba(46,39,31,0.45); margin-top: 1px; text-wrap: pretty;">${d.hint}</div>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0;">
+                      ${d.steps.map(s => {
+                        const on = s.v === nearest.v;
+                        return html`
+                          <button
+                            type="button"
+                            class="feel-step-btn ${on ? 'selected' : ''}"
+                            @click=${() => this.onSelectFeelStep(d.k, s.v)}
+                            aria-label="${d.label}: ${s.name}"
+                          >
+                            ${s.name}
+                          </button>
+                        `;
+                      })}
+                    </div>
+                  </div>
+                `;
+              })}
             </div>
-
-            <div class="feel-axis">
-              <div class="feel-axis-header">
-                <span class="feel-axis-label">Tone</span>
-                <span class="feel-axis-hint">Harmonic filter coloring</span>
-              </div>
-              <div class="feel-track">
-                ${['Warm', 'Glassy', 'Dusty'].map(t => html`
-                  <button
-                    class="feel-step-btn ${this.feelSettings.tone === t ? 'selected' : ''}"
-                    @click=${() => this.onSelectFeelStep('Tone', t, t)}
-                  >
-                    ${t}
-                  </button>
-                `)}
-              </div>
-            </div>
-
-            <button class="more-toggle" @click=${() => { this.feelMoreOpen = !this.feelMoreOpen; }}>
-              ${this.feelMoreOpen ? 'Less ▴' : 'More · Spread, Density ▾'}
+            <button
+              type="button"
+              @click=${() => { this.advOpen = !this.advOpen; }}
+              style="border: none; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; background: transparent; color: var(--cv-ink-muted, #6B5F50); font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; padding: 8px 10px; margin: 10px 0 0 -10px; border-radius: 9px;"
+              aria-label="Show the engine parameters these choices set"
+            >
+              Engine parameters <span style="font-size: 9px;">${this.advOpen ? '▲' : '▼'}</span>
             </button>
-
-            ${this.feelMoreOpen ? html`
-              <div class="feel-axis" style="margin-top: 8px;">
-                <div class="feel-axis-header">
-                  <span class="feel-axis-label">Spread</span>
-                  <span class="feel-axis-hint">Stereo width</span>
-                </div>
-                <div class="feel-track">
-                  ${[
-                    { name: 'Tight', val: 20 },
-                    { name: 'Wide', val: 50 },
-                    { name: 'Huge', val: 90 },
-                  ].map(s => html`
-                    <button
-                      class="feel-step-btn ${(this.feelSettings.spread || 50) === s.val ? 'selected' : ''}"
-                      @click=${() => this.onSelectFeelStep('Spread', s.name, s.val)}
-                    >
-                      ${s.name}
-                    </button>
-                  `)}
-                </div>
-              </div>
-
-              <div class="feel-axis">
-                <div class="feel-axis-header">
-                  <span class="feel-axis-label">Density</span>
-                  <span class="feel-axis-hint">Rhythm subdivision</span>
-                </div>
-                <div class="feel-track">
-                  ${[
-                    { name: 'Sparse', val: 25 },
-                    { name: 'Full', val: 50 },
-                    { name: 'Dense', val: 80 },
-                  ].map(s => html`
-                    <button
-                      class="feel-step-btn ${(this.feelSettings.density || 50) === s.val ? 'selected' : ''}"
-                      @click=${() => this.onSelectFeelStep('Density', s.name, s.val)}
-                    >
-                      ${s.name}
-                    </button>
-                  `)}
-                </div>
+            ${this.advOpen ? html`
+              <div style="animation: cvfv-panel 200ms var(--cv-ease, cubic-bezier(0.23, 1, 0.32, 1)); border-top: 1px solid rgba(46,39,31,0.1); padding-top: 13px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 26px;">
+                ${ADV_DEFS.map(p => {
+                  const advOv = this.feelSettings?.advOverride || {};
+                  const derived = this.getDerivedParams();
+                  const detached = advOv[p.k] !== undefined;
+                  const val = detached ? advOv[p.k] : derived[p.k as keyof typeof derived];
+                  return html`
+                    <div style="min-width: 0;">
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="font-size: 12px; font-weight: 800; color: var(--cv-ink, #2E271F); flex: 1; min-width: 0;">${p.label}</div>
+                        <button
+                          type="button"
+                          @click=${() => this.onAdvRelink(p.k)}
+                          style="border: none; font-family: inherit; background: transparent; color: #9E5D53; font-size: 10.5px; font-weight: 800; cursor: pointer; padding: 4px 6px; border-radius: 7px; ${detached ? '' : 'opacity: 0; pointer-events: none;'}"
+                          aria-label="Re-link to the feel axis"
+                        >Re-link</button>
+                        <div style="font-size: 11.5px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--cv-ink, #2E271F); background: var(--cv-surface-2, #F1E4CC); border-radius: 6px; padding: 2px 7px;">
+                          ${typeof val === 'number' ? val.toFixed(2) : val}
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="${p.max}"
+                        step="${p.step}"
+                        .value="${String(val)}"
+                        @input=${(e: Event) => this.onAdvInput(p.k, +(e.target as HTMLInputElement).value)}
+                        aria-label="${p.label}"
+                        style="width: 100%; margin-top: 7px; accent-color: #9E5D53; cursor: pointer;"
+                      />
+                      <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: ${detached ? '#9E5D53' : 'rgba(46,39,31,0.36)'}; margin-top: 3px;">
+                        ${detached ? 'Set by hand' : 'From ' + p.from}
+                      </div>
+                    </div>
+                  `;
+                })}
               </div>
             ` : ''}
           </div>
