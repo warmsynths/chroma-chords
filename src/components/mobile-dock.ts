@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { SongSection } from '../services/song-arranger';
 import { FeelSettings, setMasterTone } from '../services/audio-service';
 import { playbackEngine } from '../services/playback-engine';
+import { aiCapacity, AI_MAX_TOKENS } from '../services/ai-capacity';
 import { TRANSPORT_SOUNDS, ROOT_KEYS, SCALE_MODES, FEEL_AXES, FEEL_DEFAULTS, ADV_DEFS } from './transport-bar';
 
 export type MobileSheetType = 'key' | 'feel' | 'sound' | 'section' | 'more' | null;
@@ -29,6 +30,20 @@ export class MobileDock extends LitElement {
   @property({ type: Array }) chords: Array<{ name: string; roman?: string }> = [];
 
   @state() private activeSheet: MobileSheetType = null;
+  private unsubscribeCapacity: (() => void) | null = null;
+
+  override connectedCallback() {
+    super.connectedCallback();
+    this.unsubscribeCapacity = aiCapacity.subscribe(() => {
+      // Only the open ⋯ menu shows the countdown; skip re-rendering otherwise.
+      if (this.activeSheet === 'more') this.requestUpdate();
+    });
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.unsubscribeCapacity?.();
+  }
   @state() private feelScope: number | null = null;
   @state() private advOpen = false;
 
@@ -247,6 +262,44 @@ export class MobileDock extends LitElement {
       animation: sheet-fade-in 140ms ease;
     }
 
+    .ai-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 4px;
+      padding: 12px 12px 8px;
+      border-top: 1px solid rgba(46, 39, 31, 0.08);
+    }
+    .ai-pips {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .ai-pip {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(46, 39, 31, 0.18);
+    }
+    .ai-pip.filled {
+      background: #9E5D53;
+    }
+    .ai-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .ai-text .label {
+      font-size: 13px;
+      font-weight: 800;
+      color: #2E271F;
+    }
+    .ai-text .desc {
+      font-size: 12px;
+      font-weight: 600;
+      color: #6B5F50;
+    }
     .loop-row {
       display: flex;
       align-items: center;
@@ -828,6 +881,15 @@ export class MobileDock extends LitElement {
               <span class="label">Share and export</span>
               <span class="desc">MIDI, WAV, M8, Circuit</span>
             </button>
+            <div class="ai-row" role="note" aria-label="AI generates remaining">
+              <span class="ai-pips">
+                ${Array.from({ length: AI_MAX_TOKENS }, (_, i) => html`<span class="ai-pip ${i < aiCapacity.tokens ? 'filled' : ''}"></span>`)}
+              </span>
+              <span class="ai-text">
+                <span class="label">${aiCapacity.label}</span>
+                <span class="desc">AI generates remaining. Refills 1 every 60 seconds.</span>
+              </span>
+            </div>
           </div>
         ` : ''}
 

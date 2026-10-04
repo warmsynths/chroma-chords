@@ -71,8 +71,12 @@ export class TabChords extends LitElement {
   @state() private auditionDeg: number | null = null;
   @state() private auditionName: string | null = null;
   @state() private auditionBar: number | null = null;
+  /** Pad columns: 2 on phones (matches the app's 899px mobile breakpoint), 4 otherwise. */
+  @state() private padCols = 4;
   private padTimer: any = null;
   private gridTimer: any = null;
+  private _mq: MediaQueryList | null = null;
+  private _onMq = () => { this.padCols = this._mq?.matches ? 2 : 4; };
 
   static styles = css`
     :host {
@@ -289,11 +293,90 @@ export class TabChords extends LitElement {
       position: relative;
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 899px) {
       .pad-cells-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
+      /* Phones: chord count + "try another" live in the dock / under the grid (design) */
+      .header-actions {
+        display: none;
+      }
+      .tab-header-row {
+        margin: -2px 0 14px;
+      }
+      /* Keyboard shortcut caps mean nothing on touch */
+      .pad-cell .pad-key-badge {
+        display: none;
+      }
+      .pad-cells-grid .add-chord-row {
+        display: flex;
+      }
+    }
+
+    /* Add / remove chord (phones only) */
+    .add-chord-row {
+      display: none;
+      grid-column: 1 / -1;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .add-chord-btn,
+    .remove-chord-btn {
+      border: 1.5px dashed rgba(46, 39, 31, 0.3);
+      font-family: inherit;
+      background: transparent;
+      color: var(--cv-ink, #2E271F);
+      border-radius: 16px;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 150ms ease, transform 120ms ease;
+    }
+
+    .add-chord-btn {
+      flex: 1;
+      min-width: 0;
+      gap: 8px;
+      font-size: 12.5px;
+      letter-spacing: 0.2px;
+    }
+
+    .remove-chord-btn {
+      flex: 0 0 52px;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .add-chord-btn:hover:not(:disabled),
+    .remove-chord-btn:hover:not(:disabled) {
+      background: rgba(251, 243, 230, 0.6);
+    }
+
+    .add-chord-btn:active:not(:disabled),
+    .remove-chord-btn:active:not(:disabled) {
+      transform: scale(0.99);
+    }
+
+    .add-chord-btn:disabled,
+    .remove-chord-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .add-chord-btn .plus {
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .add-chord-btn .count {
+      font-size: 10px;
+      letter-spacing: 0.4px;
+      color: var(--cv-label, #8A6B3F);
     }
 
     /* Chord Pad Column */
@@ -772,11 +855,17 @@ export class TabChords extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     window.addEventListener('keydown', this.handleWindowKeyDown);
+    if (typeof window.matchMedia === 'function') {
+      this._mq = window.matchMedia('(max-width: 899px)');
+      this._mq.addEventListener?.('change', this._onMq);
+      this._onMq();
+    }
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     window.removeEventListener('keydown', this.handleWindowKeyDown);
+    this._mq?.removeEventListener?.('change', this._onMq);
     if (this.padTimer) clearTimeout(this.padTimer);
     if (this.gridTimer) clearTimeout(this.gridTimer);
   }
@@ -1154,7 +1243,7 @@ export class TabChords extends LitElement {
   render() {
     const chords = this.progression.chords || [];
     const activeBand = this.selectedBand ? getBandById(this.selectedBand) : null;
-    const padCols = 4;
+    const padCols = this.padCols;
 
     const diatonicList = this.showTheory
       ? getDiatonicScaleDegreeList(this.progression.key || 'C', this.progression.scaleType || 'MAJOR', this.chordData, this.progression)
@@ -1350,7 +1439,7 @@ export class TabChords extends LitElement {
                 .feelings=${this.getSwapFeelings(this.swapIndex)}
                 .activeFeel=${this.activeSwapFamily}
                 .pickedChord=${this.abPick}
-                .padCols=${Math.min(chords.length, 4)}
+                .padCols=${Math.min(chords.length, padCols)}
                 .moodColor=${this.moodColor}
                 .band=${activeBand ? { name: activeBand.name, color: activeBand.color, plain: activeBand.plain } : null}
                 @swap-feel-change=${(e: CustomEvent) => { this.activeSwapFamily = e.detail.feel; this.requestUpdate(); }}
@@ -1361,6 +1450,17 @@ export class TabChords extends LitElement {
             ` : ''}
           `;
         })}
+
+        <div class="add-chord-row">
+          <button class="add-chord-btn" @click=${() => this.updateChordCount(1)} ?disabled=${chords.length >= 8} aria-label="Add a chord to the loop">
+            <span class="plus">+</span>
+            <span>Add chord</span>
+            <span class="count">${chords.length} of 8</span>
+          </button>
+          ${chords.length > 4 ? html`
+            <button class="remove-chord-btn" @click=${() => this.updateChordCount(-1)} aria-label="Remove the last chord">−</button>
+          ` : ''}
+        </div>
       </div>
 
       <!-- 4. Diatonic Scale Strip (Theory Mode) -->

@@ -38,4 +38,18 @@ describe('MobileDock', () => {
 
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ detail: { melodyLoop: 'Span' } }));
   });
+
+  it('shows the AI capacity in the more menu (moved out of the header on phones)', async () => {
+    const el = document.createElement('mobile-dock') as MobileDock;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    (el.shadowRoot!.querySelector('[aria-label="More actions"]') as HTMLElement).click();
+    await el.updateComplete;
+
+    const row = el.shadowRoot!.querySelector('.ai-row');
+    expect(row).toBeTruthy();
+    expect(row!.querySelectorAll('.ai-pip').length).toBe(4);
+    expect(row!.textContent).toContain('AI ready');
+  });
 });

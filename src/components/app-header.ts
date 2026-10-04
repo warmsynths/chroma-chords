@@ -1,3 +1,4 @@
+import { aiCapacity } from '../services/ai-capacity';
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { projectStorage } from '../services/project-storage';
@@ -37,7 +38,7 @@ export class AppHeader extends LitElement {
 
   private unsubscribeProjects: (() => void) | null = null;
   private unsubscribeSyncStatus: (() => void) | null = null;
-  private capacityTimer: ReturnType<typeof setInterval> | null = null;
+  private unsubscribeCapacity: (() => void) | null = null;
 
   static styles = css`
     :host {
@@ -171,6 +172,17 @@ export class AppHeader extends LitElement {
     }
     .pip-dot.filled {
       background: #9E5D53;
+    }
+
+    @media (max-width: 899px) {
+      /* On phones the AI capacity lives in the dock's ⋯ menu (design: avatar only in the header) */
+      .capacity-chip,
+      .capacity-panel {
+        display: none;
+      }
+      .header-wrap {
+        padding: 0 18px;
+      }
     }
 
     /* Popover Panels */
@@ -393,25 +405,20 @@ export class AppHeader extends LitElement {
     this.syncStatus = projectStorage.getSyncStatus();
     this.syncError = projectStorage.getLastSyncError();
 
-    // AI Token countdown
-    this.capacityTimer = setInterval(() => {
-      if (this.aiTokens < 4) {
-        if (this.aiNextIn <= 1) {
-          this.aiTokens = Math.min(4, this.aiTokens + 1);
-          this.aiNextIn = 60;
-        } else {
-          this.aiNextIn -= 1;
-        }
-        this.requestUpdate();
-      }
-    }, 1000);
+    // AI capacity (shared with the mobile dock)
+    this.aiTokens = aiCapacity.tokens;
+    this.aiNextIn = aiCapacity.nextIn;
+    this.unsubscribeCapacity = aiCapacity.subscribe(() => {
+      this.aiTokens = aiCapacity.tokens;
+      this.aiNextIn = aiCapacity.nextIn;
+    });
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.unsubscribeProjects) this.unsubscribeProjects();
     if (this.unsubscribeSyncStatus) this.unsubscribeSyncStatus();
-    if (this.capacityTimer) clearInterval(this.capacityTimer);
+    if (this.unsubscribeCapacity) this.unsubscribeCapacity();
   }
 
   private setTab(id: NavTabId) {

@@ -234,6 +234,57 @@ export class ChordSwapLane extends LitElement {
       background: #2E271F !important;
       color: #FBF3E6 !important;
     }
+
+    /* Phones: one-line header (swatch, title, revert, close) and 44px touch chips */
+    @media (max-width: 899px) {
+      .tray-card {
+        padding: 10px 12px 12px;
+        border-radius: 16px;
+        gap: 9px;
+      }
+      .tray-header {
+        flex-wrap: nowrap;
+        gap: 7px;
+      }
+      .tray-title {
+        flex: 1;
+        min-width: 0;
+        font-size: 12.5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tray-sub,
+      .tray-spacer {
+        display: none;
+      }
+      .tray-revert-btn {
+        min-height: 36px;
+        flex: none;
+      }
+      .tray-close-btn {
+        width: 36px;
+        height: 36px;
+        flex: none;
+      }
+      .tray-groups-grid {
+        grid-template-columns: 1fr;
+        gap: 9px;
+      }
+      .tray-chips-row {
+        flex-wrap: nowrap;
+        gap: 5px;
+      }
+      .tray-chip {
+        min-width: 0;
+        min-height: 44px;
+        padding: 0 4px;
+        border-radius: 12px;
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
   `;
 
   private onPick(row: SwapFeelRow, feel: SwapFeelItem) {
