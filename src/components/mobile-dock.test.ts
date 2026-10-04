@@ -52,4 +52,20 @@ describe('MobileDock', () => {
     expect(row!.querySelectorAll('.ai-pip').length).toBe(4);
     expect(row!.textContent).toContain('AI ready');
   });
+
+  it('says so in the more menu when the loop changed since it was saved, and still offers Keep', async () => {
+    const el = document.createElement('mobile-dock') as MobileDock;
+    el.saveState = 'edited';
+    document.body.appendChild(el);
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector('[aria-label="More actions"]') as HTMLElement).click();
+    await el.updateComplete;
+
+    const spy = vi.fn();
+    el.addEventListener('save-set', spy);
+    const keep = Array.from(el.shadowRoot!.querySelectorAll('.popover-menu-item')).find(b => b.textContent?.includes('Keep this loop')) as HTMLElement;
+    expect(keep.textContent).toContain('Changed since you saved it');
+    keep.click();
+    expect(spy).toHaveBeenCalled();
+  });
 });

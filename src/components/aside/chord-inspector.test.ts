@@ -146,4 +146,16 @@ describe('ChordInspector Component', () => {
     await el.updateComplete;
     expect(el.shadowRoot!.querySelector('.hint-card')?.textContent).toContain('Press a chord to hear it');
   });
+
+  it('marks the Save pill when the loop changed since it was saved', async () => {
+    el.saveState = 'edited';
+    await el.updateComplete;
+    const btn = el.shadowRoot!.querySelector('[aria-label="Save loop"]') as HTMLElement;
+    expect(btn.classList.contains('edited')).toBe(true);
+    expect(btn.getAttribute('title')).toContain('Changed since you saved it');
+
+    el.saveState = 'new';
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('[aria-label="Save loop"]')!.classList.contains('edited')).toBe(false);
+  });
 });

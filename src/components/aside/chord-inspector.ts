@@ -172,6 +172,15 @@ export class ChordInspector extends LitElement {
       color: #2E271F;
     }
 
+    .action-btn.edited::after {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--mood-color, #F2735F);
+      box-shadow: 0 0 0 1.5px #2E271F;
+    }
+
     .action-btn.open, .pill-btn.open {
       background: var(--cv-surface-2, #F1E4CC);
     }
@@ -746,6 +755,10 @@ export class ChordInspector extends LitElement {
   @property({ type: Boolean })
   isSaved = false;
 
+  /** new: not saved · saved: matches its saved copy · edited: changed since it was saved */
+  @property({ type: String })
+  saveState: 'new' | 'saved' | 'edited' = 'new';
+
   @property({ type: Array })
   savedSets: ProjectData[] = [];
 
@@ -949,9 +962,10 @@ export class ChordInspector extends LitElement {
           </div>
           <div class="header-actions">
             <button
-              class="action-btn ${this.isSaved ? 'saved' : ''}"
+              class="action-btn ${this.isSaved ? 'saved' : ''} ${this.saveState === 'edited' ? 'edited' : ''}"
               @click=${this.onToggleSave}
               aria-label="${this.isSaved ? 'Saved loop' : 'Save loop'}"
+              title="${this.saveState === 'edited' ? 'Changed since you saved it' : ''}"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="${this.isSaved ? '#2E271F' : 'none'}" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M6 2h12a1 1 0 0 1 1 1v18l-7-4.5L5 21V3a1 1 0 0 1 1-1z"/>

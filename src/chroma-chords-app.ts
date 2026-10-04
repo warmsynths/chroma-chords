@@ -38,6 +38,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private activeTab: NavTabId = 'loop';
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
   @state() private libraryOpen = false;
+  @state() private saveDialog: { name: string; edited: boolean } | null = null;
   @state() private swapState: { swapIndex: number | null; abPick: any; feel: string } = { swapIndex: null, abPick: null, feel: '' };
   @state() private closeSwapSignal = 0;
   @state() private genre = 'Pop';
@@ -511,6 +512,88 @@ export class ChromaChordsApp extends LitElement {
     .dock-container {
       flex-shrink: 0;
       z-index: 45;
+    }
+
+    .save-dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 130;
+      background: rgba(46, 39, 31, 0.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      animation: cvfv-fade 180ms ease-out;
+    }
+    .save-dialog {
+      width: 100%;
+      max-width: 380px;
+      background: #FBF6EC;
+      border-radius: 20px;
+      padding: 22px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+      box-sizing: border-box;
+      animation: cvfv-pop 180ms ease-out;
+    }
+    .save-dialog-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--cv-ink, #2E271F);
+      margin-bottom: 4px;
+    }
+    .save-dialog-sub {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--cv-ink-muted, #6B5F50);
+      margin-bottom: 14px;
+    }
+    .save-dialog-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 11px 14px;
+      border-radius: 10px;
+      border: 2px solid rgba(46, 39, 31, 0.15);
+      font-size: 14px;
+      font-family: inherit;
+      background: #fff;
+      color: var(--cv-ink, #2E271F);
+      outline: none;
+    }
+    .save-dialog-input:focus {
+      border-color: #9B7CA8;
+    }
+    .save-dialog-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .save-dialog-btn {
+      flex: 1 1 auto;
+      min-height: 44px;
+      padding: 0 16px;
+      border: none;
+      border-radius: 100px;
+      font-family: inherit;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--cv-surface-2, #F1E4CC);
+      color: var(--cv-ink, #2E271F);
+      transition: transform 120ms ease, background 150ms ease;
+    }
+    .save-dialog-btn:hover { background: #E9D9BC; }
+    .save-dialog-btn:active { transform: scale(0.97); }
+    .save-dialog-btn.primary {
+      background: #2E271F;
+      color: #F4EBDB;
+    }
+    .save-dialog-btn.primary:hover { background: #463C31; }
+    .save-dialog-btn.ghost {
+      background: transparent;
+      color: var(--cv-ink-muted, #6B5F50);
+      flex: 0 0 auto;
     }
 
     .m-library-backdrop {
@@ -1291,9 +1374,54 @@ export class ChromaChordsApp extends LitElement {
     }
   }
 
-  private saveProject(customName?: string) {
+  /** What makes two loops "the same" for saving: the musical content, not the name or timestamps. */
+  private loopFingerprint(l: { genre?: string; mood?: string; key?: string; scaleType?: string; bpm?: number; barsPerChord?: number; chords?: Array<{ name: string }> } | null | undefined): string {
+    if (!l) return '';
+    return JSON.stringify([l.genre, l.mood, l.key, l.scaleType, l.bpm, l.barsPerChord ?? 1, (l.chords || []).map(c => c.name)]);
+  }
+
+  /** new: not saved yet · saved: matches its saved copy · edited: loaded/saved, then changed since. */
+  private getSaveState(): 'new' | 'saved' | 'edited' {
+    const saved = this.currentProjectId ? projectStorage.getProjects().find(p => p.id === this.currentProjectId) : undefined;
+    if (!saved || !this.progression) return 'new';
+    const now = this.loopFingerprint({ ...this.progression, barsPerChord: playbackEngine.getBarsPerChord() });
+    const then = this.loopFingerprint({ ...saved, barsPerChord: saved.barsPerChord ?? playbackEngine.getBarsPerChord() });
+    return now === then ? 'saved' : 'edited';
+  }
+
+  private suggestLoopName(): string {
+    const p = this.progression;
+    const base = p ? `${p.genre || 'Pop'} \u00B7 ${(p.mood || 'dreamy').toLowerCase()}` : 'Untitled loop';
+    const taken = new Set(projectStorage.getProjects().map(x => x.name));
+    if (!taken.has(base)) return base;
+    let n = 2;
+    while (taken.has(`${base} ${n}`)) n++;
+    return `${base} ${n}`;
+  }
+
+  /** Save / Keep pressed: unsave if it is exactly the saved copy, otherwise ask what to do. */
+  private onSavePressed() {
+    const state = this.getSaveState();
+    if (state === 'saved' && this.currentProjectId) {
+      this.onUnsaveSet(new CustomEvent('unsave-set', { detail: this.currentProjectId }));
+      return;
+    }
+    this.saveDialog = { name: this.suggestLoopName(), edited: state === 'edited' };
+  }
+
+  private confirmSaveDialog(asNew: boolean) {
+    const d = this.saveDialog;
+    if (!d) return;
+    const existing = this.currentProjectId ? projectStorage.getProjects().find(p => p.id === this.currentProjectId) : undefined;
+    // Update keeps the saved loop's own name; Save as new uses what was typed.
+    const name = (!asNew && existing?.name) || d.name.trim() || this.suggestLoopName();
+    this.saveDialog = null;
+    this.saveProject(name, asNew);
+  }
+
+  private saveProject(customName?: string, asNew = false) {
     if (!this.progression) return;
-    const id = this.currentProjectId || Math.random().toString(36).slice(2, 11);
+    const id = (!asNew && this.currentProjectId) || Math.random().toString(36).slice(2, 11);
     this.currentProjectId = id;
     
     const existing = projectStorage.getProjects().find(p => p.id === id);
@@ -1330,8 +1458,44 @@ export class ChromaChordsApp extends LitElement {
     this.requestUpdate();
   }
 
+  private renderSaveDialog() {
+    const d = this.saveDialog!;
+    const current = this.currentProjectId ? projectStorage.getProjects().find(p => p.id === this.currentProjectId) : undefined;
+    return html`
+      <div class="save-dialog-backdrop" @click=${() => { this.saveDialog = null; }}>
+        <div class="save-dialog" role="dialog" aria-label="Save this loop" @click=${(e: Event) => e.stopPropagation()}>
+          <div class="save-dialog-title">${d.edited ? 'Save this loop' : 'Name this loop'}</div>
+          <div class="save-dialog-sub">
+            ${d.edited
+              ? html`You changed \u201C${current?.name || 'this loop'}\u201D since you saved it. Keep both, or replace the saved one.`
+              : 'Give it a name so you can find it later.'}
+          </div>
+          <input
+            class="save-dialog-input"
+            aria-label="Loop name"
+            .value=${d.name}
+            placeholder="e.g. 2am drive"
+            @input=${(e: Event) => { this.saveDialog = { ...d, name: (e.target as HTMLInputElement).value }; }}
+            @keydown=${(e: KeyboardEvent) => {
+              if (e.key === 'Enter') this.confirmSaveDialog(true);
+              if (e.key === 'Escape') this.saveDialog = null;
+            }}
+          />
+          <div class="save-dialog-actions">
+            <button class="save-dialog-btn ghost" @click=${() => { this.saveDialog = null; }}>Cancel</button>
+            ${d.edited ? html`
+              <button class="save-dialog-btn" @click=${() => this.confirmSaveDialog(false)}>Update \u201C${current?.name || 'saved loop'}\u201D</button>
+            ` : ''}
+            <button class="save-dialog-btn primary" @click=${() => this.confirmSaveDialog(true)}>${d.edited ? 'Save as new' : 'Save'}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   render() {
-    const isBookmarked = Boolean(this.currentProjectId && projectStorage.isProjectSaved(this.currentProjectId));
+    const saveState = this.getSaveState();
+    const isBookmarked = saveState === 'saved';
     const moodColor = getMoodColor(this.progression?.mood || this.mood);
     const moodTint = getMoodTint(moodColor);
     const activeSec = this.sections[this.activeSectionIdx];
@@ -1729,13 +1893,8 @@ export class ChromaChordsApp extends LitElement {
             .libraryOpen=${this.libraryOpen}
             .savedSets=${projectStorage.getProjects()}
             @close-detail=${() => { this.selectedChordIndex = null; }}
-            @toggle-save=${() => {
-              if (this.currentProjectId && projectStorage.isProjectSaved(this.currentProjectId)) {
-                this.onUnsaveSet(new CustomEvent('unsave-set', { detail: this.currentProjectId }));
-              } else {
-                this.saveProject();
-              }
-            }}
+            .saveState=${saveState}
+            @toggle-save=${() => this.onSavePressed()}
             @toggle-library=${() => {
               this.libraryOpen = !this.libraryOpen;
             }}
@@ -1826,7 +1985,8 @@ export class ChromaChordsApp extends LitElement {
           }}
           @open-share=${() => { this.shareModalOpen = true; }}
           @reroll=${this.onReroll}
-          @save-set=${() => { this.saveProject(); }}
+          .saveState=${saveState}
+          @save-set=${() => this.onSavePressed()}
           @unsave-set=${() => { if (this.currentProjectId) this.onUnsaveSet(new CustomEvent('unsave-set', { detail: this.currentProjectId })); }}
           @view-sets=${() => { this.libraryOpen = true; }}
           @set-bpm=${(e: CustomEvent) => {
@@ -2004,6 +2164,8 @@ export class ChromaChordsApp extends LitElement {
         .open=${this.authModalOpen}
         @close-modal=${() => { this.authModalOpen = false; }}
       ></auth-modal>
+
+      ${this.saveDialog ? this.renderSaveDialog() : ''}
 
       ${this.toastMessage ? html`
         <div class="save-toast">

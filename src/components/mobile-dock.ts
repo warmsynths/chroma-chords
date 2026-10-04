@@ -27,6 +27,7 @@ export class MobileDock extends LitElement {
   @property({ type: Number }) bpm = 84;
   @property({ type: Number }) barsPerChord = 1;
   @property({ type: Boolean }) isSaved = false;
+  @property({ type: String }) saveState: 'new' | 'saved' | 'edited' = 'new';
   @property({ type: Array }) chords: Array<{ name: string; roman?: string }> = [];
 
   @state() private activeSheet: MobileSheetType = null;
@@ -871,7 +872,7 @@ export class MobileDock extends LitElement {
             </button>
             <button class="popover-menu-item" @click=${this.onToggleSaved}>
               <span class="label">${this.isSaved ? 'Kept' : 'Keep this loop'}</span>
-              <span class="desc">Save it to your loops</span>
+              <span class="desc">${this.saveState === 'edited' ? 'Changed since you saved it. Update or keep both' : 'Save it to your loops'}</span>
             </button>
             <button class="popover-menu-item" @click=${this.onViewSavedLoops}>
               <span class="label">Saved loops</span>
