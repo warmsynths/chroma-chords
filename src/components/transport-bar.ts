@@ -170,13 +170,24 @@ export class TransportBar extends LitElement {
       container-type: inline-size;
     }
 
-    /* Narrow desktops: drop the Sound / Feel kickers so the bar stays on one row */
-    @container (max-width: 1060px) {
+    /* Compact only when the bar would otherwise wrap: drop the Sound / Feel kickers and shorten Play.
+       Melody carries two extra buttons (Loop, Chords), so it needs more room. */
+    @container (max-width: 760px) {
       .tb-btn .kicker,
       .play-rest {
         display: none;
       }
       .tb-btn {
+        padding: 0 10px;
+      }
+    }
+
+    @container (max-width: 940px) {
+      .transport-container.melody .tb-btn .kicker,
+      .transport-container.melody .play-rest {
+        display: none;
+      }
+      .transport-container.melody .tb-btn {
         padding: 0 10px;
       }
     }
@@ -931,7 +942,7 @@ export class TransportBar extends LitElement {
     const playIcon = this.isPlaying ? '■' : '▶';
 
     return html`
-      <div class="transport-container" data-screen-label="Transport">
+      <div class="transport-container ${isMelody ? 'melody' : ''}" data-screen-label="Transport">
         ${this.openMenu ? html`<div class="backdrop" @click=${this.closeMenu}></div>` : ''}
 
         <!-- Play / Stop Button -->
