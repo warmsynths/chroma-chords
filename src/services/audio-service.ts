@@ -1829,12 +1829,22 @@ export const LEAD_PRESETS: LeadPreset[] = [
 let leadVoice: Tone.PolySynth | null = null;
 let leadGain: Tone.Gain | null = null;
 let activeLeadPresetId = 'lead-synth';
+let activeLeadInstrument = 'Stage Rhodes';
 let leadVolumeVal = 85;
 let leadMuted = false;
 let leadSolo = false;
 
 export function getLeadPresetList(): LeadPreset[] {
   return LEAD_PRESETS;
+}
+
+export function setLeadInstrument(name: string): void {
+  if (!name) return;
+  activeLeadInstrument = name;
+}
+
+export function getLeadInstrument(): string {
+  return activeLeadInstrument;
 }
 
 export function setLeadPreset(presetId: string): void {
@@ -1945,18 +1955,33 @@ export function playLeadNote(
   note: string | number,
   durationSec: number,
   timeSec?: number,
-  velocity = 0.85
+  velocity = 0.85,
+  instrumentName?: string
 ): void {
   if (leadMuted) return;
   try {
     Promise.all([Tone.start(), waitForSamplesReady()]).then(() => {
-      const voice = getLeadSynthVoice();
-      if (!voice) return;
       const pitch = typeof note === 'number' ? midiToNoteName(note) : note;
       const atTime = typeof timeSec === 'number' ? timeSec : Tone.now();
       const dur = Math.max(0.05, durationSec);
-      const vel = Math.max(0.05, Math.min(1.0, velocity));
+      const rawVel = Math.max(0.05, Math.min(1.0, velocity));
+      const vel = rawVel * (leadVolumeVal / 100);
 
+      const targetName = instrumentName || activeLeadInstrument;
+      const normalized = normalizeInstrumentName(targetName);
+      const userInst = USER_INSTRUMENTS.find(i => i.name.toLowerCase() === normalized.toLowerCase());
+
+      if (userInst) {
+        const voice = getVoice(userInst.instrument);
+        if (voice && typeof (voice as any).triggerAttackRelease === 'function') {
+          (voice as any).triggerAttackRelease(pitch, dur, atTime, vel);
+          return;
+        }
+      }
+
+      // Fallback for custom synth presets (e.g. 'lofi-sine', 'warm-pluck')
+      const voice = getLeadSynthVoice();
+      if (!voice) return;
       if (typeof (voice as any).triggerAttackRelease === 'function') {
         (voice as any).triggerAttackRelease(pitch, dur, atTime, vel);
       }

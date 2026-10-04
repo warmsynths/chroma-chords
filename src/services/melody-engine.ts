@@ -150,6 +150,7 @@ export interface MelodyGenerateOptions {
   density?: number;
   octave?: number;
   guideMode?: GuideMode;
+  strictBy?: 'scale' | 'chord';
   feelSettings?: Partial<MelodyFeelSettings>;
   presetId?: string;
   bandId?: string;
@@ -297,9 +298,11 @@ export function getHarmonicChordMatrix(
   ];
 
   const chordTonePcs = chordToneIntervals.map(iv => (rootPc + iv) % 12);
-  const tensionPcs = tensionIntervals.map(iv => (rootPc + iv) % 12);
-  const avoidPcs = avoidIntervals.map(iv => (rootPc + iv) % 12);
   const scalePcs = getScalePitchClasses(key, scaleType);
+  const tensionPcs = tensionIntervals
+    .map(iv => (rootPc + iv) % 12)
+    .filter(pc => scalePcs.includes(pc) && !chordTonePcs.includes(pc));
+  const avoidPcs = avoidIntervals.map(iv => (rootPc + iv) % 12);
 
   return {
     chordName: chord.name,
@@ -754,14 +757,25 @@ export class MelodyEngine {
         const contourBias = getContourBias(contour, barIndex, stepInBar, totalBars);
         const targetMidiCenter = 12 * (octave + 1) + matrix.rootPc + contourBias;
 
-        // Candidate pitch selection: chord tones, tensions, or scale steps
+        // Candidate pitch selection based on guideMode and strictBy
         let chosenMidi: number;
         let chosenRole: ChordToneRole = 'root';
 
-        // Collect available valid pitch classes for this step
-        const availablePcs = [...matrix.chordTonePcs];
-        if (matrix.tensionPcs.length > 0 && (cellIdx % 2 === 1 || density > 40)) {
-          availablePcs.push(...matrix.tensionPcs);
+        const isStrictChord = guideMode === 'strict-chord' && options.strictBy === 'chord';
+        const isStrictScale = guideMode === 'strict-chord' && options.strictBy !== 'chord';
+        const isGuideScale = guideMode === 'scale-key';
+
+        let availablePcs: number[];
+        if (isStrictChord) {
+          // Strict chord: exclusively chord tones
+          availablePcs = [...matrix.chordTonePcs];
+        } else if (isStrictScale || isGuideScale) {
+          // Strict scale / Guide: diatonic scale tones of the key, excluding harsh avoid tones
+          const safeScalePcs = matrix.scalePcs.filter(pc => !matrix.avoidPcs.includes(pc));
+          availablePcs = safeScalePcs.length > 0 ? safeScalePcs : matrix.chordTonePcs;
+        } else {
+          // Free mode
+          availablePcs = matrix.scalePcs;
         }
 
         // Generate candidate pitches across 3 octaves around targetMidiCenter
@@ -769,7 +783,7 @@ export class MelodyEngine {
         for (let oct = octave - 1; oct <= octave + 2; oct++) {
           availablePcs.forEach(pc => {
             const m = 12 * (oct + 1) + pc;
-            let role: ChordToneRole = 'root';
+            let role: ChordToneRole = 'passing';
             if (pc === matrix.rootPc) role = 'root';
             else if (pc === matrix.thirdPc) role = '3rd';
             else if (pc === matrix.fifthPc) role = '5th';
@@ -780,13 +794,16 @@ export class MelodyEngine {
           });
         }
 
+        const isDownbeat = cell.accent || stepInBar === 0 || stepInBar === 8;
+        const isChordToneRole = (r: ChordToneRole) => r === 'root' || r === '3rd' || r === '5th' || r === '7th';
+
         if (previousMidi === null) {
           // First note: choose pitch closest to targetMidiCenter preferring root or 3rd
           candidates.sort((a, b) => {
             const aDist = Math.abs(a.midi - targetMidiCenter);
             const bDist = Math.abs(b.midi - targetMidiCenter);
-            const aPref = (a.role === 'root' || a.role === '3rd') ? -4 : 0;
-            const bPref = (b.role === 'root' || b.role === '3rd') ? -4 : 0;
+            const aPref = (a.role === 'root' || a.role === '3rd' || a.role === '5th') ? -6 : 0;
+            const bPref = (b.role === 'root' || b.role === '3rd' || b.role === '5th') ? -6 : 0;
             return (aDist + aPref) - (bDist + bPref);
           });
           const pickIdx = seed ? Math.abs(seed + barIndex) % Math.min(3, candidates.length) : 0;
@@ -804,6 +821,12 @@ export class MelodyEngine {
             const bDelta = b.midi - previousMidi!;
             let aScore = Math.abs(a.midi - targetMidiCenter);
             let bScore = Math.abs(b.midi - targetMidiCenter);
+
+            // On downbeats or accented beats, heavily favor chord tones over passing tones
+            if (isDownbeat) {
+              if (isChordToneRole(a.role)) aScore -= 14;
+              if (isChordToneRole(b.role)) bScore -= 14;
+            }
 
             if (mustRecoverDown) {
               if (aDelta < 0 && Math.abs(aDelta) <= 4) aScore -= 20; // reward downward step

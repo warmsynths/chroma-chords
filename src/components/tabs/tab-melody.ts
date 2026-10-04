@@ -137,6 +137,7 @@ export class TabMelody extends LitElement {
       transform: scale(0.96);
     }
 
+
     .try-another-btn {
       border: none;
       font-family: inherit;
@@ -156,6 +157,7 @@ export class TabMelody extends LitElement {
       transition: background 150ms ease, transform 120ms ease;
       box-shadow: 0 1px 2px rgba(46, 39, 31, 0.06);
     }
+
 
     .try-another-btn:hover {
       background: #FFFFFF;
@@ -220,40 +222,6 @@ export class TabMelody extends LitElement {
       box-shadow: inset 0 0 0 1px rgba(46, 39, 31, 0.1), 0 1px 2px rgba(46, 39, 31, 0.12);
     }
 
-    /* Loop Mode Toggle */
-    .loop-mode-toggle {
-      display: inline-flex;
-      align-items: center;
-      background: rgba(46, 39, 31, 0.06);
-      border-radius: 100px;
-      padding: 3px;
-      gap: 2px;
-    }
-
-    .loop-mode-btn {
-      border: none;
-      font-family: inherit;
-      background: transparent;
-      padding: 4px 10px;
-      border-radius: 100px;
-      font-size: 11px;
-      font-weight: 700;
-      color: var(--cv-ink-muted, #5B5145);
-      cursor: pointer;
-      transition: background 150ms ease, color 150ms ease;
-      white-space: nowrap;
-    }
-
-    .loop-mode-btn:hover {
-      color: var(--cv-ink, #2E271F);
-    }
-
-    .loop-mode-btn.active {
-      background: #FBF3E6;
-      color: #2E271F;
-      font-weight: 800;
-      box-shadow: inset 0 0 0 1px rgba(46, 39, 31, 0.1), 0 1px 2px rgba(46, 39, 31, 0.12);
-    }
 
     /* Loop Span Bar Underline on Step Cells */
     .loop-span-bar {
@@ -845,10 +813,16 @@ export class TabMelody extends LitElement {
   playing = false;
 
   @property({ type: Boolean })
+  backingEnabled = true;
+
+  @property({ type: Boolean })
   isMobile = false;
 
   @property({ type: String })
   melodyLoop: 'Section' | 'Chord' | 'Span' = 'Section';
+
+  @property({ type: String })
+  melodySound = 'Stage Rhodes';
 
   @property({ type: Array })
   span: [number, number] = [0, 16];
@@ -924,10 +898,26 @@ export class TabMelody extends LitElement {
       density: this.density,
       octave: this.octave,
       guideMode: this.guideMode,
+      strictBy: this.strictBy,
     });
     this.melodyTrack = track;
     this.dispatchEvent(new CustomEvent('melody-change', { detail: { track }, bubbles: true, composed: true }));
   }
+
+  private onSetStrictBy(by: 'scale' | 'chord') {
+    this.strictBy = by;
+    this.requestUpdate();
+  }
+
+  private onToggleBacking = () => {
+    this.backingEnabled = !this.backingEnabled;
+    this.dispatchEvent(new CustomEvent('toggle-backing', {
+      detail: { backingEnabled: this.backingEnabled },
+      bubbles: true,
+      composed: true,
+    }));
+    this.requestUpdate();
+  };
 
   private onSetGuideMode(mode: GuideMode) {
     this.guideMode = mode;
@@ -955,6 +945,7 @@ export class TabMelody extends LitElement {
       density: this.density,
       octave: this.octave,
       guideMode: this.guideMode,
+      strictBy: this.strictBy,
       seed,
     });
     this.melodyTrack = track;
@@ -1166,15 +1157,6 @@ export class TabMelody extends LitElement {
     return [0, (this.progression?.chords.length || 4) * 16];
   }
 
-  private onSetLoopMode(mode: 'Section' | 'Chord' | 'Span') {
-    this.melodyLoop = mode;
-    this.dispatchEvent(new CustomEvent('melody-loop-change', {
-      detail: { melodyLoop: mode, loop: mode },
-      bubbles: true,
-      composed: true,
-    }));
-    this.requestUpdate();
-  }
 
   private onStepClick(globalStep: number, e?: MouseEvent) {
     if (this._didDrag) {
@@ -1299,15 +1281,15 @@ export class TabMelody extends LitElement {
     if (this.guideMode === 'strict-chord') {
       const matrix = getHarmonicChordMatrix(chord, this.progression.key, this.progression.scaleType);
       const pc = midi % 12;
-      const allowed = this.strictBy === 'chord' ? matrix.chordTonePcs : [...matrix.chordTonePcs, ...matrix.tensionPcs];
+      const allowed = this.strictBy === 'chord' ? matrix.chordTonePcs : matrix.scalePcs.filter(p => !matrix.avoidPcs.includes(p));
       if (!allowed.includes(pc)) {
-        this.dispatchEvent(new CustomEvent('toast', { detail: 'Strict mode: pick an allowed tone', bubbles: true, composed: true }));
+        this.dispatchEvent(new CustomEvent('toast', { detail: `Strict ${this.strictBy} mode: pick an allowed tone`, bubbles: true, composed: true }));
         return;
       }
     }
 
     const classification = classifyPitch(midi, chord, this.progression.key, this.progression.scaleType);
-    playLeadNote(pitch, 0.4);
+    playLeadNote(pitch, 0.4, undefined, 0.85, this.melodySound);
 
     const otherNotes = (this.melodyTrack?.notes || []).filter(
       n => !(n.barIndex === barIndex && n.stepInBar === stepInBar)
@@ -1430,12 +1412,9 @@ export class TabMelody extends LitElement {
               </svg>
               <span>${noteCount === 0 ? 'Randomize' : 'Try another'}</span>
             </button>
-
-            ${noteCount > 0 ? html`
-              <button class="clear-text-btn clear-melody-btn" @click=${this.onClearMelody} aria-label="Clear melody" title="Clear all notes">
-                Clear
-              </button>
-            ` : ''}
+            <button class="clear-text-btn clear-melody-btn" @click=${this.onClearMelody} aria-label="Clear melody" title="Clear all notes">
+              Clear
+            </button>
           </div>
 
           <div class="quick-actions-bar">
@@ -1443,7 +1422,7 @@ export class TabMelody extends LitElement {
               <div class="segmented-control" role="radiogroup" aria-label="Strict filter by">
                 <button
                   class="segment-btn ${this.strictBy === 'scale' ? 'active' : ''}"
-                  @click=${() => this.strictBy = 'scale'}
+                  @click=${() => this.onSetStrictBy('scale')}
                   role="radio"
                   aria-checked="${this.strictBy === 'scale'}"
                 >
@@ -1451,7 +1430,7 @@ export class TabMelody extends LitElement {
                 </button>
                 <button
                   class="segment-btn ${this.strictBy === 'chord' ? 'active' : ''}"
-                  @click=${() => this.strictBy = 'chord'}
+                  @click=${() => this.onSetStrictBy('chord')}
                   role="radio"
                   aria-checked="${this.strictBy === 'chord'}"
                 >
@@ -1485,31 +1464,6 @@ export class TabMelody extends LitElement {
                 aria-checked="${this.guideMode === 'free'}"
               >
                 Free
-              </button>
-            </div>
-
-            <!-- Loop Mode Control: Section / Chord / Span -->
-            <div class="loop-mode-toggle" role="radiogroup" aria-label="Melody loop mode">
-              <button
-                class="loop-mode-btn ${this.melodyLoop === 'Section' ? 'active' : ''}"
-                @click=${() => this.onSetLoopMode('Section')}
-                title="Loop whole section"
-              >
-                Section
-              </button>
-              <button
-                class="loop-mode-btn ${this.melodyLoop === 'Chord' ? 'active' : ''}"
-                @click=${() => this.onSetLoopMode('Chord')}
-                title="Loop active chord row"
-              >
-                Chord
-              </button>
-              <button
-                class="loop-mode-btn ${this.melodyLoop === 'Span' ? 'active' : ''}"
-                @click=${() => this.onSetLoopMode('Span')}
-                title="Loop custom span (Shift-click steps to set)"
-              >
-                ${this.melodyLoop === 'Span' ? `Span ${this.span[0] + 1}–${this.span[1]}` : 'Span'}
               </button>
             </div>
           </div>

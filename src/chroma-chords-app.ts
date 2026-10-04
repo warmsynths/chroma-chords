@@ -6,7 +6,7 @@ import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
 import { SongArranger, SongSection, SongTimelineItem } from './services/song-arranger';
 import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling, getMoodColor, applyVoicingToChord } from './services/chord-engine';
-import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone } from './services/audio-service';
+import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, FeelSettings } from './services/audio-service';
 import { authService } from './services/auth-service';
 import { melodyEngine, MelodyTrack } from './services/melody-engine';
 import { NavTabId } from './components/app-header';
@@ -44,9 +44,17 @@ export class ChromaChordsApp extends LitElement {
   @state() private progressStep = 0;
   @state() private order: number[] = [0, 1, 2, 3];
   @state() private playing = false;
+  @state() private chordPlaying = false;
+  @state() private melodyPlaying = false;
+  @state() private songPlaying = false;
   @state() private showTheory = false;
   @state() private instrument: string | null = null;
   @state() private playStyle: string | null = null;
+  @state() private melodySound = 'Stage Rhodes';
+  @state() private melodyFeel = 'Smooth';
+  @state() private melodyFeelSettings: FeelSettings = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
+  @state() private chordFeelSettings: FeelSettings = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
+  @state() private melodyBackingEnabled = true;
   @state() private length = 4;
   @state() private sections: SongSection[] = [];
   @state() private songTimeline: SongTimelineItem[] = [];
@@ -598,9 +606,21 @@ export class ChromaChordsApp extends LitElement {
     if (savedInstrument && USER_INSTRUMENTS.some(i => i.name === savedInstrument)) this.instrument = savedInstrument;
     const savedPlayStyle = safeGet('chroma-chords-play-style');
     if (savedPlayStyle && USER_PLAY_STYLES.some(p => p.name === savedPlayStyle)) this.playStyle = savedPlayStyle;
+    const savedMelodySound = safeGet('chroma-melody-sound');
+    if (savedMelodySound && USER_INSTRUMENTS.some(i => i.name.toLowerCase() === savedMelodySound.toLowerCase())) {
+      this.melodySound = savedMelodySound;
+    } else {
+      this.melodySound = 'Stage Rhodes';
+    }
+    const savedMelodyFeel = safeGet('chroma-melody-feel');
+    if (savedMelodyFeel) this.melodyFeel = savedMelodyFeel;
 
     playbackEngine.setInstrument(this.instrument);
     playbackEngine.setPlayStyle(this.playStyle);
+    playbackEngine.setMelodySound(this.melodySound);
+    playbackEngine.setMelodyFeel(this.melodyFeel);
+    playbackEngine.setMelodyFeelSettings(this.melodyFeelSettings);
+    playbackEngine.setMelodyBackingEnabled(this.melodyBackingEnabled);
 
     this.unsubscribeAuth = authService.subscribe((state) => {
       this.userEmail = state.user?.email || null;
@@ -632,6 +652,9 @@ export class ChromaChordsApp extends LitElement {
         this.totalSongSteps = totalSteps;
       }
       this.playing = playbackEngine.isPlaying();
+      this.chordPlaying = playbackEngine.isChordPlaying();
+      this.melodyPlaying = playbackEngine.isMelodyPlaying();
+      this.songPlaying = playbackEngine.isSongPlaying();
     });
 
     window.addEventListener('hashchange', this.onHashChange);
@@ -996,15 +1019,74 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.setPlayStyle(e.detail);
   }
 
-  private onTogglePlay() {
-    this.updateEngineLoop();
-    this.playing = playbackEngine.togglePlay();
+  private onTogglePlay(target?: 'chords' | 'melody' | 'song') {
+    const effectiveTarget = target || (this.activeTab === 'melody' ? 'melody' : (this.activeTab === 'song' ? 'song' : 'chords'));
+    if (effectiveTarget === 'melody') {
+      this.updateEngineLoop();
+      this.playing = playbackEngine.togglePlay('melody');
+      this.melodyPlaying = playbackEngine.isMelodyPlaying();
+      this.chordPlaying = false;
+      this.songPlaying = false;
+    } else if (effectiveTarget === 'song') {
+      playbackEngine.setStepLoop(null);
+      playbackEngine.setSong(this.sections);
+      this.playing = playbackEngine.togglePlay('song');
+      this.songPlaying = playbackEngine.isSongPlaying();
+      this.chordPlaying = false;
+      this.melodyPlaying = false;
+    } else {
+      playbackEngine.setStepLoop(null);
+      playbackEngine.setProgression(this.progression, this.order);
+      this.playing = playbackEngine.togglePlay('chords');
+      this.chordPlaying = playbackEngine.isChordPlaying();
+      this.melodyPlaying = false;
+      this.songPlaying = false;
+    }
   }
 
   private onTogglePlaySong() {
-    playbackEngine.setStepLoop(null);
-    playbackEngine.setSong(this.sections);
-    this.playing = playbackEngine.togglePlay();
+    this.onTogglePlay('song');
+  }
+
+  private onSetMelodySound(e: CustomEvent<string | { sound: string }>) {
+    const sound = typeof e.detail === 'object' && e.detail !== null ? (e.detail as any).sound : e.detail;
+    if (sound) {
+      this.melodySound = sound;
+      this.safeSet('chroma-melody-sound', sound);
+      playbackEngine.setMelodySound(sound);
+      this.requestUpdate();
+    }
+  }
+
+  private onSetMelodyFeel(e: CustomEvent<string | { feel?: string; playStyle?: string }>) {
+    const val = typeof e.detail === 'object' && e.detail !== null
+      ? (e.detail as any).feel || (e.detail as any).playStyle
+      : e.detail;
+    if (val) {
+      this.melodyFeel = val;
+      this.safeSet('chroma-melody-feel', val);
+      playbackEngine.setMelodyFeel(val);
+      this.requestUpdate();
+    }
+  }
+
+  private onMelodyFeelSettingsChange(e: CustomEvent<{ feelSettings?: FeelSettings }>) {
+    const fs = e.detail?.feelSettings;
+    if (fs) {
+      this.melodyFeelSettings = { ...fs };
+      playbackEngine.setMelodyFeelSettings(fs);
+      this.requestUpdate();
+    }
+  }
+
+  private onToggleMelodyBacking(e?: CustomEvent<{ backingEnabled: boolean }>) {
+    if (e && typeof e.detail?.backingEnabled === 'boolean') {
+      this.melodyBackingEnabled = e.detail.backingEnabled;
+    } else {
+      this.melodyBackingEnabled = !this.melodyBackingEnabled;
+    }
+    playbackEngine.setMelodyBackingEnabled(this.melodyBackingEnabled);
+    this.requestUpdate();
   }
 
   private onMelodyLoopCycle(mode?: 'Section' | 'Chord' | 'Span') {
@@ -1020,10 +1102,11 @@ export class ChromaChordsApp extends LitElement {
       playbackEngine.setStepLoop(null);
       return;
     }
+    const totalBars = this.progression?.chords.length || 4;
     if (this.melodyLoop === 'Section') {
-      playbackEngine.setStepLoop(null);
+      playbackEngine.setStepLoop([0, totalBars * 16]);
     } else if (this.melodyLoop === 'Chord') {
-      const chordIdx = this.activeIndex % (this.progression?.chords.length || 4);
+      const chordIdx = this.activeIndex % totalBars;
       playbackEngine.setStepLoop([chordIdx * 16, (chordIdx + 1) * 16]);
     } else if (this.melodyLoop === 'Span') {
       playbackEngine.setStepLoop(this.melodySpan && this.melodySpan[1] > this.melodySpan[0] ? this.melodySpan : [0, 16]);
@@ -1300,11 +1383,19 @@ export class ChromaChordsApp extends LitElement {
                   <tab-melody
                     .progression=${this.progression}
                     .melodyTrack=${this.melodyTrack}
+                    .melodySound=${this.melodySound}
                     .activeStepIndex=${this.progressStep}
-                    .playing=${this.playing}
+                    .playing=${this.melodyPlaying}
+                    .backingEnabled=${this.melodyBackingEnabled}
                     .showTheory=${this.showTheory}
                     .melodyLoop=${this.melodyLoop}
                     .span=${this.melodySpan}
+                    @toggle-play=${() => {
+                      this.onTogglePlay('melody');
+                    }}
+                    @toggle-backing=${(e: CustomEvent) => {
+                      this.onToggleMelodyBacking(e);
+                    }}
                     @melody-change=${(e: CustomEvent) => {
                       this.melodyTrack = e.detail.track;
                       playbackEngine.setMelodyTrack(this.melodyTrack);
@@ -1379,99 +1470,172 @@ export class ChromaChordsApp extends LitElement {
 
           <!-- Bottom Docked Transport Bar: Bounded within Center Column on Desktop -->
           <div class="transport-dock-wrapper desktop-only">
-            <transport-bar
-              .activeTab=${this.activeTab}
-              .isPlaying=${this.playing}
-              .playLabel=${this.activeTab === 'song' ? 'Play song' : 'Play section'}
-              .moodColor=${moodColor}
-              .sections=${this.sections}
-              .activeSectionId=${activeSecLetter}
-              .chordSound=${this.instrument || 'Stage Rhodes'}
-              .melodySound=${'Lead Synth'}
-              .chordFeel=${this.playStyle || 'Block chords'}
-              .feelSettings=${playbackEngine.getFeelSettings()}
-              .chords=${this.progression?.chords || []}
-              .keyRoot=${this.progression?.key || 'C'}
-              .scaleMode=${this.progression?.scaleType === 'MINOR' ? 'Minor' : 'Major'}
-              .bpm=${this.progression?.bpm || 84}
-              .barsPerChord=${playbackEngine.getBarsPerChord()}
-              .melodyLoop=${this.melodyLoop}
-              .songTotal=${songTotal}
-              @loop-cycle=${(e: CustomEvent) => {
-                this.onMelodyLoopCycle(e.detail?.melodyLoop);
-              }}
-              @toggle-play=${() => {
-                if (this.activeTab === 'song') {
-                  this.onTogglePlaySong();
-                } else {
-                  this.onTogglePlay();
-                }
-              }}
-              @share-click=${() => { this.shareModalOpen = true; }}
-              @open-share=${() => { this.shareModalOpen = true; }}
-              @bpm-change=${(e: CustomEvent) => {
-                if (this.progression) {
-                  this.progression = { ...this.progression, bpm: e.detail.bpm };
-                  playbackEngine.setBpm(e.detail.bpm);
-                  this.requestUpdate();
-                }
-              }}
-              @bars-change=${(e: CustomEvent) => {
-                playbackEngine.setBarsPerChord(e.detail.bars);
-                this.requestUpdate();
-              }}
-              @key-change=${(e: CustomEvent) => {
-                if (this.progression) {
-                  this.progression = { ...this.progression, key: e.detail.root };
-                  playbackEngine.setProgression(this.progression, this.order);
-                  this.requestUpdate();
-                }
-              }}
-              @scale-change=${(e: CustomEvent) => {
-                if (this.progression) {
-                  const scaleType = e.detail.mode.toUpperCase();
-                  this.progression = { ...this.progression, scaleType };
-                  playbackEngine.setProgression(this.progression, this.order);
-                  this.requestUpdate();
-                }
-              }}
-              @sound-change=${(e: CustomEvent) => {
-                this.onSetInstrument(new CustomEvent('set-instrument', { detail: e.detail.sound }));
-              }}
-              @set-chord-sound=${(e: CustomEvent) => {
-                this.onSetInstrument(new CustomEvent('set-instrument', { detail: e.detail.sound }));
-              }}
-              @feel-change=${(e: CustomEvent) => {
-                const val = e.detail.feel || e.detail.playStyle;
-                this.onSetPlayStyle(new CustomEvent('set-play-style', { detail: val }));
-              }}
-              @set-chord-feel=${(e: CustomEvent) => {
-                const val = e.detail.feel || e.detail.playStyle;
-                this.onSetPlayStyle(new CustomEvent('set-play-style', { detail: val }));
-              }}
-              @feel-settings-change=${(e: CustomEvent) => {
-                const fs = e.detail.feelSettings;
-                if (fs) {
-                  playbackEngine.setFeelSettings(fs);
-                  if (fs.playStyle && fs.playStyle !== this.playStyle) {
-                    this.playStyle = fs.playStyle;
-                    this.safeSet('chroma-chords-play-style', fs.playStyle);
-                    playbackEngine.setPlayStyle(fs.playStyle);
+            ${this.activeTab === 'melody' ? html`
+              <!-- Separate independent instance of controls for Melody -->
+              <transport-bar
+                id="melody-transport-bar"
+                .activeTab=${'melody'}
+                .isPlaying=${this.melodyPlaying}
+                .playLabel=${'Play melody'}
+                .moodColor=${moodColor}
+                .sections=${this.sections}
+                .activeSectionId=${activeSecLetter}
+                .chordSound=${this.instrument || 'Stage Rhodes'}
+                .melodySound=${this.melodySound || 'Lead Synth'}
+                .chordFeel=${this.playStyle || 'Block chords'}
+                .melodyFeel=${this.melodyFeel || 'Smooth'}
+                .feelSettings=${this.melodyFeelSettings}
+                .backingEnabled=${this.melodyBackingEnabled}
+                .chords=${this.progression?.chords || []}
+                .keyRoot=${this.progression?.key || 'C'}
+                .scaleMode=${this.progression?.scaleType === 'MINOR' ? 'Minor' : 'Major'}
+                .bpm=${this.progression?.bpm || 84}
+                .barsPerChord=${playbackEngine.getBarsPerChord()}
+                .melodyLoop=${this.melodyLoop}
+                .songTotal=${songTotal}
+                @loop-cycle=${(e: CustomEvent) => {
+                  this.onMelodyLoopCycle(e.detail?.melodyLoop);
+                }}
+                @toggle-play=${(e: CustomEvent) => {
+                  this.onTogglePlay(e.detail?.target || 'melody');
+                }}
+                @toggle-melody-backing=${(e: CustomEvent) => {
+                  this.onToggleMelodyBacking(e);
+                }}
+                @set-melody-sound=${(e: CustomEvent) => {
+                  this.onSetMelodySound(e);
+                }}
+                @set-melody-feel=${(e: CustomEvent) => {
+                  this.onSetMelodyFeel(e);
+                }}
+                @melody-feel-settings-change=${(e: CustomEvent) => {
+                  this.onMelodyFeelSettingsChange(e);
+                }}
+                @share-click=${() => { this.shareModalOpen = true; }}
+                @open-share=${() => { this.shareModalOpen = true; }}
+                @bpm-change=${(e: CustomEvent) => {
+                  if (this.progression) {
+                    this.progression = { ...this.progression, bpm: e.detail.bpm };
+                    playbackEngine.setBpm(e.detail.bpm);
+                    this.requestUpdate();
                   }
-                  if (fs.tone) {
-                    setMasterTone(fs.tone);
+                }}
+                @key-change=${(e: CustomEvent) => {
+                  if (this.progression) {
+                    this.progression = { ...this.progression, key: e.detail.root };
+                    playbackEngine.setProgression(this.progression, this.order);
+                    this.requestUpdate();
+                  }
+                }}
+                @scale-change=${(e: CustomEvent) => {
+                  if (this.progression) {
+                    const scaleType = e.detail.mode.toUpperCase();
+                    this.progression = { ...this.progression, scaleType };
+                    playbackEngine.setProgression(this.progression, this.order);
+                    this.requestUpdate();
+                  }
+                }}
+              ></transport-bar>
+            ` : html`
+              <!-- Dedicated instance of controls for Chords / Song / Play -->
+              <transport-bar
+                id="chord-transport-bar"
+                .activeTab=${this.activeTab}
+                .isPlaying=${this.activeTab === 'song' ? this.songPlaying : this.chordPlaying}
+                .playLabel=${this.activeTab === 'song' ? 'Play song' : 'Play chords'}
+                .moodColor=${moodColor}
+                .sections=${this.sections}
+                .activeSectionId=${activeSecLetter}
+                .chordSound=${this.instrument || 'Stage Rhodes'}
+                .melodySound=${this.melodySound || 'Lead Synth'}
+                .chordFeel=${this.playStyle || 'Block chords'}
+                .melodyFeel=${this.melodyFeel || 'Smooth'}
+                .feelSettings=${this.chordFeelSettings}
+                .chords=${this.progression?.chords || []}
+                .keyRoot=${this.progression?.key || 'C'}
+                .scaleMode=${this.progression?.scaleType === 'MINOR' ? 'Minor' : 'Major'}
+                .bpm=${this.progression?.bpm || 84}
+                .barsPerChord=${playbackEngine.getBarsPerChord()}
+                .melodyLoop=${this.melodyLoop}
+                .songTotal=${songTotal}
+                @loop-cycle=${(e: CustomEvent) => {
+                  this.onMelodyLoopCycle(e.detail?.melodyLoop);
+                }}
+                @toggle-play=${(e: CustomEvent) => {
+                  if (this.activeTab === 'song') {
+                    this.onTogglePlaySong();
+                  } else {
+                    this.onTogglePlay(e.detail?.target || 'chords');
+                  }
+                }}
+                @share-click=${() => { this.shareModalOpen = true; }}
+                @open-share=${() => { this.shareModalOpen = true; }}
+                @bpm-change=${(e: CustomEvent) => {
+                  if (this.progression) {
+                    this.progression = { ...this.progression, bpm: e.detail.bpm };
+                    playbackEngine.setBpm(e.detail.bpm);
+                    this.requestUpdate();
+                  }
+                }}
+                @bars-change=${(e: CustomEvent) => {
+                  playbackEngine.setBarsPerChord(e.detail.bars);
+                  this.requestUpdate();
+                }}
+                @key-change=${(e: CustomEvent) => {
+                  if (this.progression) {
+                    this.progression = { ...this.progression, key: e.detail.root };
+                    playbackEngine.setProgression(this.progression, this.order);
+                    this.requestUpdate();
+                  }
+                }}
+                @scale-change=${(e: CustomEvent) => {
+                  if (this.progression) {
+                    const scaleType = e.detail.mode.toUpperCase();
+                    this.progression = { ...this.progression, scaleType };
+                    playbackEngine.setProgression(this.progression, this.order);
+                    this.requestUpdate();
+                  }
+                }}
+                @sound-change=${(e: CustomEvent) => {
+                  this.onSetInstrument(new CustomEvent('set-instrument', { detail: e.detail.sound }));
+                }}
+                @set-chord-sound=${(e: CustomEvent) => {
+                  this.onSetInstrument(new CustomEvent('set-instrument', { detail: e.detail.sound }));
+                }}
+                @feel-change=${(e: CustomEvent) => {
+                  const val = e.detail.feel || e.detail.playStyle;
+                  this.onSetPlayStyle(new CustomEvent('set-play-style', { detail: val }));
+                }}
+                @set-chord-feel=${(e: CustomEvent) => {
+                  const val = e.detail.feel || e.detail.playStyle;
+                  this.onSetPlayStyle(new CustomEvent('set-play-style', { detail: val }));
+                }}
+                @feel-settings-change=${(e: CustomEvent) => {
+                  const fs = e.detail.feelSettings;
+                  if (fs) {
+                    this.chordFeelSettings = { ...fs };
+                    playbackEngine.setFeelSettings(fs);
+                    if (fs.playStyle && fs.playStyle !== this.playStyle) {
+                      this.playStyle = fs.playStyle;
+                      this.safeSet('chroma-chords-play-style', fs.playStyle);
+                      playbackEngine.setPlayStyle(fs.playStyle);
+                    }
+                    if (fs.tone) {
+                      setMasterTone(fs.tone);
+                    }
+                    this.requestUpdate();
+                  }
+                }}
+                @set-feel-settings=${(e: CustomEvent) => {
+                  this.chordFeelSettings = { ...this.chordFeelSettings, ...e.detail };
+                  playbackEngine.setFeelSettings(this.chordFeelSettings);
+                  if (e.detail.tone) {
+                    setMasterTone(e.detail.tone);
                   }
                   this.requestUpdate();
-                }
-              }}
-              @set-feel-settings=${(e: CustomEvent) => {
-                playbackEngine.setFeelSettings(e.detail);
-                if (e.detail.tone) {
-                  setMasterTone(e.detail.tone);
-                }
-                this.requestUpdate();
-              }}
-            ></transport-bar>
+                }}
+              ></transport-bar>
+            `}
           </div>
         </main>
 
@@ -1519,15 +1683,17 @@ export class ChromaChordsApp extends LitElement {
       <div class="dock-container mobile-only">
         <mobile-dock
           .activeTab=${this.activeTab}
-          .isPlaying=${this.playing}
-          .playLabel=${this.activeTab === 'song' ? 'Play song' : 'Play section'}
+          .isPlaying=${this.activeTab === 'melody' ? this.melodyPlaying : (this.activeTab === 'song' ? this.songPlaying : this.chordPlaying)}
+          .playLabel=${this.activeTab === 'melody' ? 'Play melody' : (this.activeTab === 'song' ? 'Play song' : 'Play chords')}
           .moodColor=${moodColor}
           .sections=${this.sections}
           .activeSectionId=${activeSecLetter}
           .chordSound=${this.instrument || 'Stage Rhodes'}
-          .melodySound=${'Lead Synth'}
+          .melodySound=${this.melodySound || 'Lead Synth'}
           .chordFeel=${this.playStyle || 'Block chords'}
-          .feelSettings=${playbackEngine.getFeelSettings()}
+          .melodyFeel=${this.melodyFeel || 'Smooth'}
+          .feelSettings=${this.activeTab === 'melody' ? this.melodyFeelSettings : this.chordFeelSettings}
+          .backingEnabled=${this.melodyBackingEnabled}
           .chords=${this.progression?.chords || []}
           .keyRoot=${this.progression?.key || 'C'}
           .scaleMode=${this.progression?.scaleType === 'MINOR' ? 'Minor' : 'Major'}
@@ -1538,12 +1704,26 @@ export class ChromaChordsApp extends LitElement {
           @loop-cycle=${(e: CustomEvent) => {
             this.onMelodyLoopCycle(e.detail?.melodyLoop);
           }}
-          @toggle-play=${() => {
+          @toggle-play=${(e: CustomEvent) => {
             if (this.activeTab === 'song') {
               this.onTogglePlaySong();
+            } else if (this.activeTab === 'melody') {
+              this.onTogglePlay('melody');
             } else {
-              this.onTogglePlay();
+              this.onTogglePlay(e.detail?.target || 'chords');
             }
+          }}
+          @toggle-melody-backing=${(e: CustomEvent) => {
+            this.onToggleMelodyBacking(e);
+          }}
+          @set-melody-sound=${(e: CustomEvent) => {
+            this.onSetMelodySound(e);
+          }}
+          @set-melody-feel=${(e: CustomEvent) => {
+            this.onSetMelodyFeel(e);
+          }}
+          @melody-feel-settings-change=${(e: CustomEvent) => {
+            this.onMelodyFeelSettingsChange(e);
           }}
           @open-share=${() => { this.shareModalOpen = true; }}
           @reroll=${this.onReroll}
@@ -1580,6 +1760,7 @@ export class ChromaChordsApp extends LitElement {
           @feel-settings-change=${(e: CustomEvent) => {
             const fs = e.detail.feelSettings;
             if (fs) {
+              this.chordFeelSettings = { ...fs };
               playbackEngine.setFeelSettings(fs);
               if (fs.playStyle && fs.playStyle !== this.playStyle) {
                 this.playStyle = fs.playStyle;
@@ -1593,7 +1774,8 @@ export class ChromaChordsApp extends LitElement {
             }
           }}
           @set-feel-settings=${(e: CustomEvent) => {
-            playbackEngine.setFeelSettings(e.detail);
+            this.chordFeelSettings = { ...this.chordFeelSettings, ...e.detail };
+            playbackEngine.setFeelSettings(this.chordFeelSettings);
             if (e.detail.tone) {
               setMasterTone(e.detail.tone);
             }

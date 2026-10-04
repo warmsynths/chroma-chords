@@ -128,6 +128,7 @@ export class TransportBar extends LitElement {
   @property({ type: String }) melodySound = 'Stage Rhodes';
   @property({ type: String }) chordFeel = 'Block chords';
   @property({ type: String }) melodyFeel = 'Smooth';
+  @property({ type: Boolean }) backingEnabled = true;
   @property({ type: Object }) feelSettings: FeelSettings = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
   @property({ type: String }) keyRoot = 'C';
   @property({ type: String }) scaleMode = 'Major';
@@ -600,8 +601,10 @@ export class TransportBar extends LitElement {
   }
 
   private onPlayClick() {
+    const isMelody = this.activeTab === 'melody';
+    const isSong = this.activeTab === 'song';
     this.dispatchEvent(new CustomEvent('toggle-play', {
-      detail: { isPlaying: !this.isPlaying },
+      detail: { isPlaying: !this.isPlaying, target: isMelody ? 'melody' : (isSong ? 'song' : 'chords') },
       bubbles: true,
       composed: true,
     }));
@@ -638,11 +641,23 @@ export class TransportBar extends LitElement {
   private onSelectSound(soundName: string) {
     this.closeMenu();
     const isMelody = this.activeTab === 'melody';
-    this.dispatchEvent(new CustomEvent(isMelody ? 'set-melody-sound' : 'set-chord-sound', {
-      detail: { sound: soundName },
-      bubbles: true,
-      composed: true,
-    }));
+    if (isMelody) {
+      this.melodySound = soundName;
+      playbackEngine.setMelodySound(soundName);
+      this.dispatchEvent(new CustomEvent('set-melody-sound', {
+        detail: { sound: soundName },
+        bubbles: true,
+        composed: true,
+      }));
+    } else {
+      this.chordSound = soundName;
+      this.dispatchEvent(new CustomEvent('set-chord-sound', {
+        detail: { sound: soundName },
+        bubbles: true,
+        composed: true,
+      }));
+    }
+    this.requestUpdate();
   }
 
   private get feelChanged(): boolean {
@@ -662,26 +677,39 @@ export class TransportBar extends LitElement {
   }
 
   private resetFeel() {
+    const isMelody = this.activeTab === 'melody';
     this.feelSettings = {
       ...FEEL_DEFAULTS,
       barFeel: {},
       advOverride: {},
     };
     this.feelScope = null;
-    playbackEngine.setPlayStyle(FEEL_DEFAULTS.playStyle);
-    playbackEngine.setFeelSettings(this.feelSettings);
-    setMasterTone(FEEL_DEFAULTS.tone);
+    if (isMelody) {
+      this.melodyFeel = 'Smooth';
+      playbackEngine.setMelodyFeelSettings(this.feelSettings);
+      this.dispatchEvent(new CustomEvent('set-melody-feel', {
+        detail: { feel: 'Smooth' },
+        bubbles: true,
+        composed: true,
+      }));
+    } else {
+      this.chordFeel = FEEL_DEFAULTS.playStyle;
+      playbackEngine.setPlayStyle(FEEL_DEFAULTS.playStyle);
+      playbackEngine.setFeelSettings(this.feelSettings);
+      setMasterTone(FEEL_DEFAULTS.tone);
 
-    this.dispatchEvent(new CustomEvent('feel-change', {
-      detail: { feel: FEEL_DEFAULTS.playStyle, playStyle: FEEL_DEFAULTS.playStyle },
-      bubbles: true,
-      composed: true,
-    }));
-    this.dispatchEvent(new CustomEvent('set-chord-feel', {
-      detail: { feel: FEEL_DEFAULTS.playStyle },
-      bubbles: true,
-      composed: true,
-    }));
+      this.dispatchEvent(new CustomEvent('feel-change', {
+        detail: { feel: FEEL_DEFAULTS.playStyle, playStyle: FEEL_DEFAULTS.playStyle },
+        bubbles: true,
+        composed: true,
+      }));
+      this.dispatchEvent(new CustomEvent('set-chord-feel', {
+        detail: { feel: FEEL_DEFAULTS.playStyle },
+        bubbles: true,
+        composed: true,
+      }));
+    }
+
     this.dispatchEvent(new CustomEvent('feel-settings-change', {
       detail: { feelSettings: { ...this.feelSettings } },
       bubbles: true,
@@ -722,17 +750,28 @@ export class TransportBar extends LitElement {
     if (this.feelScope === null) {
       (nextFs as any)[key] = value;
       if (key === 'playStyle') {
-        playbackEngine.setPlayStyle(value);
-        this.dispatchEvent(new CustomEvent(isMelody ? 'set-melody-feel' : 'set-chord-feel', {
-          detail: { feel: value, playStyle: value },
-          bubbles: true,
-          composed: true,
-        }));
-        this.dispatchEvent(new CustomEvent('feel-change', {
-          detail: { feel: value, playStyle: value },
-          bubbles: true,
-          composed: true,
-        }));
+        if (isMelody) {
+          this.melodyFeel = value;
+          playbackEngine.setMelodyFeel(value);
+          this.dispatchEvent(new CustomEvent('set-melody-feel', {
+            detail: { feel: value, playStyle: value },
+            bubbles: true,
+            composed: true,
+          }));
+        } else {
+          this.chordFeel = value;
+          playbackEngine.setPlayStyle(value);
+          this.dispatchEvent(new CustomEvent('set-chord-feel', {
+            detail: { feel: value, playStyle: value },
+            bubbles: true,
+            composed: true,
+          }));
+          this.dispatchEvent(new CustomEvent('feel-change', {
+            detail: { feel: value, playStyle: value },
+            bubbles: true,
+            composed: true,
+          }));
+        }
       } else if (key === 'tone') {
         setMasterTone(value);
       }
@@ -744,15 +783,19 @@ export class TransportBar extends LitElement {
     }
 
     this.feelSettings = nextFs;
-    playbackEngine.setFeelSettings(this.feelSettings);
+    if (isMelody) {
+      playbackEngine.setMelodyFeelSettings(this.feelSettings);
+    } else {
+      playbackEngine.setFeelSettings(this.feelSettings);
+    }
 
-    this.dispatchEvent(new CustomEvent('feel-settings-change', {
+    this.dispatchEvent(new CustomEvent(isMelody ? 'melody-feel-settings-change' : 'feel-settings-change', {
       detail: { feelSettings: { ...this.feelSettings }, key, value, chordIndex: this.feelScope },
       bubbles: true,
       composed: true,
     }));
     this.dispatchEvent(new CustomEvent('set-feel-settings', {
-      detail: { [key.toLowerCase()]: value },
+      detail: { [key.toLowerCase()]: value, isMelody },
       bubbles: true,
       composed: true,
     }));
@@ -954,6 +997,26 @@ export class TransportBar extends LitElement {
           >
             <span>Loop</span>
             <span class="highlight">${this.melodyLoop}</span>
+          </button>
+
+          <!-- Backing Chords Toggle (Melody Tab Only) -->
+          <button
+            class="tb-btn ${this.backingEnabled ? '' : 'muted'}"
+            @click=${() => {
+              this.backingEnabled = !this.backingEnabled;
+              playbackEngine.setMelodyBackingEnabled(this.backingEnabled);
+              this.dispatchEvent(new CustomEvent('toggle-melody-backing', {
+                detail: { backingEnabled: this.backingEnabled },
+                bubbles: true,
+                composed: true,
+              }));
+              this.requestUpdate();
+            }}
+            aria-label="Toggle backing chords"
+            title="${this.backingEnabled ? 'Backing chords on. Click to hear solo melody.' : 'Backing chords muted. Click to hear chords with melody.'}"
+          >
+            <span>Chords</span>
+            <span class="highlight">${this.backingEnabled ? 'On' : 'Muted'}</span>
           </button>
         ` : ''}
 

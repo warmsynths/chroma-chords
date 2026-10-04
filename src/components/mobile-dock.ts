@@ -351,8 +351,10 @@ export class MobileDock extends LitElement {
   }
 
   private onPlayClick() {
+    const isMelody = this.activeTab === 'melody';
+    const isSong = this.activeTab === 'song';
     this.dispatchEvent(new CustomEvent('toggle-play', {
-      detail: { isPlaying: !this.isPlaying },
+      detail: { isPlaying: !this.isPlaying, target: isMelody ? 'melody' : (isSong ? 'song' : 'chords') },
       bubbles: true,
       composed: true,
     }));
@@ -378,11 +380,23 @@ export class MobileDock extends LitElement {
   private onSelectSound(soundName: string) {
     this.closeSheet();
     const isMelody = this.activeTab === 'melody';
-    this.dispatchEvent(new CustomEvent(isMelody ? 'set-melody-sound' : 'set-chord-sound', {
-      detail: { sound: soundName },
-      bubbles: true,
-      composed: true,
-    }));
+    if (isMelody) {
+      this.melodySound = soundName;
+      playbackEngine.setMelodySound(soundName);
+      this.dispatchEvent(new CustomEvent('set-melody-sound', {
+        detail: { sound: soundName },
+        bubbles: true,
+        composed: true,
+      }));
+    } else {
+      this.chordSound = soundName;
+      this.dispatchEvent(new CustomEvent('set-chord-sound', {
+        detail: { sound: soundName },
+        bubbles: true,
+        composed: true,
+      }));
+    }
+    this.requestUpdate();
   }
 
   private get feelChanged(): boolean {
@@ -402,21 +416,34 @@ export class MobileDock extends LitElement {
   }
 
   private resetFeel() {
+    const isMelody = this.activeTab === 'melody';
     this.feelSettings = {
       ...FEEL_DEFAULTS,
       barFeel: {},
       advOverride: {},
     };
     this.feelScope = null;
-    playbackEngine.setPlayStyle(FEEL_DEFAULTS.playStyle);
-    playbackEngine.setFeelSettings(this.feelSettings);
-    setMasterTone(FEEL_DEFAULTS.tone);
+    if (isMelody) {
+      this.melodyFeel = 'Smooth';
+      playbackEngine.setMelodyFeelSettings(this.feelSettings);
+      this.dispatchEvent(new CustomEvent('set-melody-feel', {
+        detail: { feel: 'Smooth' },
+        bubbles: true,
+        composed: true,
+      }));
+    } else {
+      this.chordFeel = FEEL_DEFAULTS.playStyle;
+      playbackEngine.setPlayStyle(FEEL_DEFAULTS.playStyle);
+      playbackEngine.setFeelSettings(this.feelSettings);
+      setMasterTone(FEEL_DEFAULTS.tone);
 
-    this.dispatchEvent(new CustomEvent('set-feel', {
-      detail: { feel: FEEL_DEFAULTS.playStyle },
-      bubbles: true,
-      composed: true,
-    }));
+      this.dispatchEvent(new CustomEvent('set-feel', {
+        detail: { feel: FEEL_DEFAULTS.playStyle },
+        bubbles: true,
+        composed: true,
+      }));
+    }
+
     this.dispatchEvent(new CustomEvent('feel-settings-change', {
       detail: { feelSettings: { ...this.feelSettings } },
       bubbles: true,
@@ -457,17 +484,28 @@ export class MobileDock extends LitElement {
     if (this.feelScope === null) {
       (nextFs as any)[key] = value;
       if (key === 'playStyle') {
-        playbackEngine.setPlayStyle(value);
-        this.dispatchEvent(new CustomEvent(isMelody ? 'set-melody-feel' : 'set-chord-feel', {
-          detail: { feel: value, playStyle: value },
-          bubbles: true,
-          composed: true,
-        }));
-        this.dispatchEvent(new CustomEvent('set-feel', {
-          detail: { feel: value, playStyle: value },
-          bubbles: true,
-          composed: true,
-        }));
+        if (isMelody) {
+          this.melodyFeel = value;
+          playbackEngine.setMelodyFeel(value);
+          this.dispatchEvent(new CustomEvent('set-melody-feel', {
+            detail: { feel: value, playStyle: value },
+            bubbles: true,
+            composed: true,
+          }));
+        } else {
+          this.chordFeel = value;
+          playbackEngine.setPlayStyle(value);
+          this.dispatchEvent(new CustomEvent('set-chord-feel', {
+            detail: { feel: value, playStyle: value },
+            bubbles: true,
+            composed: true,
+          }));
+          this.dispatchEvent(new CustomEvent('set-feel', {
+            detail: { feel: value, playStyle: value },
+            bubbles: true,
+            composed: true,
+          }));
+        }
       } else if (key === 'tone') {
         setMasterTone(value);
       }
@@ -479,7 +517,11 @@ export class MobileDock extends LitElement {
     }
 
     this.feelSettings = nextFs;
-    playbackEngine.setFeelSettings(this.feelSettings);
+    if (isMelody) {
+      playbackEngine.setMelodyFeelSettings(this.feelSettings);
+    } else {
+      playbackEngine.setFeelSettings(this.feelSettings);
+    }
 
     this.dispatchEvent(new CustomEvent('feel-settings-change', {
       detail: { feelSettings: { ...this.feelSettings }, key, value, chordIndex: this.feelScope },
