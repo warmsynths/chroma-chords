@@ -852,6 +852,13 @@ export class TabChords extends LitElement {
       color: var(--cv-ink, #2E271F);
     }
 
+    @media (max-width: 899px) {
+      /* Phones: two columns so "Subdominant" / "Leading tone" fit whole at a readable size */
+      .scale-degrees-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
     .degree-fn {
       font-size: 10.5px;
       font-weight: 700;

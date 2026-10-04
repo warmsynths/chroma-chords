@@ -182,6 +182,18 @@ export class TransportBar extends LitElement {
       }
     }
 
+    /* Very tight (Chords with the right-hand column open at ~900px): shed carets and the BPM word */
+    @container (max-width: 640px) {
+      .tb-btn .caret,
+      .bpm-word {
+        display: none;
+      }
+      .tb-btn {
+        padding: 0 8px;
+        gap: 5px;
+      }
+    }
+
     @container (max-width: 940px) {
       .transport-container.melody .tb-btn .kicker,
       .transport-container.melody .play-rest {
@@ -1235,7 +1247,7 @@ export class TransportBar extends LitElement {
           <span class="highlight">${this.keyRoot} ${this.scaleMode}</span>
           <span>·</span>
           <span style="font-family: 'Space Mono', monospace;">${this.bpm}</span>
-          <span style="font-size: 11px;">BPM</span>
+          <span class="bpm-word" style="font-size: 11px;">BPM</span>
           <span class="caret">▾</span>
         </button>
 
