@@ -36,6 +36,8 @@ export interface BandMelodyProfile {
   bias: MelodyBias;
   ornament: MelodyOrnament;
   echo: boolean;
+  /** Ways the band's signature phrase may be restated on a re-roll without stopping sounding like them. */
+  signatureVariants: Array<'later' | 'octave' | 'short'>;
   /** Extra semitones to shift the line's centre of gravity (negative = lower). */
   centerShift: number;
   /** Velocity of accented notes / unaccented notes. */
@@ -53,6 +55,7 @@ export const BAND_MELODY_PROFILES: Record<string, BandMelodyProfile> = {
     bias: { pentatonic: 8, repeat: 9, leap: -4, chordTone: 3 },
     ornament: 'scoop',
     echo: true,
+    signatureVariants: ['later', 'octave', 'short'],
     centerShift: 0,
     dynamics: { accent: 114, plain: 96 },
     sigLine: 'Narrow, sing-along tune built on repeated notes and the pentatonic scale, hammering one pitch before it moves.',
@@ -70,6 +73,7 @@ export const BAND_MELODY_PROFILES: Record<string, BandMelodyProfile> = {
     bias: { leap: -6, semitone: 4, descend: 3, chordTone: 4 },
     ornament: 'none',
     echo: false,
+    signatureVariants: ['later', 'short'],
     centerShift: 0,
     dynamics: { accent: 104, plain: 90 },
     sigLine: 'Singable, mostly stepwise tune that bends through a chromatic neighbour and often descends under the chords.',
@@ -87,6 +91,7 @@ export const BAND_MELODY_PROFILES: Record<string, BandMelodyProfile> = {
     bias: { leap: 5, semitone: 5, extension: 4, chordTone: 1 },
     ornament: 'trill',
     echo: false,
+    signatureVariants: ['later', 'octave'],
     centerShift: 3,
     dynamics: { accent: 108, plain: 82 },
     sigLine: 'Small cells of notes in odd groupings, a falsetto leap, and a nagging semitone that never quite lands.',
@@ -104,6 +109,7 @@ export const BAND_MELODY_PROFILES: Record<string, BandMelodyProfile> = {
     bias: { pentatonic: 6, repeat: 6, leap: 2, chordTone: 5 },
     ornament: 'scoop',
     echo: true,
+    signatureVariants: ['octave', 'short'],
     centerShift: -3,
     dynamics: { accent: 120, plain: 80 },
     sigLine: 'Root-heavy minor-pentatonic riff that repeats, scoops up into notes, and hits much harder on the accents.',
@@ -121,6 +127,7 @@ export const BAND_MELODY_PROFILES: Record<string, BandMelodyProfile> = {
     bias: { extension: 9, semitone: 5, leap: 3, chordTone: 2 },
     ornament: 'enclosure',
     echo: false,
+    signatureVariants: ['later', 'octave'],
     centerShift: 2,
     dynamics: { accent: 104, plain: 90 },
     sigLine: 'Jazz-flavoured line leaning on 9ths and 13ths, approached chromatically from above and below.',
@@ -138,6 +145,7 @@ export const BAND_MELODY_PROFILES: Record<string, BandMelodyProfile> = {
     bias: { pentatonic: 4, descend: 5, repeat: 3, leap: -5, chordTone: 3 },
     ornament: 'slide',
     echo: false,
+    signatureVariants: ['later', 'short'],
     centerShift: -2,
     dynamics: { accent: 96, plain: 84 },
     sigLine: 'Lazy, drooping tune that lets notes sag a little flat and walks down the chord rather than leaping.',
@@ -155,6 +163,7 @@ export const BAND_MELODY_PROFILES: Record<string, BandMelodyProfile> = {
     bias: { pentatonic: 8, repeat: 4, leap: -2, chordTone: 3 },
     ornament: 'slide',
     echo: true,
+    signatureVariants: ['short', 'octave'],
     centerShift: 0,
     dynamics: { accent: 96, plain: 82 },
     sigLine: 'Sparse, reverb-soaked pentatonic phrases with long slides, answered later like an echo.',
@@ -172,6 +181,7 @@ export const BAND_MELODY_PROFILES: Record<string, BandMelodyProfile> = {
     bias: { repeat: 9, pentatonic: 5, leap: -3, chordTone: 4 },
     ornament: 'none',
     echo: true,
+    signatureVariants: [],
     centerShift: 0,
     dynamics: { accent: 110, plain: 94 },
     sigLine: 'A short riff on repeat, pushed off the beat, that evolves by dropping one note at a time rather than by writing a new tune.',

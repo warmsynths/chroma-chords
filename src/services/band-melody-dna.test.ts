@@ -143,8 +143,8 @@ describe('band rhythm variety', () => {
 });
 
 describe('band signature variety across re-rolls', () => {
-  it('first and last bar change between seeds for every band', () => {
-    BAND_LIST.forEach(b => {
+  it('first and last bar change between seeds for every band except Daft Punk, whose loop stays exact', () => {
+    BAND_LIST.filter(b => b.id !== 'daft-punk').forEach(b => {
       const p = generateBandProgression(chordData, b.id, 'C', 'MAJOR')!;
       const first = new Set<string>();
       const last = new Set<string>();

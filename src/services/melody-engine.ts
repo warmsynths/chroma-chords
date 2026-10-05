@@ -1097,8 +1097,11 @@ export class MelodyEngine {
   spiceWithBandTrick(melody: MelodyTrack, bandId: string, barIndex: number, progression: Progression, seed: number = 0): MelodyTrack {
     const result = this.spiceWithBandTrickBase(melody, bandId, barIndex, progression);
     if (!seed) return result;
-    const variant = Math.abs(seed * 13 + barIndex * 7) % 4;
-    if (variant === 0) return result;
+    // Only restatements this band would actually make; some (Daft Punk's loop) never change.
+    const allowed = getBandMelodyProfile(bandId)?.signatureVariants ?? [];
+    const pickIdx = Math.abs(seed * 13 + barIndex * 7) % (allowed.length + 1);
+    if (pickIdx === 0) return result;
+    const variant = ({ later: 1, octave: 2, short: 3 } as const)[allowed[pickIdx - 1]];
 
     const isTrick = (n: MelodyNote) => n.barIndex === barIndex && !!n.tag && n.tag.startsWith('band-');
     const trick = result.notes.filter(isTrick);
