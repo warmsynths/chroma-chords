@@ -8,7 +8,7 @@ import { SongArranger, SongSection, SongTimelineItem } from './services/song-arr
 import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling, getMoodColor, applyVoicingToChord } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, FeelSettings } from './services/audio-service';
 import { authService } from './services/auth-service';
-import { melodyEngine, MelodyTrack } from './services/melody-engine';
+import { melodyEngine, MelodyTrack, ContourArchetype } from './services/melody-engine';
 import { NavTabId } from './components/app-header';
 import { PlayInstrument } from './components/tabs/tab-play';
 import './components/app-header';
@@ -1097,6 +1097,7 @@ export class ChromaChordsApp extends LitElement {
     this.melodyTrack = (p as any).melodyTrack || melodyEngine.createEmptyTrack(this.progression);
     playbackEngine.setMelodyTrack(this.melodyTrack);
     this.activeSectionIdx = 0;
+    this.sections = SongArranger.setSectionMelody(this.sections, 0, this.melodyTrack);
     this.showToast(`Loaded "${p.name}"`);
   }
 
@@ -1178,6 +1179,7 @@ export class ChromaChordsApp extends LitElement {
       this.songPlaying = false;
     } else if (effectiveTarget === 'song') {
       playbackEngine.setStepLoop(null);
+      this.captureActiveMelody();
       playbackEngine.setSong(this.sections);
       this.playing = playbackEngine.togglePlay('song');
       this.songPlaying = playbackEngine.isSongPlaying();
@@ -1289,10 +1291,49 @@ export class ChromaChordsApp extends LitElement {
     this.requestUpdate();
   }
 
+  /** A fresh melody for a section, shaped by what the section is for. */
+  private generateSectionMelody(progression: Progression, sectionName: string): MelodyTrack {
+    const contourBySection: Record<string, ContourArchetype> = {
+      Verse: 'Arch',
+      Chorus: 'AnthemHook',
+      Bridge: 'CallAndResponse',
+      Outro: 'DescendingSigh',
+      'Pre-chorus': 'AscendingClimax',
+    };
+    return melodyEngine.generateMelody(progression, {
+      contour: contourBySection[sectionName] || 'Arch',
+      density: 50,
+      octave: 4,
+      guideMode: 'scale-key',
+      seed: Math.floor(Math.random() * 100000) + 1,
+    });
+  }
+
+  /** Write the melody being edited back onto the active section (call before switching away). */
+  private captureActiveMelody() {
+    if (this.sections[this.activeSectionIdx]) {
+      this.sections = SongArranger.setSectionMelody(this.sections, this.activeSectionIdx, this.melodyTrack);
+    }
+  }
+
+  /** Make a section's own melody the one being edited and played. */
+  private loadSectionMelody(sec: SongSection | undefined) {
+    if (!sec) return;
+    this.melodyTrack = sec.melodyTrack ?? melodyEngine.createEmptyTrack(sec.progression);
+    playbackEngine.setMelodyTrack(this.melodyTrack);
+  }
+
   private onAddSection() {
     if (!this.progression) return;
+    this.captureActiveMelody();
+    const before = this.sections.length;
     const res = SongArranger.addSection(this.sections, this.progression, this.chordData);
     this.sections = res.sections;
+    // A new section gets its own melody to match its new chords (not the previous section's)
+    if (this.sections.length > before) {
+      const added = this.sections[res.activeIndex];
+      this.sections = SongArranger.setSectionMelody(this.sections, res.activeIndex, this.generateSectionMelody(added.progression, added.name));
+    }
     this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
     this.activeSectionIdx = res.activeIndex;
     const activeSec = this.sections[this.activeSectionIdx];
@@ -1300,6 +1341,7 @@ export class ChromaChordsApp extends LitElement {
       this.progression = activeSec.progression;
       this.order = activeSec.order.slice();
       playbackEngine.setProgression(this.progression, this.order);
+      this.loadSectionMelody(activeSec);
     }
     playbackEngine.setSong(this.sections);
     this.requestUpdate();
@@ -1307,6 +1349,7 @@ export class ChromaChordsApp extends LitElement {
 
   private onRemoveSection(e: CustomEvent<number>) {
     const idx = e.detail;
+    this.captureActiveMelody();
     const res = SongArranger.removeSection(this.sections, idx);
     this.sections = res.sections;
     this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
@@ -1316,6 +1359,7 @@ export class ChromaChordsApp extends LitElement {
       this.progression = activeSec.progression;
       this.order = activeSec.order.slice();
       playbackEngine.setProgression(this.progression, this.order);
+      this.loadSectionMelody(activeSec);
     }
     playbackEngine.setSong(this.sections);
     this.requestUpdate();
@@ -1325,12 +1369,14 @@ export class ChromaChordsApp extends LitElement {
     const idx = typeof e.detail === 'object' && e.detail !== null && 'sectionIndex' in e.detail
       ? (e.detail as any).sectionIndex
       : e.detail;
+    if (idx !== this.activeSectionIdx) this.captureActiveMelody();
     this.activeSectionIdx = idx;
     const sec = this.sections[idx];
     if (sec) {
       this.progression = sec.progression;
       this.order = sec.order.slice();
       playbackEngine.setProgression(this.progression, this.order);
+      this.loadSectionMelody(sec);
     }
     this.requestUpdate();
   }
@@ -1637,6 +1683,8 @@ export class ChromaChordsApp extends LitElement {
                     @melody-change=${(e: CustomEvent) => {
                       this.melodyTrack = e.detail.track;
                       playbackEngine.setMelodyTrack(this.melodyTrack);
+                      this.sections = SongArranger.setSectionMelody(this.sections, this.activeSectionIdx, this.melodyTrack);
+                      playbackEngine.updateSongSections(this.sections);
                     }}
                     @span-change=${(e: CustomEvent) => {
                       this.melodySpan = e.detail.span;

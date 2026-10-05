@@ -271,6 +271,11 @@ export class PlaybackEngine {
     this.progressStep = 0;
   }
 
+  /** Swap in updated sections (e.g. after a melody edit) without restarting the song. */
+  public updateSongSections(sections: SongSection[]): void {
+    this.sections = sections;
+  }
+
   public isSongMode(): boolean {
     return this.mode === 'song';
   }
@@ -520,8 +525,9 @@ export class PlaybackEngine {
         });
 
         // In song mode, companion melody notes for this bar play with relative bar timing
-        if (this.melodyTrack && !this.melodyTrack.muted && sec.progression) {
-          const barNotes = this.melodyTrack.notes.filter(n => n.barIndex === chordIndex);
+        const sectionMelody = sec.melodyTrack ?? null;
+        if (sectionMelody && !sectionMelody.muted && sec.progression) {
+          const barNotes = sectionMelody.notes.filter(n => n.barIndex === chordIndex);
           if (barNotes.length > 0) {
             const bpm = sec.progression.bpm || 84;
             const secondsPerBeat = 60 / bpm;

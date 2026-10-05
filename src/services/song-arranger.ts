@@ -18,6 +18,7 @@ import {
   ROMAN_BY_SCALE,
   SCALE_LABEL,
 } from './chord-engine';
+import type { MelodyTrack } from './melody-engine';
 
 export interface SongSection {
   id?: string;
@@ -26,6 +27,8 @@ export interface SongSection {
   tint?: string;
   progression: Progression;
   order: number[];
+  /** This section's own melody (each section gets its own, like its own chords). */
+  melodyTrack?: MelodyTrack | null;
 }
 
 export interface SongTimelineItem {
@@ -397,7 +400,8 @@ export class SongArranger {
     sections: SongSection[],
     activeSectionIdx: number,
     progression: Progression,
-    order: number[]
+    order: number[],
+    melodyTrack?: MelodyTrack | null
   ): SongSection[] {
     if (!sections[activeSectionIdx]) return sections;
     const updated = [...sections];
@@ -405,7 +409,16 @@ export class SongArranger {
       ...updated[activeSectionIdx],
       progression,
       order: order.slice(),
+      ...(melodyTrack !== undefined ? { melodyTrack } : {}),
     };
+    return updated;
+  }
+
+  /** Stores a melody on one section without touching its chords. */
+  public static setSectionMelody(sections: SongSection[], index: number, melodyTrack: MelodyTrack | null): SongSection[] {
+    if (!sections[index]) return sections;
+    const updated = [...sections];
+    updated[index] = { ...updated[index], melodyTrack };
     return updated;
   }
 

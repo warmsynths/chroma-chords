@@ -144,4 +144,25 @@ describe('SongArranger Deep Module', () => {
       expect(removed).toHaveLength(2);
     });
   });
+
+  it('keeps a melody per section: sync preserves it, setSectionMelody replaces only that section', () => {
+    const melody = (id: string) => ({ id, notes: [] } as any);
+    let sections = SongArranger.createInitialSong(sampleProgression);
+    sections = SongArranger.setSectionMelody(sections, 0, melody('verse'));
+    const added = SongArranger.addSection(sections, sampleProgression);
+    sections = SongArranger.setSectionMelody(added.sections, added.activeIndex, melody('chorus'));
+
+    expect(sections[0].melodyTrack?.id).toBe('verse');
+    expect(sections[1].melodyTrack?.id).toBe('chorus');
+
+    // editing the chords of a section must not drop its melody
+    const synced = SongArranger.syncActiveSection(sections, 1, sampleProgression, [3, 2, 1, 0]);
+    expect(synced[1].melodyTrack?.id).toBe('chorus');
+    expect(synced[1].order).toEqual([3, 2, 1, 0]);
+
+    // or replace it when a melody is passed
+    const swapped = SongArranger.syncActiveSection(sections, 1, sampleProgression, [0, 1, 2, 3], melody('chorus-2'));
+    expect(swapped[1].melodyTrack?.id).toBe('chorus-2');
+    expect(swapped[0].melodyTrack?.id).toBe('verse');
+  });
 });
