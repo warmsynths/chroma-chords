@@ -27,6 +27,7 @@ export class MobileDock extends LitElement {
   @property({ type: Number }) bpm = 84;
   @property({ type: Number }) barsPerChord = 1;
   @property({ type: Boolean }) isSaved = false;
+  @property({ type: Boolean }) backingEnabled = true;
   @property({ type: String }) saveState: 'new' | 'saved' | 'edited' = 'new';
   @property({ type: Array }) chords: Array<{ name: string; roman?: string }> = [];
 
@@ -308,6 +309,7 @@ export class MobileDock extends LitElement {
       padding: 6px 10px 8px;
     }
     .loop-row-label {
+      min-width: 52px;
       font-size: 10.5px;
       font-weight: 800;
       letter-spacing: 1.2px;
@@ -742,6 +744,15 @@ export class MobileDock extends LitElement {
     }));
   }
 
+  private onSetBacking(on: boolean) {
+    this.backingEnabled = on;
+    this.dispatchEvent(new CustomEvent('toggle-melody-backing', {
+      detail: { backingEnabled: on },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
   private onSetLoop(next: 'Section' | 'Chord' | 'Span') {
     this.melodyLoop = next;
     this.dispatchEvent(new CustomEvent('loop-cycle', {
@@ -862,6 +873,19 @@ export class MobileDock extends LitElement {
                       aria-checked=${this.melodyLoop === m}
                       @click=${() => this.onSetLoop(m)}
                     >${m}</button>
+                  `)}
+                </div>
+              </div>
+              <div class="loop-row">
+                <span class="loop-row-label">Chords</span>
+                <div class="loop-seg" role="radiogroup" aria-label="Chords playing under the melody">
+                  ${([[true, 'On'], [false, 'Muted']] as const).map(([val, label]) => html`
+                    <button
+                      class="loop-seg-btn ${this.backingEnabled === val ? 'active' : ''}"
+                      role="radio"
+                      aria-checked=${this.backingEnabled === val}
+                      @click=${() => this.onSetBacking(val)}
+                    >${label}</button>
                   `)}
                 </div>
               </div>

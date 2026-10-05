@@ -68,4 +68,31 @@ describe('MobileDock', () => {
     keep.click();
     expect(spy).toHaveBeenCalled();
   });
+
+  it('lets you mute the chords under the melody from the more menu', async () => {
+    const el = document.createElement('mobile-dock') as MobileDock;
+    el.activeTab = 'melody';
+    document.body.appendChild(el);
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector('[aria-label="More actions"]') as HTMLElement).click();
+    await el.updateComplete;
+
+    const spy = vi.fn();
+    el.addEventListener('toggle-melody-backing', spy);
+    const muted = Array.from(el.shadowRoot!.querySelectorAll('[aria-label="Chords playing under the melody"] .loop-seg-btn')).find(b => b.textContent?.trim() === 'Muted') as HTMLElement;
+    muted.click();
+    expect(spy.mock.calls[0][0].detail).toEqual({ backingEnabled: false });
+    await el.updateComplete;
+    expect(muted.classList.contains('active')).toBe(true);
+  });
+
+  it('does not show the chords mute outside Melody', async () => {
+    const el = document.createElement('mobile-dock') as MobileDock;
+    el.activeTab = 'loop';
+    document.body.appendChild(el);
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector('[aria-label="More actions"]') as HTMLElement).click();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('[aria-label="Chords playing under the melody"]')).toBeNull();
+  });
 });
