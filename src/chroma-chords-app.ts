@@ -9,7 +9,7 @@ import { loadChordData, generateProgression, extendProgression, RawChordData, Pr
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, FeelSettings } from './services/audio-service';
 import { authService } from './services/auth-service';
 import { melodyEngine, MelodyTrack, ContourArchetype, CONTOUR_STYLES, BAND_MELODY_MOVES } from './services/melody-engine';
-import { getBandById, BAND_LIST } from './services/band-dna-service';
+import { getBandById, BAND_LIST, generateBandProgression } from './services/band-dna-service';
 import { NavTabId } from './components/app-header';
 import { PlayInstrument } from './components/tabs/tab-play';
 import './components/app-header';
@@ -1000,10 +1000,21 @@ export class ChromaChordsApp extends LitElement {
   private regenerate() {
     if (!this.chordData.scales || Object.keys(this.chordData.scales).length === 0) return;
     this.chordLengthCache = [];
-    const progression = generateProgression(this.chordData, this.genre, this.mood, {
+    // With a band picked, the loop itself is written in that band's harmonic style (its
+    // progression patterns, cadence and signature chords), in one of its favoured keys.
+    let progression = generateProgression(this.chordData, this.genre, this.mood, {
       length: this.length,
     });
+    const band = this.selectedBand ? getBandById(this.selectedBand) : undefined;
+    if (band) {
+      const bandProg = generateBandProgression(this.chordData, band.id, '', '');
+      if (bandProg && bandProg.chords.length >= 4) {
+        progression = { ...bandProg, chords: bandProg.chords.slice(0, Math.max(4, this.length)) };
+        playbackEngine.setBpm(progression.bpm);
+      }
+    }
     this.progression = progression;
+    this.length = progression.chords.length;
     this.order = Array.from({ length: this.length }, (_, i) => i);
     this.activeIndex = 0;
     this.progressStep = 0;

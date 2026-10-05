@@ -651,6 +651,9 @@ export class TabChords extends LitElement {
     }
 
     .band-move-pill {
+      border: none;
+      font-family: inherit;
+      cursor: pointer;
       margin-top: 8px;
       display: inline-flex;
       align-items: center;
@@ -665,6 +668,10 @@ export class TabChords extends LitElement {
       font-weight: 800;
       box-shadow: 0 0 0 1px rgba(46, 39, 31, 0.1);
     }
+
+    .band-move-pill:hover { background: #FFFFFF; }
+    .band-move-pill:active { transform: scale(0.97); }
+    .band-move-use { font-size: 9.5px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--cv-label, #8A6B3F); }
 
     /* Swap Button beneath pad card */
     .pad-tray-btn {
@@ -1262,6 +1269,28 @@ export class TabChords extends LitElement {
     this.requestUpdate();
   }
 
+  /** Replaces a bar's chord with the active band's suggested move for it. */
+  private applyBandMove(index: number, move: { name: string; chord: string; roman: string; role: string }) {
+    const current = this.progression.chords[index];
+    if (!current) return;
+    const key = this.progression?.key || 'C';
+    const scaleType = this.progression?.scaleType || 'MAJOR';
+    const notes = notesForSymbol(move.chord, preferFlatSpelling(key, scaleType));
+    const newChord: ChordBlock = {
+      ...current,
+      name: move.chord,
+      roman: move.roman,
+      functionLabel: move.role,
+      tag: 'borrowed',
+      notes,
+      desc: `${move.chord} is ${move.name}.`,
+    };
+    const updated = [...this.progression.chords];
+    updated[index] = newChord;
+    this.dispatchEvent(new CustomEvent('progression-update', { detail: { chords: updated }, bubbles: true, composed: true }));
+    playbackEngine.playChordNotes(notes, 0.85, newChord.voicing || '1st inversion', 92);
+  }
+
   private confirmSwap(e: CustomEvent<{ chord: ChordBlock; index: number }>) {
     const swapIdx = this.swapIndex;
     if (swapIdx === null) return;
@@ -1480,9 +1509,17 @@ export class TabChords extends LitElement {
                   </div>
 
                   ${bandMove ? html`
-                    <div class="band-move-pill" style="border-left: 3px solid ${activeBand?.color || '#2E271F'};">
+                    <button
+                      class="band-move-pill"
+                      style="border-left: 3px solid ${activeBand?.color || '#2E271F'};"
+                      title="Play ${bandMove.chord} here: ${bandMove.name}"
+                      aria-label="Use ${activeBand?.name} move ${bandMove.name}: ${bandMove.chord} in bar ${i + 1}"
+                      @click=${(e: MouseEvent) => { e.stopPropagation(); this.applyBandMove(i, bandMove); }}
+                      @pointerdown=${(e: Event) => e.stopPropagation()}
+                    >
                       <span>${bandMove.name}: ${bandMove.chord}</span>
-                    </div>
+                      <span class="band-move-use">Use</span>
+                    </button>
                   ` : ''}
                 </div>
               </div>
