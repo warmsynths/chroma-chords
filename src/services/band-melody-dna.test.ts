@@ -141,3 +141,21 @@ describe('band rhythm variety', () => {
     expect(shapes.size).toBeGreaterThan(1);
   });
 });
+
+describe('band signature variety across re-rolls', () => {
+  it('first and last bar change between seeds for every band', () => {
+    BAND_LIST.forEach(b => {
+      const p = generateBandProgression(chordData, b.id, 'C', 'MAJOR')!;
+      const first = new Set<string>();
+      const last = new Set<string>();
+      for (let seed = 1; seed <= 16; seed++) {
+        const t = melodyEngine.generateMelody(p, { bandId: b.id, density: 45, seed });
+        const sig = (bar: number) => t.notes.filter(n => n.barIndex === bar).map(n => `${n.stepInBar}:${n.midi}`).join(',');
+        first.add(sig(0));
+        last.add(sig(p.chords.length - 1));
+      }
+      expect(first.size, `${b.id} first`).toBeGreaterThan(2);
+      expect(last.size, `${b.id} last`).toBeGreaterThan(2);
+    });
+  });
+});

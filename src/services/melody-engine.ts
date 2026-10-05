@@ -935,8 +935,8 @@ export class MelodyEngine {
 
     if (bandId) {
       // The signature lands where a hook would: the first bar, and again on the last to call back
-      resultTrack = this.spiceWithBandTrick(resultTrack, bandId, 0, progression);
-      if (totalBars > 1) resultTrack = this.spiceWithBandTrick(resultTrack, bandId, totalBars - 1, progression);
+      resultTrack = this.spiceWithBandTrick(resultTrack, bandId, 0, progression, seed);
+      if (totalBars > 1) resultTrack = this.spiceWithBandTrick(resultTrack, bandId, totalBars - 1, progression, seed);
     }
 
     return resultTrack;
@@ -1090,7 +1090,48 @@ export class MelodyEngine {
     return { ...melody, notes: invertedNotes };
   }
 
-  spiceWithBandTrick(melody: MelodyTrack, bandId: string, barIndex: number, progression: Progression): MelodyTrack {
+  /**
+   * Lays the band's signature phrase into one bar. With a seed (a re-roll) the phrase is varied
+   * (shifted later, moved an octave, or shortened) so first and last bars don't repeat verbatim.
+   */
+  spiceWithBandTrick(melody: MelodyTrack, bandId: string, barIndex: number, progression: Progression, seed: number = 0): MelodyTrack {
+    const result = this.spiceWithBandTrickBase(melody, bandId, barIndex, progression);
+    if (!seed) return result;
+    const variant = Math.abs(seed * 13 + barIndex * 7) % 4;
+    if (variant === 0) return result;
+
+    const isTrick = (n: MelodyNote) => n.barIndex === barIndex && !!n.tag && n.tag.startsWith('band-');
+    const trick = result.notes.filter(isTrick);
+    if (!trick.length) return result;
+
+    let varied: MelodyNote[] = trick;
+    if (variant === 1) {
+      // Arrive a little later in the bar
+      const shift = 2;
+      varied = trick
+        .filter(n => n.stepInBar + shift < 16)
+        .map(n => ({
+          ...n,
+          stepInBar: n.stepInBar + shift,
+          beatOffset: n.beatOffset + shift / 4,
+          durationBeats: Math.min(n.durationBeats, (16 - (n.stepInBar + shift)) / 4),
+        }));
+    } else if (variant === 2) {
+      // Same phrase an octave away
+      const avg = trick.reduce((a, n) => a + n.midi, 0) / trick.length;
+      const delta = avg < 72 ? 12 : -12;
+      varied = trick.map(n => ({ ...n, midi: n.midi + delta, pitch: midiToNoteName(n.midi + delta) }));
+    } else {
+      // A shortened statement: the opening of the phrase only
+      varied = trick.slice(0, Math.max(1, trick.length - 1)).map((n, i, arr) => (
+        i === arr.length - 1 ? { ...n, durationBeats: Math.max(n.durationBeats, 2.0) } : n
+      ));
+    }
+    const rest = result.notes.filter(n => !isTrick(n));
+    return { ...result, notes: [...rest, ...varied].sort((a, b) => a.beatOffset - b.beatOffset) };
+  }
+
+  private spiceWithBandTrickBase(melody: MelodyTrack, bandId: string, barIndex: number, progression: Progression): MelodyTrack {
     const activeChord = progression.chords[barIndex] || progression.chords[0];
     const bId = bandId.toLowerCase().replace(/[^a-z]/g, '');
 
