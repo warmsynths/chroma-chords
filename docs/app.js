@@ -3388,7 +3388,7 @@ import{f as bn,u as vn,s as zo,n as ji,l as Cs,S as Ue,E as At,R as ot,P as de,F
               <span>${i===0?"Randomize":"Try another"}</span>
             </button>
             <button class="style-pill ${this.styleOpen?"open":""}" @click=${()=>{this.styleOpen=!this.styleOpen}} aria-expanded=${this.styleOpen} aria-label="Melody style">
-              <span class="style-pill-label">Style</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
               <span class="style-pill-value">${this.styleSummary()}</span>
               <span class="style-pill-caret">\u25BE</span>
             </button>
@@ -3625,7 +3625,7 @@ import{f as bn,u as vn,s as zo,n as ji,l as Cs,S as Ue,E as At,R as ot,P as de,F
             <span>${i===0?"Randomize":"Try another"}</span>
           </button>
           <button class="style-pill ${this.styleOpen?"open":""}" @click=${()=>{this.styleOpen=!this.styleOpen}} aria-expanded=${this.styleOpen} aria-label="Melody style">
-            <span class="style-pill-label">Style</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
             <span class="style-pill-caret">\u25BE</span>
           </button>
           <div class="m-tools-spacer"></div>
@@ -5214,26 +5214,29 @@ import{f as bn,u as vn,s as zo,n as ji,l as Cs,S as Ue,E as At,R as ot,P as de,F
       font-family: inherit;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       min-height: 32px;
-      padding: 0 11px 0 13px;
+      padding: 0 11px 0 12px;
       border-radius: 100px;
-      background: rgba(251, 243, 230, 0.72);
-      border: 1px solid rgba(46, 39, 31, 0.08);
+      background: var(--cv-cream, #FBF3E6);
+      box-shadow: 0 1px 2px rgba(46, 39, 31, 0.06);
       color: var(--cv-ink, #2E271F);
       font-size: 12px;
       font-weight: 800;
       cursor: pointer;
+      flex-shrink: 0;
       white-space: nowrap;
-      transition: background 150ms ease, transform 120ms ease;
+      transition: background 150ms ease, transform 120ms ease, box-shadow 150ms ease;
     }
 
-    .style-pill:hover { background: #FBF3E6; }
+    .style-pill:hover { background: #FFFFFF; box-shadow: 0 2px 4px rgba(46, 39, 31, 0.08); }
     .style-pill:active { transform: scale(0.97); }
-    .style-pill.open { background: #FBF3E6; box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.16); }
+    .style-pill.open { background: #2E271F; color: #FBF3E6; box-shadow: none; }
 
-    .style-pill-label { color: var(--cv-label, #8A6B3F); font-size: 10.5px; letter-spacing: 1.1px; text-transform: uppercase; }
-    .style-pill-caret { font-size: 10px; opacity: 0.65; }
+    .style-pill svg { flex-shrink: 0; }
+    .style-pill-value { font-weight: 800; }
+    .style-pill-caret { font-size: 9px; opacity: 0.55; transition: transform 150ms ease; }
+    .style-pill.open .style-pill-caret { transform: rotate(180deg); opacity: 0.8; }
 
     .m-tools .style-pill { min-height: 38px; }
 
@@ -5248,10 +5251,11 @@ import{f as bn,u as vn,s as zo,n as ji,l as Cs,S as Ue,E as At,R as ot,P as de,F
       z-index: 41;
       top: 52px;
       left: 0;
-      width: min(380px, 100%);
-      max-height: calc(100% - 64px);
+      width: min(460px, 100%);
+      max-height: calc(100vh - 250px);
       overflow-y: auto;
       overscroll-behavior: contain;
+      scrollbar-width: none;
       box-sizing: border-box;
       background: var(--cv-cream, #FBF3E6);
       border: 1px solid rgba(46, 39, 31, 0.1);
@@ -5265,11 +5269,14 @@ import{f as bn,u as vn,s as zo,n as ji,l as Cs,S as Ue,E as At,R as ot,P as de,F
     }
 
     :host([mobile]) .style-panel {
+      max-height: calc(100vh - 250px);
       top: 100px;
       left: 0;
       right: 0;
       width: auto;
     }
+
+    .style-panel::-webkit-scrollbar { display: none; }
 
     @keyframes style-in {
       from { opacity: 0; transform: translateY(-6px); }
@@ -5287,18 +5294,20 @@ import{f as bn,u as vn,s as zo,n as ji,l as Cs,S as Ue,E as At,R as ot,P as de,F
 
     .style-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, 1fr);
       gap: 6px;
     }
+
+    :host([mobile]) .style-grid { grid-template-columns: 1fr 1fr; }
 
     .style-card {
       border: none;
       font-family: inherit;
       text-align: left;
       cursor: pointer;
-      min-height: 56px;
-      padding: 9px 11px;
-      border-radius: 14px;
+      min-height: 52px;
+      padding: 8px 10px;
+      border-radius: 13px;
       background: var(--cv-surface, #F6EADB);
       color: var(--cv-ink, #2E271F);
       display: flex;
