@@ -12,7 +12,10 @@ import {
   preferChordFlatSpelling,
   splitChordRootAndSuffix,
   transposeChordName,
+  QUALITY_INTERVALS,
+  CHORD_SUFFIX,
 } from './chord-engine';
+import { BAND_MELODY_PROFILES } from './band-melody-dna';
 
 export { splitChordRootAndSuffix };
 
@@ -463,6 +466,80 @@ export const BAND_ARCHETYPES: Record<string, BandArchetype> = {
       },
     ],
   },
+  khruangbin: {
+    id: 'khruangbin',
+    name: 'Khruangbin',
+    color: '#E8B77A',
+    font: "'Playfair Display', serif",
+    weight: 700,
+    pillFs: 12,
+    pillTrack: '0.02em',
+    presetId: 'guitar',
+    rhythmStyle: 'slow_arpeggio',
+    defaultBpm: 98,
+    tagline: 'A dusty minor groove that rocks between two chords and leaves the space open',
+    theoryTagline: 'Dorian i7–IV7 vamps, Andalusian i–♭VII–♭VI–V drops, dub-spacious dominant 9ths',
+    plain: 'a dusty minor groove that rocks between two chords and leaves the space open',
+    theory: 'dorian i7–IV7 vamp, ♭VII–♭VI descent, dominant 9ths, lots of repeat',
+    sig: [
+      { k: 'Harmony', v: 'Rocks between a minor 7th and a dominant chord a fourth above, the dorian vamp, rarely going anywhere else.' },
+      { k: 'Colour', v: 'Dominant 9ths and major 7ths give a warm, dusty funk tint instead of plain triads.' },
+      { k: 'Space', v: 'Few chords, changing slowly, so the bass and drums and reverb carry the groove.' },
+    ],
+    hoist: ['Am7', 'D9', 'Gmaj7'],
+    genre: 'Funk/Disco',
+    mood: 'Warm',
+    favoredKeys: ['A', 'D', 'E', 'G', 'C'],
+    favoredScales: ['DORIAN', 'NATURAL_MINOR'],
+    favoredMoods: ['Dreamy', 'Warm', 'Peaceful'],
+    basisArchetypes: [
+      ['Am7', 'D7', 'Am7', 'D7', 'Am7', 'D9', 'Am7', 'Am7'],
+      ['Am7', 'Gmaj7', 'Fmaj7', 'E7', 'Am7', 'Gmaj7', 'Fmaj7', 'E7'],
+    ],
+    cMajorBasisChords: ['Am7', 'D7', 'Am7', 'D7', 'Am7', 'D9', 'Am7', 'Am7'],
+    signatureTricks: [
+      { id: 'khruangbin-iv9', name: 'Dorian IV9', roman: 'IV9', plain: 'The bright dominant chord a fourth up that makes a minor groove feel sunlit', theory: 'Dominant 9th on the dorian IV (e.g. D9 in A dorian)', semitones: 5, quality: 'dom9' },
+      { id: 'khruangbin-bvii', name: '♭VII Slide', roman: '♭VIImaj7', plain: 'A major 7th a tone below home, drifting like a slow slide guitar', theory: 'Flat-seven major 7th, the Andalusian step (e.g. Gmaj7 in A)', semitones: 10, quality: 'maj7' },
+      { id: 'khruangbin-v7', name: 'Desert Dominant', roman: 'V7', plain: 'A bluesy dominant chord that pulls back to the minor home', theory: 'Dominant 7th on V resolving to i (e.g. E7 in A minor)', semitones: 7, quality: 'dom7' },
+    ],
+  },
+  'daft-punk': {
+    id: 'daft-punk',
+    name: 'Daft Punk',
+    color: '#9FB8E8',
+    font: "'Archivo Black', sans-serif",
+    weight: 400,
+    pillFs: 12,
+    pillTrack: '0.02em',
+    presetId: 'juno-pad',
+    rhythmStyle: 'driving_strum',
+    defaultBpm: 116,
+    tagline: 'A four-chord disco loop that never builds to a cadence, just keeps grooving',
+    theoryTagline: 'Minor-seventh loop with ♭III and IV, funk-filtered extensions, no dominant resolution',
+    plain: 'a four-chord disco loop that never builds to a cadence, just keeps grooving',
+    theory: 'i7–♭III–v7–IV loop, 7th and 9th colour, no V–I cadence',
+    sig: [
+      { k: 'Harmony', v: 'A minor-seventh loop that skips through ♭III and a minor v, borrowed from the funk and disco playbook.' },
+      { k: 'Colour', v: 'Every chord is a 7th or 9th, filtered and pumped, never a plain triad.' },
+      { k: 'Cadence', v: 'No V–I at the end: the loop just starts again, so the groove never feels finished.' },
+    ],
+    hoist: ['Bm7', 'D', 'F♯m7'],
+    genre: 'House/Dance',
+    mood: 'Uplifting',
+    favoredKeys: ['B', 'A', 'E', 'F#', 'D'],
+    favoredScales: ['NATURAL_MINOR', 'DORIAN'],
+    favoredMoods: ['Uplifting', 'Dreamy'],
+    basisArchetypes: [
+      ['Am7', 'C', 'Em7', 'D', 'Am7', 'C', 'Em7', 'D'],
+      ['Am7', 'Fmaj7', 'C', 'G', 'Am7', 'Fmaj7', 'C', 'G'],
+    ],
+    cMajorBasisChords: ['Am7', 'C', 'Em7', 'D', 'Am7', 'C', 'Em7', 'D'],
+    signatureTricks: [
+      { id: 'daft-biii', name: 'Disco ♭III', roman: '♭III', plain: 'The major chord a minor third up that makes a minor loop open out', theory: 'Major ♭III in a minor key (e.g. C in A minor)', semitones: 3, quality: 'maj' },
+      { id: 'daft-v7', name: 'Minor v Loop', roman: 'v7', plain: 'A minor chord on the fifth that keeps the loop going without ever resolving', theory: 'Minor 7th on the fifth degree (e.g. Em7 in A minor)', semitones: 7, quality: 'min7' },
+      { id: 'daft-iv', name: 'Filter IV', roman: 'IV', plain: 'A major chord on the fourth that lifts the loop for the last beat', theory: 'Major IV in a minor loop (dorian colour, e.g. D in A minor)', semitones: 5, quality: 'maj' },
+    ],
+  },
 };
 
 export const BAND_LIST = Object.values(BAND_ARCHETYPES);
@@ -471,6 +548,209 @@ export function getBandById(bandIdOrName?: string | null): BandArchetype | undef
   if (!bandIdOrName) return undefined;
   const norm = bandIdOrName.toLowerCase().trim().replace(/\s+/g, '-');
   return BAND_ARCHETYPES[norm] || BAND_LIST.find(b => b.name.toLowerCase() === bandIdOrName.toLowerCase().trim());
+}
+
+/* ==========================================================================
+   Harmonic grammar
+   Each band gets a handful of tonic-relative progression patterns (semitones from the key's
+   tonic + a chord quality), distilled from published analyses of their songs, and a cadence rule
+   for how the second half of an 8-bar loop lands. The generator draws from these first; the
+   older tricks / Markov paths are kept as variation.
+   ========================================================================== */
+
+export interface BandStep { semi: number; q: string }
+export interface BandPattern { name: string; basedOn: string; steps: BandStep[] }
+export interface BandGrammar {
+  patterns: BandPattern[];
+  /** How the last two bars of the second half land. Empty = repeat the loop as-is. */
+  cadence: BandStep[];
+  /** True if the band's loops legitimately sit on one chord (so repeats are not "fixed"). */
+  allowsRepeat: boolean;
+  /** Short plain-language bullets for the UI. */
+  how: string[];
+}
+
+const S = (semi: number, q: string): BandStep => ({ semi, q });
+
+export const BAND_GRAMMAR: Record<string, BandGrammar> = {
+  oasis: {
+    patterns: [
+      { name: 'Wonderwall verse', basedOn: 'Wonderwall (sus chords held over a drone)', steps: [S(9, 'min7'), S(0, 'maj'), S(7, 'sus4'), S(2, 'sus7')] },
+      { name: 'Anthem walk', basedOn: 'Don’t Look Back in Anger', steps: [S(0, 'maj'), S(7, 'maj'), S(9, 'min'), S(4, 'dom7'), S(5, 'maj'), S(7, 'maj'), S(0, 'maj'), S(0, 'maj')] },
+      { name: 'Mixolydian drop', basedOn: 'Champagne Supernova', steps: [S(0, 'maj'), S(10, 'maj'), S(5, 'maj'), S(0, 'maj')] },
+      { name: 'Live Forever lift', basedOn: 'Live Forever', steps: [S(0, 'maj'), S(7, 'maj'), S(2, 'min7'), S(5, 'maj')] },
+    ],
+    cadence: [S(5, 'maj'), S(0, 'maj')],
+    allowsRepeat: false,
+    how: [
+      'Open chords with the root held while the chord on top changes (sus2/sus4, add9).',
+      'Borrows ♭VII or ♭III to give a Mixolydian anthem lift.',
+      'Ends plagal, IV → I, instead of V → I.',
+    ],
+  },
+  beatles: {
+    patterns: [
+      { name: 'Here, There and Everywhere', basedOn: 'Here, There and Everywhere (I–iii–vi–ii–V)', steps: [S(0, 'maj'), S(4, 'min'), S(9, 'min7'), S(2, 'min7'), S(7, 'dom7'), S(0, 'maj'), S(5, 'maj'), S(0, 'maj')] },
+      { name: 'Hey Jude', basedOn: 'Hey Jude', steps: [S(0, 'maj'), S(7, 'maj'), S(7, 'dom7'), S(0, 'maj'), S(5, 'maj'), S(0, 'maj'), S(7, 'maj'), S(0, 'maj')] },
+      { name: 'Minor IV fade', basedOn: 'In My Life / Michelle', steps: [S(0, 'maj'), S(5, 'maj'), S(5, 'min'), S(0, 'maj')] },
+      { name: 'Eleanor’s dorian rock', basedOn: 'Eleanor Rigby', steps: [S(0, 'min'), S(8, 'maj'), S(0, 'min'), S(8, 'maj')] },
+      { name: 'Let It Be', basedOn: 'Let It Be', steps: [S(0, 'maj'), S(7, 'maj'), S(9, 'min'), S(5, 'maj')] },
+    ],
+    cadence: [S(7, 'dom7'), S(0, 'maj')],
+    allowsRepeat: false,
+    how: [
+      'Mixes in the minor iv (a major key borrowing its minor sibling), the bittersweet “Beatles chord”.',
+      'Uses secondary dominants (III7, II7) to pull toward the next chord.',
+      'Cadences classically with V7 → I, then ends clean.',
+    ],
+  },
+  radiohead: {
+    patterns: [
+      { name: 'Creep', basedOn: 'Creep (I–III–IV–iv)', steps: [S(0, 'maj'), S(4, 'maj'), S(5, 'maj'), S(5, 'min')] },
+      { name: 'Chromatic mediants', basedOn: 'OK Computer era (♭VI and ♭III a third apart)', steps: [S(0, 'maj7'), S(8, 'maj7'), S(3, 'maj7'), S(10, 'maj')] },
+      { name: 'Sinking minor', basedOn: 'No Surprises / Karma Police', steps: [S(0, 'min7'), S(8, 'maj7'), S(5, 'min7'), S(7, 'min7')] },
+      { name: 'Unresolved climb', basedOn: 'Paranoid Android', steps: [S(0, 'min'), S(10, 'maj'), S(8, 'maj'), S(3, 'maj')] },
+    ],
+    cadence: [S(5, 'min'), S(0, 'maj7')],
+    allowsRepeat: false,
+    how: [
+      'Chords a major or minor third apart (chromatic mediants), so the loop slides sideways.',
+      'Major chord turning to its minor (IV → iv) for a sudden cloud.',
+      'Often ends on a borrowed chord rather than resolving home.',
+    ],
+  },
+  nirvana: {
+    patterns: [
+      { name: 'Teen Spirit cycle', basedOn: 'Smells Like Teen Spirit (i–iv–♭III–♭VI power chords)', steps: [S(0, 'pow5'), S(5, 'pow5'), S(3, 'pow5'), S(8, 'pow5')] },
+      { name: 'Lithium lurch', basedOn: 'Lithium / Come As You Are', steps: [S(0, 'pow5'), S(3, 'pow5'), S(10, 'pow5'), S(5, 'pow5')] },
+      { name: 'Bloom verse', basedOn: 'In Bloom', steps: [S(0, 'maj'), S(5, 'maj'), S(10, 'maj'), S(5, 'maj')] },
+      { name: 'Heart-Shaped drop', basedOn: 'Heart-Shaped Box', steps: [S(0, 'min'), S(8, 'maj'), S(3, 'maj'), S(10, 'maj')] },
+    ],
+    cadence: [S(10, 'pow5'), S(0, 'pow5')],
+    allowsRepeat: true,
+    how: [
+      'Power chords (root + fifth, no third) so the riff is neither major nor minor.',
+      'Roots move by thirds (♭III, ♭VI), a rock rather than classical motion.',
+      'Verses are quiet, choruses are the same chords played louder.',
+    ],
+  },
+  'steely-dan': {
+    patterns: [
+      { name: 'Tritone ii–V–I', basedOn: 'Aja / Deacon Blues (ii–♭II7–I)', steps: [S(2, 'min7'), S(1, 'dom9'), S(0, 'maj9'), S(0, 'maj9'), S(5, 'maj7'), S(5, 'min7'), S(10, 'dom9'), S(0, 'maj9')] },
+      { name: 'Mu chord cycle', basedOn: 'Peg / Reelin’ in the Years (the “Mu chord” add2)', steps: [S(0, 'mu'), S(5, 'mu'), S(0, 'mu'), S(7, 'sus7')] },
+      { name: 'Minor ii–V', basedOn: 'Black Cow / Josie (minor ii°–V7♯9)', steps: [S(2, 'min7b5'), S(7, 'dom7sharp9'), S(0, 'min7'), S(0, 'min7')] },
+      { name: 'Backdoor', basedOn: 'Peg (♭VII7 → I)', steps: [S(0, 'maj7'), S(9, 'min7'), S(10, 'dom9'), S(0, 'maj9')] },
+    ],
+    cadence: [S(1, 'dom9'), S(0, 'maj9')],
+    allowsRepeat: false,
+    how: [
+      'Mu chord: a major chord with an added 2nd, in place of a plain triad.',
+      'Replaces V7 with a tritone-substitute dominant (♭II7) so the bass slides down by a semitone.',
+      'Dominants with ♯9, 9 or 13, and minor ii–V built on half-diminished chords.',
+    ],
+  },
+  'mac-demarco': {
+    patterns: [
+      { name: 'Walkdown', basedOn: 'Salad Days', steps: [S(5, 'maj7'), S(4, 'min7'), S(2, 'min7'), S(0, 'maj7')] },
+      { name: 'Lazy vamp', basedOn: 'Chamber of Reflection', steps: [S(0, 'maj9'), S(5, 'maj7'), S(0, 'maj9'), S(4, 'min7')] },
+      { name: 'Floating ♭VI', basedOn: 'Ode to Viceroy', steps: [S(0, 'maj7'), S(8, 'maj7'), S(5, 'maj7'), S(4, 'min7')] },
+    ],
+    cadence: [S(4, 'min7'), S(5, 'maj7')],
+    allowsRepeat: true,
+    how: [
+      'Two or three maj7 / min7 chords, chorus-warbled and left to wander.',
+      'Chromatic bass walkdowns so the root glides while the chord colour barely moves.',
+      'Never resolves: the last chord leans, it does not land.',
+    ],
+  },
+  khruangbin: {
+    patterns: [
+      { name: 'Dorian vamp', basedOn: 'Maria También (i7–IV7 dorian rock)', steps: [S(0, 'min7'), S(5, 'dom7'), S(0, 'min7'), S(5, 'dom7')] },
+      { name: 'Andalusian drop', basedOn: 'White Gloves (i–♭VII–♭VI–V)', steps: [S(0, 'min7'), S(10, 'maj7'), S(8, 'maj7'), S(7, 'dom7')] },
+      { name: 'Desert 9th', basedOn: 'Time (You and I)', steps: [S(0, 'min7'), S(0, 'min7'), S(5, 'dom9'), S(0, 'min7')] },
+    ],
+    cadence: [S(5, 'dom7'), S(0, 'min7')],
+    allowsRepeat: true,
+    how: [
+      'A dorian vamp, i7 to IV7, that rocks between two chords for bars on end.',
+      'Dominant 9ths and major 7ths on top, a warm funk-and-surf tint.',
+      'Open space left for bass, drums and a reverb tail.',
+    ],
+  },
+  'daft-punk': {
+    patterns: [
+      { name: 'Get Lucky loop', basedOn: 'Get Lucky (i7–♭III–v7–IV)', steps: [S(0, 'min7'), S(3, 'maj'), S(7, 'min7'), S(5, 'maj')] },
+      { name: 'Disco-house descent', basedOn: 'Digital Love / Veridis Quo', steps: [S(0, 'min7'), S(8, 'maj7'), S(3, 'maj7'), S(10, 'dom7')] },
+      { name: 'Around the loop', basedOn: 'Around the World', steps: [S(0, 'min7'), S(0, 'min7'), S(10, 'maj'), S(5, 'maj')] },
+    ],
+    cadence: [S(3, 'maj7'), S(0, 'min7')],
+    allowsRepeat: true,
+    how: [
+      'A four-chord loop, repeated exactly, with no V → I to end it.',
+      'Minor 7ths with a major ♭III and IV for a disco / funk colour.',
+      'Variation is in the filter and the sample, so the chords hardly change.',
+    ],
+  },
+};
+
+// Surface the grammar through the archetype so the UI / other services can read one object.
+export function getBandGrammar(bandIdOrName?: string | null): BandGrammar | undefined {
+  const band = getBandById(bandIdOrName);
+  return band ? BAND_GRAMMAR[band.id] : undefined;
+}
+
+// Add a Melody row to each band's signature, sourced from the melody profile.
+Object.values(BAND_ARCHETYPES).forEach(band => {
+  const melody = BAND_MELODY_PROFILES[band.id];
+  if (melody && !band.sig.some(x => x.k === 'Melody')) band.sig.push({ k: 'Melody', v: melody.sigLine });
+});
+
+/** Expand a band pattern to 8 steps: a 4-chord pattern repeats and the second pass takes the cadence. */
+export function expandBandPattern(pattern: BandPattern, grammar: BandGrammar): BandStep[] {
+  const steps = pattern.steps.map(st => ({ ...st }));
+  if (steps.length >= 8) return steps.slice(0, 8);
+  const first = steps.slice();
+  const second = steps.map(st => ({ ...st }));
+  if (grammar.cadence.length && second.length >= grammar.cadence.length) {
+    second.splice(second.length - grammar.cadence.length, grammar.cadence.length, ...grammar.cadence.map(st => ({ ...st })));
+  }
+  const out = [...first, ...second];
+  while (out.length < 8) out.push({ ...out[out.length - 1] });
+  return out.slice(0, 8);
+}
+
+function stepChordName(step: BandStep, key: string, scaleType: string): { root: string; quality: string } {
+  const keyPc = PITCH_CLASS[key] ?? 0;
+  const pc = ((keyPc + step.semi) % 12 + 12) % 12;
+  const flat = preferFlatSpelling(key, scaleType) || [1, 3, 6, 8, 10].includes(step.semi % 12);
+  return { root: noteName(pc, flat), quality: step.q };
+}
+
+function buildGrammarProgression(
+  chordData: RawChordData,
+  band: BandArchetype,
+  grammar: BandGrammar,
+  key: string,
+  scaleType: string,
+  mood: string
+): Progression | null {
+  const pattern = grammar.patterns[Math.floor(Math.random() * grammar.patterns.length)];
+  const steps = expandBandPattern(pattern, grammar);
+
+  // One signature trick may replace a middle bar (never the first or the cadence) 30% of the time,
+  // only if it is not already the chord there and does not double its neighbour.
+  if (Math.random() < 0.3 && band.signatureTricks.length) {
+    const slot = 2 + Math.floor(Math.random() * 3); // bars 3-5
+    const trick = band.signatureTricks[Math.floor(Math.random() * band.signatureTricks.length)];
+    const candidate: BandStep = { semi: trick.semitones, q: trick.quality };
+    const same = (a: BandStep, b: BandStep) => a.semi === b.semi && a.q === b.q;
+    if (!same(steps[slot], candidate) && !same(steps[slot - 1], candidate) && !same(steps[slot + 1], candidate)) {
+      steps[slot] = candidate;
+    }
+  }
+
+  const requested: RequestedChord[] = steps.map(st => stepChordName(st, key, scaleType));
+  return alignChordsToScale(chordData, key, scaleType, requested, band.genre, mood);
 }
 
 /**
@@ -508,7 +788,17 @@ export function generateBandProgression(
 
   let progression: Progression | null = null;
 
-  // 2. Dynamic generation: 50% Markov-based with signature trick insertion, 50% template pool with mutation
+  // 2a. Grammar-first generation: a band pattern (tonic-relative) expanded to 8 bars, with the
+  // band's cadence rule and at most one signature-trick substitution. ~70% of the time.
+  const grammar = BAND_GRAMMAR[band.id];
+  if (grammar && grammar.patterns.length && Math.random() < 0.7) {
+    progression = buildGrammarProgression(chordData, band, grammar, key, scaleType, mood);
+    if (progression) {
+      return { ...progression, genre: band.genre, mood, bpm: band.defaultBpm };
+    }
+  }
+
+  // 2b. Dynamic generation: 50% Markov-based with signature trick insertion, 50% template pool with mutation
   const tryMarkov = Math.random() < 0.5;
 
   if (tryMarkov) {
@@ -636,7 +926,7 @@ export function resolveBandTrickForScale(
     case 'maj7': suffix = 'maj7'; break;
     case 'maj9': suffix = 'maj9'; break;
     case 'sus4': suffix = 'sus4'; break;
-    default: suffix = trick.quality; break;
+    default: suffix = CHORD_SUFFIX[trick.quality] ?? trick.quality; break;
   }
 
   return {
@@ -721,7 +1011,7 @@ export function getBandTrickCandidates(
       : trick.quality === 'min7' ? [0, 3, 7, 10]
       : trick.quality === 'maj7' ? [0, 4, 7, 11]
       : trick.quality === 'maj9' ? [0, 2, 4, 7]
-      : [0, 4, 7];
+      : QUALITY_INTERVALS[trick.quality] ?? [0, 4, 7];
 
     const effectivePreferFlat = preferChordFlatSpelling(resolved.root, trick.quality, preferFlat);
     const notes = intervals.map(iv => noteName(rootPc + iv, effectivePreferFlat));
@@ -749,6 +1039,8 @@ export interface BandWordmark {
 }
 
 export const BAND_WORDMARKS: Record<string, BandWordmark> = {
+  Khruangbin: { l1: 'KHRUANG', l2: 'BIN', font: "'Playfair Display', serif", pillFs: 11.5, pillTrack: '0.02em', weight: 700 },
+  'Daft Punk': { l1: 'DAFT', l2: 'PUNK', font: "'Archivo Black', sans-serif", pillFs: 12, pillTrack: '0.04em', weight: 400 },
   Oasis: { l1: 'OA', l2: 'SIS', font: 'Anton, sans-serif', pillFs: 13, pillTrack: '0.08em' },
   Radiohead: { l1: 'RADIO', l2: 'HEAD', font: "'Space Mono', monospace", pillFs: 12.5, pillTrack: '0.02em', weight: 700 },
   Nirvana: { l1: 'NIR', l2: 'VANA', font: "'Rock Salt', cursive", pillFs: 10, pillTrack: '0', weight: 400 },
@@ -791,6 +1083,16 @@ export const BAND_MOVES: Record<string, BandMoveTrick[]> = {
     { roman: 'IV', chord: 'Fmaj7', name: 'maj7 vamp', role: 'Subdominant', semitones: 5, quality: 'maj7' },
     { roman: 'I9', chord: 'Cmaj9', name: 'Add the 9th', role: 'Tonic', semitones: 0, quality: 'maj9' },
     { roman: 'iii', chord: 'Em7', name: 'Never resolves', role: 'Mediant', semitones: 4, quality: 'min7' },
+  ],
+  Khruangbin: [
+    { roman: 'IV9', chord: 'F9', name: 'Dorian IV9', role: 'Subdominant', semitones: 5, quality: 'dom9' },
+    { roman: '♭VII', chord: 'B♭maj7', name: 'Slide ♭VII', role: 'Borrowed', semitones: 10, quality: 'maj7' },
+    { roman: 'V7', chord: 'G7', name: 'Desert dominant', role: 'Dominant', semitones: 7, quality: 'dom7' },
+  ],
+  'Daft Punk': [
+    { roman: '♭III', chord: 'E♭', name: 'Disco ♭III', role: 'Borrowed', semitones: 3, quality: 'maj' },
+    { roman: 'v7', chord: 'Gm7', name: 'Minor v loop', role: 'Dominant', semitones: 7, quality: 'min7' },
+    { roman: 'IV', chord: 'F', name: 'Filter IV', role: 'Subdominant', semitones: 5, quality: 'maj' },
   ],
   'The Beatles': [
     { roman: 'iv', chord: 'Fm', name: 'Minor iv fade', role: 'Borrowed', semitones: 5, quality: 'min' },

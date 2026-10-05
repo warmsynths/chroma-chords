@@ -1,4 +1,4 @@
-import { LitElement, html, css, PropertyValues } from 'lit';
+import { LitElement, html, css, nothing, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import {
   Progression,
@@ -25,6 +25,7 @@ import {
   contourName,
 } from '../../services/melody-engine';
 import { getBandById } from '../../services/band-dna-service';
+import { getBandMelodyProfile, pickBandContour } from '../../services/band-melody-dna';
 import { midiToNoteName, playLeadNote } from '../../services/audio-service';
 import { noteToMidiNumber } from '../../services/export-service';
 
@@ -1624,6 +1625,8 @@ export class TabMelody extends LitElement {
     .band-follow-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
     .band-follow-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
     .band-follow-name { font-size: 13px; font-weight: 800; }
+    .band-how { margin: 8px 0 0; padding: 0 0 0 16px; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; line-height: 1.4; color: var(--cv-ink, #2E271F); }
+    .band-songs { margin-top: 6px; font-size: 10.5px; font-weight: 700; color: var(--cv-ink-muted, #6B5F50); }
     .band-follow-move { font-size: 11px; font-weight: 600; line-height: 1.35; color: var(--cv-ink-muted, #6B5F50); }
 
     .style-footnote {
@@ -1876,7 +1879,10 @@ export class TabMelody extends LitElement {
     if (!this.progression) return;
     const CONTOURS: ContourArchetype[] = CONTOUR_STYLES.map(c => c.id);
     let contour: ContourArchetype;
-    if (this.melodyStyle === 'auto') {
+    const bandContour = this.melodyStyle === 'auto' ? pickBandContour(this.activeBandId()) : undefined;
+    if (bandContour) {
+      contour = bandContour;
+    } else if (this.melodyStyle === 'auto') {
       const currentIdx = CONTOURS.indexOf(this.contour);
       contour = CONTOURS[(currentIdx + 1 + Math.floor(Math.random() * (CONTOURS.length - 1))) % CONTOURS.length];
     } else {
@@ -1942,6 +1948,7 @@ export class TabMelody extends LitElement {
 
   private renderStylePanel() {
     const band = this.bandWithMove();
+    const profile = band ? getBandMelodyProfile(band.id) : undefined;
     const unsupported = !band && this.bandId ? (getBandById(this.bandId)?.name || this.bandId) : undefined;
     const nearest = DENSITY_STEPS.reduce((a, b) => (Math.abs(b.value - this.density) < Math.abs(a.value - this.density) ? b : a));
     return html`
@@ -1981,6 +1988,12 @@ export class TabMelody extends LitElement {
               <button class="segment-btn ${!this.bandOn ? 'active' : ''}" role="radio" aria-checked=${!this.bandOn} @click=${() => this.onToggleBand(false)}>Off</button>
             </span>
           </div>
+          ${this.bandOn && profile ? html`
+            <ul class="band-how" aria-label="How ${band.name} writes a melody">
+              ${profile.how.map(h => html`<li>${h}</li>`)}
+            </ul>
+            <div class="band-songs">Based on ${profile.songs.join(', ')}</div>
+          ` : nothing}
         ` : html`
           <div class="style-footnote">${unsupported
             ? `${unsupported} doesn't have a melodic signature yet, so the melody follows the shape and busyness above.`

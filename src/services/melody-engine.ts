@@ -6,6 +6,7 @@ import {
 } from './chord-engine';
 import { noteToMidiNumber } from './export-service';
 import { midiToNoteName } from './audio-service';
+import { getBandMelodyProfile, getBandRhythmCells, biasAdjustment, type BandMelodyProfile } from './band-melody-dna';
 
 export type ChordToneRole =
   | 'root'
@@ -124,6 +125,8 @@ export const BAND_MELODY_MOVES: Record<string, string> = {
   nirvana: 'a raw root-and-slide riff',
   'steely-dan': 'a jazz enclosure that lands on the 9th',
   'mac-demarco': 'a lazy walk down the chord',
+  khruangbin: 'a long, sliding pentatonic phrase',
+  'daft-punk': 'a looped offbeat riff that drops a note each time',
 };
 
 export function contourName(id: ContourArchetype | string | undefined): string {
@@ -767,6 +770,9 @@ export class MelodyEngine {
     const presetId = options.presetId || 'lead-synth';
     const bandId = options.bandId;
     const seed = options.seed ?? 0;
+    const profile = getBandMelodyProfile(bandId);
+    const tonicPcForBias = noteToMidiNumber(`${progression.key || 'C'}4`) % 12;
+    const isMinorKey = /MINOR|DORIAN|PHRYGIAN|AEOLIAN|LOCRIAN|BLUES/.test(String(progression.scaleType || ''));
 
     const notes: MelodyNote[] = [];
     const chords = progression.chords || [];
@@ -777,7 +783,8 @@ export class MelodyEngine {
 
     chords.forEach((chord, barIndex) => {
       const matrix = getHarmonicChordMatrix(chord, progression.key, progression.scaleType);
-      const cells = getRhythmicCellsForBar(density, barIndex, totalBars, contour, seed);
+      const cells = (profile && getBandRhythmCells(profile, density, barIndex, totalBars))
+        || getRhythmicCellsForBar(density, barIndex, totalBars, contour, seed);
 
       cells.forEach((cell, cellIdx) => {
         const stepInBar = cell.step;
@@ -786,7 +793,7 @@ export class MelodyEngine {
 
         // Base contour pitch bias in semitones
         const contourBias = getContourBias(contour, barIndex, stepInBar, totalBars);
-        const targetMidiCenter = 12 * (octave + 1) + matrix.rootPc + contourBias;
+        const targetMidiCenter = 12 * (octave + 1) + matrix.rootPc + contourBias + (profile?.centerShift ?? 0);
 
         // Candidate pitch selection based on guideMode and strictBy
         let chosenMidi: number;
@@ -871,6 +878,11 @@ export class MelodyEngine {
               if (Math.abs(bDelta) >= 1 && Math.abs(bDelta) <= 4) bScore -= 12;
             }
 
+            if (profile) {
+              aScore += biasAdjustment(profile, { tonicPc: tonicPcForBias, isMinor: isMinorKey, previousMidi, midi: a.midi, isTension: a.role === 'tension', isChordTone: isChordToneRole(a.role) });
+              bScore += biasAdjustment(profile, { tonicPc: tonicPcForBias, isMinor: isMinorKey, previousMidi, midi: b.midi, isTension: b.role === 'tension', isChordTone: isChordToneRole(b.role) });
+            }
+
             return aScore - bScore;
           });
 
@@ -894,7 +906,7 @@ export class MelodyEngine {
           durationBeats,
           pitch,
           midi: chosenMidi,
-          velocity: cell.accent ? 110 : 92,
+          velocity: cell.accent ? (profile?.dynamics.accent ?? 110) : (profile?.dynamics.plain ?? 92),
           chordToneRole: chosenRole,
           isClash: classification.isClash,
         });
@@ -917,6 +929,10 @@ export class MelodyEngine {
       bandId,
     };
 
+    if (profile) {
+      resultTrack = this.applyBandMelodyDna(resultTrack, profile, progression);
+    }
+
     if (bandId) {
       // The signature lands where a hook would: the first bar, and again on the last to call back
       resultTrack = this.spiceWithBandTrick(resultTrack, bandId, 0, progression);
@@ -924,6 +940,77 @@ export class MelodyEngine {
     }
 
     return resultTrack;
+  }
+
+  /**
+   * Post-pass that gives a band's melody its habits: an answered phrase (echo) and the small
+   * embellishment it puts on notes (scoop / slide / enclosure / trill).
+   */
+  applyBandMelodyDna(melody: MelodyTrack, profile: BandMelodyProfile, progression: Progression): MelodyTrack {
+    let notes = [...melody.notes];
+    const totalBars = Math.max(1, progression.chords.length);
+
+    // Echo: bar 1's phrase returns at the midpoint, re-fitted to whatever chord sits there.
+    if (profile.echo && totalBars >= 4) {
+      const echoBar = Math.floor(totalBars / 2);
+      const source = notes.filter(n => n.barIndex === 0 && !n.tag);
+      if (source.length >= 1 && echoBar > 0) {
+        const copied: MelodyNote[] = source.map(n => ({
+          ...n,
+          id: `echo-${echoBar}-${n.stepInBar}`,
+          barIndex: echoBar,
+          beatOffset: echoBar * 4 + n.stepInBar / 4,
+          tag: undefined,
+        }));
+        const merged: MelodyTrack = {
+          ...melody,
+          notes: [...notes.filter(n => n.barIndex !== echoBar), ...copied].sort((a, b) => a.beatOffset - b.beatOffset),
+        };
+        const aligned = alignMelodyToChords(merged, progression);
+        const alignedEcho = aligned.notes.filter(n => n.barIndex === echoBar);
+        notes = [...notes.filter(n => n.barIndex !== echoBar), ...alignedEcho];
+      }
+    }
+
+    // Ornaments land on accented notes that have a free sixteenth before them.
+    if (profile.ornament !== 'none') {
+      const grace: MelodyNote[] = [];
+      const byStart = (bar: number, step: number) => notes.some(n => n.barIndex === bar && n.stepInBar === step);
+      const phraseEnds = new Set<number>();
+      for (let b = 0; b < totalBars; b += 2) phraseEnds.add(b);
+      for (const n of notes) {
+        if (n.tag || n.stepInBar < 1 || n.velocity < (profile.dynamics.accent - 1)) continue;
+        if (!phraseEnds.has(n.barIndex) && profile.ornament !== 'slide') continue;
+        if (byStart(n.barIndex, n.stepInBar - 1)) continue;
+        // A note running into the grace slot is clipped to make room, unless that would erase it
+        const graceStart = n.beatOffset - 0.25;
+        const running = notes.find(o => o !== n && o.barIndex === n.barIndex && o.stepInBar < n.stepInBar && o.beatOffset + o.durationBeats > graceStart);
+        if (running) {
+          if (graceStart - running.beatOffset < 0.25) continue;
+          const idx = notes.indexOf(running);
+          notes[idx] = { ...running, durationBeats: graceStart - running.beatOffset };
+        }
+        const offsets = profile.ornament === 'enclosure' ? [1] : profile.ornament === 'trill' ? [1] : [-1];
+        const gm = n.midi + offsets[0];
+        grace.push({
+          ...n,
+          id: `orn-${n.barIndex}-${n.stepInBar - 1}`,
+          stepInBar: n.stepInBar - 1,
+          beatOffset: n.beatOffset - 0.25,
+          durationBeats: 0.25,
+          midi: gm,
+          pitch: midiToNoteName(gm),
+          velocity: Math.round(n.velocity * 0.7),
+          chordToneRole: 'chromatic',
+          isClash: false,
+          tag: `band-ornament-${profile.ornament}`,
+        });
+      }
+      notes = [...notes, ...grace];
+    }
+
+    notes.sort((a, b) => a.beatOffset - b.beatOffset);
+    return { ...melody, notes };
   }
 
   regenerateBar(melody: MelodyTrack, barIndex: number, progression: Progression): MelodyTrack {
@@ -1248,6 +1335,54 @@ export class MelodyEngine {
       return {
         ...melody,
         notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...macNotes].sort((a, b) => a.beatOffset - b.beatOffset),
+        bandId,
+      };
+    }
+
+    if (bId.includes('khruangbin')) {
+      // Khruangbin Trick: a long slide up into the octave, left to ring like a reverb tail
+      const rootMidi = noteToMidiNumber(`${progression.key || 'C'}4`);
+      const slide: MelodyNote[] = [
+        { pitch: rootMidi + 10, step: 0, beats: 0.5, vel: 82, role: 'chromatic' as ChordToneRole },
+        { pitch: rootMidi + 11, step: 2, beats: 0.5, vel: 86, role: 'chromatic' as ChordToneRole },
+        { pitch: rootMidi + 12, step: 4, beats: 3.0, vel: 100, role: 'root' as ChordToneRole },
+      ].map(n => ({
+        id: `khruangbin-slide-${barIndex}-${n.step}`,
+        barIndex,
+        stepInBar: n.step,
+        beatOffset: barIndex * 4 + n.step / 4,
+        durationBeats: n.beats,
+        pitch: midiToNoteName(n.pitch),
+        midi: n.pitch,
+        velocity: n.vel,
+        chordToneRole: n.role,
+        tag: 'band-khruangbin-slide',
+      }));
+      return {
+        ...melody,
+        notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...slide].sort((a, b) => a.beatOffset - b.beatOffset),
+        bandId,
+      };
+    }
+
+    if (bId.includes('daft')) {
+      // Daft Punk Trick: a 4-note offbeat riff, the loop the rest of the track is built from
+      const rootMidi = noteToMidiNumber(`${progression.key || 'C'}4`);
+      const riff: MelodyNote[] = [0, 0, 7, 10].map((iv, i) => ({
+        id: `daft-riff-${barIndex}-${2 + i * 4}`,
+        barIndex,
+        stepInBar: 2 + i * 4,
+        beatOffset: barIndex * 4 + (2 + i * 4) / 4,
+        durationBeats: 0.5,
+        pitch: midiToNoteName(rootMidi + iv),
+        midi: rootMidi + iv,
+        velocity: i % 2 === 0 ? 112 : 96,
+        chordToneRole: (iv === 0 ? 'root' : iv === 7 ? '5th' : '7th') as ChordToneRole,
+        tag: 'band-daft-riff',
+      }));
+      return {
+        ...melody,
+        notes: [...melody.notes.filter(n => n.barIndex !== barIndex), ...riff].sort((a, b) => a.beatOffset - b.beatOffset),
         bandId,
       };
     }

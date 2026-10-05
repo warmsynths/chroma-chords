@@ -400,11 +400,11 @@ describe('TabMelody Component', () => {
     });
 
     it('says so when the picked band has no melodic signature', async () => {
-      el.bandId = 'Khruangbin';
+      el.bandId = 'Sade';
       await el.updateComplete;
       await openPanel();
       expect(el.shadowRoot!.querySelector('.band-follow')).toBeNull();
-      expect(el.shadowRoot!.querySelector('.style-footnote')?.textContent).toContain("Khruangbin doesn't have a melodic signature yet");
+      expect(el.shadowRoot!.querySelector('.style-footnote')?.textContent).toContain("Sade doesn't have a melodic signature yet");
     });
   });
 });

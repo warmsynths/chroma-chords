@@ -85,7 +85,7 @@ const FLAT_TONICS = new Set(['F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb']);
 
 export const ROOT_KEYS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 
-const QUALITY_INTERVALS: Record<string, number[]> = {
+export const QUALITY_INTERVALS: Record<string, number[]> = {
   maj: [0, 4, 7],
   min: [0, 3, 7],
   dim: [0, 3, 6],
@@ -104,6 +104,12 @@ const QUALITY_INTERVALS: Record<string, number[]> = {
   mmaj7: [0, 3, 7, 11],
   sus7: [0, 5, 7, 10],
   sus9: [0, 5, 7, 10, 14],
+  // Band DNA vocabulary
+  pow5: [0, 7],                // power chord (Nirvana): root + fifth, no third, so major/minor stays ambiguous
+  mu: [0, 2, 4, 7],            // "mu major" / add2 (Steely Dan): the 2nd sits right under the 3rd
+  add9: [0, 4, 7, 14],         // major triad with a 9th on top, no 7th
+  min7b5: [0, 3, 6, 10],       // half-diminished (Steely Dan's tense minor ii)
+  dom7sharp9: [0, 4, 7, 10, 15], // 7♯9 (Steely Dan's chromatic walkdown dominants)
 };
 
 export const CHORD_QUALITIES = Object.keys(QUALITY_INTERVALS);
@@ -262,7 +268,12 @@ export function parseChordSymbol(symbol: string): { root: string; quality: keyof
   }
   rest = rest.toLowerCase();
   let quality: keyof typeof QUALITY_INTERVALS = 'maj';
-  if (rest.includes('maj9') || (rest.includes('m9') && rest.includes('maj'))) quality = 'maj9';
+  if (rest.includes('m7b5') || rest.includes('min7b5') || rest.includes('\u00f8') || rest.includes('m7\u266d5')) quality = 'min7b5';
+  else if (rest.includes('7#9') || rest.includes('7\u266f9')) quality = 'dom7sharp9';
+  else if (rest.includes('add9')) quality = 'add9';
+  else if (rest.includes('add2') || rest === '2') quality = 'mu';
+  else if (rest === '5') quality = 'pow5';
+  else if (rest.includes('maj9') || (rest.includes('m9') && rest.includes('maj'))) quality = 'maj9';
   else if (rest.includes('min9') || rest.includes('m9')) quality = 'min9';
   else if (rest.includes('dom9') || rest.includes('9sus') || rest.includes('9')) {
     if (rest.includes('9sus') || rest.includes('sus9')) quality = 'sus9';
@@ -1043,6 +1054,7 @@ function prettifyChordName(symbol: string): string {
   const { root, quality } = parseChordSymbol(symbol);
   const suffix: Record<string, string> = {
     maj: '', min: 'm', dim: 'dim', aug: 'aug', dom7: '7', min7: 'm7', maj7: 'maj7', dim7: 'dim7', sus4: 'sus4',
+    pow5: '5', mu: 'add2', add9: 'add9', min7b5: 'm7b5', dom7sharp9: '7#9',
   };
   return `${root}${suffix[quality] ?? ''}`;
 }
@@ -1301,19 +1313,24 @@ function formatQualityRoman(baseRoman: string, quality: keyof typeof QUALITY_INT
   if (quality === 'dom9') return `${baseRoman}9`;
   if (quality === 'maj9') return `${baseRoman}maj9`;
   if (quality === 'min9') return `${baseRoman}m9`;
+  if (quality === 'pow5') return `${baseRoman}5`;
+  if (quality === 'mu') return `${baseRoman}add2`;
+  if (quality === 'add9') return `${baseRoman}add9`;
+  if (quality === 'min7b5') return `${baseRoman}\u00f87`;
+  if (quality === 'dom7sharp9') return `${baseRoman}7\u266f9`;
   return baseRoman;
 }
 
 export function formatDegreeRoman(degree: string, quality: keyof typeof QUALITY_INTERVALS): string {
   const base = DEGREE_ROMAN_MAP[degree] || { upper: 'I', lower: 'i' };
-  const isMinorLike = quality === 'min' || quality === 'min7' || quality === 'dim' || quality === 'dim7' || quality === 'min9';
+  const isMinorLike = quality === 'min' || quality === 'min7' || quality === 'dim' || quality === 'dim7' || quality === 'min9' || quality === 'min7b5';
   const romanBase = isMinorLike ? base.lower : base.upper;
   return formatQualityRoman(romanBase, quality);
 }
 
 export function formatBorrowedRoman(semitones: number, quality: keyof typeof QUALITY_INTERVALS): string {
   const base = SEMITONE_ACCIDENTAL_ROMAN[((semitones % 12) + 12) % 12] || { upper: '?', lower: '?' };
-  const isMinorLike = quality === 'min' || quality === 'min7' || quality === 'dim' || quality === 'dim7' || quality === 'min9';
+  const isMinorLike = quality === 'min' || quality === 'min7' || quality === 'dim' || quality === 'dim7' || quality === 'min9' || quality === 'min7b5';
   const romanBase = isMinorLike ? base.lower : base.upper;
   return formatQualityRoman(romanBase, quality);
 }
@@ -1541,8 +1558,10 @@ function pickDegreeWithMarkov(
   return pickWeighted(pool, d => getMarkovTransitionWeight(prevDegree, d, scaleType, genre, mood));
 }
 
-const CHORD_SUFFIX: Record<string, string> = {
+export const CHORD_SUFFIX: Record<string, string> = {
   maj: '', min: 'm', dim: 'dim', aug: 'aug', dom7: '7', min7: 'm7', maj7: 'maj7', dim7: 'dim7', sus4: 'sus4',
+  sus2: 'sus2', dom9: '9', maj9: 'maj9', min9: 'm9', maj6: '6', min6: 'm6', mmaj7: 'm(maj7)', sus7: '7sus4', sus9: '9sus4',
+  pow5: '5', mu: 'add2', add9: 'add9', min7b5: 'm7b5', dom7sharp9: '7#9',
 };
 
 // Synthesize a plausible borrowed chord directly by transposition with accurate Roman numerals.
@@ -1693,7 +1712,7 @@ export function transposeProgression(
 }
 
 function adaptChordQuality(originalQuality: string, newTriadQuality: string, degree: string, scaleType?: string): string {
-  if (originalQuality === 'sus4' || originalQuality === 'sus2' || originalQuality === 'sus7' || originalQuality === 'sus9') {
+  if (['sus4', 'sus2', 'sus7', 'sus9', 'pow5', 'mu', 'add9', 'min7b5', 'dom7sharp9'].includes(originalQuality)) {
     return originalQuality;
   }
   const isSeventh = originalQuality.includes('7');
@@ -1744,6 +1763,11 @@ function formatChordName(root: string, quality: string): string {
     case 'mmaj7': return `${root}m(maj7)`;
     case 'sus7': return `${root}7sus4`;
     case 'sus9': return `${root}9sus4`;
+    case 'pow5': return `${root}5`;
+    case 'mu': return `${root}add2`;
+    case 'add9': return `${root}add9`;
+    case 'min7b5': return `${root}m7b5`;
+    case 'dom7sharp9': return `${root}7#9`;
     default: return `${root}${quality}`;
   }
 }

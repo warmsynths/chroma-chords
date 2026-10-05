@@ -9,7 +9,7 @@ import { loadChordData, generateProgression, extendProgression, RawChordData, Pr
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, FeelSettings } from './services/audio-service';
 import { authService } from './services/auth-service';
 import { melodyEngine, MelodyTrack, ContourArchetype, CONTOUR_STYLES, BAND_MELODY_MOVES } from './services/melody-engine';
-import { getBandById } from './services/band-dna-service';
+import { getBandById, BAND_LIST } from './services/band-dna-service';
 import { NavTabId } from './components/app-header';
 import { PlayInstrument } from './components/tabs/tab-play';
 import './components/app-header';
@@ -2214,7 +2214,7 @@ export class ChromaChordsApp extends LitElement {
             <div style="font-size: 11px; font-weight: 700; color: rgba(46,39,31,0.38);">optional</div>
           </div>
           <div class="vibe-pills-row">
-            ${['Steely Dan', 'Khruangbin', 'Daft Punk', 'Radiohead', 'Mac DeMarco'].map(b => html`
+            ${BAND_LIST.map(band => band.name).map(b => html`
               <button
                 class="vibe-chip ${this.selectedBand === b ? 'active' : ''}"
                 @click=${() => { this.selectedBand = this.selectedBand === b ? null : b; this.regenerate(); this.rebuildMelodyForBand(); }}
