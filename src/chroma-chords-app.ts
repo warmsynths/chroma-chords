@@ -8,7 +8,8 @@ import { SongArranger, SongSection, SongTimelineItem } from './services/song-arr
 import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling, getMoodColor, applyVoicingToChord } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, FeelSettings } from './services/audio-service';
 import { authService } from './services/auth-service';
-import { melodyEngine, MelodyTrack, ContourArchetype } from './services/melody-engine';
+import { melodyEngine, MelodyTrack, ContourArchetype, CONTOUR_STYLES, BAND_MELODY_MOVES } from './services/melody-engine';
+import { getBandById } from './services/band-dna-service';
 import { NavTabId } from './components/app-header';
 import { PlayInstrument } from './components/tabs/tab-play';
 import './components/app-header';
@@ -38,6 +39,9 @@ export class ChromaChordsApp extends LitElement {
   @state() private activeTab: NavTabId = 'loop';
   @state() private chordData: RawChordData = { chords: {}, scales: {} };
   @state() private libraryOpen = false;
+  @state() private melodyStyle: 'auto' | ContourArchetype = 'auto';
+  @state() private melodyDensity = 45;
+  @state() private melodyBandOn = true;
   @state() private saveDialog: { name: string; edited: boolean } | null = null;
   @state() private swapState: { swapIndex: number | null; abPick: any; feel: string } = { swapIndex: null, abPick: null, feel: '' };
   @state() private closeSwapSignal = 0;
@@ -761,6 +765,11 @@ export class ChromaChordsApp extends LitElement {
     } else {
       this.melodySound = 'Stage Rhodes';
     }
+    const savedStyle = safeGet('chroma-melody-style');
+    if (savedStyle === 'auto' || CONTOUR_STYLES.some(c => c.id === savedStyle)) this.melodyStyle = savedStyle as 'auto' | ContourArchetype;
+    const savedDensity = Number(safeGet('chroma-melody-density'));
+    if (savedDensity > 0 && savedDensity <= 100) this.melodyDensity = savedDensity;
+    if (safeGet('chroma-melody-band-on') === 'false') this.melodyBandOn = false;
     const savedMelodyFeel = safeGet('chroma-melody-feel');
     if (savedMelodyFeel) this.melodyFeel = savedMelodyFeel;
 
@@ -1291,7 +1300,7 @@ export class ChromaChordsApp extends LitElement {
     this.requestUpdate();
   }
 
-  /** A fresh melody for a section, shaped by what the section is for. */
+  /** A fresh melody for a section: the chosen shape (or one suited to the section), busyness and band. */
   private generateSectionMelody(progression: Progression, sectionName: string): MelodyTrack {
     const contourBySection: Record<string, ContourArchetype> = {
       Verse: 'Arch',
@@ -1300,13 +1309,28 @@ export class ChromaChordsApp extends LitElement {
       Outro: 'DescendingSigh',
       'Pre-chorus': 'AscendingClimax',
     };
+    const band = this.selectedBand ? getBandById(this.selectedBand) : undefined;
+    const bandId = this.melodyBandOn && band && BAND_MELODY_MOVES[band.id] ? band.id : undefined;
     return melodyEngine.generateMelody(progression, {
-      contour: contourBySection[sectionName] || 'Arch',
-      density: 50,
+      contour: this.melodyStyle === 'auto' ? (contourBySection[sectionName] || 'Arch') : this.melodyStyle,
+      density: this.melodyDensity,
       octave: 4,
       guideMode: 'scale-key',
+      bandId,
       seed: Math.floor(Math.random() * 100000) + 1,
     });
+  }
+
+  /** A melody that already has notes follows a newly picked band; an empty one waits for Randomize. */
+  private rebuildMelodyForBand() {
+    const band = this.selectedBand ? getBandById(this.selectedBand) : undefined;
+    if (!band || !BAND_MELODY_MOVES[band.id] || !this.melodyBandOn || !this.progression) return;
+    if (!this.melodyTrack || this.melodyTrack.notes.length === 0) return;
+    const sec = this.sections[this.activeSectionIdx];
+    this.melodyTrack = this.generateSectionMelody(this.progression, sec?.name || 'Verse');
+    playbackEngine.setMelodyTrack(this.melodyTrack);
+    this.sections = SongArranger.setSectionMelody(this.sections, this.activeSectionIdx, this.melodyTrack);
+    this.showToast(`Melody follows ${band.name}`);
   }
 
   /** Write the melody being edited back onto the active section (call before switching away). */
@@ -1674,6 +1698,18 @@ export class ChromaChordsApp extends LitElement {
                     .showTheory=${this.showTheory}
                     .melodyLoop=${this.melodyLoop}
                     .span=${this.melodySpan}
+                    .melodyStyle=${this.melodyStyle}
+                    .density=${this.melodyDensity}
+                    .bandId=${this.selectedBand}
+                    .bandOn=${this.melodyBandOn}
+                    @melody-style-change=${(e: CustomEvent) => {
+                      this.melodyStyle = e.detail.style;
+                      this.melodyDensity = e.detail.density;
+                      this.melodyBandOn = e.detail.bandOn;
+                      this.safeSet('chroma-melody-style', this.melodyStyle);
+                      this.safeSet('chroma-melody-density', String(this.melodyDensity));
+                      this.safeSet('chroma-melody-band-on', String(this.melodyBandOn));
+                    }}
                     @toggle-play=${() => {
                       this.onTogglePlay('melody');
                     }}
@@ -2181,7 +2217,7 @@ export class ChromaChordsApp extends LitElement {
             ${['Steely Dan', 'Khruangbin', 'Daft Punk', 'Radiohead', 'Mac DeMarco'].map(b => html`
               <button
                 class="vibe-chip ${this.selectedBand === b ? 'active' : ''}"
-                @click=${() => { this.selectedBand = this.selectedBand === b ? null : b; this.regenerate(); }}
+                @click=${() => { this.selectedBand = this.selectedBand === b ? null : b; this.regenerate(); this.rebuildMelodyForBand(); }}
               >
                 ${b}
               </button>

@@ -99,6 +99,37 @@ export type ContourArchetype =
   | 'OstinatoRiff'      // Punchy 1-2 bar repeating rhythmic motif with harmonic shifts
   | 'AnthemHook';       // High-register soaring hook with syncopated anticipations
 
+/** The shapes the generator can draw, in plain language (what the picker shows). */
+export const CONTOUR_STYLES: Array<{ id: ContourArchetype; name: string; blurb: string }> = [
+  { id: 'Arch', name: 'Arch', blurb: 'Rises to a peak, then settles back home' },
+  { id: 'AscendingClimax', name: 'Climb', blurb: 'Builds bar by bar toward a high point' },
+  { id: 'DescendingSigh', name: 'Sigh', blurb: 'Starts high and falls gently' },
+  { id: 'CallAndResponse', name: 'Question & answer', blurb: 'Two bars ask, two bars answer' },
+  { id: 'OstinatoRiff', name: 'Riff', blurb: 'A short punchy motif that keeps repeating' },
+  { id: 'AnthemHook', name: 'Anthem', blurb: 'A soaring, syncopated hook up high' },
+];
+
+/** How busy the line is (maps onto the generator's rhythm density bands). */
+export const DENSITY_STEPS: Array<{ label: string; value: number }> = [
+  { label: 'Sparse', value: 15 },
+  { label: 'Medium', value: 45 },
+  { label: 'Busy', value: 90 },
+];
+
+/** What each band's melodic signature does, for the picker (see spiceWithBandTrick). */
+export const BAND_MELODY_MOVES: Record<string, string> = {
+  oasis: 'a held drone on the fifth under the tune',
+  beatles: 'a descending chromatic line',
+  radiohead: 'a falsetto leap that lands on a trill',
+  nirvana: 'a raw root-and-slide riff',
+  'steely-dan': 'a jazz enclosure that lands on the 9th',
+  'mac-demarco': 'a lazy walk down the chord',
+};
+
+export function contourName(id: ContourArchetype | string | undefined): string {
+  return CONTOUR_STYLES.find(c => c.id === id)?.name || String(id || '');
+}
+
 export interface MelodyTrack {
   id: string;
   progressionId?: string;
@@ -887,7 +918,9 @@ export class MelodyEngine {
     };
 
     if (bandId) {
+      // The signature lands where a hook would: the first bar, and again on the last to call back
       resultTrack = this.spiceWithBandTrick(resultTrack, bandId, 0, progression);
+      if (totalBars > 1) resultTrack = this.spiceWithBandTrick(resultTrack, bandId, totalBars - 1, progression);
     }
 
     return resultTrack;
@@ -976,8 +1009,9 @@ export class MelodyEngine {
 
     if (bId.includes('oasis')) {
       // Oasis Trick: Drone anchor pedal note (G4 or D5) held over chords
-      const dronePitch = 'G4';
-      const droneMidi = noteToMidiNumber(dronePitch);
+      const tonicPc = noteToMidiNumber(`${progression.key || 'C'}4`) % 12;
+      const droneMidi = 12 * 5 + ((tonicPc + 7) % 12) + (((tonicPc + 7) % 12) < 2 ? 12 : 0); // fifth above the tonic, ~octave 4 (G4 in C)
+      const dronePitch = midiToNoteName(droneMidi);
       const droneNotes: MelodyNote[] = [
         {
           id: `oasis-drone-${barIndex}-0`,
@@ -1001,7 +1035,7 @@ export class MelodyEngine {
 
     if (bId.includes('beatles')) {
       // Beatles Trick: Bittersweet 4-note descending chromatic line
-      const baseNote = noteToMidiNumber('C5');
+      const baseNote = noteToMidiNumber(`${progression.key || 'C'}5`);
       const beatlesNotes: MelodyNote[] = [0, 1, 2, 3].map(i => {
         const m = baseNote - i;
         return {

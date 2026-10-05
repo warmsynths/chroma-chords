@@ -216,6 +216,21 @@ describe('Melody Engine - Harmonic Matrix & Theory', () => {
       expect(droneNote?.tag).toBe('band-oasis-drone');
     });
 
+    it('Oasis drone follows the key (fifth above the tonic), not a fixed G', () => {
+      const inD = { ...dummyProgression, key: 'D' } as any;
+      const track = melodyEngine.generateMelody(inD);
+      const drone = melodyEngine.spiceWithBandTrick(track, 'Oasis', 0, inD).notes.find(n => n.chordToneRole === 'drone');
+      expect(drone?.pitch.replace(/\d+$/, '')).toBe('A');
+    });
+
+    it('generating with a band lands its signature on the first and last bar', () => {
+      const track = melodyEngine.generateMelody(dummyProgression, { bandId: 'radiohead' });
+      const lastBar = dummyProgression.chords.length - 1;
+      const tagged = (bar: number) => track.notes.some(n => n.barIndex === bar && String(n.tag).startsWith('band-radiohead'));
+      expect(tagged(0)).toBe(true);
+      expect(tagged(lastBar)).toBe(true);
+    });
+
     it('applies human feel with timing jitter and dynamics', () => {
       const track = melodyEngine.generateMelody(dummyProgression);
       const scheduled = melodyEngine.applyHumanFeel(

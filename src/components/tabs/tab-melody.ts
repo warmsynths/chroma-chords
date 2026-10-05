@@ -19,7 +19,12 @@ import {
   snapNoteToGuide,
   HarmonicChordMatrix,
   NoteAnalysis,
+  CONTOUR_STYLES,
+  DENSITY_STEPS,
+  BAND_MELODY_MOVES,
+  contourName,
 } from '../../services/melody-engine';
+import { getBandById } from '../../services/band-dna-service';
 import { midiToNoteName, playLeadNote } from '../../services/audio-service';
 import { noteToMidiNumber } from '../../services/export-service';
 
@@ -1494,6 +1499,154 @@ export class TabMelody extends LitElement {
       font-weight: 600;
       cursor: pointer;
     }
+
+    /* ===== Style picker (shape, busyness, band) ===== */
+    .melody-container,
+    .m-root {
+      position: relative;
+    }
+
+    .style-pill {
+      border: none;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 32px;
+      padding: 0 11px 0 13px;
+      border-radius: 100px;
+      background: rgba(251, 243, 230, 0.72);
+      border: 1px solid rgba(46, 39, 31, 0.08);
+      color: var(--cv-ink, #2E271F);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 150ms ease, transform 120ms ease;
+    }
+
+    .style-pill:hover { background: #FBF3E6; }
+    .style-pill:active { transform: scale(0.97); }
+    .style-pill.open { background: #FBF3E6; box-shadow: inset 0 0 0 1.5px rgba(46, 39, 31, 0.16); }
+
+    .style-pill-label { color: var(--cv-label, #8A6B3F); font-size: 10.5px; letter-spacing: 1.1px; text-transform: uppercase; }
+    .style-pill-caret { font-size: 10px; opacity: 0.65; }
+
+    .m-tools .style-pill { min-height: 38px; }
+
+    .style-backdrop {
+      position: absolute;
+      inset: -16px;
+      z-index: 40;
+    }
+
+    .style-panel {
+      position: absolute;
+      z-index: 41;
+      top: 52px;
+      left: 0;
+      width: min(380px, 100%);
+      max-height: calc(100% - 64px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      box-sizing: border-box;
+      background: var(--cv-cream, #FBF3E6);
+      border: 1px solid rgba(46, 39, 31, 0.1);
+      border-radius: 20px;
+      padding: 14px;
+      box-shadow: 0 24px 50px -18px rgba(46, 39, 31, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      animation: style-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    :host([mobile]) .style-panel {
+      top: 100px;
+      left: 0;
+      right: 0;
+      width: auto;
+    }
+
+    @keyframes style-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .style-kicker {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1.3px;
+      text-transform: uppercase;
+      color: var(--cv-label, #8A6B3F);
+      margin-top: 4px;
+    }
+
+    .style-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .style-card {
+      border: none;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      min-height: 56px;
+      padding: 9px 11px;
+      border-radius: 14px;
+      background: var(--cv-surface, #F6EADB);
+      color: var(--cv-ink, #2E271F);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      transition: background 140ms ease, transform 120ms ease, box-shadow 140ms ease;
+    }
+
+    .style-card:hover { background: var(--cv-surface-2, #F1E4CC); }
+    .style-card:active { transform: scale(0.98); }
+    .style-card.active { background: #2E271F; color: #FBF3E6; }
+    .style-card.auto { grid-column: 1 / -1; }
+
+    .style-name { font-size: 13px; font-weight: 800; }
+    .style-blurb { font-size: 11px; font-weight: 600; line-height: 1.35; opacity: 0.72; }
+
+    .band-follow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--cv-surface, #F6EADB);
+      border-radius: 14px;
+      padding: 10px 11px;
+    }
+
+    .band-follow-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+    .band-follow-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .band-follow-name { font-size: 13px; font-weight: 800; }
+    .band-follow-move { font-size: 11px; font-weight: 600; line-height: 1.35; color: var(--cv-ink-muted, #6B5F50); }
+
+    .style-footnote {
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 1.45;
+      color: var(--cv-ink-muted, #6B5F50);
+      padding: 2px 2px 0;
+    }
+
+    .style-clear {
+      align-self: flex-start;
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--cv-ink-muted, #6B5F50);
+      padding: 8px 4px 2px;
+      cursor: pointer;
+    }
+
+    .style-clear:hover { color: #A34848; }
   `;
 
   @property({ type: Object })
@@ -1513,6 +1666,18 @@ export class TabMelody extends LitElement {
 
   @property({ type: Number })
   density = 50;
+
+  /** 'auto' picks a new shape every time you randomize; otherwise the chosen shape is kept. */
+  @property({ type: String })
+  melodyStyle: 'auto' | ContourArchetype = 'auto';
+
+  /** The band picked in the vibe panel (Band DNA), if any. */
+  @property({ type: String })
+  bandId: string | null = null;
+
+  /** Whether the melody should follow that band's melodic signature. */
+  @property({ type: Boolean })
+  bandOn = true;
 
   @property({ type: Number })
   octave = 4;
@@ -1555,6 +1720,9 @@ export class TabMelody extends LitElement {
 
   @state()
   private strictBy: 'scale' | 'chord' = 'scale';
+
+  @state()
+  private styleOpen = false;
 
   @state()
   private dragStartStep: number | null = null;
@@ -1693,27 +1861,136 @@ export class TabMelody extends LitElement {
     }
   }
 
-  private onRerollMelody = () => {
-    if (!this.progression) return;
-    const CONTOURS: ContourArchetype[] = ['Arch', 'AscendingClimax', 'DescendingSigh', 'CallAndResponse', 'OstinatoRiff', 'AnthemHook'];
-    const currentIdx = CONTOURS.indexOf(this.contour);
-    const nextIdx = (currentIdx + 1 + Math.floor(Math.random() * (CONTOURS.length - 1))) % CONTOURS.length;
-    this.contour = CONTOURS[nextIdx];
+  /** The picked band, only when it actually has a melodic move (not every Band DNA entry does yet). */
+  private bandWithMove() {
+    const band = this.bandId ? getBandById(this.bandId) : undefined;
+    return band && BAND_MELODY_MOVES[band.id] ? band : undefined;
+  }
 
-    const seed = Math.floor(Math.random() * 100000) + 1;
+  private activeBandId(): string | undefined {
+    return this.bandOn ? this.bandWithMove()?.id : undefined;
+  }
+
+  /** Builds a new melody from the current style, busyness and band, and announces what it made. */
+  private generateFromSettings() {
+    if (!this.progression) return;
+    const CONTOURS: ContourArchetype[] = CONTOUR_STYLES.map(c => c.id);
+    let contour: ContourArchetype;
+    if (this.melodyStyle === 'auto') {
+      const currentIdx = CONTOURS.indexOf(this.contour);
+      contour = CONTOURS[(currentIdx + 1 + Math.floor(Math.random() * (CONTOURS.length - 1))) % CONTOURS.length];
+    } else {
+      contour = this.melodyStyle;
+    }
+    this.contour = contour;
+
+    const bandId = this.activeBandId();
     const track = melodyEngine.generateMelody(this.progression, {
-      contour: this.contour,
+      contour,
       density: this.density,
       octave: this.octave,
       guideMode: this.guideMode,
       strictBy: this.strictBy,
-      seed,
+      bandId,
+      seed: Math.floor(Math.random() * 100000) + 1,
     });
     this.melodyTrack = track;
     this.requestUpdate();
     this.dispatchEvent(new CustomEvent('melody-change', { detail: { track }, bubbles: true, composed: true }));
-    this.dispatchEvent(new CustomEvent('toast', { detail: `Generated ${this.contour} melody`, bubbles: true, composed: true }));
+    const bandName = bandId ? getBandById(bandId)?.name : '';
+    this.dispatchEvent(new CustomEvent('toast', { detail: `Generated ${contourName(contour)} melody${bandName ? ` \u00B7 ${bandName}` : ''}`, bubbles: true, composed: true }));
+  }
+
+  private onRerollMelody = () => {
+    this.generateFromSettings();
   };
+
+  private emitStyleChange() {
+    this.dispatchEvent(new CustomEvent('melody-style-change', {
+      detail: { style: this.melodyStyle, density: this.density, bandOn: this.bandOn },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private onPickStyle(style: 'auto' | ContourArchetype) {
+    this.melodyStyle = style;
+    this.emitStyleChange();
+    this.generateFromSettings();
+  }
+
+  private onPickDensity(value: number) {
+    this.density = value;
+    this.emitStyleChange();
+    this.generateFromSettings();
+  }
+
+  private onToggleBand(on: boolean) {
+    this.bandOn = on;
+    this.emitStyleChange();
+    this.generateFromSettings();
+  }
+
+  private densityLabel(): string {
+    const nearest = DENSITY_STEPS.reduce((a, b) => (Math.abs(b.value - this.density) < Math.abs(a.value - this.density) ? b : a));
+    return nearest.label;
+  }
+
+  private styleSummary(): string {
+    return this.melodyStyle === 'auto' ? 'Auto' : contourName(this.melodyStyle);
+  }
+
+  private renderStylePanel() {
+    const band = this.bandWithMove();
+    const unsupported = !band && this.bandId ? (getBandById(this.bandId)?.name || this.bandId) : undefined;
+    const nearest = DENSITY_STEPS.reduce((a, b) => (Math.abs(b.value - this.density) < Math.abs(a.value - this.density) ? b : a));
+    return html`
+      <div class="style-backdrop" @click=${() => { this.styleOpen = false; }}></div>
+      <div class="style-panel" role="dialog" aria-label="Melody style" @click=${(e: Event) => e.stopPropagation()}>
+        <div class="style-kicker">Shape</div>
+        <div class="style-grid">
+          <button class="style-card auto ${this.melodyStyle === 'auto' ? 'active' : ''}" @click=${() => this.onPickStyle('auto')} aria-pressed=${this.melodyStyle === 'auto'}>
+            <span class="style-name">Surprise me</span>
+            <span class="style-blurb">A different shape each time</span>
+          </button>
+          ${CONTOUR_STYLES.map(c => html`
+            <button class="style-card ${this.melodyStyle === c.id ? 'active' : ''}" data-style=${c.id} @click=${() => this.onPickStyle(c.id)} aria-pressed=${this.melodyStyle === c.id}>
+              <span class="style-name">${c.name}</span>
+              <span class="style-blurb">${c.blurb}</span>
+            </button>
+          `)}
+        </div>
+
+        <div class="style-kicker">How busy</div>
+        <div class="segmented-control" role="radiogroup" aria-label="How busy the melody is" style="width: 100%;">
+          ${DENSITY_STEPS.map(d => html`
+            <button class="segment-btn ${nearest.value === d.value ? 'active' : ''}" style="flex: 1;" role="radio" aria-checked=${nearest.value === d.value} @click=${() => this.onPickDensity(d.value)}>${d.label}</button>
+          `)}
+        </div>
+
+        ${band ? html`
+          <div class="style-kicker">In the style of</div>
+          <div class="band-follow">
+            <span class="band-follow-swatch" style="background: ${band.color};"></span>
+            <span class="band-follow-text">
+              <span class="band-follow-name">${band.name}</span>
+              <span class="band-follow-move">${BAND_MELODY_MOVES[band.id]}, on the first and last bar</span>
+            </span>
+            <span class="segmented-control" role="radiogroup" aria-label="Follow the band's melody style">
+              <button class="segment-btn ${this.bandOn ? 'active' : ''}" role="radio" aria-checked=${this.bandOn} @click=${() => this.onToggleBand(true)}>On</button>
+              <button class="segment-btn ${!this.bandOn ? 'active' : ''}" role="radio" aria-checked=${!this.bandOn} @click=${() => this.onToggleBand(false)}>Off</button>
+            </span>
+          </div>
+        ` : html`
+          <div class="style-footnote">${unsupported
+            ? `${unsupported} doesn't have a melodic signature yet, so the melody follows the shape and busyness above.`
+            : 'Pick a band in the vibe panel to have the melody borrow its signature move.'}</div>
+        `}
+
+        <button class="style-clear clear-melody-btn" @click=${() => { this.styleOpen = false; this.onClearMelody(); }}>Clear all notes</button>
+      </div>
+    `;
+  }
 
   private onClearMelody = () => {
     if (!this.progression && !this.melodyTrack) return;
@@ -2184,6 +2461,11 @@ export class TabMelody extends LitElement {
               </svg>
               <span>${noteCount === 0 ? 'Randomize' : 'Try another'}</span>
             </button>
+            <button class="style-pill ${this.styleOpen ? 'open' : ''}" @click=${() => { this.styleOpen = !this.styleOpen; }} aria-expanded=${this.styleOpen} aria-label="Melody style">
+              <span class="style-pill-label">Style</span>
+              <span class="style-pill-value">${this.styleSummary()}</span>
+              <span class="style-pill-caret">\u25BE</span>
+            </button>
             <button class="clear-text-btn clear-melody-btn" @click=${this.onClearMelody} aria-label="Clear melody" title="Clear all notes">
               Clear
             </button>
@@ -2355,6 +2637,7 @@ export class TabMelody extends LitElement {
           <!-- Note Blooming Micro-Keyboard Popover (Anchored inside grid stage) -->
           ${this.selectedGlobalStep !== null ? this.renderBloomPopover(moodColor) : ''}
         </div>
+        ${this.styleOpen ? this.renderStylePanel() : ''}
       </div>
     `;
   }
@@ -2655,7 +2938,10 @@ export class TabMelody extends LitElement {
             </svg>
             <span>${noteCount === 0 ? 'Randomize' : 'Try another'}</span>
           </button>
-          <button class="clear-text-btn clear-melody-btn" @click=${this.onClearMelody} aria-label="Clear melody" title="Clear all notes">Clear</button>
+          <button class="style-pill ${this.styleOpen ? 'open' : ''}" @click=${() => { this.styleOpen = !this.styleOpen; }} aria-expanded=${this.styleOpen} aria-label="Melody style">
+            <span class="style-pill-label">Style</span>
+            <span class="style-pill-caret">\u25BE</span>
+          </button>
           <div class="m-tools-spacer"></div>
           ${this.melodyLoop === 'Span' ? html`
             <button class="m-span-chip ${this.spanEdit ? 'editing' : ''}" @click=${() => this.mSpanChip()} aria-label="Edit loop span">
@@ -2725,6 +3011,8 @@ export class TabMelody extends LitElement {
         `}
 
         ${this.renderMobileDock()}
+
+        ${this.styleOpen ? this.renderStylePanel() : ''}
 
         ${this.removedNote ? html`
           <div class="m-toast" role="status">Note removed<button @click=${() => this.mUndoRemove()}>Undo</button></div>

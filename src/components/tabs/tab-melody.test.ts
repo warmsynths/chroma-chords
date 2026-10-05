@@ -346,5 +346,66 @@ describe('TabMelody Component', () => {
       expect(shadow.querySelectorAll('.m-focus-grid .m-cell').length).toBe(16);
     });
   });
+
+  describe('style picker', () => {
+    const openPanel = async () => {
+      (el.shadowRoot!.querySelector('.style-pill') as HTMLElement).click();
+      await el.updateComplete;
+    };
+
+    it('lists the six shapes, plus "Surprise me", and busyness', async () => {
+      await openPanel();
+      const cards = el.shadowRoot!.querySelectorAll('.style-card');
+      expect(cards.length).toBe(7);
+      expect(el.shadowRoot!.querySelector('[aria-label="How busy the melody is"]')).toBeTruthy();
+    });
+
+    it('keeps the chosen shape when you randomize, instead of picking a random one', async () => {
+      await openPanel();
+      const events: any[] = [];
+      el.addEventListener('melody-change', (e: any) => events.push(e.detail.track));
+      (el.shadowRoot!.querySelector('[data-style="OstinatoRiff"]') as HTMLElement).click();
+      await el.updateComplete;
+      expect(events.at(-1).contour).toBe('OstinatoRiff');
+
+      (el.shadowRoot!.querySelector('.random-melody-btn') as HTMLElement).click();
+      expect(events.at(-1).contour).toBe('OstinatoRiff');
+    });
+
+    it('busyness changes how many notes are generated', async () => {
+      await openPanel();
+      const tracks: any[] = [];
+      el.addEventListener('melody-change', (e: any) => tracks.push(e.detail.track));
+      const click = (label: string) => (Array.from(el.shadowRoot!.querySelectorAll('[aria-label="How busy the melody is"] .segment-btn')).find(b => b.textContent?.trim() === label) as HTMLElement).click();
+      click('Sparse');
+      click('Busy');
+      expect(tracks[0].notes.length).toBeLessThan(tracks[1].notes.length);
+    });
+
+    it('follows a band that has a melodic move, and can be switched off', async () => {
+      el.bandId = 'radiohead';
+      await el.updateComplete;
+      await openPanel();
+      expect(el.shadowRoot!.querySelector('.band-follow-name')?.textContent).toBe('Radiohead');
+
+      const tracks: any[] = [];
+      el.addEventListener('melody-change', (e: any) => tracks.push(e.detail.track));
+      (el.shadowRoot!.querySelector('.style-card.auto') as HTMLElement).click();
+      expect(tracks.at(-1).bandId).toBe('radiohead');
+      expect(tracks.at(-1).notes.some((n: any) => String(n.tag).startsWith('band-radiohead'))).toBe(true);
+
+      const off = Array.from(el.shadowRoot!.querySelectorAll('.band-follow .segment-btn')).find(b => b.textContent?.trim() === 'Off') as HTMLElement;
+      off.click();
+      expect(tracks.at(-1).bandId).toBeUndefined();
+    });
+
+    it('says so when the picked band has no melodic signature', async () => {
+      el.bandId = 'Khruangbin';
+      await el.updateComplete;
+      await openPanel();
+      expect(el.shadowRoot!.querySelector('.band-follow')).toBeNull();
+      expect(el.shadowRoot!.querySelector('.style-footnote')?.textContent).toContain("Khruangbin doesn't have a melodic signature yet");
+    });
+  });
 });
 
