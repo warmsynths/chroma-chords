@@ -783,7 +783,7 @@ export class MelodyEngine {
 
     chords.forEach((chord, barIndex) => {
       const matrix = getHarmonicChordMatrix(chord, progression.key, progression.scaleType);
-      const cells = (profile && getBandRhythmCells(profile, density, barIndex, totalBars))
+      const cells = (profile && getBandRhythmCells(profile, density, barIndex, totalBars, seed))
         || getRhythmicCellsForBar(density, barIndex, totalBars, contour, seed);
 
       cells.forEach((cell, cellIdx) => {

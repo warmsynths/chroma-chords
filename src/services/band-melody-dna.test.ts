@@ -129,3 +129,15 @@ describe('melody engine with band DNA', () => {
     expect(d.notes.some(n => n.tag === 'band-daft-riff')).toBe(true);
   });
 });
+
+describe('band rhythm variety', () => {
+  it('re-rolls change the Oasis rhythm, not just the pitches', () => {
+    const p = generateBandProgression(chordData, 'oasis', 'C', 'MAJOR')!;
+    const shapes = new Set<string>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const t = melodyEngine.generateMelody(p, { bandId: 'oasis', density: 45, seed });
+      shapes.add(t.notes.filter(n => n.barIndex === 1 && !n.tag).map(n => n.stepInBar).join(','));
+    }
+    expect(shapes.size).toBeGreaterThan(1);
+  });
+});

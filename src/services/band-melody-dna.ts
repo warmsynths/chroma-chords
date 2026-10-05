@@ -219,39 +219,69 @@ export function getBandRhythmCells(
   profile: BandMelodyProfile,
   density: number,
   barIndex: number,
-  totalBars: number
+  totalBars: number,
+  seed: number = 0
 ): RhythmicCell[] | null {
   const last = barIndex === totalBars - 1;
   const alt = barIndex % 2 === 1;
   let cells: RhythmicCell[] | null = null;
 
+  // Each band rhythm has a few variants of the same feel; the seed (a re-roll) picks among them
+  // bar by bar, so the groove stays on-brand without repeating the same pattern every time.
+  const pick = <T,>(variants: T[]): T => {
+    const i = seed ? Math.abs(seed * 31 + barIndex * 17) % variants.length : barIndex % variants.length;
+    return variants[i];
+  };
+
   switch (profile.rhythm) {
     case 'pyramid':
-      // 3+3+4+3+3 sixteenth grouping
-      cells = [r(0, 0.75, true), r(3, 0.75), r(6, 1.0, true), r(10, 0.75), r(13, 0.75)];
-      if (alt) cells = [r(0, 0.75, true), r(3, 0.75), r(6, 1.0), r(10, 1.5, true)];
+      // 3+3+4+3+3 sixteenth grouping is the signature, so only the tail varies
+      cells = alt
+        ? [r(0, 0.75, true), r(3, 0.75), r(6, 1.0), r(10, 1.5, true)]
+        : [r(0, 0.75, true), r(3, 0.75), r(6, 1.0, true), r(10, 0.75), r(13, 0.75)];
       break;
     case 'anthem':
-      cells = alt
-        ? [r(0, 0.5, true), r(2, 0.5), r(4, 1.0), r(8, 1.0, true), r(12, 1.0)]
-        : [r(0, 1.0, true), r(4, 0.5), r(6, 0.5), r(8, 1.0, true), r(12, 1.0)];
+      cells = pick([
+        [r(0, 1.0, true), r(4, 0.5), r(6, 0.5), r(8, 1.0, true), r(12, 1.0)],
+        [r(0, 0.5, true), r(2, 0.5), r(4, 1.0), r(8, 1.0, true), r(12, 1.0)],
+        [r(0, 1.5, true), r(6, 0.5), r(8, 0.5, true), r(10, 0.5), r(12, 1.0)],
+        [r(0, 0.5, true), r(2, 0.5), r(4, 0.5), r(6, 0.5), r(8, 1.5, true)],
+      ]);
       break;
     case 'riff':
-      cells = [r(0, 0.5, true), r(2, 0.5), r(4, 0.5), r(6, 0.5, true), r(8, 0.5), r(10, 0.5), r(12, 1.0, true)];
+      cells = pick([
+        [r(0, 0.5, true), r(2, 0.5), r(4, 0.5), r(6, 0.5, true), r(8, 0.5), r(10, 0.5), r(12, 1.0, true)],
+        [r(0, 0.75, true), r(3, 0.75), r(6, 0.5, true), r(8, 0.5), r(11, 0.5), r(14, 0.5, true)],
+        [r(0, 0.5, true), r(2, 0.5, true), r(4, 1.0), r(8, 0.5, true), r(10, 0.5), r(12, 1.0)],
+      ]);
       break;
     case 'syncopated':
-      cells = alt
-        ? [r(2, 0.5, true), r(5, 0.5), r(8, 0.75), r(11, 0.5, true), r(14, 0.5)]
-        : [r(0, 0.5), r(3, 0.75, true), r(6, 0.5), r(10, 0.75), r(13, 0.5, true)];
+      cells = pick([
+        [r(0, 0.5), r(3, 0.75, true), r(6, 0.5), r(10, 0.75), r(13, 0.5, true)],
+        [r(2, 0.5, true), r(5, 0.5), r(8, 0.75), r(11, 0.5, true), r(14, 0.5)],
+        [r(1, 0.5), r(4, 0.75, true), r(7, 0.5), r(9, 0.5), r(12, 0.75, true)],
+      ]);
       break;
     case 'lazy':
-      cells = alt ? [r(2, 2.0, true), r(10, 1.5)] : [r(0, 1.5, true), r(6, 1.0), r(10, 1.5)];
+      cells = pick([
+        [r(0, 1.5, true), r(6, 1.0), r(10, 1.5)],
+        [r(2, 2.0, true), r(10, 1.5)],
+        [r(0, 2.0, true), r(8, 1.0), r(12, 1.0)],
+      ]);
       break;
     case 'space':
-      cells = alt ? [r(4, 3.0, true)] : [r(0, 1.5, true), r(8, 2.5)];
+      cells = pick([
+        [r(0, 1.5, true), r(8, 2.5)],
+        [r(4, 3.0, true)],
+        [r(2, 2.0, true), r(10, 1.5)],
+      ]);
       break;
     case 'offbeat':
-      cells = [r(2, 0.5, true), r(6, 0.5), r(10, 0.5, true), r(14, 0.5)];
+      cells = pick([
+        [r(2, 0.5, true), r(6, 0.5), r(10, 0.5, true), r(14, 0.5)],
+        [r(2, 0.5, true), r(6, 0.5), r(10, 0.5), r(11, 0.5, true), r(14, 0.5)],
+        [r(2, 0.5, true), r(3, 0.25), r(6, 0.5, true), r(10, 0.5), r(14, 0.5, true)],
+      ]);
       break;
     default:
       return null;
