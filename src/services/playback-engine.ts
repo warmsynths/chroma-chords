@@ -12,6 +12,7 @@ import {
 } from './audio-service';
 import { Progression, ChordBlock, AUTOPLAY_INTERVAL_MS, notesForSymbol, preferFlatSpelling } from './chord-engine';
 import type { SongSection } from './song-arranger';
+import { midiService } from './midi-service';
 import { MelodyTrack, melodyEngine } from './melody-engine';
 
 export type PlaybackTickCallback = (
@@ -211,7 +212,9 @@ export class PlaybackEngine {
         if (note) {
           const lenSteps = Math.max(1, Math.round((note.durationBeats || 0.25) * 4));
           const vel = typeof note.velocity === 'number' ? Math.max(0.05, Math.min(1, note.velocity / 127)) : 0.85;
-          playLeadNote(note.pitch, lenSteps * sd * 0.92, undefined, vel, this.melodySound || undefined);
+          if (midiService.playNotes('melody', [note.pitch], lenSteps * sd * 0.92, vel)) {
+            playLeadNote(note.pitch, lenSteps * sd * 0.92, undefined, vel, this.melodySound || undefined);
+          }
         }
       }
     }
@@ -537,7 +540,9 @@ export class PlaybackEngine {
               const vel = typeof note.velocity === 'number' ? Math.max(0.05, Math.min(1, note.velocity / 127)) : 0.85;
               setTimeout(() => {
                 if (this.playing && this.mode === 'song') {
-                  playLeadNote(note.pitch, durSec, undefined, vel, this.melodySound || undefined);
+                  if (midiService.playNotes('melody', [note.pitch], durSec, vel)) {
+                    playLeadNote(note.pitch, durSec, undefined, vel, this.melodySound || undefined);
+                  }
                 }
               }, Math.round(relSec * 1000));
             });
@@ -628,6 +633,9 @@ export class PlaybackEngine {
     const activeFeel = (effectiveIndex !== undefined && this.feelSettings?.barFeel && this.feelSettings.barFeel[effectiveIndex])
       ? { ...this.feelSettings, ...this.feelSettings.barFeel[effectiveIndex] }
       : this.feelSettings;
+
+    const chordDur = duration || (this.getStepIntervalMs() / 1000) * 0.85;
+    if (!midiService.playNotes('chords', pitchedNotes, chordDur, (velocity ?? 92) > 1 ? (velocity ?? 92) / 127 : (velocity ?? 0.75))) return;
 
     playChordForGenre(pitchedNotes, this.progression.genre || 'Unknown', {
       bpm: this.progression.bpm || 120,

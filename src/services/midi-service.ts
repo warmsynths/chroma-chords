@@ -221,6 +221,27 @@ export class MidiService {
     }
   }
 
+  /** True when a MIDI output device is connected and picked, so routed notes will really leave the app. */
+  public hasOutput(): boolean {
+    return this.getActiveOutputDevice() !== null;
+  }
+
+  /**
+   * Sends notes (e.g. "C4", "F#3") to the chosen MIDI output on the channel for that part, with a
+   * timed note-off. Returns whether the built-in sound should ALSO play: it always does when no
+   * device is connected, so turning built-in audio off can never silence the app by accident.
+   */
+  public playNotes(part: 'chords' | 'melody', noteNames: string[], durationSec: number, velocity01 = 0.8): boolean {
+    const internal = part === 'chords' ? this.routing.chordsInternalAudio : this.routing.melodyInternalAudio;
+    if (!this.hasOutput()) return true;
+    const channel = part === 'chords' ? this.routing.chordsChannel : this.routing.melodyChannel;
+    const vel = Math.round(Math.max(1, Math.min(127, velocity01 * 127)));
+    const midis = noteNames.map(noteNameToMidi).filter((m): m is number => m !== null);
+    midis.forEach(m => this.sendNoteOn(m, vel, channel));
+    setTimeout(() => midis.forEach(m => this.sendNoteOff(m, channel)), Math.max(50, durationSec * 1000));
+    return internal;
+  }
+
   public sendTestNote(channel = 1): void {
     // Plays Middle C (60) for 400ms
     this.sendNoteOn(60, 100, channel);
@@ -228,6 +249,15 @@ export class MidiService {
       this.sendNoteOff(60, channel);
     }, 400);
   }
+}
+
+const NOTE_PCS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+export function noteNameToMidi(name: string): number | null {
+  const m = /^([A-Ga-g])([#b\u266f\u266d]?)(-?\d+)$/.exec((name || '').trim());
+  if (!m) return null;
+  const acc = m[2] === '#' || m[2] === '\u266f' ? 1 : m[2] === 'b' || m[2] === '\u266d' ? -1 : 0;
+  return 12 * (parseInt(m[3], 10) + 1) + NOTE_PCS[m[1].toUpperCase()] + acc;
 }
 
 export const midiService = MidiService.getInstance();
