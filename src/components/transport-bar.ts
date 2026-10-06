@@ -135,6 +135,7 @@ export class TransportBar extends LitElement {
   @property({ type: Number }) bpm = 84;
   @property({ type: Number }) barsPerChord = 1;
   @property({ type: String }) songTotal = '';
+  @property({ type: Boolean }) songLoop = true;
   @property({ type: Array }) chords: Array<{ name: string; roman?: string }> = [];
 
   @state() private openMenu: TransportMenuType = null;
@@ -1228,6 +1229,19 @@ export class TransportBar extends LitElement {
               </div>
             ` : ''}
           </div>
+        ` : ''}
+
+        ${isSong ? html`
+          <button
+            class="tb-btn"
+            @click=${() => this.dispatchEvent(new CustomEvent('song-loop-change', { detail: { loop: !this.songLoop }, bubbles: true, composed: true }))}
+            aria-label="Loop the song"
+            aria-pressed=${this.songLoop}
+            title="${this.songLoop ? 'The song repeats from the top. Click to play it once.' : 'The song plays once and stops. Click to loop it.'}"
+          >
+            <span>Loop</span>
+            <span class="highlight">${this.songLoop ? 'On' : 'Off'}</span>
+          </button>
         ` : ''}
 
         ${isSong && this.songTotal ? html`

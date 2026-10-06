@@ -39,6 +39,23 @@ describe('MobileDock', () => {
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({ detail: { melodyLoop: 'Span' } }));
   });
 
+  it('offers a song loop On/Off in the more menu on the Song tab', async () => {
+    const el = document.createElement('mobile-dock') as MobileDock;
+    el.activeTab = 'song';
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const spy = vi.fn();
+    el.addEventListener('song-loop-change', spy);
+    (el.shadowRoot!.querySelector('[aria-label="More actions"]') as HTMLElement).click();
+    await el.updateComplete;
+    const radios = Array.from(el.shadowRoot!.querySelectorAll('[aria-label="Loop the song"] .loop-seg-btn')) as HTMLElement[];
+    expect(radios.map(b => b.textContent?.trim())).toEqual(['On', 'Off']);
+    expect(radios[0].getAttribute('aria-checked')).toBe('true');
+    radios[1].click();
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ detail: { loop: false } }));
+  });
+
   it('shows the AI capacity in the more menu (moved out of the header on phones)', async () => {
     const el = document.createElement('mobile-dock') as MobileDock;
     document.body.appendChild(el);

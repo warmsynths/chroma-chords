@@ -63,6 +63,8 @@ export class PlaybackEngine {
   private activeIndex = 0;
   private progressStep = 0;
   private songStep = 0;
+  /** Song mode: wrap back to the start at the end (true) or stop there (false). */
+  private songLoop = true;
   private activeSectionIndex = 0;
   private playing = false;
   private instrument: string | null = null;
@@ -279,6 +281,14 @@ export class PlaybackEngine {
     this.sections = sections;
   }
 
+  public setSongLoop(loop: boolean): void {
+    this.songLoop = loop;
+  }
+
+  public getSongLoop(): boolean {
+    return this.songLoop;
+  }
+
   public isSongMode(): boolean {
     return this.mode === 'song';
   }
@@ -410,6 +420,18 @@ export class PlaybackEngine {
       if (this.mode === 'song' || this.playTarget === 'song') {
         const totalSteps = this.getTotalSteps();
         if (totalSteps <= 0) return;
+        if (!this.songLoop && this.songStep + 1 >= totalSteps) {
+          // The song has played through once: stop and rewind rather than wrapping
+          this.playing = false;
+          this.songStep = 0;
+          this.activeIndex = 0;
+          this.progressStep = 0;
+          this.activeSectionIndex = 0;
+          this.stepPos = -1;
+          this.stopAutoplay();
+          this.notifyTick();
+          return;
+        }
         this.songStep = (this.songStep + 1) % totalSteps;
         this.updateSongStepState(this.songStep);
       } else {

@@ -55,6 +55,7 @@ export class ChromaChordsApp extends LitElement {
   @state() private chordPlaying = false;
   @state() private melodyPlaying = false;
   @state() private songPlaying = false;
+  @state() private songLoop = true;
   @state() private showTheory = false;
   @state() private instrument: string | null = null;
   @state() private playStyle: string | null = null;
@@ -772,6 +773,7 @@ export class ChromaChordsApp extends LitElement {
     const savedDensity = Number(safeGet('chroma-melody-density'));
     if (savedDensity > 0 && savedDensity <= 100) this.melodyDensity = savedDensity;
     if (safeGet('chroma-melody-band-on') === 'false') this.melodyBandOn = false;
+    if (safeGet('chroma-song-loop') === 'false') { this.songLoop = false; playbackEngine.setSongLoop(false); }
     const savedMelodyFeel = safeGet('chroma-melody-feel');
     if (savedMelodyFeel) this.melodyFeel = savedMelodyFeel;
 
@@ -1382,6 +1384,13 @@ export class ChromaChordsApp extends LitElement {
     else playbackEngine.setSong(song);
   }
 
+  private onSongLoopChange(loop: boolean) {
+    this.songLoop = loop;
+    playbackEngine.setSongLoop(loop);
+    this.safeSet('chroma-song-loop', String(loop));
+    this.showToast(loop ? 'Song loops' : 'Song plays once');
+  }
+
   private onAddSection(type?: string) {
     if (!this.progression) return;
     if (this.sections.length >= MAX_SECTIONS) {
@@ -1907,6 +1916,8 @@ export class ChromaChordsApp extends LitElement {
                 .barsPerChord=${playbackEngine.getBarsPerChord()}
                 .melodyLoop=${this.melodyLoop}
                 .songTotal=${songTotal}
+                .songLoop=${this.songLoop}
+                @song-loop-change=${(e: CustomEvent) => this.onSongLoopChange(e.detail.loop)}
                 @loop-cycle=${(e: CustomEvent) => {
                   this.onMelodyLoopCycle(e.detail?.melodyLoop);
                 }}
@@ -1974,6 +1985,8 @@ export class ChromaChordsApp extends LitElement {
                 .barsPerChord=${playbackEngine.getBarsPerChord()}
                 .melodyLoop=${this.melodyLoop}
                 .songTotal=${songTotal}
+                .songLoop=${this.songLoop}
+                @song-loop-change=${(e: CustomEvent) => this.onSongLoopChange(e.detail.loop)}
                 @loop-cycle=${(e: CustomEvent) => {
                   this.onMelodyLoopCycle(e.detail?.melodyLoop);
                 }}
@@ -2132,6 +2145,8 @@ export class ChromaChordsApp extends LitElement {
           .bpm=${this.progression?.bpm || 84}
           .barsPerChord=${playbackEngine.getBarsPerChord()}
           .melodyLoop=${this.melodyLoop}
+          .songLoop=${this.songLoop}
+          @song-loop-change=${(e: CustomEvent) => this.onSongLoopChange(e.detail.loop)}
           .isSaved=${isBookmarked}
           @loop-cycle=${(e: CustomEvent) => {
             this.onMelodyLoopCycle(e.detail?.melodyLoop);

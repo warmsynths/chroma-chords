@@ -21,6 +21,7 @@ export class MobileDock extends LitElement {
   @property({ type: String }) chordFeel = 'Block chords';
   @property({ type: String }) melodyFeel = 'Smooth';
   @property({ type: String }) melodyLoop = 'Section';
+  @property({ type: Boolean }) songLoop = true;
   @property({ type: Object }) feelSettings: FeelSettings = { swing: 0, spread: 50, density: 50, tone: 'Warm' };
   @property({ type: String }) keyRoot = 'C';
   @property({ type: String }) scaleMode = 'Major';
@@ -862,6 +863,21 @@ export class MobileDock extends LitElement {
         <!-- More Popover (Upwards) -->
         ${this.activeSheet === 'more' ? html`
           <div class="popover-up">
+            ${isSong ? html`
+              <div class="loop-row">
+                <span class="loop-row-label">Loop</span>
+                <div class="loop-seg" role="radiogroup" aria-label="Loop the song">
+                  ${[true, false].map(val => html`
+                    <button
+                      class="loop-seg-btn ${this.songLoop === val ? 'active' : ''}"
+                      role="radio"
+                      aria-checked=${this.songLoop === val}
+                      @click=${() => this.dispatchEvent(new CustomEvent('song-loop-change', { detail: { loop: val }, bubbles: true, composed: true }))}
+                    >${val ? 'On' : 'Off'}</button>
+                  `)}
+                </div>
+              </div>
+            ` : ''}
             ${isMelody ? html`
               <div class="loop-row">
                 <span class="loop-row-label">Loop</span>

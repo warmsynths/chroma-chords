@@ -68,3 +68,32 @@ describe('song playback uses each section\'s own melody', () => {
     expect(playLeadNote).not.toHaveBeenCalled();
   });
 });
+
+describe('song loop', () => {
+  let engine: PlaybackEngine;
+  const sections = (): SongSection[] => [
+    { name: 'Verse', desc: '', progression: prog, order: [0, 1] },
+    { name: 'Chorus', desc: '', progression: prog, order: [0, 1] },
+  ];
+  beforeEach(() => { vi.useFakeTimers(); engine = new PlaybackEngine(); });
+  afterEach(() => { engine.stopAutoplay(); vi.useRealTimers(); });
+
+  it('wraps to the top by default', async () => {
+    engine.setSong(sections());
+    engine.togglePlay('song');
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(engine.isPlaying()).toBe(true);
+  });
+
+  it('stops and rewinds after one pass when loop is off', async () => {
+    engine.setSongLoop(false);
+    engine.setSong(sections());
+    engine.togglePlay('song');
+    expect(engine.isPlaying()).toBe(true);
+    await vi.advanceTimersByTimeAsync(3500); // still inside the last chord
+    expect(engine.isPlaying()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(engine.isPlaying()).toBe(false);
+    expect(engine.getActiveSectionIndex()).toBe(0);
+  });
+});

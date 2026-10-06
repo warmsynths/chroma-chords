@@ -200,3 +200,23 @@ describe('MobileDock component', () => {
     }));
   });
 });
+
+describe('TransportBar song loop', () => {
+  it('shows Loop On/Off on the Song tab and toggles it', async () => {
+    const el = document.createElement('transport-bar') as any;
+    el.activeTab = 'song';
+    el.songLoop = true;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const btn = el.shadowRoot.querySelector('[aria-label="Loop the song"]') as HTMLButtonElement;
+    expect(btn.textContent).toContain('On');
+    const spy = vi.fn();
+    el.addEventListener('song-loop-change', spy);
+    btn.click();
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ detail: { loop: false } }));
+    el.songLoop = false;
+    await el.updateComplete;
+    expect(el.shadowRoot.querySelector('[aria-label="Loop the song"]').textContent).toContain('Off');
+    el.remove();
+  });
+});
