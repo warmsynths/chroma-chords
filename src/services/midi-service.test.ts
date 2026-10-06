@@ -209,3 +209,36 @@ describe('MIDI clock and latency', () => {
     expect(midiService.routing.latencyMs).toBe(-250);
   });
 });
+
+describe('autoReconnect', () => {
+  const svc = midiService as any;
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    svc.midiAccess = null;
+    svc.selectedOutputId = null;
+    svc.status = 'idle';
+    svc.errorMessage = '';
+  });
+
+  it('reconnects when an output was chosen last time', async () => {
+    svc.selectedOutputId = 'o';
+    const access = { outputs: new Map([['o', { id: 'o', name: 'Circuit', send: vi.fn() }]]), inputs: new Map() };
+    vi.stubGlobal('navigator', { requestMIDIAccess: vi.fn().mockResolvedValue(access) });
+    expect(await midiService.autoReconnect()).toBe(true);
+    expect(midiService.getStatus()).toBe('connected');
+    expect(midiService.hasOutput()).toBe(true);
+  });
+
+  it('does nothing without a saved device, and stays quiet if the browser refuses', async () => {
+    const request = vi.fn().mockRejectedValue(new Error('denied'));
+    vi.stubGlobal('navigator', { requestMIDIAccess: request });
+    svc.selectedOutputId = null;
+    expect(await midiService.autoReconnect()).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+
+    svc.selectedOutputId = 'o';
+    expect(await midiService.autoReconnect()).toBe(false);
+    expect(midiService.getStatus()).toBe('idle');
+    expect(midiService.getErrorMessage()).toBe('');
+  });
+});

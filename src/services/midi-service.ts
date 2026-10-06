@@ -90,6 +90,23 @@ export class MidiService {
     return typeof navigator !== 'undefined' && typeof (navigator as any).requestMIDIAccess === 'function';
   }
 
+  /**
+   * Reconnects quietly on startup when a device was chosen last time, so MIDI output and clock work
+   * straight after a reload without opening the dialog. Browsers that already granted access allow
+   * this without a prompt; if not, it simply stays idle until Connect is pressed.
+   */
+  public async autoReconnect(): Promise<boolean> {
+    if (!this.selectedOutputId || !this.isSupported() || this.status === 'connected') return false;
+    const ok = await this.connect();
+    if (!ok) {
+      // A quiet retry that fails shouldn't greet the user with an error
+      this.status = 'idle';
+      this.errorMessage = '';
+      this.notify();
+    }
+    return ok;
+  }
+
   public async connect(): Promise<boolean> {
     if (!this.isSupported()) {
       this.status = 'unsupported';

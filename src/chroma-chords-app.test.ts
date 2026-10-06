@@ -163,4 +163,20 @@ describe('ChromaChordsApp Integration', () => {
       expect(a.songTimeline.map((t: any) => t.sectionIndex)).toEqual([0, 1]);
     });
   });
+
+  it('MIDI settings can be reopened after closing (the close event resets the parent state)', async () => {
+    const a = app as any;
+    a.midiModalOpen = true;
+    await app.updateComplete;
+    const modal = app.shadowRoot!.querySelector('midi-modal') as any;
+    expect(modal.isOpen).toBe(true);
+
+    modal.shadowRoot.querySelector('.close-btn').click();
+    await app.updateComplete;
+    expect(a.midiModalOpen).toBe(false);
+
+    a.midiModalOpen = true;
+    await app.updateComplete;
+    expect((app.shadowRoot!.querySelector('midi-modal') as any).isOpen).toBe(true);
+  });
 });

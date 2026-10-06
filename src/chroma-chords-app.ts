@@ -9,6 +9,7 @@ import { loadChordData, generateProgression, extendProgression, RawChordData, Pr
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, FeelSettings } from './services/audio-service';
 import { authService } from './services/auth-service';
 import { melodyEngine, MelodyTrack, ContourArchetype, CONTOUR_STYLES, BAND_MELODY_MOVES } from './services/melody-engine';
+import { midiService } from './services/midi-service';
 import { getBandById, BAND_LIST, generateBandProgression } from './services/band-dna-service';
 import { NavTabId } from './components/app-header';
 import { PlayInstrument } from './components/tabs/tab-play';
@@ -819,6 +820,7 @@ export class ChromaChordsApp extends LitElement {
       this.songPlaying = playbackEngine.isSongPlaying();
     });
 
+    midiService.autoReconnect().catch(() => { /* stays idle until Connect is pressed */ });
     window.addEventListener('hashchange', this.onHashChange);
     window.addEventListener('keydown', this.onGlobalKeyDown);
     this.syncRouteFromHash();
@@ -2333,6 +2335,7 @@ export class ChromaChordsApp extends LitElement {
 
       <midi-modal
         .isOpen=${this.midiModalOpen}
+        @close=${() => { this.midiModalOpen = false; }}
         @close-modal=${() => { this.midiModalOpen = false; }}
       ></midi-modal>
 
