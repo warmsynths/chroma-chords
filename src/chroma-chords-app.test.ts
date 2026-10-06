@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { playbackEngine } from './services/playback-engine';
+
 vi.mock('tone', () => ({
   Compressor: class { connect() { return this; } toDestination() { return this; } },
   Sampler: class { connect() { return this; } triggerAttackRelease() { } triggerAttack() { } triggerRelease() { } },
@@ -117,5 +119,48 @@ describe('ChromaChordsApp Integration', () => {
     (app as any).activeTab = 'play';
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector('tab-play')).toBeTruthy();
+  });
+
+  describe('song arrangement reaches playback', () => {
+    const mk = (name: string) => ({
+      name, desc: '',
+      progression: (app as any).progression,
+      order: [0],
+    });
+
+    it('plays a section as many times as its repeat count', () => {
+      const a = app as any;
+      a.sections = [mk('Verse'), mk('Chorus')];
+      a.songTimeline = [
+        { id: 't1', sectionIndex: 0, repeats: 1 },
+        { id: 't2', sectionIndex: 1, repeats: 2 },
+      ];
+      a.syncSongToEngine(false, true);
+      expect(playbackEngine.getTotalSteps()).toBe(3);
+      expect(a.expandedToTimeline).toEqual([0, 1, 1]);
+    });
+
+    it('follows timeline order, so a section can be reused', () => {
+      const a = app as any;
+      a.sections = [mk('Verse'), mk('Chorus')];
+      a.songTimeline = [
+        { id: 't1', sectionIndex: 0, repeats: 1 },
+        { id: 't2', sectionIndex: 1, repeats: 1 },
+        { id: 't3', sectionIndex: 0, repeats: 1 },
+      ];
+      a.syncSongToEngine(false, true);
+      expect(playbackEngine.getTotalSteps()).toBe(3);
+    });
+
+    it('duplicating a section keeps its chords, gives it its own melody, and slots it into the song', () => {
+      const a = app as any;
+      a.sections = [mk('Verse')];
+      a.songTimeline = [{ id: 't1', sectionIndex: 0, repeats: 1 }];
+      a.onDuplicateSection(0);
+      expect(a.sections.map((s: any) => s.name)).toEqual(['Verse', 'Verse 2']);
+      expect(a.sections[1].progression.chords.map((c: any) => c.name)).toEqual(a.sections[0].progression.chords.map((c: any) => c.name));
+      expect(a.sections[1].melodyTrack?.notes.length).toBeGreaterThan(0);
+      expect(a.songTimeline.map((t: any) => t.sectionIndex)).toEqual([0, 1]);
+    });
   });
 });

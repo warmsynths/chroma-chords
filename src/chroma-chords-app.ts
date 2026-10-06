@@ -68,6 +68,8 @@ export class ChromaChordsApp extends LitElement {
   @state() private songTimeline: SongTimelineItem[] = [];
   @state() private activeSectionIdx = 0;
   @state() private activePlayingSectionIdx = 0;
+  /** Engine plays the expanded song (repeats applied); this maps each played slot back to its timeline row. */
+  private expandedToTimeline: number[] = [];
   @state() private totalSongSteps = 0;
   @state() private userEmail: string | null = null;
   @state() private isAuthenticated = false;
@@ -804,7 +806,7 @@ export class ChromaChordsApp extends LitElement {
       this.activeIndex = activeIdx;
       this.progressStep = typeof stepPos === 'number' && stepPos >= 0 ? stepPos : step;
       if (typeof secIdx === 'number') {
-        this.activePlayingSectionIdx = secIdx;
+        this.activePlayingSectionIdx = this.expandedToTimeline[secIdx] ?? secIdx;
       }
       if (typeof totalSteps === 'number') {
         this.totalSongSteps = totalSteps;
@@ -1200,7 +1202,7 @@ export class ChromaChordsApp extends LitElement {
     } else if (effectiveTarget === 'song') {
       playbackEngine.setStepLoop(null);
       this.captureActiveMelody();
-      playbackEngine.setSong(this.sections);
+      this.syncSongToEngine(false, true);
       this.playing = playbackEngine.togglePlay('song');
       this.songPlaying = playbackEngine.isSongPlaying();
       this.chordPlaying = false;
@@ -1358,6 +1360,28 @@ export class ChromaChordsApp extends LitElement {
     playbackEngine.setMelodyTrack(this.melodyTrack);
   }
 
+  /**
+   * Hands the engine the song as it is arranged: sections in song-order with each row's repeat
+   * count applied. `keepPosition` swaps content in without restarting playback.
+   */
+  private syncSongToEngine(keepPosition = false, forceReset = false) {
+    const timeline = this.songTimeline.length ? this.songTimeline : SongArranger.createDefaultTimeline(this.sections);
+    const expanded: SongSection[] = [];
+    const map: number[] = [];
+    timeline.forEach((item, tIdx) => {
+      const sec = this.sections[item.sectionIndex];
+      if (!sec) return;
+      for (let r = 0; r < Math.max(1, item.repeats); r++) {
+        expanded.push(sec);
+        map.push(tIdx);
+      }
+    });
+    const song = expanded.length ? expanded : this.sections;
+    this.expandedToTimeline = expanded.length ? map : this.sections.map((_, i) => i);
+    if (!forceReset && (keepPosition || playbackEngine.isPlaying())) playbackEngine.updateSongSections(song);
+    else playbackEngine.setSong(song);
+  }
+
   private onAddSection() {
     if (!this.progression) return;
     this.captureActiveMelody();
@@ -1369,7 +1393,9 @@ export class ChromaChordsApp extends LitElement {
       const added = this.sections[res.activeIndex];
       this.sections = SongArranger.setSectionMelody(this.sections, res.activeIndex, this.generateSectionMelody(added.progression, added.name));
     }
-    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+    this.songTimeline = this.sections.length > before
+      ? SongArranger.addTimelineItem(this.songTimeline, res.activeIndex)
+      : this.songTimeline;
     this.activeSectionIdx = res.activeIndex;
     const activeSec = this.sections[this.activeSectionIdx];
     if (activeSec) {
@@ -1378,7 +1404,45 @@ export class ChromaChordsApp extends LitElement {
       playbackEngine.setProgression(this.progression, this.order);
       this.loadSectionMelody(activeSec);
     }
-    playbackEngine.setSong(this.sections);
+    this.syncSongToEngine();
+    this.requestUpdate();
+  }
+
+  /** Same chords, its own melody: e.g. Verse 2 sung over Verse 1's progression. */
+  private onDuplicateSection(sectionIndex: number) {
+    const source = this.sections[sectionIndex];
+    if (!source || this.sections.length >= 8) {
+      if (source) this.showToast('That\u2019s the most sections a song can hold');
+      return;
+    }
+    this.captureActiveMelody();
+    const fresh = this.sections[sectionIndex];
+    const base = fresh.name.replace(/\s+\d+$/, '');
+    const taken = this.sections.filter(s => s.name === base || s.name.replace(/\s+\d+$/, '') === base).length;
+    const name = `${base} ${taken + 1}`;
+    const progression = { ...fresh.progression, chords: fresh.progression.chords.map(c => ({ ...c })) };
+    const copy: SongSection = {
+      ...fresh,
+      name,
+      progression,
+      order: fresh.order.slice(),
+      melodyTrack: this.generateSectionMelody(progression, base),
+    };
+    const insertAt = this.sections.length;
+    this.sections = [...this.sections, copy];
+    // Slot it into the song straight after the last place the original is played
+    const lastUse = this.songTimeline.map(t => t.sectionIndex).lastIndexOf(sectionIndex);
+    const item = SongArranger.addTimelineItem([], insertAt)[0];
+    const tl = [...this.songTimeline];
+    tl.splice(lastUse >= 0 ? lastUse + 1 : tl.length, 0, item);
+    this.songTimeline = tl;
+    this.activeSectionIdx = insertAt;
+    this.progression = copy.progression;
+    this.order = copy.order.slice();
+    playbackEngine.setProgression(this.progression, this.order);
+    this.loadSectionMelody(copy);
+    this.syncSongToEngine();
+    this.showToast(`${name}: same chords, new melody`);
     this.requestUpdate();
   }
 
@@ -1386,8 +1450,14 @@ export class ChromaChordsApp extends LitElement {
     const idx = e.detail;
     this.captureActiveMelody();
     const res = SongArranger.removeSection(this.sections, idx);
+    const removed = res.sections.length < this.sections.length;
     this.sections = res.sections;
-    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+    if (removed) {
+      const rest = this.songTimeline
+        .filter(t => t.sectionIndex !== idx)
+        .map(t => (t.sectionIndex > idx ? { ...t, sectionIndex: t.sectionIndex - 1 } : t));
+      this.songTimeline = rest.length ? rest : SongArranger.createDefaultTimeline(this.sections);
+    }
     this.activeSectionIdx = res.activeIndex;
     const activeSec = this.sections[this.activeSectionIdx];
     if (activeSec) {
@@ -1396,7 +1466,7 @@ export class ChromaChordsApp extends LitElement {
       playbackEngine.setProgression(this.progression, this.order);
       this.loadSectionMelody(activeSec);
     }
-    playbackEngine.setSong(this.sections);
+    this.syncSongToEngine();
     this.requestUpdate();
   }
 
@@ -1731,7 +1801,7 @@ export class ChromaChordsApp extends LitElement {
                       this.melodyTrack = e.detail.track;
                       playbackEngine.setMelodyTrack(this.melodyTrack);
                       this.sections = SongArranger.setSectionMelody(this.sections, this.activeSectionIdx, this.melodyTrack);
-                      playbackEngine.updateSongSections(this.sections);
+                      this.syncSongToEngine(true);
                     }}
                     @span-change=${(e: CustomEvent) => {
                       this.melodySpan = e.detail.span;
@@ -1755,8 +1825,9 @@ export class ChromaChordsApp extends LitElement {
                   .bpm=${this.progression?.bpm || 120}
                   @select-section=${(e: CustomEvent) => this.onSelectSection(e)}
                   @section-select=${(e: CustomEvent) => this.onSelectSection(e)}
-                  @reorder-timeline=${(e: CustomEvent) => { this.songTimeline = e.detail.timeline; }}
-                  @timeline-change=${(e: CustomEvent) => { this.songTimeline = e.detail.timeline; }}
+                  @reorder-timeline=${(e: CustomEvent) => { this.songTimeline = e.detail.timeline; this.syncSongToEngine(); }}
+                  @timeline-change=${(e: CustomEvent) => { this.songTimeline = e.detail.timeline; this.syncSongToEngine(); }}
+                  @duplicate-section=${(e: CustomEvent) => this.onDuplicateSection(e.detail.sectionIndex)}
                   @new-section-from-loop=${() => this.onAddSection()}
                   @add-section=${() => this.onAddSection()}
                   @remove-section=${(e: CustomEvent) => this.onRemoveSection(e)}

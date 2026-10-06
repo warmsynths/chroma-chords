@@ -683,6 +683,11 @@ export class TabSong extends LitElement {
     );
   }
 
+  private onDuplicateSection(sectionIndex: number, e: Event) {
+    e.stopPropagation();
+    this.dispatchEvent(new CustomEvent('duplicate-section', { detail: { sectionIndex }, bubbles: true, composed: true }));
+  }
+
   private onEditMelody(sectionIndex: number, e: Event) {
     e.stopPropagation();
     this.activeSectionIdx = sectionIndex;
@@ -1032,6 +1037,13 @@ export class TabSong extends LitElement {
                         title="Edit melody in Melody tab"
                       >
                         Edit melody
+                      </button>
+                      <button
+                        class="action-btn section-edit-btn"
+                        @click=${(e: Event) => this.onDuplicateSection(idx, e)}
+                        title="Copy this section: same chords, a fresh melody"
+                      >
+                        Duplicate
                       </button>
                     </div>
                   </div>
