@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { midiService, noteNameToMidi } from './midi-service';
+import { midiService, noteNameToMidi, MIDI_LOOKAHEAD_MS } from './midi-service';
 
 describe('noteNameToMidi', () => {
   it('parses names with octaves and accidentals', () => {
@@ -28,11 +28,12 @@ describe('midiService.playNotes routing', () => {
     svc.selectedOutputId = null;
   });
 
-  it('sends note-on now and note-off after the duration, on the part\'s channel', () => {
+  it('sends note-on and a later note-off, stamped for the browser to schedule, on the part\'s channel', () => {
+    const out: Array<{ d: number[]; ts?: number }> = [];
+    svc.midiAccess = { outputs: new Map([['out1', { send: (d: number[], ts?: number) => out.push({ d, ts }) }]]) };
     midiService.playNotes('melody', ['C4'], 0.5, 1);
-    expect(sent).toEqual([[0x92, 60, 127]]);
-    vi.advanceTimersByTime(600);
-    expect(sent[1]).toEqual([0x82, 60, 0]);
+    expect(out.map(o => o.d)).toEqual([[0x92, 60, 127], [0x82, 60, 0]]);
+    expect(out[1].ts! - out[0].ts!).toBeCloseTo(500, 0);
   });
 
   it('tells the engine whether built-in audio should also play', () => {
@@ -95,14 +96,17 @@ describe('midiService.playEvents timing', () => {
   });
   afterEach(() => { vi.useRealTimers(); svc.midiAccess = null; svc.selectedOutputId = null; });
 
-  it('delays later notes of an arpeggio instead of sending them all at once', () => {
+  it('stamps later notes of an arpeggio further ahead instead of using timers', () => {
+    const out: Array<{ d: number[]; ts: number }> = [];
+    svc.midiAccess = { outputs: new Map([['o', { send: (d: number[], ts: number) => out.push({ d, ts }) }]]) };
     midiService.playEvents('chords', [
       { note: 'C4', offsetSec: 0, durSec: 0.1, vel: 0.8 },
       { note: 'E4', offsetSec: 0.25, durSec: 0.1, vel: 0.8 },
     ]);
-    expect(sent.filter(([, m]) => m[0] === 0x90).map(([, m]) => m[1])).toEqual([60]);
-    vi.advanceTimersByTime(300);
-    expect(sent.filter(([, m]) => m[0] === 0x90).map(([, m]) => m[1])).toEqual([60, 64]);
+    const ons = out.filter(o => o.d[0] === 0x90);
+    expect(ons.map(o => o.d[1])).toEqual([60, 64]);
+    expect(ons[1].ts - ons[0].ts).toBeCloseTo(250, 1);
+    expect(vi.getTimerCount()).toBe(0); // nothing waits on a JS timer
   });
 });
 
@@ -182,24 +186,68 @@ describe('MIDI clock and latency', () => {
     fresh({ latencyMs: 80 });
     const before = performance.now();
     midiService.syncTransport(true, 120);
-    expect(sent.find(s => s.data[0] === 0xFA)!.ts!).toBeGreaterThanOrEqual(before + 80);
-    expect(midiService.internalDelayMs()).toBe(0);
+    expect(sent.find(s => s.data[0] === 0xFA)!.ts!).toBeGreaterThanOrEqual(before + 80 + MIDI_LOOKAHEAD_MS);
+    expect(midiService.internalDelayMs()).toBe(MIDI_LOOKAHEAD_MS);
 
     midiService.syncTransport(false, 120);
     fresh({ latencyMs: -60 });
-    expect(midiService.internalDelayMs()).toBe(60);
+    expect(midiService.internalDelayMs()).toBe(MIDI_LOOKAHEAD_MS + 60);
     svc.selectedOutputId = null;
     expect(midiService.internalDelayMs()).toBe(0); // no device: never delay the app's own sound
   });
 
   it('holds MIDI notes back by a positive offset', () => {
     fresh({ latencyMs: 100 });
-    const notes: number[][] = [];
-    svc.midiAccess = { outputs: new Map([['o', { send: (d: number[]) => notes.push(d) }]]) };
+    const out: Array<{ d: number[]; ts: number }> = [];
+    svc.midiAccess = { outputs: new Map([['o', { send: (d: number[], ts: number) => out.push({ d, ts }) }]]) };
+    const now = performance.now();
     midiService.playEvents('chords', [{ note: 'C4', offsetSec: 0, durSec: 0.1, vel: 0.8 }]);
-    expect(notes).toHaveLength(0);
-    vi.advanceTimersByTime(110);
-    expect(notes[0]).toEqual([0x90, 60, 102]);
+    expect(out[0].d).toEqual([0x90, 60, 102]);
+    expect(out[0].ts).toBeGreaterThanOrEqual(now + 100 + MIDI_LOOKAHEAD_MS);
+  });
+
+  it('stamps notes from the engine\'s ideal grid time, so a late timer does not move them', () => {
+    const out: Array<{ d: number[]; ts: number }> = [];
+    svc.midiAccess = { outputs: new Map([['o', { send: (d: number[], ts: number) => out.push({ d, ts }) }]]) };
+    const now = performance.now();
+    // the timer fired 12 ms after the beat it belongs to
+    midiService.setGridTime(now - 12);
+    midiService.playEvents('chords', [{ note: 'C4', offsetSec: 0, durSec: 0.1, vel: 0.8 }]);
+    midiService.setGridTime(null);
+    expect(out[0].ts).toBeCloseTo(now - 12 + MIDI_LOOKAHEAD_MS, 1);
+  });
+
+  it('chords and melody on the same beat get the same timestamp', () => {
+    const out: Array<{ part: string; ts: number }> = [];
+    svc.midiAccess = { outputs: new Map([['o', { send: (d: number[], ts: number) => { if (d[0] >= 0x90 && d[0] < 0xA0) out.push({ part: d[0] === 0x90 ? 'c' : 'm', ts }); } }]]) };
+    svc.routing = { ...svc.routing, chordsChannel: 1, melodyChannel: 2, chordsSend: true, melodySend: true };
+    midiService.setGridTime(performance.now() + 5);
+    midiService.playEvents('chords', [{ note: 'C3', offsetSec: 0, durSec: 0.2, vel: 0.8 }]);
+    midiService.playEvents('melody', [{ note: 'G4', offsetSec: 0, durSec: 0.2, vel: 0.8 }]);
+    midiService.setGridTime(null);
+    expect(out).toHaveLength(2);
+    expect(out[0].ts).toBe(out[1].ts);
+  });
+
+  it('can switch one part\'s MIDI off so the other records alone; the app still plays it', () => {
+    const out: number[][] = [];
+    svc.midiAccess = { outputs: new Map([['o', { send: (d: number[]) => out.push(d) }]]) };
+    svc.routing = { ...svc.routing, chordsSend: false, melodySend: true, chordsInternalAudio: false };
+    const internal = midiService.playEvents('chords', [{ note: 'C3', offsetSec: 0, durSec: 0.2, vel: 0.8 }]);
+    expect(out).toHaveLength(0);
+    expect(internal).toBe(true); // not sent to the device, so it must still sound in the app
+    midiService.playEvents('melody', [{ note: 'G4', offsetSec: 0, durSec: 0.2, vel: 0.8 }]);
+    expect(out.some(d => d[0] === 0x91)).toBe(true);
+  });
+
+  it('sends All Notes Off on both channels when playback stops', () => {
+    const out: number[][] = [];
+    svc.midiAccess = { outputs: new Map([['o', { send: (d: number[]) => out.push(d) }]]) };
+    svc.routing = { ...svc.routing, chordsChannel: 1, melodyChannel: 2 };
+    midiService.syncTransport(true, 120);
+    midiService.syncTransport(false, 120);
+    expect(out).toContainEqual([0xB0, 123, 0]);
+    expect(out).toContainEqual([0xB1, 123, 0]);
   });
 
   it('clamps the offset to the slider range', () => {

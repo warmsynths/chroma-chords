@@ -11,6 +11,8 @@ export interface MidiRoutingConfig {
   chordsInternalAudio: boolean;// default true
   melodyChannel: number;       // 1 to 16, default 2
   melodyInternalAudio: boolean;// default true
+  chordsSend: boolean;         // send chords to the MIDI output, default true
+  melodySend: boolean;         // send melody to the MIDI output, default true
   sendClock: boolean;          // send MIDI clock + start/stop to the output, default false
   latencyMs: number;           // -250..250: + delays MIDI, - delays the built-in sound
 }
@@ -23,6 +25,13 @@ export interface MidiNoteEvent {
 }
 
 export type MidiListener = (status: MidiConnectionStatus) => void;
+
+/**
+ * Everything sent to a device is stamped this far in the future and scheduled by the browser's
+ * MIDI layer rather than by JavaScript timers, so a busy main thread (audio, UI, two parts at
+ * once) can't push one note later than another.
+ */
+export const MIDI_LOOKAHEAD_MS = 40;
 
 export class MidiService {
   private static instance: MidiService;
@@ -38,6 +47,8 @@ export class MidiService {
     chordsInternalAudio: true,
     melodyChannel: 2,
     melodyInternalAudio: true,
+    chordsSend: true,
+    melodySend: true,
     sendClock: false,
     latencyMs: 0,
   };
@@ -219,7 +230,24 @@ export class MidiService {
   /** How long to hold back the built-in sound so it lines up with a slower external device. */
   public internalDelayMs(): number {
     if (!this.hasOutput()) return 0;
-    return Math.max(0, -(this.routing.latencyMs || 0));
+    // MIDI is stamped LOOKAHEAD ahead, so the app's own sound waits the same, keeping 0 ms = aligned
+    return MIDI_LOOKAHEAD_MS + Math.max(0, -(this.routing.latencyMs || 0));
+  }
+
+  private gridTimeMs: number | null = null;
+
+  /**
+   * The playback engine tells us the ideal (jitter-free) time of the beat/step it is about to play,
+   * in performance.now() milliseconds, so notes keep their musical spacing even when a timer fires late.
+   */
+  public setGridTime(ms: number | null): void {
+    this.gridTimeMs = ms;
+  }
+
+  private baseTimeMs(): number {
+    const now = this.nowMs();
+    const g = this.gridTimeMs;
+    return g !== null && Math.abs(g - now) < 250 ? g : now;
   }
 
   private midiDelayMs(): number {
@@ -242,13 +270,26 @@ export class MidiService {
    * plays, and Stop when it ends.
    */
   public syncTransport(playing: boolean, bpm: number): void {
+    const stopped = this.lastTransport.playing && !playing;
     this.lastTransport = { playing, bpm };
+    if (stopped) this.allNotesOff();
     const wanted = this.routing.sendClock && this.hasOutput();
     if (!wanted || !playing) {
       if (this.clockRunning) this.stopClock();
       return;
     }
     if (!this.clockRunning) this.startClock();
+  }
+
+  /** Releases anything still sounding on both part channels (called when playback stops). */
+  public allNotesOff(): void {
+    const output = this.getActiveOutputDevice();
+    if (!output) return;
+    try { output.clear?.(); } catch { /* not supported in every browser */ }
+    const at = this.nowMs() + MIDI_LOOKAHEAD_MS + this.midiDelayMs();
+    [this.routing.chordsChannel, this.routing.melodyChannel].forEach(ch => {
+      this.sendRaw([0xB0 | Math.max(0, Math.min(15, ch - 1)), 123, 0], at);
+    });
   }
 
   private sendRaw(data: number[], timestamp?: number): void {
@@ -268,7 +309,7 @@ export class MidiService {
 
   private startClock(): void {
     this.clockRunning = true;
-    const at = this.nowMs() + this.midiDelayMs();
+    const at = this.baseTimeMs() + MIDI_LOOKAHEAD_MS + this.midiDelayMs();
     this.sendRaw([0xFA], at); // Start
     this.nextPulseAt = at;
     this.pumpClock();
@@ -289,7 +330,7 @@ export class MidiService {
     if (this.clockTimer) clearInterval(this.clockTimer);
     this.clockTimer = null;
     this.clockRunning = false;
-    this.sendRaw([0xFC], this.nowMs() + this.midiDelayMs()); // Stop
+    this.sendRaw([0xFC], this.nowMs() + MIDI_LOOKAHEAD_MS + this.midiDelayMs()); // Stop
   }
 
   public subscribe(cb: MidiListener): () => void {
@@ -342,17 +383,21 @@ export class MidiService {
    */
   public playEvents(part: 'chords' | 'melody', events: MidiNoteEvent[]): boolean {
     const internal = part === 'chords' ? this.routing.chordsInternalAudio : this.routing.melodyInternalAudio;
+    const sendMidi = part === 'chords' ? this.routing.chordsSend !== false : this.routing.melodySend !== false;
     if (!this.hasOutput()) return true;
+    // MIDI switched off for this part (e.g. recording the other part alone): the app's own sound still plays
+    if (!sendMidi) return true;
     const channel = part === 'chords' ? this.routing.chordsChannel : this.routing.melodyChannel;
+    const base = this.baseTimeMs() + MIDI_LOOKAHEAD_MS + this.midiDelayMs();
+    const status = (kind: number) => kind | Math.max(0, Math.min(15, channel - 1));
     events.forEach(ev => {
       const midi = noteNameToMidi(ev.note);
       if (midi === null) return;
       const vel = Math.round(Math.max(1, Math.min(127, ev.vel * 127)));
-      const on = () => this.sendNoteOn(midi, vel, channel);
-      const off = () => setTimeout(() => this.sendNoteOff(midi, channel), Math.max(40, ev.durSec * 1000));
-      const startMs = ev.offsetSec * 1000 + this.midiDelayMs();
-      if (startMs > 1) setTimeout(() => { on(); off(); }, startMs);
-      else { on(); off(); }
+      const on = base + ev.offsetSec * 1000;
+      const off = on + Math.max(40, ev.durSec * 1000);
+      this.sendRaw([status(0x90), midi, vel], on);
+      this.sendRaw([status(0x80), midi, 0], off);
     });
     return internal;
   }

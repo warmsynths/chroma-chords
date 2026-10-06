@@ -131,4 +131,27 @@ describe('MidiModal Component & MidiService', () => {
     midiService.setRouting({ sendClock: false, latencyMs: 0 });
     el.remove();
   });
+
+  it('lets you switch each part\'s MIDI off to record the other on its own', async () => {
+    midiService.setRouting({ chordsSend: true, melodySend: true });
+    const el = document.createElement('midi-modal') as MidiModal;
+    el.isOpen = true;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const chords = el.shadowRoot!.querySelector('[aria-label="Send chords to MIDI"]') as HTMLButtonElement;
+    const melody = el.shadowRoot!.querySelector('[aria-label="Send melody to MIDI"]') as HTMLButtonElement;
+    expect(chords.textContent).toContain('on');
+    chords.click();
+    await el.updateComplete;
+    expect(midiService.routing.chordsSend).toBe(false);
+    expect(midiService.routing.melodySend).toBe(true);
+    expect(chords.textContent).toContain('off');
+    melody.click();
+    await el.updateComplete;
+    expect(midiService.routing.melodySend).toBe(false);
+
+    midiService.setRouting({ chordsSend: true, melodySend: true });
+    el.remove();
+  });
 });

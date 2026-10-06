@@ -69,6 +69,10 @@ export class PlaybackEngine {
   private activeIndex = 0;
   private progressStep = 0;
   private songStep = 0;
+  /** Ideal tick times for MIDI stamping: start + n * interval, so a late timer doesn't smear the groove. */
+  private gridStartMs = 0;
+  private gridTick = 0;
+  private gridIntervalMs = 0;
   /** Song mode: wrap back to the start at the end (true) or stop there (false). */
   private songLoop = true;
   private activeSectionIndex = 0;
@@ -412,19 +416,36 @@ export class PlaybackEngine {
     this.progressStep = 0;
   }
 
+  private anchorGrid(intervalMs: number): void {
+    this.gridStartMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.gridTick = 0;
+    this.gridIntervalMs = intervalMs;
+    midiService.setGridTime(this.gridStartMs);
+  }
+
+  private advanceGrid(): void {
+    this.gridTick += 1;
+    midiService.setGridTime(this.gridStartMs + this.gridTick * this.gridIntervalMs);
+  }
+
   public startAutoplay(): void {
     this.stopAutoplay();
     if (this.playTarget === 'melody') {
+      const stepMs = this.getSixteenthMs();
+      this.anchorGrid(stepMs);
       this.autoplayTimer = setInterval(() => {
         if (this.playing && this.playTarget === 'melody') {
+          this.advanceGrid();
           this.stepTick();
         }
-      }, this.getSixteenthMs());
+      }, stepMs);
       return;
     }
     const intervalMs = this.getStepIntervalMs();
+    this.anchorGrid(intervalMs);
     this.autoplayTimer = setInterval(() => {
       if (!this.playing) return;
+      this.advanceGrid();
 
       if (this.mode === 'song' || this.playTarget === 'song') {
         const totalSteps = this.getTotalSteps();
@@ -459,6 +480,7 @@ export class PlaybackEngine {
       clearInterval(this.autoplayTimer);
       this.autoplayTimer = null;
     }
+    midiService.setGridTime(null);
   }
 
   public togglePlay(target?: 'chords' | 'melody' | 'song'): boolean {
@@ -565,18 +587,24 @@ export class PlaybackEngine {
           if (barNotes.length > 0) {
             const bpm = sec.progression.bpm || 84;
             const secondsPerBeat = 60 / bpm;
-            barNotes.forEach(note => {
-              const relSec = (note.stepInBar / 4) * secondsPerBeat;
-              const durSec = (note.durationBeats || 0.25) * secondsPerBeat;
-              const vel = typeof note.velocity === 'number' ? Math.max(0.05, Math.min(1, note.velocity / 127)) : 0.85;
-              setTimeout(() => {
-                if (this.playing && this.mode === 'song') {
-                  if (midiService.playNotes('melody', [note.pitch], durSec, vel)) {
-                    runAfter(midiService.internalDelayMs(), () => playLeadNote(note.pitch, durSec, undefined, vel, this.melodySound || undefined));
+            const bar = barNotes.map(note => ({
+              note,
+              relSec: (note.stepInBar / 4) * secondsPerBeat,
+              durSec: (note.durationBeats || 0.25) * secondsPerBeat,
+              vel: typeof note.velocity === 'number' ? Math.max(0.05, Math.min(1, note.velocity / 127)) : 0.85,
+            }));
+            // MIDI gets the whole bar now, stamped with each note's exact offset
+            const internalOn = midiService.playEvents('melody', bar.map(b => ({ note: b.note.pitch, offsetSec: b.relSec, durSec: b.durSec, vel: b.vel })));
+            if (internalOn) {
+              const hold = midiService.internalDelayMs();
+              bar.forEach(({ note, relSec, durSec, vel }) => {
+                setTimeout(() => {
+                  if (this.playing && this.mode === 'song') {
+                    playLeadNote(note.pitch, durSec, undefined, vel, this.melodySound || undefined);
                   }
-                }
-              }, Math.round(relSec * 1000));
-            });
+                }, Math.round(relSec * 1000) + hold);
+              });
+            }
           }
         }
       }

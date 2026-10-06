@@ -15,6 +15,8 @@ export class MidiModal extends LitElement {
   @state() private chordsInternalAudio = true;
   @state() private melodyChannel = 2;
   @state() private melodyInternalAudio = true;
+  @state() private chordsSend = true;
+  @state() private melodySend = true;
   @state() private sendClock = false;
   @state() private latencyMs = 0;
   @state() private errorMessage = '';
@@ -232,10 +234,14 @@ export class MidiModal extends LitElement {
       color: #6b5f50;
     }
 
+    .routing-controls .audio-toggle-btn,
+    .routing-controls .send-toggle-btn { white-space: nowrap; padding: 0 8px; }
+    .routing-info { min-width: 0; }
+
     .routing-controls {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 6px;
     }
 
     .channel-select {
@@ -252,6 +258,7 @@ export class MidiModal extends LitElement {
 
     /* Audio Toggle Pill */
     .audio-toggle-btn,
+    .send-toggle-btn,
     .clock-toggle-btn {
       min-height: 28px;
       padding: 0 10px;
@@ -267,6 +274,7 @@ export class MidiModal extends LitElement {
     }
 
     .audio-toggle-btn.active,
+    .send-toggle-btn.active,
     .clock-toggle-btn.active {
       background: #2e271f;
       color: #fbf3e6;
@@ -362,6 +370,8 @@ export class MidiModal extends LitElement {
     this.chordsInternalAudio = midiService.routing.chordsInternalAudio;
     this.melodyChannel = midiService.routing.melodyChannel;
     this.melodyInternalAudio = midiService.routing.melodyInternalAudio;
+    this.chordsSend = midiService.routing.chordsSend !== false;
+    this.melodySend = midiService.routing.melodySend !== false;
     this.sendClock = midiService.routing.sendClock;
     this.latencyMs = midiService.routing.latencyMs;
   }
@@ -409,6 +419,16 @@ export class MidiModal extends LitElement {
   private toggleMelodyAudio() {
     this.melodyInternalAudio = !this.melodyInternalAudio;
     midiService.setRouting({ melodyInternalAudio: this.melodyInternalAudio });
+  }
+
+  private toggleChordsSend() {
+    this.chordsSend = !this.chordsSend;
+    midiService.setRouting({ chordsSend: this.chordsSend });
+  }
+
+  private toggleMelodySend() {
+    this.melodySend = !this.melodySend;
+    midiService.setRouting({ melodySend: this.melodySend });
   }
 
   private toggleClock() {
@@ -505,6 +525,16 @@ export class MidiModal extends LitElement {
                       )}
                     </select>
                     <button
+                      class="send-toggle-btn ${this.chordsSend ? 'active' : ''}"
+                      role="switch"
+                      aria-checked=${this.chordsSend}
+                      aria-label="Send chords to MIDI"
+                      @click=${this.toggleChordsSend}
+                      title="Send the chords to your MIDI device"
+                    >
+                      ${this.chordsSend ? 'MIDI on' : 'MIDI off'}
+                    </button>
+                    <button
                       class="audio-toggle-btn ${this.chordsInternalAudio ? 'active' : ''}"
                       @click=${this.toggleChordsAudio}
                       title="Internal synth audio playback"
@@ -531,6 +561,16 @@ export class MidiModal extends LitElement {
                       )}
                     </select>
                     <button
+                      class="send-toggle-btn ${this.melodySend ? 'active' : ''}"
+                      role="switch"
+                      aria-checked=${this.melodySend}
+                      aria-label="Send melody to MIDI"
+                      @click=${this.toggleMelodySend}
+                      title="Send the melody to your MIDI device"
+                    >
+                      ${this.melodySend ? 'MIDI on' : 'MIDI off'}
+                    </button>
+                    <button
                       class="audio-toggle-btn ${this.melodyInternalAudio ? 'active' : ''}"
                       @click=${this.toggleMelodyAudio}
                       title="Internal lead synth audio playback"
@@ -540,6 +580,7 @@ export class MidiModal extends LitElement {
                   </div>
                 </div>
               </div>
+              <span class="routing-sub" style="padding: 0 2px;">Recording one part on the device? Switch the other part's MIDI off. It keeps playing in the app and just stops arriving at the device.</span>
             </div>
 
             <!-- Sync -->
