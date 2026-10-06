@@ -4,7 +4,7 @@ import { ProjectData, ProjectChord } from './services/project-service';
 import { projectStorage, SyncStatus } from './services/project-storage';
 import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
-import { SongArranger, SongSection, SongTimelineItem } from './services/song-arranger';
+import { SongArranger, SongSection, SongTimelineItem, MAX_SECTIONS } from './services/song-arranger';
 import { loadChordData, generateProgression, extendProgression, RawChordData, Progression, ChordBlock, notesForSymbol, preferFlatSpelling, getMoodColor, applyVoicingToChord } from './services/chord-engine';
 import { USER_INSTRUMENTS, USER_PLAY_STYLES, setMasterTone, FeelSettings } from './services/audio-service';
 import { authService } from './services/auth-service';
@@ -1382,16 +1382,24 @@ export class ChromaChordsApp extends LitElement {
     else playbackEngine.setSong(song);
   }
 
-  private onAddSection() {
+  private onAddSection(type?: string) {
     if (!this.progression) return;
+    if (this.sections.length >= MAX_SECTIONS) {
+      this.showToast(`A song can hold ${MAX_SECTIONS} sections`);
+      return;
+    }
     this.captureActiveMelody();
     const before = this.sections.length;
-    const res = SongArranger.addSection(this.sections, this.progression, this.chordData);
+    // Build from the first section's harmony so every new part stays in the song's key and feel
+    const base = this.sections[0]?.progression || this.progression;
+    const res = type
+      ? SongArranger.addSectionOfType(this.sections, base, type, this.chordData)
+      : SongArranger.addSection(this.sections, this.progression, this.chordData);
     this.sections = res.sections;
     // A new section gets its own melody to match its new chords (not the previous section's)
     if (this.sections.length > before) {
       const added = this.sections[res.activeIndex];
-      this.sections = SongArranger.setSectionMelody(this.sections, res.activeIndex, this.generateSectionMelody(added.progression, added.name));
+      this.sections = SongArranger.setSectionMelody(this.sections, res.activeIndex, this.generateSectionMelody(added.progression, added.name.replace(/\s+\d+$/, '')));
     }
     this.songTimeline = this.sections.length > before
       ? SongArranger.addTimelineItem(this.songTimeline, res.activeIndex)
@@ -1411,8 +1419,8 @@ export class ChromaChordsApp extends LitElement {
   /** Same chords, its own melody: e.g. Verse 2 sung over Verse 1's progression. */
   private onDuplicateSection(sectionIndex: number) {
     const source = this.sections[sectionIndex];
-    if (!source || this.sections.length >= 8) {
-      if (source) this.showToast('That\u2019s the most sections a song can hold');
+    if (!source || this.sections.length >= MAX_SECTIONS) {
+      if (source) this.showToast(`A song can hold ${MAX_SECTIONS} sections`);
       return;
     }
     this.captureActiveMelody();
@@ -1829,7 +1837,7 @@ export class ChromaChordsApp extends LitElement {
                   @timeline-change=${(e: CustomEvent) => { this.songTimeline = e.detail.timeline; this.syncSongToEngine(); }}
                   @duplicate-section=${(e: CustomEvent) => this.onDuplicateSection(e.detail.sectionIndex)}
                   @new-section-from-loop=${() => this.onAddSection()}
-                  @add-section=${() => this.onAddSection()}
+                  @add-section=${(e: CustomEvent) => this.onAddSection(e.detail?.type)}
                   @remove-section=${(e: CustomEvent) => this.onRemoveSection(e)}
                   @edit-chords=${(e: CustomEvent) => {
                     this.activeSectionIdx = e.detail.sectionIndex;

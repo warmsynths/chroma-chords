@@ -173,23 +173,34 @@ describe('TabSong Component', () => {
     el.remove();
   });
 
-  it('dispatches toggle-play-song and new-section-from-loop', async () => {
+  it('lets you pick which kind of section to add next', async () => {
     const el = document.createElement('tab-song') as TabSong;
     el.sections = sampleSections;
     document.body.appendChild(el);
     await el.updateComplete;
 
-    let newSectionTriggered = false;
+    const added: string[] = [];
+    el.addEventListener('add-section', (e: Event) => added.push((e as CustomEvent).detail.type));
 
-    el.addEventListener('new-section-from-loop', () => {
-      newSectionTriggered = true;
-    });
+    (el.shadowRoot!.querySelector('.new-section-btn') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const chips = Array.from(el.shadowRoot!.querySelectorAll('.type-chip')) as HTMLButtonElement[];
+    expect(chips.map(c => c.querySelector('.type-chip-name')!.textContent)).toEqual(
+      expect.arrayContaining(['Verse', 'Pre-chorus', 'Chorus', 'Bridge', 'Outro'])
+    );
+    chips.find(c => c.querySelector('.type-chip-name')!.textContent === 'Bridge')!.click();
+    expect(added).toEqual(['Bridge']);
 
-    const newSecBtn = el.shadowRoot!.querySelector('.new-section-btn') as HTMLButtonElement;
-    expect(newSecBtn).toBeTruthy();
-    newSecBtn.click();
-    expect(newSectionTriggered).toBe(true);
+    el.remove();
+  });
 
+  it('stops offering new sections once the song is full', async () => {
+    const el = document.createElement('tab-song') as TabSong;
+    el.sections = Array.from({ length: 12 }, (_, i) => ({ ...sampleSections[0], name: `S${i}` }));
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.new-section-btn')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.picker-note')?.textContent).toContain('12 sections');
     el.remove();
   });
 

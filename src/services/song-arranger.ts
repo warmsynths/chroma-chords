@@ -51,6 +51,19 @@ export const SECTION_TEMPLATES: SectionTemplate[] = [
   { name: 'Pre-chorus', desc: 'Leans in, sets up the turn.', reorder: n => Array.from({ length: n }, (_, i) => (i + 1) % n) },
 ];
 
+/** Section kinds a song can add, in the order they are offered. */
+export const SECTION_TYPES: Array<{ name: string; desc: string }> = [
+  { name: 'Verse', desc: 'Settled, familiar.' },
+  { name: 'Pre-chorus', desc: 'Leans in, sets up the turn.' },
+  { name: 'Chorus', desc: 'Brighter, opens the key up.' },
+  { name: 'Bridge', desc: 'Detours, borrows a shadow chord.' },
+  { name: 'Outro', desc: 'Settles back down.' },
+  { name: 'Intro', desc: 'Sets the scene.' },
+  { name: 'Solo', desc: 'Room for the lead to stretch.' },
+];
+
+export const MAX_SECTIONS = 12;
+
 export class SongArranger {
   public static createInitialSong(progression: Progression, order?: number[]): SongSection[] {
     const defaultOrder = order || Array.from({ length: progression.chords.length }, (_, i) => i);
@@ -379,6 +392,34 @@ export class SongArranger {
       sections: updatedSections,
       activeIndex: updatedSections.length - 1,
     };
+  }
+
+  /**
+   * Adds a section of a chosen kind with its own freshly generated chords. Repeats of a kind are
+   * numbered ("Verse", "Verse 2", ...). Returns the same sections when the song is full.
+   */
+  public static addSectionOfType(
+    sections: SongSection[],
+    baseProgression: Progression,
+    type: string,
+    chordData?: RawChordData,
+    targetLength?: number
+  ): { sections: SongSection[]; activeIndex: number } {
+    if (sections.length >= MAX_SECTIONS) {
+      return { sections, activeIndex: sections.length - 1 };
+    }
+    const kind = SECTION_TYPES.find(t => t.name === type) || SECTION_TYPES[0];
+    const same = sections.filter(sec => sec.name.replace(/\s+\d+$/, '') === kind.name).length;
+    const name = same === 0 ? kind.name : `${kind.name} ${same + 1}`;
+    const progression = this.generateSectionProgression(baseProgression, kind.name, chordData, targetLength);
+    const newSection: SongSection = {
+      name,
+      desc: kind.desc,
+      progression,
+      order: Array.from({ length: progression.chords.length }, (_, i) => i),
+    };
+    const updated = [...sections, newSection];
+    return { sections: updated, activeIndex: updated.length - 1 };
   }
 
   public static removeSection(

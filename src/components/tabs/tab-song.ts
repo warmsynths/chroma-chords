@@ -4,6 +4,8 @@ import {
   SongSection,
   SongTimelineItem,
   SongArranger,
+  SECTION_TYPES,
+  MAX_SECTIONS,
 } from '../../services/song-arranger';
 import { roleForTension } from '../../services/chord-engine';
 
@@ -41,6 +43,7 @@ export class TabSong extends LitElement {
   @property({ type: String }) mood: string = 'Dreamy';
   @property({ type: Number }) bpm: number = 120;
 
+  @state() private pickerOpen = false;
   @state() private draggingIdx: number | null = null;
   @state() private dragOverIdx: number | null = null;
 
@@ -606,6 +609,39 @@ export class TabSong extends LitElement {
       transition: background 150ms ease, border-color 150ms ease;
     }
 
+    .type-picker {
+      border-radius: 16px;
+      background: rgba(251, 243, 230, 0.8);
+      border: 1.5px solid rgba(46, 39, 31, 0.12);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .type-picker-head { display: flex; align-items: center; justify-content: space-between; }
+    .type-picker-close { border: none; background: none; font-size: 18px; cursor: pointer; color: #6b5f50; min-width: 32px; min-height: 32px; }
+    .type-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .type-chip {
+      border: none;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      min-height: 52px;
+      padding: 9px 12px;
+      border-radius: 13px;
+      background: #f6eadb;
+      color: #2e271f;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      transition: background 140ms ease, transform 120ms ease;
+    }
+    .type-chip:hover { background: #f1e4cc; }
+    .type-chip:active { transform: scale(0.98); }
+    .type-chip-name { font-size: 13px; font-weight: 800; }
+    .type-chip-desc { font-size: 11px; font-weight: 600; opacity: 0.7; line-height: 1.3; }
+    .picker-note { font-size: 11.5px; font-weight: 600; color: #6b5f50; line-height: 1.4; text-align: center; }
+
     .new-section-btn:hover {
       background: rgba(251, 243, 230, 0.6);
       border-color: #8a6b3f;
@@ -753,6 +789,11 @@ export class TabSong extends LitElement {
         composed: true,
       })
     );
+  }
+
+  private onPickType(type: string) {
+    this.pickerOpen = false;
+    this.dispatchEvent(new CustomEvent('add-section', { detail: { type }, bubbles: true, composed: true }));
   }
 
   private onNewSectionFromLoop() {
@@ -1050,13 +1091,33 @@ export class TabSong extends LitElement {
                 `;
               })}
 
-              <button
-                class="new-section-btn"
-                @click=${this.onNewSectionFromLoop}
-                title="Branch current progression into a new section"
-              >
-                + New section from the loop
-              </button>
+              ${this.sections.length >= MAX_SECTIONS
+                ? html`<div class="picker-note">A song can hold ${MAX_SECTIONS} sections.</div>`
+                : this.pickerOpen
+                  ? html`
+                    <div class="type-picker" role="group" aria-label="Choose a section to add">
+                      <div class="type-picker-head">
+                        <span class="col-title">ADD A SECTION</span>
+                        <button class="type-picker-close" @click=${() => { this.pickerOpen = false; }} aria-label="Close">×</button>
+                      </div>
+                      <div class="type-picker-grid">
+                        ${SECTION_TYPES.map(t => html`
+                          <button class="type-chip" @click=${() => this.onPickType(t.name)}>
+                            <span class="type-chip-name">${t.name}</span>
+                            <span class="type-chip-desc">${t.desc}</span>
+                          </button>
+                        `)}
+                      </div>
+                      <div class="picker-note">New chords in the same key, plus its own melody, added to the end of the song.</div>
+                    </div>`
+                  : html`
+                    <button
+                      class="new-section-btn"
+                      @click=${() => { this.pickerOpen = true; }}
+                      title="Pick which kind of section to add next"
+                    >
+                      + Add a section
+                    </button>`}
             </div>
           </div>
         </div>

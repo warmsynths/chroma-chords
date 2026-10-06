@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SongArranger, SECTION_TEMPLATES } from './song-arranger';
+import { SongArranger, SECTION_TEMPLATES, MAX_SECTIONS } from './song-arranger';
 import { Progression, buildDeviceShareUrl } from './chord-engine';
 
 describe('SongArranger Deep Module', () => {
@@ -164,5 +164,32 @@ describe('SongArranger Deep Module', () => {
     const swapped = SongArranger.syncActiveSection(sections, 1, sampleProgression, [0, 1, 2, 3], melody('chorus-2'));
     expect(swapped[1].melodyTrack?.id).toBe('chorus-2');
     expect(swapped[0].melodyTrack?.id).toBe('verse');
+  });
+
+  describe('addSectionOfType', () => {
+    const base = { genre: 'Pop', mood: 'Warm', key: 'C', scaleType: 'MAJOR', bpm: 100, chords: sampleProgression.chords } as any;
+
+    it('adds the kind asked for and numbers repeats', () => {
+      let sections = SongArranger.createInitialSong(base);
+      sections = SongArranger.addSectionOfType(sections, base, 'Verse').sections;
+      sections = SongArranger.addSectionOfType(sections, base, 'Chorus').sections;
+      sections = SongArranger.addSectionOfType(sections, base, 'Chorus').sections;
+      expect(sections.map(s => s.name)).toEqual(['Verse', 'Verse 2', 'Chorus', 'Chorus 2']);
+    });
+
+    it('is not capped at five sections', () => {
+      let sections = SongArranger.createInitialSong(base);
+      for (const t of ['Pre-chorus', 'Chorus', 'Bridge', 'Outro', 'Intro', 'Solo', 'Verse']) {
+        sections = SongArranger.addSectionOfType(sections, base, t).sections;
+      }
+      expect(sections).toHaveLength(8);
+      sections.forEach(s => expect(s.progression.chords.length).toBeGreaterThan(0));
+    });
+
+    it('stops at the maximum', () => {
+      let sections = SongArranger.createInitialSong(base);
+      for (let i = 0; i < 20; i++) sections = SongArranger.addSectionOfType(sections, base, 'Verse').sections;
+      expect(sections).toHaveLength(MAX_SECTIONS);
+    });
   });
 });
