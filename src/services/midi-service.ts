@@ -13,6 +13,13 @@ export interface MidiRoutingConfig {
   melodyInternalAudio: boolean;// default true
 }
 
+export interface MidiNoteEvent {
+  note: string;      // e.g. "C4"
+  offsetSec: number; // when to start, relative to now
+  durSec: number;
+  vel: number;       // 0 to 1
+}
+
 export type MidiListener = (status: MidiConnectionStatus) => void;
 
 export class MidiService {
@@ -227,19 +234,29 @@ export class MidiService {
   }
 
   /**
-   * Sends notes (e.g. "C4", "F#3") to the chosen MIDI output on the channel for that part, with a
-   * timed note-off. Returns whether the built-in sound should ALSO play: it always does when no
+   * Sends timed note events (offsets in seconds from now) to the chosen MIDI output on the channel
+   * for that part. Returns whether the built-in sound should ALSO play: it always does when no
    * device is connected, so turning built-in audio off can never silence the app by accident.
    */
-  public playNotes(part: 'chords' | 'melody', noteNames: string[], durationSec: number, velocity01 = 0.8): boolean {
+  public playEvents(part: 'chords' | 'melody', events: MidiNoteEvent[]): boolean {
     const internal = part === 'chords' ? this.routing.chordsInternalAudio : this.routing.melodyInternalAudio;
     if (!this.hasOutput()) return true;
     const channel = part === 'chords' ? this.routing.chordsChannel : this.routing.melodyChannel;
-    const vel = Math.round(Math.max(1, Math.min(127, velocity01 * 127)));
-    const midis = noteNames.map(noteNameToMidi).filter((m): m is number => m !== null);
-    midis.forEach(m => this.sendNoteOn(m, vel, channel));
-    setTimeout(() => midis.forEach(m => this.sendNoteOff(m, channel)), Math.max(50, durationSec * 1000));
+    events.forEach(ev => {
+      const midi = noteNameToMidi(ev.note);
+      if (midi === null) return;
+      const vel = Math.round(Math.max(1, Math.min(127, ev.vel * 127)));
+      const on = () => this.sendNoteOn(midi, vel, channel);
+      const off = () => setTimeout(() => this.sendNoteOff(midi, channel), Math.max(40, ev.durSec * 1000));
+      if (ev.offsetSec > 0.001) setTimeout(() => { on(); off(); }, ev.offsetSec * 1000);
+      else { on(); off(); }
+    });
     return internal;
+  }
+
+  /** Convenience for simultaneous notes (e.g. a melody note). */
+  public playNotes(part: 'chords' | 'melody', noteNames: string[], durationSec: number, velocity01 = 0.8): boolean {
+    return this.playEvents(part, noteNames.map(note => ({ note, offsetSec: 0, durSec: durationSec, vel: velocity01 })));
   }
 
   public sendTestNote(channel = 1): void {

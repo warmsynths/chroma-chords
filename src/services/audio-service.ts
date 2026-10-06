@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { midiService } from './midi-service';
 
 let limiter: Tone.Compressor | null = null;
 let pianoSampler: Tone.Sampler | null = null;
@@ -1123,6 +1124,7 @@ export function arpRateToSeconds(arpRate: string, bpm: number): number {
     case '1/8':  return 0.5 / beatsPerSecond;         // half beat
     case '1/8T': return (0.5 / beatsPerSecond) * (2 / 3); // triplet eighth
     case '1/16': return 0.25 / beatsPerSecond;        // quarter beat
+    case '1/16T': return (0.25 / beatsPerSecond) * (2 / 3); // triplet sixteenth
     case '1/32': return 0.125 / beatsPerSecond;       // eighth beat — fast cascade, strum feel
     default:     return 0.25 / beatsPerSecond;
   }
@@ -1364,6 +1366,47 @@ export function playChord(
   }
 }
 
+export interface ChordEvent {
+  note: string;
+  offsetSec: number;
+  durSec: number;
+  vel: number; // 0 to 1
+}
+
+/**
+ * The note timing a chord will be played with (arpeggio order and rate, strum roll, or a block
+ * with spread), as plain data. Used to send the same pattern to MIDI output that the built-in
+ * sound plays.
+ */
+export function planChordEvents(noteNames: string[], duration: number, humanState?: any): ChordEvent[] {
+  const hs = humanState || {};
+  const baseVel = (): number => {
+    if (typeof hs.velocity === 'number') return Math.min(1, Math.max(0.1, hs.velocity > 1 ? hs.velocity / 127 : hs.velocity));
+    if (typeof hs.minVelocity === 'number' && typeof hs.maxVelocity === 'number') {
+      return Math.min(1, (hs.minVelocity + Math.random() * (hs.maxVelocity - hs.minVelocity)) / 127);
+    }
+    return 0.75;
+  };
+
+  if (hs.arpMode && hs.arpMode !== 'off') {
+    const bpm = hs.bpm ?? 80;
+    const arpRate = hs.arpRate ?? '1/16';
+    const interval = arpRateToSeconds(arpRate, bpm);
+    const ordered = orderNotesForArp(expandNotesAcrossOctaves(noteNames, hs.arpRange ?? 1), hs.arpMode);
+    const isStrum = (hs.isStrum === true || hs.playStyle === 'Strum' || arpRate === '1/32') && (arpRate === '1/32' || hs.isStrum === true);
+    const chordDur = (typeof hs.duration === 'number' && hs.duration > 0) ? hs.duration : duration;
+    const strumStep = typeof hs.spread === 'number' && hs.spread > 0 ? Math.min(0.045, Math.max(0.02, hs.spread * 0.04)) : 0.028;
+    const step = isStrum ? strumStep : interval;
+    const gate = typeof hs.arpGate === 'number' ? Math.max(0.1, Math.min(2.0, hs.arpGate)) : 0.85;
+    const noteDur = isStrum ? Math.max(1.4, chordDur) : Math.max(0.04, interval * gate);
+    return ordered.map((note, i) => ({ note, offsetSec: i * step, durSec: noteDur, vel: baseVel() }));
+  }
+
+  const spread = typeof hs.spread === 'number' ? hs.spread : 0;
+  const dur = (typeof hs.duration === 'number' && hs.duration > 0) ? hs.duration : duration;
+  return noteNames.map((note, i) => ({ note, offsetSec: i * spread * 0.1, durSec: dur, vel: baseVel() }));
+}
+
 export function applyDensityToNotes(noteNames: string[], density: number): string[] {
   if (!Array.isArray(noteNames) || noteNames.length === 0) return [];
   if (noteNames.length <= 1) return noteNames;
@@ -1500,6 +1543,9 @@ export function playChordForGenre(
   // Apply density filtering to notes
   const density = opts?.feelSettings?.density ?? 50;
   const processedNotes = applyDensityToNotes(noteNames, density);
+
+  // External MIDI gets the same arpeggio / strum / block pattern; built-in audio can be switched off per part.
+  if (!midiService.playEvents('chords', planChordEvents(processedNotes, duration, humanState))) return;
 
   playChord(processedNotes, duration, humanState, instrument, opts?.customConfig);
 }

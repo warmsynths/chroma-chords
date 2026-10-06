@@ -656,9 +656,6 @@ export class PlaybackEngine {
       ? { ...this.feelSettings, ...this.feelSettings.barFeel[effectiveIndex] }
       : this.feelSettings;
 
-    const chordDur = duration || (this.getStepIntervalMs() / 1000) * 0.85;
-    if (!midiService.playNotes('chords', pitchedNotes, chordDur, (velocity ?? 92) > 1 ? (velocity ?? 92) / 127 : (velocity ?? 0.75))) return;
-
     playChordForGenre(pitchedNotes, this.progression.genre || 'Unknown', {
       bpm: this.progression.bpm || 120,
       duration: duration || (this.getStepIntervalMs() / 1000) * 0.85,
