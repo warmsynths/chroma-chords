@@ -11,6 +11,8 @@ export interface MidiRoutingConfig {
   chordsInternalAudio: boolean;// default true
   melodyChannel: number;       // 1 to 16, default 2
   melodyInternalAudio: boolean;// default true
+  sendClock: boolean;          // send MIDI clock + start/stop to the output, default false
+  latencyMs: number;           // -250..250: + delays MIDI, - delays the built-in sound
 }
 
 export interface MidiNoteEvent {
@@ -36,6 +38,8 @@ export class MidiService {
     chordsInternalAudio: true,
     melodyChannel: 2,
     melodyInternalAudio: true,
+    sendClock: false,
+    latencyMs: 0,
   };
 
   private constructor() {
@@ -186,8 +190,89 @@ export class MidiService {
 
   public setRouting(config: Partial<MidiRoutingConfig>): void {
     this.routing = { ...this.routing, ...config };
+    if (typeof config.latencyMs === 'number') {
+      this.routing.latencyMs = Math.max(-250, Math.min(250, Math.round(config.latencyMs)));
+    }
     this.saveSettings();
     this.notify();
+    // Turning clock on/off while the app is already playing takes effect immediately
+    this.syncTransport(this.lastTransport.playing, this.lastTransport.bpm);
+  }
+
+  /** How long to hold back the built-in sound so it lines up with a slower external device. */
+  public internalDelayMs(): number {
+    if (!this.hasOutput()) return 0;
+    return Math.max(0, -(this.routing.latencyMs || 0));
+  }
+
+  private midiDelayMs(): number {
+    return Math.max(0, this.routing.latencyMs || 0);
+  }
+
+  /* ---- MIDI clock + transport (the app leads) ---- */
+  private lastTransport = { playing: false, bpm: 120 };
+  private clockRunning = false;
+  private clockTimer: ReturnType<typeof setInterval> | null = null;
+  private nextPulseAt = 0;
+
+  public isClockRunning(): boolean {
+    return this.clockRunning;
+  }
+
+  /**
+   * Called by the playback engine whenever its state ticks. Idempotent: sends Start once when
+   * playback begins, a clock pulse stream (24 per quarter note) at the current BPM while it
+   * plays, and Stop when it ends.
+   */
+  public syncTransport(playing: boolean, bpm: number): void {
+    this.lastTransport = { playing, bpm };
+    const wanted = this.routing.sendClock && this.hasOutput();
+    if (!wanted || !playing) {
+      if (this.clockRunning) this.stopClock();
+      return;
+    }
+    if (!this.clockRunning) this.startClock();
+  }
+
+  private sendRaw(data: number[], timestamp?: number): void {
+    const output = this.getActiveOutputDevice();
+    if (!output) return;
+    try {
+      if (typeof timestamp === 'number') output.send(data, timestamp);
+      else output.send(data);
+    } catch {
+      // Safe fallback
+    }
+  }
+
+  private nowMs(): number {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  }
+
+  private startClock(): void {
+    this.clockRunning = true;
+    const at = this.nowMs() + this.midiDelayMs();
+    this.sendRaw([0xFA], at); // Start
+    this.nextPulseAt = at;
+    this.pumpClock();
+    this.clockTimer = setInterval(() => this.pumpClock(), 20);
+  }
+
+  /** Schedules the next ~80 ms of clock pulses with exact timestamps, so timer jitter doesn't reach the device. */
+  private pumpClock(): void {
+    const horizon = this.nowMs() + 80;
+    const pulseMs = 60000 / (Math.max(40, Math.min(300, this.lastTransport.bpm)) * 24);
+    while (this.nextPulseAt < horizon) {
+      this.sendRaw([0xF8], this.nextPulseAt);
+      this.nextPulseAt += pulseMs;
+    }
+  }
+
+  private stopClock(): void {
+    if (this.clockTimer) clearInterval(this.clockTimer);
+    this.clockTimer = null;
+    this.clockRunning = false;
+    this.sendRaw([0xFC], this.nowMs() + this.midiDelayMs()); // Stop
   }
 
   public subscribe(cb: MidiListener): () => void {
@@ -248,7 +333,8 @@ export class MidiService {
       const vel = Math.round(Math.max(1, Math.min(127, ev.vel * 127)));
       const on = () => this.sendNoteOn(midi, vel, channel);
       const off = () => setTimeout(() => this.sendNoteOff(midi, channel), Math.max(40, ev.durSec * 1000));
-      if (ev.offsetSec > 0.001) setTimeout(() => { on(); off(); }, ev.offsetSec * 1000);
+      const startMs = ev.offsetSec * 1000 + this.midiDelayMs();
+      if (startMs > 1) setTimeout(() => { on(); off(); }, startMs);
       else { on(); off(); }
     });
     return internal;

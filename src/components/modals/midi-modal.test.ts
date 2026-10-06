@@ -107,4 +107,28 @@ describe('MidiModal Component & MidiService', () => {
 
     el.remove();
   });
+
+  it('has a Sync section with a clock switch and a latency offset', async () => {
+    midiService.setRouting({ sendClock: false, latencyMs: 0 });
+    const el = document.createElement('midi-modal') as MidiModal;
+    el.isOpen = true;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const sw = el.shadowRoot!.querySelector('[aria-label="Send MIDI clock"]') as HTMLButtonElement;
+    expect(sw.getAttribute('aria-checked')).toBe('false');
+    sw.click();
+    await el.updateComplete;
+    expect(midiService.routing.sendClock).toBe(true);
+
+    const slider = el.shadowRoot!.querySelector('[aria-label="Latency offset in milliseconds"]') as HTMLInputElement;
+    slider.value = '-40';
+    slider.dispatchEvent(new Event('input'));
+    await el.updateComplete;
+    expect(midiService.routing.latencyMs).toBe(-40);
+    expect(el.shadowRoot!.textContent).toContain('Built-in sound is held back 40 ms');
+
+    midiService.setRouting({ sendClock: false, latencyMs: 0 });
+    el.remove();
+  });
 });

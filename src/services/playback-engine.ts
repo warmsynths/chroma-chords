@@ -55,6 +55,12 @@ export function pitchNotesAscending(notes: string[], baseOctave = 4): string[] {
   return [bassNote, ...pitched];
 }
 
+/** Runs `fn` now, or after `ms` when the built-in sound is held back to match an external device. */
+function runAfter(ms: number, fn: () => void): void {
+  if (ms > 0) setTimeout(fn, ms);
+  else fn();
+}
+
 export class PlaybackEngine {
   private mode: 'single' | 'song' = 'single';
   private progression: Progression | null = null;
@@ -215,7 +221,8 @@ export class PlaybackEngine {
           const lenSteps = Math.max(1, Math.round((note.durationBeats || 0.25) * 4));
           const vel = typeof note.velocity === 'number' ? Math.max(0.05, Math.min(1, note.velocity / 127)) : 0.85;
           if (midiService.playNotes('melody', [note.pitch], lenSteps * sd * 0.92, vel)) {
-            playLeadNote(note.pitch, lenSteps * sd * 0.92, undefined, vel, this.melodySound || undefined);
+            const lenSec = lenSteps * sd * 0.92;
+            runAfter(midiService.internalDelayMs(), () => playLeadNote(note.pitch, lenSec, undefined, vel, this.melodySound || undefined));
           }
         }
       }
@@ -375,6 +382,8 @@ export class PlaybackEngine {
   }
 
   private notifyTick() {
+    const songBpm = this.mode === 'song' ? this.sections[this.activeSectionIndex]?.progression.bpm : undefined;
+    midiService.syncTransport(this.playing, songBpm || this.progression?.bpm || 120);
     const totalSteps = this.getTotalSteps();
     if (this.mode === 'song' || this.playTarget === 'song') {
       this.tickCallbacks.forEach(cb => cb(this.activeIndex, this.songStep, this.activeSectionIndex, totalSteps, true));
@@ -563,7 +572,7 @@ export class PlaybackEngine {
               setTimeout(() => {
                 if (this.playing && this.mode === 'song') {
                   if (midiService.playNotes('melody', [note.pitch], durSec, vel)) {
-                    playLeadNote(note.pitch, durSec, undefined, vel, this.melodySound || undefined);
+                    runAfter(midiService.internalDelayMs(), () => playLeadNote(note.pitch, durSec, undefined, vel, this.melodySound || undefined));
                   }
                 }
               }, Math.round(relSec * 1000));

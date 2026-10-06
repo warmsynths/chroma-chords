@@ -15,6 +15,8 @@ export class MidiModal extends LitElement {
   @state() private chordsInternalAudio = true;
   @state() private melodyChannel = 2;
   @state() private melodyInternalAudio = true;
+  @state() private sendClock = false;
+  @state() private latencyMs = 0;
   @state() private errorMessage = '';
   @state() private testNotePlaying = false;
 
@@ -217,7 +219,8 @@ export class MidiModal extends LitElement {
       gap: 2px;
     }
 
-    .routing-title {
+    .routing-title,
+    .sync-title {
       font-size: 13.5px;
       font-weight: 800;
       color: #2e271f;
@@ -248,7 +251,8 @@ export class MidiModal extends LitElement {
     }
 
     /* Audio Toggle Pill */
-    .audio-toggle-btn {
+    .audio-toggle-btn,
+    .clock-toggle-btn {
       min-height: 28px;
       padding: 0 10px;
       border-radius: 8px;
@@ -262,7 +266,8 @@ export class MidiModal extends LitElement {
       transition: background 0.15s ease, color 0.15s ease;
     }
 
-    .audio-toggle-btn.active {
+    .audio-toggle-btn.active,
+    .clock-toggle-btn.active {
       background: #2e271f;
       color: #fbf3e6;
       border-color: #2e271f;
@@ -357,6 +362,8 @@ export class MidiModal extends LitElement {
     this.chordsInternalAudio = midiService.routing.chordsInternalAudio;
     this.melodyChannel = midiService.routing.melodyChannel;
     this.melodyInternalAudio = midiService.routing.melodyInternalAudio;
+    this.sendClock = midiService.routing.sendClock;
+    this.latencyMs = midiService.routing.latencyMs;
   }
 
   private async onConnect() {
@@ -402,6 +409,16 @@ export class MidiModal extends LitElement {
   private toggleMelodyAudio() {
     this.melodyInternalAudio = !this.melodyInternalAudio;
     midiService.setRouting({ melodyInternalAudio: this.melodyInternalAudio });
+  }
+
+  private toggleClock() {
+    this.sendClock = !this.sendClock;
+    midiService.setRouting({ sendClock: this.sendClock });
+  }
+
+  private onLatencyInput(e: Event) {
+    this.latencyMs = parseInt((e.target as HTMLInputElement).value, 10) || 0;
+    midiService.setRouting({ latencyMs: this.latencyMs });
   }
 
   private onClose() {
@@ -521,6 +538,54 @@ export class MidiModal extends LitElement {
                       ${this.melodyInternalAudio ? 'Sound: ON' : 'Muted'}
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sync -->
+            <div class="form-group">
+              <span class="section-label">SYNC</span>
+              <div class="routing-card">
+                <div class="routing-row">
+                  <div class="routing-info">
+                    <span class="sync-title">Send clock</span>
+                    <span class="routing-sub">Start, stop and tempo follow this app</span>
+                  </div>
+                  <div class="routing-controls">
+                    <button
+                      class="clock-toggle-btn ${this.sendClock ? 'active' : ''}"
+                      role="switch"
+                      aria-checked=${this.sendClock}
+                      aria-label="Send MIDI clock"
+                      @click=${this.toggleClock}
+                    >
+                      ${this.sendClock ? 'Clock: ON' : 'Off'}
+                    </button>
+                  </div>
+                </div>
+                <div class="routing-row" style="flex-direction: column; align-items: stretch; gap: 6px;">
+                  <div class="routing-row">
+                    <div class="routing-info">
+                      <span class="sync-title">Latency offset</span>
+                      <span class="routing-sub">${this.latencyMs > 0
+                        ? `MIDI is held back ${this.latencyMs} ms`
+                        : this.latencyMs < 0
+                          ? `Built-in sound is held back ${-this.latencyMs} ms`
+                          : 'No offset'}</span>
+                    </div>
+                    <span class="sync-title" style="font-family: 'Space Mono', monospace;">${this.latencyMs > 0 ? '+' : ''}${this.latencyMs} ms</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-250"
+                    max="250"
+                    step="5"
+                    .value=${String(this.latencyMs)}
+                    aria-label="Latency offset in milliseconds"
+                    @input=${this.onLatencyInput}
+                    style="width: 100%; accent-color: #9b7ca8;"
+                  />
+                  <span class="routing-sub">Plus delays MIDI to match the app's sound. Minus delays the app's sound to match your device.</span>
                 </div>
               </div>
             </div>

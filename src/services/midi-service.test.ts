@@ -105,3 +105,107 @@ describe('midiService.playEvents timing', () => {
     expect(sent.filter(([, m]) => m[0] === 0x90).map(([, m]) => m[1])).toEqual([60, 64]);
   });
 });
+
+describe('MIDI clock and latency', () => {
+  const svc = midiService as any;
+  const sent: Array<{ data: number[]; ts?: number }> = [];
+  const fresh = (patch: Record<string, unknown> = {}) => {
+    svc.routing = { chordsChannel: 1, chordsInternalAudio: true, melodyChannel: 2, melodyInternalAudio: true, sendClock: true, latencyMs: 0, ...patch };
+  };
+  beforeEach(() => {
+    vi.useFakeTimers();
+    sent.length = 0;
+    svc.midiAccess = { outputs: new Map([['o', { send: (data: number[], ts?: number) => sent.push({ data, ts }) }]]) };
+    svc.selectedOutputId = 'o';
+    svc.lastTransport = { playing: false, bpm: 120 };
+    fresh();
+  });
+  afterEach(() => {
+    midiService.syncTransport(false, 120);
+    vi.useRealTimers();
+    svc.midiAccess = null;
+    svc.selectedOutputId = null;
+  });
+
+  const pulses = () => sent.filter(s => s.data[0] === 0xF8);
+
+  it('sends Start once, then 24 pulses per beat at the tempo', () => {
+    midiService.syncTransport(true, 120);
+    midiService.syncTransport(true, 120); // repeated ticks must not restart the device
+    expect(sent.filter(s => s.data[0] === 0xFA)).toHaveLength(1);
+    vi.advanceTimersByTime(1000);
+    const p = pulses();
+    expect(p.length).toBeGreaterThan(40); // 1 s at 120 BPM = 48 pulses
+    const gap = (p[1].ts! - p[0].ts!);
+    expect(gap).toBeCloseTo(60000 / (120 * 24), 3);
+  });
+
+  it('sends Stop when playback ends and stops pulsing', () => {
+    midiService.syncTransport(true, 100);
+    vi.advanceTimersByTime(200);
+    midiService.syncTransport(false, 100);
+    expect(sent.filter(s => s.data[0] === 0xFC)).toHaveLength(1);
+    const count = pulses().length;
+    vi.advanceTimersByTime(500);
+    expect(pulses().length).toBe(count);
+  });
+
+  it('follows a tempo change while playing', () => {
+    midiService.syncTransport(true, 60);
+    vi.advanceTimersByTime(300);
+    midiService.syncTransport(true, 120);
+    sent.length = 0;
+    vi.advanceTimersByTime(300);
+    const p = pulses();
+    expect(p[p.length - 1].ts! - p[p.length - 2].ts!).toBeCloseTo(60000 / (120 * 24), 3);
+  });
+
+  it('sends nothing when clock is off or no device is chosen', () => {
+    fresh({ sendClock: false });
+    midiService.syncTransport(true, 120);
+    expect(sent).toHaveLength(0);
+    fresh();
+    svc.selectedOutputId = null;
+    midiService.syncTransport(true, 120);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('turning clock on while already playing starts it right away', () => {
+    fresh({ sendClock: false });
+    midiService.syncTransport(true, 120);
+    expect(sent).toHaveLength(0);
+    midiService.setRouting({ sendClock: true });
+    expect(sent.some(s => s.data[0] === 0xFA)).toBe(true);
+  });
+
+  it('positive latency delays MIDI and clock; negative delays the built-in sound', () => {
+    fresh({ latencyMs: 80 });
+    const before = performance.now();
+    midiService.syncTransport(true, 120);
+    expect(sent.find(s => s.data[0] === 0xFA)!.ts!).toBeGreaterThanOrEqual(before + 80);
+    expect(midiService.internalDelayMs()).toBe(0);
+
+    midiService.syncTransport(false, 120);
+    fresh({ latencyMs: -60 });
+    expect(midiService.internalDelayMs()).toBe(60);
+    svc.selectedOutputId = null;
+    expect(midiService.internalDelayMs()).toBe(0); // no device: never delay the app's own sound
+  });
+
+  it('holds MIDI notes back by a positive offset', () => {
+    fresh({ latencyMs: 100 });
+    const notes: number[][] = [];
+    svc.midiAccess = { outputs: new Map([['o', { send: (d: number[]) => notes.push(d) }]]) };
+    midiService.playEvents('chords', [{ note: 'C4', offsetSec: 0, durSec: 0.1, vel: 0.8 }]);
+    expect(notes).toHaveLength(0);
+    vi.advanceTimersByTime(110);
+    expect(notes[0]).toEqual([0x90, 60, 102]);
+  });
+
+  it('clamps the offset to the slider range', () => {
+    midiService.setRouting({ latencyMs: 9999 });
+    expect(midiService.routing.latencyMs).toBe(250);
+    midiService.setRouting({ latencyMs: -9999 });
+    expect(midiService.routing.latencyMs).toBe(-250);
+  });
+});

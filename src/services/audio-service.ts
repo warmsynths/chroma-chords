@@ -1547,7 +1547,9 @@ export function playChordForGenre(
   // External MIDI gets the same arpeggio / strum / block pattern; built-in audio can be switched off per part.
   if (!midiService.playEvents('chords', planChordEvents(processedNotes, duration, humanState))) return;
 
-  playChord(processedNotes, duration, humanState, instrument, opts?.customConfig);
+  const hold = midiService.internalDelayMs();
+  if (hold > 0) setTimeout(() => playChord(processedNotes, duration, humanState, instrument, opts?.customConfig), hold);
+  else playChord(processedNotes, duration, humanState, instrument, opts?.customConfig);
 }
 
 /**
