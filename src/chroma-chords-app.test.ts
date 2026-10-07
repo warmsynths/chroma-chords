@@ -229,5 +229,42 @@ describe('ChromaChordsApp Integration', () => {
       a.progression = { ...a.progression, chords: [{ ...a.progression.chords[0], name: 'Dm' }] };
       expect(a.getSaveState()).toBe('edited');
     });
+
+    it('saves instrument and play style (chords and melody) and restores them on load', async () => {
+      const a = app as any;
+      a.instrument = 'Nylon Guitar';
+      a.playStyle = 'Arpeggio';
+      a.melodySound = 'Lead Synth';
+      a.melodyFeel = 'Lazy';
+      a.saveProject('Guitar arp', true);
+      expect(a.getSaveState()).toBe('saved');
+
+      a.instrument = 'Grand Piano';
+      expect(a.getSaveState()).toBe('edited'); // changing the sound counts as a change to the save
+
+      const saved = (await import('./services/project-service')).ProjectService.getProjects().find(p => p.name === 'Guitar arp')!;
+      expect(saved.sound).toMatchObject({ instrument: 'Nylon Guitar', playStyle: 'Arpeggio', melodySound: 'Lead Synth', melodyFeel: 'Lazy' });
+
+      a.playStyle = 'Strum';
+      a.melodySound = 'Stage Rhodes';
+      a.onLoadProject(new CustomEvent('load', { detail: saved }));
+      expect(a.instrument).toBe('Nylon Guitar');
+      expect(a.playStyle).toBe('Arpeggio');
+      expect(a.melodySound).toBe('Lead Synth');
+      expect(a.melodyFeel).toBe('Lazy');
+      expect(playbackEngine.getFeelSettings()).toBeDefined();
+      expect(a.getSaveState()).toBe('saved');
+    });
+
+    it('older saves without a sound are not flagged as edited because of it', async () => {
+      const a = app as any;
+      a.saveProject('Old style', true);
+      const svc = (await import('./services/project-service')).ProjectService;
+      const p = svc.getProjects().find(x => x.name === 'Old style')!;
+      delete (p as any).sound;
+      svc.saveProject(p);
+      a.instrument = 'Drawbar Organ';
+      expect(a.getSaveState()).toBe('saved');
+    });
   });
 });

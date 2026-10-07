@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { ProjectData, ProjectChord, ProjectSong } from './services/project-service';
+import { ProjectData, ProjectChord, ProjectSong, ProjectSound } from './services/project-service';
 import { projectStorage, SyncStatus } from './services/project-storage';
 import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
@@ -1119,6 +1119,9 @@ export class ChromaChordsApp extends LitElement {
     if (p.feel) {
       playbackEngine.setFeelSettings(p.feel);
     }
+    if (p.sound) {
+      this.applySound(p.sound);
+    }
     playbackEngine.setProgression(this.progression, this.order);
     if (p.song && p.song.sections.length) {
       this.restoreSong(p.song);
@@ -1609,6 +1612,45 @@ export class ChromaChordsApp extends LitElement {
     return JSON.stringify([l.genre, l.mood, l.key, l.scaleType, l.bpm, l.barsPerChord ?? 1, (l.chords || []).map(c => c.name), this.melodyFingerprint(l.melodyTrack)]);
   }
 
+  private stableStringify(value: unknown): string {
+    const sort = (v: any): any => Array.isArray(v) ? v.map(sort)
+      : v && typeof v === 'object' ? Object.keys(v).sort().reduce((o: any, k) => { o[k] = sort(v[k]); return o; }, {})
+      : v;
+    return JSON.stringify(sort(value));
+  }
+
+  private soundSnapshot(): ProjectSound {
+    return {
+      instrument: this.instrument,
+      playStyle: this.playStyle,
+      melodySound: this.melodySound,
+      melodyFeel: this.melodyFeel,
+      melodyFeelSettings: { ...this.melodyFeelSettings },
+      melodyBacking: this.melodyBackingEnabled,
+    };
+  }
+
+  /** Puts the saved instruments and play styles back, in the app and in the engine. */
+  private applySound(sound: ProjectSound) {
+    this.instrument = sound.instrument;
+    this.playStyle = sound.playStyle;
+    this.melodySound = sound.melodySound || this.melodySound;
+    this.melodyFeel = sound.melodyFeel || this.melodyFeel;
+    if (sound.melodyFeelSettings) this.melodyFeelSettings = { ...sound.melodyFeelSettings };
+    this.melodyBackingEnabled = sound.melodyBacking !== false;
+    playbackEngine.setInstrument(this.instrument);
+    playbackEngine.setPlayStyle(this.playStyle);
+    playbackEngine.setMelodySound(this.melodySound);
+    playbackEngine.setMelodyFeel(this.melodyFeel);
+    playbackEngine.setMelodyFeelSettings(this.melodyFeelSettings);
+    playbackEngine.setMelodyBackingEnabled(this.melodyBackingEnabled);
+  }
+
+  /** Older saves carry no sound, so they can never count as changed because of it. */
+  private soundMatches(saved: ProjectData): boolean {
+    return !saved.sound || this.stableStringify(this.soundSnapshot()) === this.stableStringify(saved.sound);
+  }
+
   /** True once the song has more than one section or a repeated/reordered row (otherwise it is just a loop). */
   private isSongArranged(): boolean {
     if (this.sections.length > 1) return true;
@@ -1652,11 +1694,11 @@ export class ChromaChordsApp extends LitElement {
     // A song is compared as a whole (every section, melody and the order), so adding a section counts as a change
     if (saved.song || this.isSongArranged()) {
       const nowSong = this.isSongArranged() ? this.songFingerprint(this.songSnapshot()) : '';
-      return nowSong === this.songFingerprint(saved.song) ? 'saved' : 'edited';
+      return nowSong === this.songFingerprint(saved.song) && this.soundMatches(saved) ? 'saved' : 'edited';
     }
     const now = this.loopFingerprint({ ...this.progression, barsPerChord: playbackEngine.getBarsPerChord(), melodyTrack: this.melodyTrack });
     const then = this.loopFingerprint({ ...saved, barsPerChord: saved.barsPerChord ?? playbackEngine.getBarsPerChord() });
-    return now === then ? 'saved' : 'edited';
+    return now === then && this.soundMatches(saved) ? 'saved' : 'edited';
   }
 
   private suggestLoopName(): string {
@@ -1714,6 +1756,7 @@ export class ChromaChordsApp extends LitElement {
       barsPerChord,
       melodyTrack: this.melodyTrack && this.melodyTrack.notes?.length ? this.melodyTrack : undefined,
       song: this.isSongArranged() ? this.songSnapshot() : undefined,
+      sound: this.soundSnapshot(),
       feel: {
         swing: feelSettings.swing ?? 0,
         spread: feelSettings.spread ?? 50,

@@ -14,6 +14,16 @@ export interface ProjectChord {
   initialChord?: any;
 }
 
+/** The sound a loop or song was made with: chord instrument and play style, melody sound and feel. */
+export interface ProjectSound {
+  instrument: string | null;
+  playStyle: string | null;
+  melodySound: string;
+  melodyFeel: string;
+  melodyFeelSettings: any;
+  melodyBacking: boolean;
+}
+
 /** A saved song: every section's own chords and melody, plus the song order (with repeats). */
 export interface ProjectSong {
   sections: Array<{
@@ -42,6 +52,7 @@ export interface ProjectData {
   barsPerChord?: number;
   melodyTrack?: any;
   song?: ProjectSong;
+  sound?: ProjectSound;
   feel?: {
     swing: number;
     spread: number;
