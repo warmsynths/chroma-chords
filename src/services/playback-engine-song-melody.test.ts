@@ -20,13 +20,14 @@ vi.mock('tone', () => ({
 }));
 
 const playLeadNote = vi.fn();
+const playChordForGenre = vi.fn();
 vi.mock('./audio-service', async (orig) => ({
   ...(await orig<typeof import('./audio-service')>()),
   playLeadNote: (...a: unknown[]) => playLeadNote(...a),
-  playChordForGenre: vi.fn(),
+  playChordForGenre: (...a: unknown[]) => playChordForGenre(...a),
 }));
 
-import { PlaybackEngine } from './playback-engine';
+import { PlaybackEngine, withBassNote } from './playback-engine';
 import type { SongSection } from './song-arranger';
 
 const chord = (name: string) => ({ name, tag: 'd', roman: 'I', color: '#fff', functionLabel: 'Tonic', notes: ['C4', 'E4', 'G4'], scaleLabel: '', desc: '', degree: '1', scaleKey: 'C', tension: 0.1 });
@@ -95,5 +96,27 @@ describe('song loop', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(engine.isPlaying()).toBe(false);
     expect(engine.getActiveSectionIndex()).toBe(0);
+  });
+});
+
+describe('bass note under voicings', () => {
+  it('keeps the low root when a voicing is applied, like the plain chord does', () => {
+    const engine = new PlaybackEngine();
+    engine.setProgression(prog, [0, 1]);
+    const played = () => playChordForGenre.mock.calls[playChordForGenre.mock.calls.length - 1][0] as string[];
+
+    engine.playChordNotes(['C', 'E', 'G']);
+    expect(played()[0]).toBe('C3');
+
+    for (const voicing of ['low, root position', '1st inversion', 'up an octave']) {
+      engine.playChordNotes(['C', 'E', 'G'], 1, voicing);
+      expect(played()[0], voicing).toBe('C3');
+      expect(played().length, voicing).toBeGreaterThan(3);
+    }
+  });
+
+  it('does not double the bass if it is already there', () => {
+    expect(withBassNote(['C3', 'E4', 'G4'], 'C')).toEqual(['C3', 'E4', 'G4']);
+    expect(withBassNote(['E4', 'G4'], 'C4')).toEqual(['C3', 'E4', 'G4']);
   });
 });

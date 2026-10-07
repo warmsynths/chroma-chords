@@ -10,6 +10,21 @@ export interface ProjectChord {
   degree: string;
   scaleKey: string;
   tension: number;
+  voicing?: string;
+  initialChord?: any;
+}
+
+/** A saved song: every section's own chords and melody, plus the song order (with repeats). */
+export interface ProjectSong {
+  sections: Array<{
+    name: string;
+    desc: string;
+    progression: { genre: string; mood: string; key: string; scaleType: string; bpm: number; chords: ProjectChord[] };
+    order: number[];
+    melodyTrack?: any;
+  }>;
+  timeline: Array<{ id: string; sectionIndex: number; repeats: number }>;
+  activeSectionIdx: number;
 }
 
 export interface ProjectData {
@@ -25,6 +40,8 @@ export interface ProjectData {
   showTheory?: boolean;
   syncedToCloud?: boolean;
   barsPerChord?: number;
+  melodyTrack?: any;
+  song?: ProjectSong;
   feel?: {
     swing: number;
     spread: number;

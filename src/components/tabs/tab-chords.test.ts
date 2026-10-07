@@ -272,3 +272,37 @@ describe('TabChords component', () => {
   });
 });
 
+
+describe('TabChords double-tap reset', () => {
+  it('double-tapping the centre of a card puts the chord back to how it started, silently', async () => {
+    const el = document.createElement('tab-chords') as TabChords;
+    const chords: ChordBlock[] = [
+      { name: 'C', tag: 'home', roman: 'I', color: '#9CC0EC', functionLabel: 'Tonic', notes: ['C', 'E', 'G'], scaleLabel: 'Major', desc: '', degree: 'TONIC', scaleKey: 'C_MAJOR', tension: 0.1 },
+    ];
+    el.progression = { genre: 'Pop', mood: 'Warm', key: 'C', scaleType: 'MAJOR', bpm: 90, chords } as Progression;
+    document.body.appendChild(el);
+    await el.updateComplete;
+
+    const pad = el.shadowRoot!.querySelector('.pad-cell') as HTMLElement;
+    pad.getBoundingClientRect = () => ({ left: 100, top: 100, width: 200, height: 120, right: 300, bottom: 220, x: 100, y: 100, toJSON: () => {} });
+    const tap = async (x: number, y: number) => {
+      pad.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, bubbles: true, composed: true }));
+      await el.updateComplete;
+      pad.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, composed: true }));
+      await el.updateComplete;
+    };
+
+    // Latch an extension and a voicing (top right: octave up, Cmaj7)
+    await tap(235, 120);
+    expect(el.progression.chords[0].name).toBe('Cmaj7');
+    expect(el.progression.chords[0].initialChord?.name).toBe('C');
+
+    // Two quick taps in the centre
+    await tap(200, 160);
+    await tap(200, 160);
+    expect(el.progression.chords[0].name).toBe('C');
+    expect(el.progression.chords[0].voicing).toBeUndefined();
+    expect(el.progression.chords[0].initialChord).toBeUndefined();
+    el.remove();
+  });
+});

@@ -55,6 +55,14 @@ export function pitchNotesAscending(notes: string[], baseOctave = 4): string[] {
   return [bassNote, ...pitched];
 }
 
+/** Puts the chord's root an octave below the lowest played octave, unless that note is already there. */
+export function withBassNote(pitched: string[], rootNote: string): string[] {
+  const root = (rootNote || '').replace(/\d+$/, '');
+  if (!root || pitched.length === 0) return pitched;
+  const bass = `${root}3`;
+  return pitched.includes(bass) ? pitched : [bass, ...pitched];
+}
+
 /** Runs `fn` now, or after `ms` when the built-in sound is held back to match an external device. */
 function runAfter(ms: number, fn: () => void): void {
   if (ms > 0) setTimeout(fn, ms);
@@ -568,7 +576,9 @@ export class PlaybackEngine {
         const notes = (chord.notes && chord.notes.length > 0) 
           ? chord.notes 
           : notesForSymbol(chord.name, preferFlatSpelling(sec.progression.key, sec.progression.scaleType));
-        const pitchedNotes = pitchNotesAscending(notes, 4);
+        const pitchedNotes = chord.voicing
+          ? withBassNote(applyVoicingToNotes(notes, chord.voicing), notes[0])
+          : pitchNotesAscending(notes, 4);
         const activeFeel = (chordIndex !== undefined && this.feelSettings?.barFeel && this.feelSettings.barFeel[chordIndex])
           ? { ...this.feelSettings, ...this.feelSettings.barFeel[chordIndex] }
           : this.feelSettings;
@@ -682,8 +692,10 @@ export class PlaybackEngine {
     const validNotes = Array.isArray(notes) ? notes.filter(n => typeof n === 'string' && n.trim().length > 0) : [];
     if (validNotes.length === 0) return;
 
+    // A voicing re-spreads the chord tones; the low root underneath (which the plain path always adds)
+    // stays, so changing extension or voicing doesn't lose the bass note.
     const pitchedNotes = voicing
-      ? applyVoicingToNotes(validNotes, voicing)
+      ? withBassNote(applyVoicingToNotes(validNotes, voicing), validNotes[0])
       : pitchNotesAscending(validNotes, 4);
 
     const effectiveIndex = chordIndex !== undefined

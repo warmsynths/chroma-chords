@@ -179,4 +179,55 @@ describe('ChromaChordsApp Integration', () => {
     await app.updateComplete;
     expect((app.shadowRoot!.querySelector('midi-modal') as any).isOpen).toBe(true);
   });
+
+  describe('saving a song', () => {
+    const mkSection = (name: string) => ({ name, desc: '', progression: (app as any).progression, order: [0] });
+
+    it('adding a section after saving makes the loop count as edited, so Save asks Update or Save as new', async () => {
+      const a = app as any;
+      a.sections = [mkSection('Verse')];
+      a.songTimeline = [{ id: 't1', sectionIndex: 0, repeats: 1 }];
+      a.activeSectionIdx = 0;
+      a.saveProject('My song', true);
+      expect(a.getSaveState()).toBe('saved');
+
+      a.onDuplicateSection(0);
+      expect(a.getSaveState()).toBe('edited');
+
+      a.onSavePressed();
+      expect(a.saveDialog?.edited).toBe(true);
+    });
+
+    it('saves every section, melody and the order, and restores them on load', async () => {
+      const a = app as any;
+      a.sections = [mkSection('Verse')];
+      a.songTimeline = [{ id: 't1', sectionIndex: 0, repeats: 1 }];
+      a.activeSectionIdx = 0;
+      a.onDuplicateSection(0);
+      a.songTimeline = a.songTimeline.map((t: any, i: number) => (i === 1 ? { ...t, repeats: 2 } : t));
+      a.saveProject('Two verses', true);
+
+      const saved = (await import('./services/project-service')).ProjectService.getProjects().find(p => p.name === 'Two verses')!;
+      expect(saved.song?.sections.map(s => s.name)).toEqual(['Verse', 'Verse 2']);
+      expect(saved.song?.timeline.map(t => t.repeats)).toEqual([1, 2]);
+      expect(saved.song?.sections[1].melodyTrack?.notes.length).toBeGreaterThan(0);
+
+      a.sections = [mkSection('Other')];
+      a.songTimeline = [{ id: 'x', sectionIndex: 0, repeats: 1 }];
+      a.onLoadProject(new CustomEvent('load', { detail: saved }));
+      expect(a.sections.map((s: any) => s.name)).toEqual(['Verse', 'Verse 2']);
+      expect(a.songTimeline.map((t: any) => t.repeats)).toEqual([1, 2]);
+      expect(a.getSaveState()).toBe('saved');
+    });
+
+    it('a plain loop still behaves as before', async () => {
+      const a = app as any;
+      a.sections = [mkSection('Verse')];
+      a.songTimeline = [{ id: 't1', sectionIndex: 0, repeats: 1 }];
+      a.saveProject('Just a loop', true);
+      expect(a.getSaveState()).toBe('saved');
+      a.progression = { ...a.progression, chords: [{ ...a.progression.chords[0], name: 'Dm' }] };
+      expect(a.getSaveState()).toBe('edited');
+    });
+  });
 });

@@ -70,6 +70,7 @@ export class TabChords extends LitElement {
   @state() private baseChords: ChordBlock[] = [];
   @state() private lastPad: { idx: number; voicing: string; vel: number; zone: number; reach: number | null } | null = null;
   @state() private padVoice: Record<string, number> = {};
+  private lastCenterTap: { index: number; time: number } | null = null;
   @state() private auditionDeg: number | null = null;
   @state() private auditionName: string | null = null;
   @state() private auditionBar: number | null = null;
@@ -998,6 +999,25 @@ export class TabChords extends LitElement {
       }
     }
 
+    // Double-tap the centre of a card to silently put the chord back to how it started
+    // (before any extension or voicing was latched).
+    let isCenter = false;
+    if (target && target.getBoundingClientRect && typeof e.clientY === 'number' && typeof e.clientX === 'number') {
+      const r = target.getBoundingClientRect();
+      const xr = (e.clientX - r.left) / (r.width || 1);
+      const yr = (e.clientY - r.top) / (r.height || 1);
+      isCenter = xr >= 0.25 && xr <= 0.75 && yr >= 0.33 && yr <= 0.67;
+    }
+    const now = Date.now();
+    if (isCenter && this.lastCenterTap && this.lastCenterTap.index === index && now - this.lastCenterTap.time < 350) {
+      this.lastCenterTap = null;
+      if (chord.initialChord) {
+        this.revertChord(index);
+        return;
+      }
+    }
+    this.lastCenterTap = isCenter ? { index, time: now } : null;
+
     const vel = 88 + (index % 3) * 6;
     clearTimeout(this.padTimer);
     clearTimeout(this.gridTimer);
@@ -1072,44 +1092,67 @@ export class TabChords extends LitElement {
 
     if (lp && lp.idx === heldIdx && this.progression && this.progression.chords[heldIdx]) {
       const chord = this.progression.chords[heldIdx];
-      this.padVoice = { ...this.padVoice, [`${heldIdx}`]: lp.zone };
+      const key = this.progression.key || 'C';
+      const scaleType = this.progression.scaleType || 'MAJOR';
+      const lad = this.getChordLadder(chord);
+      const reachedName = typeof lp.reach === 'number' ? lad[lp.reach] : undefined;
+      const extensionChanged = !!reachedName && reachedName !== chord.name;
+      const voicingChanged = lp.voicing !== (chord.voicing || '1st inversion');
 
-      let updatedChord: ChordBlock = { ...chord, voicing: lp.voicing };
+      if (extensionChanged || voicingChanged) {
+        // Remember how the chord started so a double tap in the centre can put it back
+        const { initialChord: _drop, ...baseline } = chord;
+        let updatedChord: ChordBlock = { ...chord, voicing: lp.voicing, initialChord: chord.initialChord || (baseline as ChordBlock) };
+        this.padVoice = { ...this.padVoice, [`${heldIdx}`]: lp.zone };
 
-      if (typeof lp.reach === 'number') {
-        const lad = this.getChordLadder(chord);
-        const reachedName = lad[lp.reach];
-        if (reachedName) {
-          const key = this.progression.key || 'C';
-          const scaleType = this.progression.scaleType || 'MAJOR';
-          const notes = notesForSymbol(reachedName, preferFlatSpelling(key, scaleType));
+        if (extensionChanged && reachedName) {
           updatedChord = {
             ...updatedChord,
             name: reachedName,
-            notes,
+            notes: notesForSymbol(reachedName, preferFlatSpelling(key, scaleType)),
           };
         }
+
+        const chords = [...this.progression.chords];
+        chords[heldIdx] = updatedChord;
+        this.progression = { ...this.progression, chords };
+        playbackEngine.setProgression(this.progression);
+
+        this.dispatchEvent(new CustomEvent('progression-update', {
+          detail: { chords },
+          bubbles: true,
+          composed: true,
+        }));
+        this.dispatchEvent(new CustomEvent('progression-change', {
+          detail: this.progression,
+          bubbles: true,
+          composed: true,
+        }));
       }
-
-      const chords = [...this.progression.chords];
-      chords[heldIdx] = updatedChord;
-      this.progression = { ...this.progression, chords };
-
       this.lastPad = { ...lp, reach: null };
-
-      playbackEngine.setProgression(this.progression);
-
-      this.dispatchEvent(new CustomEvent('progression-update', {
-        detail: { chords },
-        bubbles: true,
-        composed: true,
-      }));
-      this.dispatchEvent(new CustomEvent('progression-change', {
-        detail: this.progression,
-        bubbles: true,
-        composed: true,
-      }));
     }
+    this.requestUpdate();
+  }
+
+  /** Puts a card back to the chord it started as (before extensions / voicing were latched). */
+  private revertChord(index: number) {
+    const chord = this.progression?.chords?.[index];
+    if (!chord?.initialChord || !this.progression) return;
+    const { initialChord, ...rest } = chord;
+    void rest;
+    const restored: ChordBlock = { ...initialChord };
+    delete restored.initialChord;
+    const chords = [...this.progression.chords];
+    chords[index] = restored;
+    this.progression = { ...this.progression, chords };
+    const nextVoice = { ...this.padVoice };
+    delete nextVoice[`${index}`];
+    this.padVoice = nextVoice;
+    this.lastPad = null;
+    this.padHeld = null;
+    playbackEngine.setProgression(this.progression);
+    this.dispatchEvent(new CustomEvent('progression-update', { detail: { chords }, bubbles: true, composed: true }));
+    this.dispatchEvent(new CustomEvent('progression-change', { detail: this.progression, bubbles: true, composed: true }));
     this.requestUpdate();
   }
 

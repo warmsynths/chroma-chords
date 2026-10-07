@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { ProjectData, ProjectChord } from './services/project-service';
+import { ProjectData, ProjectChord, ProjectSong } from './services/project-service';
 import { projectStorage, SyncStatus } from './services/project-storage';
 import { playbackEngine } from './services/playback-engine';
 import { PromptClassifier } from './services/prompt-classifier';
@@ -1092,6 +1092,8 @@ export class ChromaChordsApp extends LitElement {
         degree: c.degree || '',
         scaleKey: c.scaleKey || '',
         tension: c.tension || 0.1,
+        ...(c.voicing ? { voicing: c.voicing } : {}),
+        ...(c.initialChord ? { initialChord: c.initialChord } : {}),
       });
     }
 
@@ -1118,13 +1120,57 @@ export class ChromaChordsApp extends LitElement {
       playbackEngine.setFeelSettings(p.feel);
     }
     playbackEngine.setProgression(this.progression, this.order);
-    this.sections = SongArranger.createInitialSong(this.progression, this.order);
-    this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
-    this.melodyTrack = (p as any).melodyTrack || melodyEngine.createEmptyTrack(this.progression);
-    playbackEngine.setMelodyTrack(this.melodyTrack);
-    this.activeSectionIdx = 0;
-    this.sections = SongArranger.setSectionMelody(this.sections, 0, this.melodyTrack);
+    if (p.song && p.song.sections.length) {
+      this.restoreSong(p.song);
+    } else {
+      this.sections = SongArranger.createInitialSong(this.progression, this.order);
+      this.songTimeline = SongArranger.createDefaultTimeline(this.sections);
+      this.melodyTrack = p.melodyTrack || melodyEngine.createEmptyTrack(this.progression);
+      playbackEngine.setMelodyTrack(this.melodyTrack);
+      this.activeSectionIdx = 0;
+      this.sections = SongArranger.setSectionMelody(this.sections, 0, this.melodyTrack);
+      this.syncSongToEngine(false, true);
+    }
     this.showToast(`Loaded "${p.name}"`);
+  }
+
+  /** Rebuilds the sections, melodies and song order from a saved song. */
+  private restoreSong(song: ProjectSong) {
+    const restoreChords = (chords: ProjectChord[], key: string, scaleType: string): ChordBlock[] => chords.map(c => ({
+      name: c.name,
+      tag: c.tag || 'diatonic',
+      roman: c.roman || '',
+      color: c.color || '#9CC0EC',
+      functionLabel: c.functionLabel || '',
+      notes: c.notes && c.notes.length ? c.notes : notesForSymbol(c.name, preferFlatSpelling(key, scaleType)),
+      scaleLabel: c.scaleLabel || '',
+      desc: c.desc || '',
+      degree: c.degree || '',
+      scaleKey: c.scaleKey || '',
+      tension: c.tension || 0.1,
+      ...(c.voicing ? { voicing: c.voicing } : {}),
+      ...(c.initialChord ? { initialChord: c.initialChord } : {}),
+    }));
+    this.sections = song.sections.map(sec => ({
+      name: sec.name,
+      desc: sec.desc,
+      progression: {
+        genre: sec.progression.genre, mood: sec.progression.mood, key: sec.progression.key,
+        scaleType: sec.progression.scaleType, bpm: sec.progression.bpm,
+        chords: restoreChords(sec.progression.chords, sec.progression.key, sec.progression.scaleType),
+      },
+      order: sec.order.slice(),
+      melodyTrack: sec.melodyTrack ?? null,
+    }));
+    this.songTimeline = song.timeline.length ? song.timeline.map(t => ({ ...t })) : SongArranger.createDefaultTimeline(this.sections);
+    this.activeSectionIdx = Math.max(0, Math.min(song.activeSectionIdx, this.sections.length - 1));
+    const active = this.sections[this.activeSectionIdx];
+    this.progression = active.progression;
+    this.order = active.order.slice();
+    this.length = this.progression.chords.length;
+    playbackEngine.setProgression(this.progression, this.order);
+    this.loadSectionMelody(active);
+    this.syncSongToEngine(false, true);
   }
 
   private onDeleteProject(e: CustomEvent<string>) {
@@ -1544,17 +1590,71 @@ export class ChromaChordsApp extends LitElement {
     }
   }
 
+  /** Small stable hash so long note lists don't bloat the fingerprint. */
+  private hashText(text: string): string {
+    let h = 5381;
+    for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+
+  private melodyFingerprint(track: { notes?: Array<{ barIndex: number; stepInBar: number; midi: number }> } | null | undefined): string {
+    const notes = track?.notes || [];
+    if (!notes.length) return '';
+    return this.hashText(notes.map(n => `${n.barIndex}.${n.stepInBar}.${n.midi}`).join('|'));
+  }
+
   /** What makes two loops "the same" for saving: the musical content, not the name or timestamps. */
-  private loopFingerprint(l: { genre?: string; mood?: string; key?: string; scaleType?: string; bpm?: number; barsPerChord?: number; chords?: Array<{ name: string }> } | null | undefined): string {
+  private loopFingerprint(l: { genre?: string; mood?: string; key?: string; scaleType?: string; bpm?: number; barsPerChord?: number; chords?: Array<{ name: string }>; melodyTrack?: any } | null | undefined): string {
     if (!l) return '';
-    return JSON.stringify([l.genre, l.mood, l.key, l.scaleType, l.bpm, l.barsPerChord ?? 1, (l.chords || []).map(c => c.name)]);
+    return JSON.stringify([l.genre, l.mood, l.key, l.scaleType, l.bpm, l.barsPerChord ?? 1, (l.chords || []).map(c => c.name), this.melodyFingerprint(l.melodyTrack)]);
+  }
+
+  /** True once the song has more than one section or a repeated/reordered row (otherwise it is just a loop). */
+  private isSongArranged(): boolean {
+    if (this.sections.length > 1) return true;
+    return this.songTimeline.some(t => t.repeats > 1) || this.songTimeline.length > 1;
+  }
+
+  /** The whole song as it is right now, including the section being edited and its melody. */
+  private songSnapshot(): ProjectSong {
+    const sections = this.sections.map((sec, i) => i === this.activeSectionIdx && this.progression
+      ? { ...sec, progression: this.progression, order: this.order.slice(), melodyTrack: this.melodyTrack }
+      : sec);
+    return {
+      sections: sections.map(sec => ({
+        name: sec.name,
+        desc: sec.desc,
+        progression: {
+          genre: sec.progression.genre, mood: sec.progression.mood, key: sec.progression.key,
+          scaleType: sec.progression.scaleType, bpm: sec.progression.bpm,
+          chords: sec.progression.chords as unknown as ProjectChord[],
+        },
+        order: sec.order.slice(),
+        melodyTrack: sec.melodyTrack && sec.melodyTrack.notes?.length ? sec.melodyTrack : undefined,
+      })),
+      timeline: this.songTimeline.map(t => ({ id: t.id, sectionIndex: t.sectionIndex, repeats: t.repeats })),
+      activeSectionIdx: this.activeSectionIdx,
+    };
+  }
+
+  private songFingerprint(song: ProjectSong | null | undefined): string {
+    if (!song) return '';
+    return JSON.stringify([
+      song.sections.map(sec => [sec.name, sec.progression.key, sec.progression.scaleType, sec.progression.bpm, sec.progression.chords.map(c => c.name), sec.order, this.melodyFingerprint(sec.melodyTrack)]),
+      song.timeline.map(t => [t.sectionIndex, t.repeats]),
+    ]);
   }
 
   /** new: not saved yet · saved: matches its saved copy · edited: loaded/saved, then changed since. */
   private getSaveState(): 'new' | 'saved' | 'edited' {
     const saved = this.currentProjectId ? projectStorage.getProjects().find(p => p.id === this.currentProjectId) : undefined;
     if (!saved || !this.progression) return 'new';
-    const now = this.loopFingerprint({ ...this.progression, barsPerChord: playbackEngine.getBarsPerChord() });
+    // A song is compared as a whole (every section, melody and the order), so adding a section counts as a change
+    if (saved.song || this.isSongArranged()) {
+      const nowSong = this.isSongArranged() ? this.songFingerprint(this.songSnapshot()) : '';
+      return nowSong === this.songFingerprint(saved.song) ? 'saved' : 'edited';
+    }
+    const now = this.loopFingerprint({ ...this.progression, barsPerChord: playbackEngine.getBarsPerChord(), melodyTrack: this.melodyTrack });
     const then = this.loopFingerprint({ ...saved, barsPerChord: saved.barsPerChord ?? playbackEngine.getBarsPerChord() });
     return now === then ? 'saved' : 'edited';
   }
@@ -1612,6 +1712,8 @@ export class ChromaChordsApp extends LitElement {
       chords: this.progression.chords as unknown as ProjectChord[],
       showTheory: this.showTheory,
       barsPerChord,
+      melodyTrack: this.melodyTrack && this.melodyTrack.notes?.length ? this.melodyTrack : undefined,
+      song: this.isSongArranged() ? this.songSnapshot() : undefined,
       feel: {
         swing: feelSettings.swing ?? 0,
         spread: feelSettings.spread ?? 50,
