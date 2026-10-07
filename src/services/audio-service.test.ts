@@ -51,6 +51,23 @@ describe('Perform Mode Audio Functions', () => {
     });
   });
 
+  describe('applyDensityToNotes keeps the bass and the defining tones', () => {
+    it('keeps a low bass root and the 7th of a seventh chord at Simple density', () => {
+      const out = applyDensityToNotes(['C3', 'C4', 'E4', 'G4', 'Bb4'], 50);
+      expect(out).toContain('C3');
+      expect(out).toContain('Bb4');
+    });
+
+    it('drops the 5th, then the doubled root, not the 7th or 9th, when a 9th chord has to lose notes', () => {
+      const out = applyDensityToNotes(['C3', 'C4', 'E4', 'G4', 'B4', 'D5'], 50);
+      expect(out).toEqual(['C3', 'E4', 'B4', 'D5']);
+    });
+
+    it('does not mistake an ordinary chord for one with a bass', () => {
+      expect(applyDensityToNotes(['C4', 'E4', 'G4', 'B4'], 50)).toEqual(['C4', 'E4', 'G4', 'B4']);
+    });
+  });
+
   describe('applyDensityToNotes', () => {
     const chordNotes = ['C3', 'C4', 'E4', 'G4', 'B4'];
 
@@ -61,7 +78,8 @@ describe('Perform Mode Audio Functions', () => {
 
     it('simple density (26 - 55) limits chord to 4 notes max', () => {
       const simple = applyDensityToNotes(chordNotes, 50);
-      expect(simple).toEqual(['C3', 'C4', 'E4', 'G4']);
+      expect(simple).toHaveLength(4);
+      expect(simple).toEqual(['C3', 'C4', 'E4', 'B4']); // gives up the 5th, keeps the 7th
     });
 
     it('full density (56 - 80) retains full chord notes', () => {

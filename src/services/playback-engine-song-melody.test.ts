@@ -28,6 +28,8 @@ vi.mock('./audio-service', async (orig) => ({
 }));
 
 import { PlaybackEngine, withBassNote } from './playback-engine';
+import { applyDensityToNotes } from './audio-service';
+import { notesForSymbol } from './chord-engine';
 import type { SongSection } from './song-arranger';
 
 const chord = (name: string) => ({ name, tag: 'd', roman: 'I', color: '#fff', functionLabel: 'Tonic', notes: ['C4', 'E4', 'G4'], scaleLabel: '', desc: '', degree: '1', scaleKey: 'C', tension: 0.1 });
@@ -118,5 +120,27 @@ describe('bass note under voicings', () => {
   it('does not double the bass if it is already there', () => {
     expect(withBassNote(['C3', 'E4', 'G4'], 'C')).toEqual(['C3', 'E4', 'G4']);
     expect(withBassNote(['E4', 'G4'], 'C4')).toEqual(['C3', 'E4', 'G4']);
+  });
+});
+
+describe('extensions stay distinct after density trimming', () => {
+  it('6, 7, maj7 and maj9 each keep the tone that defines them, with the bass kept', () => {
+    const engine = new PlaybackEngine();
+    engine.setProgression(prog, [0, 1]);
+    const sounded = (symbol: string, voicing?: string) => {
+      engine.playChordNotes(notesForSymbol(symbol, false), 1, voicing);
+      const args = playChordForGenre.mock.calls[playChordForGenre.mock.calls.length - 1][0] as string[];
+      return applyDensityToNotes(args, 50).map(n => n.replace(/\d+$/, ''));
+    };
+    for (const voicing of [undefined, 'low, root position', '1st inversion', 'up an octave']) {
+      const sets = ['C', 'C6', 'C7', 'Cmaj7', 'Cmaj9'].map(sym => new Set(sounded(sym, voicing)));
+      expect(sets[1].has('A'), `C6 ${voicing}`).toBe(true);
+      expect(sets[2].has('A#') || sets[2].has('Bb'), `C7 ${voicing}`).toBe(true);
+      expect(sets[3].has('B'), `Cmaj7 ${voicing}`).toBe(true);
+      expect(sets[4].has('B') && sets[4].has('D'), `Cmaj9 ${voicing}`).toBe(true);
+      expect(sets[4].has('E'), `Cmaj9 keeps its 3rd ${voicing}`).toBe(true);
+      // all five sound different
+      expect(new Set(sets.map(x => [...x].sort().join(','))).size, `distinct ${voicing}`).toBe(5);
+    }
   });
 });

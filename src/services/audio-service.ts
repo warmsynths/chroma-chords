@@ -1407,11 +1407,23 @@ export function planChordEvents(noteNames: string[], duration: number, humanStat
   return noteNames.map((note, i) => ({ note, offsetSec: i * spread * 0.1, durSec: dur, vel: baseVel() }));
 }
 
+const DENSITY_PC: Record<string, number> = {
+  'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5,
+  'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
+};
+const noteLetters = (n: string) => n.replace(/-?\d+$/, '');
+const noteOctave = (n: string) => parseInt(n.match(/(-?\d+)$/)?.[1] ?? '4', 10);
+
+/**
+ * Trims a chord to the requested density without losing what makes it that chord. When a chord has
+ * to lose notes it gives up its 5th first, then a root that a low bass note already covers, so a
+ * 7th or 9th still sounds like one and the bass stays.
+ */
 export function applyDensityToNotes(noteNames: string[], density: number): string[] {
   if (!Array.isArray(noteNames) || noteNames.length === 0) return [];
   if (noteNames.length <= 1) return noteNames;
 
-  // Sparse (<= 25): Root + 5th / 3rd essential interval
+  // Sparse (<= 25): Root (or bass) + the top note
   if (density <= 25) {
     if (noteNames.length <= 2) return noteNames;
     return [noteNames[0], noteNames[noteNames.length - 1]];
@@ -1420,7 +1432,24 @@ export function applyDensityToNotes(noteNames: string[], density: number): strin
   // Simple (26 - 55): Standard 3-4 note voicing
   if (density <= 55) {
     if (noteNames.length <= 4) return noteNames;
-    return noteNames.slice(0, 4);
+    let notes = [...noteNames];
+
+    // A bass root: the first note is the chord's root an octave under everything else
+    const rest = notes.slice(1);
+    const hasBass = rest.some(n => noteLetters(n) === noteLetters(notes[0])) && noteOctave(notes[0]) < Math.min(...rest.map(noteOctave));
+    const rootPc = DENSITY_PC[noteLetters(notes[0])];
+
+    // 1. Lose the 5th first
+    if (rootPc !== undefined) {
+      const fifthAt = notes.findIndex((n, i) => i > 0 && DENSITY_PC[noteLetters(n)] === (rootPc + 7) % 12);
+      if (fifthAt > 0) notes = notes.filter((_, i) => i !== fifthAt);
+    }
+    // 2. Then the root doubled above the bass (the bass already plays it)
+    if (notes.length > 4 && hasBass) {
+      const dupAt = notes.findIndex((n, i) => i > 0 && noteLetters(n) === noteLetters(notes[0]));
+      if (dupAt > 0) notes = notes.filter((_, i) => i !== dupAt);
+    }
+    return notes.length <= 4 ? notes : notes.slice(0, 4);
   }
 
   // Full (56 - 80): Full voicing with extensions and bass root
