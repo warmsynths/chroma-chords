@@ -24,6 +24,8 @@ export interface MidiNoteEvent {
   vel: number;       // 0 to 1
 }
 
+export type MidiSendMode = 'both' | 'chords' | 'melody' | 'off';
+
 export type MidiListener = (status: MidiConnectionStatus) => void;
 
 /**
@@ -225,6 +227,25 @@ export class MidiService {
     this.notify();
     // Turning clock on/off while the app is already playing takes effect immediately
     this.syncTransport(this.lastTransport.playing, this.lastTransport.bpm);
+  }
+
+  /** Which parts currently reach the device: both, only one of them, or neither. */
+  public getSendMode(): MidiSendMode {
+    const c = this.routing.chordsSend !== false;
+    const m = this.routing.melodySend !== false;
+    return c && m ? 'both' : c ? 'chords' : m ? 'melody' : 'off';
+  }
+
+  public setSendMode(mode: MidiSendMode): void {
+    this.setRouting({
+      chordsSend: mode === 'both' || mode === 'chords',
+      melodySend: mode === 'both' || mode === 'melody',
+    });
+  }
+
+  /** Next mode when tapping a single quick control: Both, Chords only, Melody only, Off. */
+  public static nextSendMode(mode: MidiSendMode): MidiSendMode {
+    return ({ both: 'chords', chords: 'melody', melody: 'off', off: 'both' } as const)[mode];
   }
 
   /** How long to hold back the built-in sound so it lines up with a slower external device. */

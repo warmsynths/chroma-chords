@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import './transport-bar';
 import './mobile-dock';
 import type { TransportBar } from './transport-bar';
+import { midiService } from '../services/midi-service';
 import type { MobileDock } from './mobile-dock';
 
 describe('TransportBar component', () => {
@@ -217,6 +218,59 @@ describe('TransportBar song loop', () => {
     el.songLoop = false;
     await el.updateComplete;
     expect(el.shadowRoot.querySelector('[aria-label="Loop the song"]').textContent).toContain('Off');
+    el.remove();
+  });
+});
+
+describe('Quick MIDI send control', () => {
+  const svc = midiService as any;
+  const connect = () => {
+    svc.midiAccess = { outputs: new Map([['o', { send: () => {} }]]), inputs: new Map() };
+    svc.selectedOutputId = 'o';
+    midiService.setSendMode('both');
+  };
+  afterEach(() => {
+    svc.midiAccess = null;
+    svc.selectedOutputId = null;
+    midiService.setSendMode('both');
+  });
+
+  it('is hidden until a MIDI device is connected', async () => {
+    const el = document.createElement('transport-bar') as any;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    expect(el.shadowRoot.querySelector('[aria-label^="MIDI output"]')).toBeNull();
+    el.remove();
+  });
+
+  it('cycles Both, Chords, Melody, Off in one tap and updates the routing', async () => {
+    connect();
+    const el = document.createElement('transport-bar') as any;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    const btn = () => el.shadowRoot.querySelector('[aria-label^="MIDI output"]') as HTMLButtonElement;
+    expect(btn().textContent).toContain('Both');
+
+    const seen: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      btn().click();
+      await el.updateComplete;
+      seen.push(midiService.getSendMode());
+    }
+    expect(seen).toEqual(['chords', 'melody', 'off', 'both']);
+    expect(midiService.routing.chordsSend).toBe(true);
+    expect(midiService.routing.melodySend).toBe(true);
+    el.remove();
+  });
+
+  it('reflects changes made in the MIDI dialog', async () => {
+    connect();
+    const el = document.createElement('transport-bar') as any;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    midiService.setRouting({ melodySend: false });
+    await el.updateComplete;
+    expect(el.shadowRoot.querySelector('[aria-label^="MIDI output"]').textContent).toContain('Chords');
     el.remove();
   });
 });

@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { SongSection } from '../services/song-arranger';
 import { FeelSettings, setMasterTone } from '../services/audio-service';
 import { playbackEngine } from '../services/playback-engine';
+import { midiService, MidiService, type MidiSendMode } from '../services/midi-service';
 
 export interface TransportSoundItem {
   name: string;
@@ -142,6 +143,29 @@ export class TransportBar extends LitElement {
   @state() private feelScope: number | null = null;
   @state() private advOpen = false;
 
+  @state() private midiConnected = false;
+  @state() private midiMode: MidiSendMode = 'both';
+  private unsubscribeMidi: (() => void) | null = null;
+
+  override connectedCallback() {
+    super.connectedCallback();
+    const sync = () => {
+      this.midiConnected = midiService.hasOutput();
+      this.midiMode = midiService.getSendMode();
+    };
+    sync();
+    this.unsubscribeMidi = midiService.subscribe(sync);
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this.unsubscribeMidi?.();
+  }
+
+  private onMidiCycle() {
+    midiService.setSendMode(MidiService.nextSendMode(this.midiMode));
+  }
+
   static styles = css`
     :host {
       display: block;
@@ -201,6 +225,49 @@ export class TransportBar extends LitElement {
         display: none;
       }
       .transport-container.melody .tb-btn {
+        padding: 0 10px;
+      }
+    }
+
+    /* A connected MIDI device adds one more button; compact a little earlier to make room. */
+    @container (max-width: 860px) {
+      .transport-container.has-midi .tb-btn .kicker,
+      .transport-container.has-midi .play-rest {
+        display: none;
+      }
+      .transport-container.has-midi .tb-btn {
+        padding: 0 10px;
+      }
+    }
+
+    @container (max-width: 700px) {
+      .transport-container.has-midi .tb-btn .caret,
+      .transport-container.has-midi .bpm-word {
+        display: none;
+      }
+      .transport-container.has-midi .tb-btn {
+        padding: 0 8px;
+        gap: 5px;
+      }
+    }
+
+    @container (max-width: 900px) {
+      .transport-container.melody.has-midi .tb-btn .caret,
+      .transport-container.melody.has-midi .bpm-word {
+        display: none;
+      }
+      .transport-container.melody.has-midi .tb-btn {
+        padding: 0 8px;
+        gap: 5px;
+      }
+    }
+
+    @container (max-width: 1130px) {
+      .transport-container.melody.has-midi .tb-btn .kicker,
+      .transport-container.melody.has-midi .play-rest {
+        display: none;
+      }
+      .transport-container.melody.has-midi .tb-btn {
         padding: 0 10px;
       }
     }
@@ -955,7 +1022,7 @@ export class TransportBar extends LitElement {
     const playIcon = this.isPlaying ? '■' : '▶';
 
     return html`
-      <div class="transport-container ${isMelody ? 'melody' : ''}" data-screen-label="Transport">
+      <div class="transport-container ${isMelody ? 'melody' : ''} ${this.midiConnected ? 'has-midi' : ''}" data-screen-label="Transport">
         ${this.openMenu ? html`<div class="backdrop" @click=${this.closeMenu}></div>` : ''}
 
         <!-- Play / Stop Button -->
@@ -1053,6 +1120,19 @@ export class TransportBar extends LitElement {
           >
             <span>Chords</span>
             <span class="highlight">${this.backingEnabled ? 'On' : 'Muted'}</span>
+          </button>
+        ` : ''}
+
+        <!-- MIDI send (only when a device is connected): which parts reach it -->
+        ${this.midiConnected ? html`
+          <button
+            class="tb-btn ${this.midiMode === 'off' ? 'muted' : ''}"
+            @click=${this.onMidiCycle}
+            aria-label="MIDI output: ${this.midiMode}. Click to change"
+            title="Which parts go to your MIDI device. Click to cycle Both, Chords, Melody, Off."
+          >
+            <span>MIDI</span>
+            <span class="highlight">${({ both: 'Both', chords: 'Chords', melody: 'Melody', off: 'Off' } as const)[this.midiMode]}</span>
           </button>
         ` : ''}
 

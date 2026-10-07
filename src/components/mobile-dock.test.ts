@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { midiService } from '../services/midi-service';
 import './mobile-dock';
 import { MobileDock } from './mobile-dock';
 
@@ -111,5 +112,42 @@ describe('MobileDock', () => {
     (el.shadowRoot!.querySelector('[aria-label="More actions"]') as HTMLElement).click();
     await el.updateComplete;
     expect(el.shadowRoot!.querySelector('[aria-label="Chords playing under the melody"]')).toBeNull();
+  });
+});
+
+describe('MobileDock quick MIDI send', () => {
+  const svc = midiService as any;
+  afterEach(() => {
+    svc.midiAccess = null;
+    svc.selectedOutputId = null;
+    midiService.setSendMode('both');
+  });
+
+  it('puts a MIDI Both/Chords/Melody/Off row in the more menu once a device is connected', async () => {
+    svc.midiAccess = { outputs: new Map([['o', { send: () => {} }]]), inputs: new Map() };
+    svc.selectedOutputId = 'o';
+    const el = document.createElement('mobile-dock') as MobileDock;
+    el.activeTab = 'melody';
+    document.body.appendChild(el);
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector('[aria-label="More actions"]') as HTMLElement).click();
+    await el.updateComplete;
+    const row = Array.from(el.shadowRoot!.querySelectorAll('[aria-label="Which parts go to MIDI"] .loop-seg-btn')) as HTMLElement[];
+    expect(row.map(b => b.textContent?.trim())).toEqual(['Both', 'Chords', 'Melody', 'Off']);
+    row[2].click(); // Melody only: record the melody on its own
+    await el.updateComplete;
+    expect(midiService.getSendMode()).toBe('melody');
+    expect(row[2].className).toContain('active');
+    el.remove();
+  });
+
+  it('shows no MIDI row without a device', async () => {
+    const el = document.createElement('mobile-dock') as MobileDock;
+    document.body.appendChild(el);
+    await el.updateComplete;
+    (el.shadowRoot!.querySelector('[aria-label="More actions"]') as HTMLElement).click();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('[aria-label="Which parts go to MIDI"]')).toBeNull();
+    el.remove();
   });
 });

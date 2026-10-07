@@ -4,6 +4,7 @@ import { SongSection } from '../services/song-arranger';
 import { FeelSettings, setMasterTone } from '../services/audio-service';
 import { playbackEngine } from '../services/playback-engine';
 import { aiCapacity, AI_MAX_TOKENS } from '../services/ai-capacity';
+import { midiService, type MidiSendMode } from '../services/midi-service';
 import { TRANSPORT_SOUNDS, ROOT_KEYS, SCALE_MODES, FEEL_AXES, FEEL_DEFAULTS, ADV_DEFS } from './transport-bar';
 
 export type MobileSheetType = 'key' | 'feel' | 'sound' | 'section' | 'more' | null;
@@ -34,9 +35,18 @@ export class MobileDock extends LitElement {
 
   @state() private activeSheet: MobileSheetType = null;
   private unsubscribeCapacity: (() => void) | null = null;
+  @state() private midiConnected = false;
+  @state() private midiMode: MidiSendMode = 'both';
+  private unsubscribeMidi: (() => void) | null = null;
 
   override connectedCallback() {
     super.connectedCallback();
+    const syncMidi = () => {
+      this.midiConnected = midiService.hasOutput();
+      this.midiMode = midiService.getSendMode();
+    };
+    syncMidi();
+    this.unsubscribeMidi = midiService.subscribe(syncMidi);
     this.unsubscribeCapacity = aiCapacity.subscribe(() => {
       // Only the open ⋯ menu shows the countdown; skip re-rendering otherwise.
       if (this.activeSheet === 'more') this.requestUpdate();
@@ -46,6 +56,7 @@ export class MobileDock extends LitElement {
   override disconnectedCallback() {
     super.disconnectedCallback();
     this.unsubscribeCapacity?.();
+    this.unsubscribeMidi?.();
   }
   @state() private feelScope: number | null = null;
   @state() private advOpen = false;
@@ -863,6 +874,21 @@ export class MobileDock extends LitElement {
         <!-- More Popover (Upwards) -->
         ${this.activeSheet === 'more' ? html`
           <div class="popover-up">
+            ${this.midiConnected ? html`
+              <div class="loop-row">
+                <span class="loop-row-label">MIDI</span>
+                <div class="loop-seg" role="radiogroup" aria-label="Which parts go to MIDI">
+                  ${(['both', 'chords', 'melody', 'off'] as const).map(m => html`
+                    <button
+                      class="loop-seg-btn ${this.midiMode === m ? 'active' : ''}"
+                      role="radio"
+                      aria-checked=${this.midiMode === m}
+                      @click=${() => midiService.setSendMode(m)}
+                    >${m === 'both' ? 'Both' : m === 'chords' ? 'Chords' : m === 'melody' ? 'Melody' : 'Off'}</button>
+                  `)}
+                </div>
+              </div>
+            ` : ''}
             ${isSong ? html`
               <div class="loop-row">
                 <span class="loop-row-label">Loop</span>
